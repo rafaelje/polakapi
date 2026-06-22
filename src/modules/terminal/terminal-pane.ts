@@ -1,14 +1,9 @@
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
-import { ptySpawn, ptyWrite, ptyResize, ptyKill } from "./pty";
-import { terminalTheme } from "./theme";
-
-export interface PaneCreateOptions {
-  command?: string;
-  args?: string[];
-  cwd?: string;
-}
+import { ptySpawn, ptyWrite, ptyResize, ptyKill } from "./pty-client";
+import { terminalTheme } from "./terminal-theme";
+import { type PaneCreateOptions } from "./types";
 
 export class TerminalPane {
   ptyId = "";

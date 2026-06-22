@@ -1,8 +1,8 @@
+import { type SidebarTarget } from "./types";
+
 const MIN_PANE_PX = 80;
 const MIN_SIDEBAR_PX = 120;
 const MAX_SIDEBAR_PX = 600;
-
-export type SidebarTarget = "sidebar-left" | "sidebar-right";
 
 export function makeFlexGutter(orientation: "h" | "v", onResize: () => void): HTMLElement {
   const g = document.createElement("div");
@@ -96,23 +96,4 @@ export function wireSidebarGutters(
       startSidebarDrag(e, g, sidebars[target], target, onResize),
     );
   });
-}
-
-export interface ToggleBinding {
-  btnId: string;
-  target: HTMLElement;
-  cls: string;
-}
-
-export function wireToggles(bindings: ToggleBinding[], onChange: () => void): void {
-  for (const { btnId, target, cls } of bindings) {
-    const btn = document.getElementById(btnId) as HTMLButtonElement | null;
-    if (!btn) continue;
-    btn.addEventListener("click", () => {
-      const willHide = !target.classList.contains(cls);
-      target.classList.toggle(cls, willHide);
-      btn.classList.toggle("active", !willHide);
-      requestAnimationFrame(onChange);
-    });
-  }
 }

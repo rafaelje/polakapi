@@ -1,7 +1,8 @@
-import { makeFlexGutter } from "../layout/layout";
-import { TerminalPane, type PaneCreateOptions } from "./terminal-pane";
+import { makeFlexGutter } from "../layout/gutters";
+import { TerminalPane } from "./terminal-pane";
+import { type PaneCreateOptions } from "./types";
 
-export interface PaneManagerOptions {
+export interface TerminalManagerOptions {
   /** Element that hosts the grid of rows of panes. */
   gridEl: HTMLElement;
   /** Initial number of columns per row. Must be >= 1. */
@@ -10,16 +11,16 @@ export interface PaneManagerOptions {
 
 /**
  * Owns the lifecycle of every TerminalPane: creation, focus, ordering, layout
- * and disposal. Exposes a small surface so `main.ts` is wiring only, not state.
+ * and disposal. Exposes a small surface so the app controller coordinates instead of owning state.
  */
-export class PaneManager {
+export class TerminalManager {
   private readonly panes = new Map<string, TerminalPane>();
   private readonly order: string[] = [];
   private focusedId: string | null = null;
   private readonly gridEl: HTMLElement;
   private cols: number;
 
-  constructor(opts: PaneManagerOptions) {
+  constructor(opts: TerminalManagerOptions) {
     this.gridEl = opts.gridEl;
     this.cols = Math.max(1, Math.floor(opts.gridCols));
   }

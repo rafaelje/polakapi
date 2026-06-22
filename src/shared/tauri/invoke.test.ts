@@ -6,7 +6,7 @@ vi.mock("@tauri-apps/api/core", () => ({
 }));
 
 const showToast = vi.hoisted(() => vi.fn());
-vi.mock("./toast", () => ({
+vi.mock("../ui/toast", () => ({
   showToast,
 }));
 

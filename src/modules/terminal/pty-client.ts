@@ -1,5 +1,5 @@
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { invoke } from "../../shared/invoke";
+import { invoke } from "../../shared/tauri/invoke";
 
 export type PtyDataEvent = { id: string; data: string };
 export type PtyExitEvent = { id: string };

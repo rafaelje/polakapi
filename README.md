@@ -41,11 +41,18 @@ pnpm run check
 
 ```text
 src/
-  main.ts                 App composition and DOM wiring.
-  features/
-    terminal/             xterm pane UI and Tauri PTY client API.
-    layout/               Resize gutters, panel toggles, and layout helpers.
-    notes/                Notes panel wiring and persisted notes state.
+  main.ts                 Minimal Vite entrypoint.
+  app/                    App bootstrap, DOM elements, lifecycle, and orchestration.
+  modules/
+    terminal/             xterm pane UI, terminal manager, and Tauri PTY client API.
+    layout/               Resize gutters, panel toggles, and layout types.
+    notes/                Notes panel and notes persistence wiring.
+  shared/
+    tauri/                Tauri invoke wrapper.
+    ui/                   Toasts and modal primitives.
+    persistence/          Store-backed layout persistence.
+    keyboard/             Keyboard shortcut wiring.
+    dom/                  DOM lookup helpers.
   shared/                 Cross-feature helpers such as invoke, persistence, shortcuts, and toasts.
 src-tauri/
   src/
@@ -57,7 +64,7 @@ src-tauri/
 ## Architecture Notes
 
 - Rust owns PTY processes and emits `pty:data` / `pty:exit` events to the frontend.
-- The frontend sends writes, resizes, and kills through typed wrappers in `src/features/terminal/pty.ts`.
+- The frontend sends writes, resizes, and kills through typed wrappers in `src/modules/terminal/pty-client.ts`.
 - PTY sessions are cleaned up from Rust when the main window closes and again when the store is dropped.
 - Layout and notes are persisted through the Tauri store plugin.
 - Tauri capabilities should stay minimal. Add permissions only when a feature needs them.

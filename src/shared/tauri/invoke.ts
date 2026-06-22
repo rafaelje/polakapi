@@ -1,5 +1,5 @@
 import { invoke as tauriInvoke, type InvokeArgs } from "@tauri-apps/api/core";
-import { showToast } from "./toast";
+import { showToast } from "../ui/toast";
 
 export class InvokeError extends Error {
   constructor(

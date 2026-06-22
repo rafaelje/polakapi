@@ -15,7 +15,7 @@ vi.mock("@tauri-apps/plugin-store", () => ({
 
 async function freshModule() {
   vi.resetModules();
-  return await import("./persistence");
+  return await import("./store");
 }
 
 describe("persistence", () => {
