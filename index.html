@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="stylesheet" href="/src/styles.css" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>multiterm</title>
+    <script type="module" src="/src/main.ts" defer></script>
+  </head>
+  <body>
+    <div id="app">
+      <div class="toolbar">
+        <button id="add-pane">+ Terminal</button>
+        <button id="run-all">Run command in all…</button>
+        <span class="spacer"></span>
+        <div class="toggle-group">
+          <button class="toggle-btn active" id="toggle-left" title="Toggle workspaces panel">
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.2"
+            >
+              <rect x="1.5" y="3.5" width="13" height="9" rx="1.5" />
+              <rect x="3" y="5" width="3" height="6" fill="currentColor" stroke="none" />
+            </svg>
+          </button>
+          <button class="toggle-btn active" id="toggle-bottom" title="Toggle notes panel">
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.2"
+            >
+              <rect x="1.5" y="3.5" width="13" height="9" rx="1.5" />
+              <rect x="3" y="9" width="10" height="2.5" fill="currentColor" stroke="none" />
+            </svg>
+          </button>
+          <button class="toggle-btn active" id="toggle-right" title="Toggle agents flow panel">
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.2"
+            >
+              <rect x="1.5" y="3.5" width="13" height="9" rx="1.5" />
+              <rect x="10" y="5" width="3" height="6" fill="currentColor" stroke="none" />
+            </svg>
+          </button>
+        </div>
+      </div>
+      <div class="main-row" id="main-row">
+        <aside class="sidebar sidebar-left" id="sidebar-left">
+          <div class="sidebar-title">workspaces</div>
+        </aside>
+        <div class="gutter gutter-h" data-resize="sidebar-left"></div>
+        <div class="right-col" id="right-col">
+          <div class="layout" id="layout">
+            <div id="grid" class="grid"></div>
+            <div class="gutter gutter-h" data-resize="sidebar-right"></div>
+            <aside class="sidebar sidebar-right" id="sidebar-right">
+              <div class="sidebar-title">agents flow</div>
+            </aside>
+          </div>
+          <div class="gutter gutter-v" id="gutter-notes"></div>
+          <section class="notes" id="notes">
+            <div class="sidebar-title">notes</div>
+            <textarea class="notes-body" placeholder="Write notes here…"></textarea>
+          </section>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>
