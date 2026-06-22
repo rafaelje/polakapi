@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "multiterm",
+  "productName": "polakapi",
   "version": "0.1.0",
-  "identifier": "com.rafaelje.multiterm",
+  "identifier": "com.rafaelje.polakapi",
   "build": {
     "beforeDevCommand": "pnpm dev",
     "devUrl": "http://localhost:1420",
@@ -13,7 +13,7 @@
     "withGlobalTauri": false,
     "windows": [
       {
-        "title": "multiterm",
+        "title": "polakapi",
         "label": "main",
         "width": 1400,
         "height": 900

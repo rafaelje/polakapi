@@ -1,4 +1,4 @@
-# multiterm
+# polakapi
 
 Desktop app built with Tauri for working with multiple local terminal panes in one window.
 

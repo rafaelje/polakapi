@@ -1784,19 +1784,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "multiterm"
-version = "0.1.0"
-dependencies = [
- "parking_lot",
- "portable-pty",
- "serde",
- "tauri",
- "tauri-build",
- "tauri-plugin-store",
- "uuid",
-]
-
-[[package]]
 name = "ndk"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2246,6 +2233,19 @@ dependencies = [
  "fdeflate",
  "flate2",
  "miniz_oxide",
+]
+
+[[package]]
+name = "polakapi"
+version = "0.1.0"
+dependencies = [
+ "parking_lot",
+ "portable-pty",
+ "serde",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-store",
+ "uuid",
 ]
 
 [[package]]
