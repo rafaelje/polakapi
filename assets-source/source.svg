@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <rect x="100" y="100" width="824" height="824" rx="185" ry="185" fill="#000000"/>
+  <g fill="#ffffff" transform="translate(512 512) scale(0.7) translate(-555 -512)">
+    <rect x="280" y="180" width="200" height="664"/>
+    <path fill-rule="evenodd" d="
+      M 380 180
+      L 580 180
+      A 250 250 0 0 1 580 680
+      L 380 680
+      Z
+      M 380 320
+      L 380 540
+      L 580 540
+      A 110 110 0 0 0 580 320
+      Z
+    "/>
+  </g>
+</svg>
