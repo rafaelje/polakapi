@@ -8,6 +8,7 @@ import {
   wireToggles,
   type SidebarTarget,
 } from "./layout";
+import { flushSave, loadLayout, queueSave } from "./persistence";
 
 const GRID_COLS = 2;
 const INITIAL_PANES = 4;
@@ -21,7 +22,9 @@ const sidebarRight = document.getElementById("sidebar-right") as HTMLElement;
 const layoutEl = document.getElementById("layout") as HTMLElement;
 const mainRow = document.getElementById("main-row") as HTMLElement;
 const rightCol = document.getElementById("right-col") as HTMLElement;
+const notesEl = document.getElementById("notes");
 const notesGutter = document.getElementById("gutter-notes");
+const notesTextarea = document.querySelector<HTMLTextAreaElement>(".notes-body");
 
 function refit(): void {
   for (const pane of panes.values()) pane.fit();
@@ -108,14 +111,34 @@ function wireToolbar(): void {
   });
 }
 
+function persistSidebarWidths(): void {
+  queueSave({
+    sidebarLeftWidth: sidebarLeft.getBoundingClientRect().width,
+    sidebarRightWidth: sidebarRight.getBoundingClientRect().width,
+  });
+}
+
+function persistNotesHeight(): void {
+  if (!notesEl) return;
+  queueSave({ notesHeight: notesEl.getBoundingClientRect().height });
+}
+
 function wireGutters(): void {
   const sidebars: Record<SidebarTarget, HTMLElement> = {
     "sidebar-left": sidebarLeft,
     "sidebar-right": sidebarRight,
   };
-  wireSidebarGutters(sidebars, refit);
+  wireSidebarGutters(sidebars, () => {
+    refit();
+    persistSidebarWidths();
+  });
   if (notesGutter) {
-    notesGutter.addEventListener("mousedown", (e) => startFlexDrag(e, notesGutter, "v", refit));
+    notesGutter.addEventListener("mousedown", (e) =>
+      startFlexDrag(e, notesGutter, "v", () => {
+        refit();
+        persistNotesHeight();
+      }),
+    );
   }
 }
 
@@ -126,22 +149,63 @@ function wirePanelToggles(): void {
       { btnId: "toggle-right", target: layoutEl, cls: "hide-right" },
       { btnId: "toggle-bottom", target: rightCol, cls: "hide-notes" },
     ],
-    refit,
+    () => {
+      refit();
+      queueSave({
+        hideLeft: mainRow.classList.contains("hide-left"),
+        hideRight: layoutEl.classList.contains("hide-right"),
+        hideNotes: rightCol.classList.contains("hide-notes"),
+      });
+    },
   );
+}
+
+function wireNotes(): void {
+  if (!notesTextarea) return;
+  notesTextarea.addEventListener("input", () => {
+    queueSave({ notesContent: notesTextarea.value });
+  });
+}
+
+function applyLayout(layout: Awaited<ReturnType<typeof loadLayout>>): void {
+  if (typeof layout.sidebarLeftWidth === "number") {
+    sidebarLeft.style.width = `${layout.sidebarLeftWidth}px`;
+  }
+  if (typeof layout.sidebarRightWidth === "number") {
+    sidebarRight.style.width = `${layout.sidebarRightWidth}px`;
+  }
+  if (typeof layout.notesHeight === "number" && notesEl) {
+    notesEl.style.flex = `0 0 ${layout.notesHeight}px`;
+  }
+  if (layout.hideLeft) toggleClassAndButton(mainRow, "hide-left", "toggle-left");
+  if (layout.hideRight) toggleClassAndButton(layoutEl, "hide-right", "toggle-right");
+  if (layout.hideNotes) toggleClassAndButton(rightCol, "hide-notes", "toggle-bottom");
+  if (typeof layout.notesContent === "string" && notesTextarea) {
+    notesTextarea.value = layout.notesContent;
+  }
+}
+
+function toggleClassAndButton(target: HTMLElement, cls: string, btnId: string): void {
+  target.classList.add(cls);
+  document.getElementById(btnId)?.classList.remove("active");
 }
 
 window.addEventListener("beforeunload", () => {
   unlistenData?.();
   unlistenExit?.();
   for (const id of panes.keys()) void ptyKill(id);
+  void flushSave();
 });
 window.addEventListener("resize", () => refit());
 
 async function init(): Promise<void> {
+  const layout = await loadLayout();
+  applyLayout(layout);
   await wirePtyEvents();
   wireGutters();
   wirePanelToggles();
   wireToolbar();
+  wireNotes();
   for (let i = 0; i < INITIAL_PANES; i++) await createPane();
 }
 
