@@ -1,5 +1,5 @@
-import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { invoke } from "../../shared/invoke";
 
 export type PtyDataEvent = { id: string; data: string };
 export type PtyExitEvent = { id: string };
@@ -13,25 +13,30 @@ export interface PtySpawnOptions {
 }
 
 export function ptySpawn(opts: PtySpawnOptions): Promise<string> {
-  return invoke<string>("pty_spawn", {
-    cols: opts.cols,
-    rows: opts.rows,
-    command: opts.command ?? null,
-    args: opts.args ?? null,
-    cwd: opts.cwd ?? null,
-  });
+  return invoke<string>(
+    "pty_spawn",
+    {
+      cols: opts.cols,
+      rows: opts.rows,
+      command: opts.command ?? null,
+      args: opts.args ?? null,
+      cwd: opts.cwd ?? null,
+    },
+    { errorMessage: "Failed to spawn terminal" },
+  );
 }
 
 export function ptyWrite(id: string, data: string): Promise<void> {
-  return invoke("pty_write", { id, data });
+  // High-frequency: don't surface a toast per keystroke if PTY is gone.
+  return invoke("pty_write", { id, data }, { toastOnError: false });
 }
 
 export function ptyResize(id: string, cols: number, rows: number): Promise<void> {
-  return invoke("pty_resize", { id, cols, rows });
+  return invoke("pty_resize", { id, cols, rows }, { toastOnError: false });
 }
 
 export function ptyKill(id: string): Promise<void> {
-  return invoke("pty_kill", { id });
+  return invoke("pty_kill", { id }, { toastOnError: false });
 }
 
 export function onPtyData(handler: (ev: PtyDataEvent) => void): Promise<UnlistenFn> {

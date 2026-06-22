@@ -1,114 +1,84 @@
 import { type UnlistenFn } from "@tauri-apps/api/event";
-import { TerminalPane } from "./terminal-pane";
-import { onPtyData, onPtyExit, ptyKill, ptyWrite } from "./pty";
 import {
-  makeFlexGutter,
+  applyNotesLayout,
+  getNotesElements,
+  persistNotesHeight as queueNotesHeightSave,
+  wireNotes,
+} from "./features/notes/notes";
+import { PaneManager } from "./features/terminal/pane-manager";
+import { onPtyData, onPtyExit, ptyKill, ptyWrite } from "./features/terminal/pty";
+import {
   startFlexDrag,
   wireSidebarGutters,
   wireToggles,
   type SidebarTarget,
-} from "./layout";
-import { flushSave, loadLayout, queueSave } from "./persistence";
+} from "./features/layout/layout";
+import { flushSave, loadLayout, queueSave, type PersistedLayout } from "./shared/persistence";
+import { wireShortcuts } from "./shared/shortcuts";
+import { showToast } from "./shared/toast";
+import { requireById } from "./shared/dom";
+import { promptModal } from "./shared/modal";
 
-const GRID_COLS = 2;
+const DEFAULT_GRID_COLS = 2;
+const MIN_GRID_COLS = 1;
+const MAX_GRID_COLS = 8;
 const INITIAL_PANES = 4;
 
-const panes = new Map<string, TerminalPane>();
-const paneOrder: string[] = [];
-
-const gridEl = document.getElementById("grid") as HTMLDivElement;
-const sidebarLeft = document.getElementById("sidebar-left") as HTMLElement;
-const sidebarRight = document.getElementById("sidebar-right") as HTMLElement;
-const layoutEl = document.getElementById("layout") as HTMLElement;
-const mainRow = document.getElementById("main-row") as HTMLElement;
-const rightCol = document.getElementById("right-col") as HTMLElement;
-const notesEl = document.getElementById("notes");
+const gridEl = requireById<HTMLDivElement>("grid", HTMLDivElement);
+const sidebarLeft = requireById("sidebar-left");
+const sidebarRight = requireById("sidebar-right");
+const layoutEl = requireById("layout");
+const mainRow = requireById("main-row");
+const rightCol = requireById("right-col");
 const notesGutter = document.getElementById("gutter-notes");
-const notesTextarea = document.querySelector<HTMLTextAreaElement>(".notes-body");
+const notesElements = getNotesElements();
 
-function refit(): void {
-  for (const pane of panes.values()) pane.fit();
-}
-
-function setFocused(ptyId: string): void {
-  for (const pane of panes.values()) {
-    pane.el.classList.toggle("focused", pane.ptyId === ptyId);
-  }
-}
-
-function relayout(): void {
-  for (const id of paneOrder) {
-    const p = panes.get(id);
-    p?.el.parentElement?.removeChild(p.el);
-  }
-  gridEl.innerHTML = "";
-  for (let i = 0; i < paneOrder.length; i += GRID_COLS) {
-    if (i > 0) gridEl.append(makeFlexGutter("v", refit));
-    const row = document.createElement("div");
-    row.className = "grid-row";
-    paneOrder.slice(i, i + GRID_COLS).forEach((id, idx) => {
-      const p = panes.get(id);
-      if (!p) return;
-      p.el.style.flex = "1 1 0";
-      if (idx > 0) row.append(makeFlexGutter("h", refit));
-      row.append(p.el);
-    });
-    gridEl.append(row);
-  }
-  requestAnimationFrame(refit);
-}
-
-async function createPane(opts?: { command?: string; args?: string[] }): Promise<TerminalPane> {
-  const pane = new TerminalPane();
-  pane.el.style.visibility = "hidden";
-  await pane.attach(gridEl, opts);
-  pane.el.style.visibility = "";
-
-  panes.set(pane.ptyId, pane);
-  paneOrder.push(pane.ptyId);
-
-  pane.el.addEventListener("mousedown", () => setFocused(pane.ptyId));
-  pane.bodyEl.addEventListener("focusin", () => setFocused(pane.ptyId));
-  pane.closeBtn.addEventListener("click", (e) => {
-    e.stopPropagation();
-    void closePane(pane.ptyId);
-  });
-
-  setFocused(pane.ptyId);
-  relayout();
-  return pane;
-}
-
-async function closePane(ptyId: string): Promise<void> {
-  const pane = panes.get(ptyId);
-  if (!pane) return;
-  panes.delete(ptyId);
-  const idx = paneOrder.indexOf(ptyId);
-  if (idx >= 0) paneOrder.splice(idx, 1);
-  await pane.dispose();
-  relayout();
-}
-
+const paneManager = new PaneManager({ gridEl, gridCols: DEFAULT_GRID_COLS });
+let unwireShortcuts: (() => void) | null = null;
 let unlistenData: UnlistenFn | null = null;
 let unlistenExit: UnlistenFn | null = null;
 
 async function wirePtyEvents(): Promise<void> {
   unlistenData = await onPtyData(({ id, data }) => {
-    panes.get(id)?.write(data);
+    paneManager.get(id)?.write(data);
   });
   unlistenExit = await onPtyExit(({ id }) => {
-    panes.get(id)?.markExited();
+    paneManager.get(id)?.markExited();
   });
 }
 
+function clampGridCols(value: number): number {
+  if (!Number.isFinite(value)) return DEFAULT_GRID_COLS;
+  return Math.min(MAX_GRID_COLS, Math.max(MIN_GRID_COLS, Math.floor(value)));
+}
+
 function wireToolbar(): void {
-  document.getElementById("add-pane")?.addEventListener("click", () => void createPane());
+  document.getElementById("add-pane")?.addEventListener("click", () => void paneManager.create());
+
   document.getElementById("run-all")?.addEventListener("click", () => {
-    const cmd = prompt("Command to send to every terminal (will be followed by Enter):");
-    if (!cmd) return;
-    const payload = cmd + "\r";
-    for (const id of panes.keys()) void ptyWrite(id, payload);
+    void (async () => {
+      const cmd = await promptModal({
+        title: "Run command in all terminals",
+        message: "The command will be sent followed by Enter to every open terminal.",
+        placeholder: "e.g. ls",
+        confirmLabel: "Run",
+      });
+      if (!cmd) return;
+      const payload = `${cmd}\r`;
+      for (const id of paneManager.ids()) void ptyWrite(id, payload);
+    })();
   });
+
+  const colsInput = document.getElementById("grid-cols");
+  if (colsInput instanceof HTMLInputElement) {
+    colsInput.value = String(paneManager.gridCols);
+    colsInput.addEventListener("change", () => {
+      const next = clampGridCols(Number(colsInput.value));
+      colsInput.value = String(next);
+      paneManager.setGridCols(next);
+      queueSave({ gridCols: next });
+    });
+  }
 }
 
 function persistSidebarWidths(): void {
@@ -118,9 +88,8 @@ function persistSidebarWidths(): void {
   });
 }
 
-function persistNotesHeight(): void {
-  if (!notesEl) return;
-  queueSave({ notesHeight: notesEl.getBoundingClientRect().height });
+function persistCurrentNotesHeight(): void {
+  queueNotesHeightSave(notesElements.panel);
 }
 
 function wireGutters(): void {
@@ -129,14 +98,14 @@ function wireGutters(): void {
     "sidebar-right": sidebarRight,
   };
   wireSidebarGutters(sidebars, () => {
-    refit();
+    paneManager.refit();
     persistSidebarWidths();
   });
   if (notesGutter) {
     notesGutter.addEventListener("mousedown", (e) =>
       startFlexDrag(e, notesGutter, "v", () => {
-        refit();
-        persistNotesHeight();
+        paneManager.refit();
+        persistCurrentNotesHeight();
       }),
     );
   }
@@ -150,7 +119,7 @@ function wirePanelToggles(): void {
       { btnId: "toggle-bottom", target: rightCol, cls: "hide-notes" },
     ],
     () => {
-      refit();
+      paneManager.refit();
       queueSave({
         hideLeft: mainRow.classList.contains("hide-left"),
         hideRight: layoutEl.classList.contains("hide-right"),
@@ -160,29 +129,20 @@ function wirePanelToggles(): void {
   );
 }
 
-function wireNotes(): void {
-  if (!notesTextarea) return;
-  notesTextarea.addEventListener("input", () => {
-    queueSave({ notesContent: notesTextarea.value });
-  });
-}
-
-function applyLayout(layout: Awaited<ReturnType<typeof loadLayout>>): void {
+function applyLayout(layout: PersistedLayout): void {
   if (typeof layout.sidebarLeftWidth === "number") {
     sidebarLeft.style.width = `${layout.sidebarLeftWidth}px`;
   }
   if (typeof layout.sidebarRightWidth === "number") {
     sidebarRight.style.width = `${layout.sidebarRightWidth}px`;
   }
-  if (typeof layout.notesHeight === "number" && notesEl) {
-    notesEl.style.flex = `0 0 ${layout.notesHeight}px`;
+  if (typeof layout.gridCols === "number") {
+    paneManager.setGridCols(clampGridCols(layout.gridCols));
   }
+  applyNotesLayout(layout, notesElements);
   if (layout.hideLeft) toggleClassAndButton(mainRow, "hide-left", "toggle-left");
   if (layout.hideRight) toggleClassAndButton(layoutEl, "hide-right", "toggle-right");
   if (layout.hideNotes) toggleClassAndButton(rightCol, "hide-notes", "toggle-bottom");
-  if (typeof layout.notesContent === "string" && notesTextarea) {
-    notesTextarea.value = layout.notesContent;
-  }
 }
 
 function toggleClassAndButton(target: HTMLElement, cls: string, btnId: string): void {
@@ -192,21 +152,47 @@ function toggleClassAndButton(target: HTMLElement, cls: string, btnId: string): 
 
 window.addEventListener("beforeunload", () => {
   unlistenData?.();
+  unlistenData = null;
   unlistenExit?.();
-  for (const id of panes.keys()) void ptyKill(id);
-  void flushSave();
+  unlistenExit = null;
+  unwireShortcuts?.();
+  unwireShortcuts = null;
+  for (const id of paneManager.ids()) {
+    void ptyKill(id);
+  }
+  void flushSave().catch((error) => console.error("Failed to flush layout before unload", error));
 });
-window.addEventListener("resize", () => refit());
+window.addEventListener("resize", () => paneManager.refit());
+
+async function loadSavedLayout(): Promise<PersistedLayout> {
+  try {
+    return await loadLayout();
+  } catch (error) {
+    console.error("Failed to load saved layout", error);
+    showToast("Could not load saved layout", "error");
+    return {};
+  }
+}
 
 async function init(): Promise<void> {
-  const layout = await loadLayout();
+  const layout = await loadSavedLayout();
   applyLayout(layout);
   await wirePtyEvents();
   wireGutters();
   wirePanelToggles();
   wireToolbar();
-  wireNotes();
-  for (let i = 0; i < INITIAL_PANES; i++) await createPane();
+  wireNotes(notesElements.textarea);
+  unwireShortcuts = wireShortcuts({
+    newPane: () => void paneManager.create(),
+    closeFocused: () => paneManager.closeFocused(),
+    focusByIndex: (idx) => paneManager.focusByIndex(idx),
+    focusPrev: () => paneManager.focusRelative(-1),
+    focusNext: () => paneManager.focusRelative(1),
+  });
+  for (let i = 0; i < INITIAL_PANES; i++) await paneManager.create();
 }
 
-void init();
+void init().catch((error) => {
+  console.error("Application failed to initialize", error);
+  showToast("Application failed to initialize", "error");
+});

@@ -3,18 +3,75 @@ use portable_pty::{Child, CommandBuilder, MasterPty, NativePtySystem, PtySize, P
 use serde::Serialize;
 use std::collections::HashMap;
 use std::io::{Read, Write};
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter};
 
+#[cfg(target_os = "windows")]
+const ALLOWED_SHELL_BASENAMES: &[&str] = &[
+    "cmd",
+    "cmd.exe",
+    "powershell",
+    "powershell.exe",
+    "pwsh",
+    "pwsh.exe",
+];
+
+#[cfg(not(target_os = "windows"))]
+const ALLOWED_SHELL_BASENAMES: &[&str] =
+    &["sh", "bash", "zsh", "fish", "dash", "ksh", "tcsh", "csh"];
+
+const MAX_ARG_LEN: usize = 4096;
+const MAX_ARGS: usize = 64;
+const MAX_CWD_LEN: usize = 4096;
+
 pub struct PtySession {
-    pub writer: Box<dyn Write + Send>,
-    pub master: Box<dyn MasterPty + Send>,
-    pub child: Box<dyn Child + Send + Sync>,
+    pub writer: Mutex<Box<dyn Write + Send>>,
+    pub master: Mutex<Box<dyn MasterPty + Send>>,
+    pub child: Mutex<Box<dyn Child + Send + Sync>>,
 }
 
 #[derive(Default)]
 pub struct PtyStore {
-    pub sessions: Mutex<HashMap<String, PtySession>>,
+    sessions: Mutex<HashMap<String, Arc<PtySession>>>,
+}
+
+impl PtyStore {
+    pub fn session(&self, id: &str) -> Option<Arc<PtySession>> {
+        self.sessions.lock().get(id).cloned()
+    }
+
+    pub fn insert_session(&self, id: String, session: Arc<PtySession>) {
+        self.sessions.lock().insert(id, session);
+    }
+
+    pub fn remove_session(&self, id: &str) -> Option<Arc<PtySession>> {
+        self.sessions.lock().remove(id)
+    }
+
+    pub fn kill_session(&self, id: &str) {
+        if let Some(session) = self.remove_session(id) {
+            let _ = session.child.lock().kill();
+        }
+    }
+
+    pub fn kill_all(&self) {
+        let sessions: Vec<_> = self
+            .sessions
+            .lock()
+            .drain()
+            .map(|(_, session)| session)
+            .collect();
+        for session in sessions {
+            let _ = session.child.lock().kill();
+        }
+    }
+}
+
+impl Drop for PtyStore {
+    fn drop(&mut self) {
+        self.kill_all();
+    }
 }
 
 #[derive(Clone, Serialize)]
@@ -47,18 +104,18 @@ pub fn spawn_session(
         })
         .map_err(|e| e.to_string())?;
 
-    let shell = command
-        .unwrap_or_else(|| std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string()));
+    let shell = resolve_shell(command)?;
+    let validated_args = validate_args(args)?;
+    let validated_cwd = validate_cwd(cwd)?;
+
     let mut cmd = CommandBuilder::new(shell);
-    if let Some(a) = args {
-        for arg in a {
-            cmd.arg(arg);
-        }
+    for arg in validated_args {
+        cmd.arg(arg);
     }
-    if let Some(dir) = cwd {
+    if let Some(dir) = validated_cwd {
         cmd.cwd(dir);
-    } else if let Ok(home) = std::env::var("HOME") {
-        cmd.cwd(home);
+    } else if let Some(dir) = default_working_dir() {
+        cmd.cwd(dir);
     }
     cmd.env("TERM", "xterm-256color");
 
@@ -70,17 +127,12 @@ pub fn spawn_session(
 
     let id = uuid::Uuid::new_v4().to_string();
 
-    {
-        let mut sessions = store.sessions.lock();
-        sessions.insert(
-            id.clone(),
-            PtySession {
-                writer,
-                master: pair.master,
-                child,
-            },
-        );
-    }
+    let session = Arc::new(PtySession {
+        writer: Mutex::new(writer),
+        master: Mutex::new(pair.master),
+        child: Mutex::new(child),
+    });
+    store.insert_session(id.clone(), session);
 
     let id_for_thread = id.clone();
     let app_for_thread = app.clone();
@@ -123,11 +175,108 @@ pub fn spawn_session(
                 id: id_for_thread.clone(),
             },
         );
-        let mut sessions = store_for_thread.sessions.lock();
-        sessions.remove(&id_for_thread);
+        store_for_thread.remove_session(&id_for_thread);
     });
 
     Ok(id)
+}
+
+fn resolve_shell(command: Option<String>) -> Result<String, String> {
+    let requested = command
+        .map(|c| c.trim().to_string())
+        .filter(|c| !c.is_empty());
+    match requested {
+        Some(cmd) => {
+            if !is_allowed_shell(&cmd) {
+                return Err(format!("shell not allowed: {cmd}"));
+            }
+            Ok(cmd)
+        }
+        None => Ok(default_shell()),
+    }
+}
+
+fn is_allowed_shell(cmd: &str) -> bool {
+    if cmd.contains('\0') {
+        return false;
+    }
+    let basename = Path::new(cmd)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or(cmd);
+    let normalized = basename.to_ascii_lowercase();
+    ALLOWED_SHELL_BASENAMES
+        .iter()
+        .any(|allowed| allowed.eq_ignore_ascii_case(&normalized))
+}
+
+fn validate_args(args: Option<Vec<String>>) -> Result<Vec<String>, String> {
+    let Some(items) = args else {
+        return Ok(Vec::new());
+    };
+    if items.len() > MAX_ARGS {
+        return Err(format!("too many args (max {MAX_ARGS})"));
+    }
+    for arg in &items {
+        if arg.len() > MAX_ARG_LEN {
+            return Err(format!("arg too long (max {MAX_ARG_LEN} bytes)"));
+        }
+        if arg.contains('\0') {
+            return Err("arg contains NUL byte".to_string());
+        }
+    }
+    Ok(items)
+}
+
+fn validate_cwd(cwd: Option<String>) -> Result<Option<String>, String> {
+    let Some(dir) = cwd else { return Ok(None) };
+    let trimmed = dir.trim();
+    if trimmed.is_empty() {
+        return Ok(None);
+    }
+    if trimmed.len() > MAX_CWD_LEN {
+        return Err(format!("cwd too long (max {MAX_CWD_LEN} bytes)"));
+    }
+    if trimmed.contains('\0') {
+        return Err("cwd contains NUL byte".to_string());
+    }
+    Ok(Some(trimmed.to_string()))
+}
+
+fn default_shell() -> String {
+    #[cfg(target_os = "windows")]
+    {
+        std::env::var("COMSPEC").unwrap_or_else(|_| "cmd.exe".to_string())
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        std::env::var("SHELL")
+            .ok()
+            .filter(|s| is_allowed_shell(s))
+            .unwrap_or_else(|| "/bin/sh".to_string())
+    }
+}
+
+fn default_working_dir() -> Option<PathBuf> {
+    home_dir_from_env().or_else(|| std::env::current_dir().ok())
+}
+
+fn home_dir_from_env() -> Option<PathBuf> {
+    if let Some(home) = std::env::var_os("HOME") {
+        return Some(PathBuf::from(home));
+    }
+    if let Some(profile) = std::env::var_os("USERPROFILE") {
+        return Some(PathBuf::from(profile));
+    }
+    match (std::env::var_os("HOMEDRIVE"), std::env::var_os("HOMEPATH")) {
+        (Some(drive), Some(path)) => Some(PathBuf::from(format!(
+            "{}{}",
+            drive.to_string_lossy(),
+            path.to_string_lossy()
+        ))),
+        _ => None,
+    }
 }
 
 /// Drains the longest valid UTF-8 prefix from `buf` and returns it as a String.
@@ -215,5 +364,64 @@ mod tests {
         let out = drain_valid_utf8(&mut buf);
         assert_eq!(out, "hi");
         assert_eq!(buf, vec![0xC3]);
+    }
+
+    #[test]
+    fn allowed_shell_accepts_basename_and_path() {
+        #[cfg(not(target_os = "windows"))]
+        {
+            assert!(is_allowed_shell("bash"));
+            assert!(is_allowed_shell("/bin/bash"));
+            assert!(is_allowed_shell("/usr/local/bin/zsh"));
+        }
+        #[cfg(target_os = "windows")]
+        {
+            assert!(is_allowed_shell("cmd.exe"));
+            assert!(is_allowed_shell("C:\\Windows\\System32\\cmd.exe"));
+        }
+    }
+
+    #[test]
+    fn allowed_shell_rejects_arbitrary_binary() {
+        assert!(!is_allowed_shell("/usr/bin/curl"));
+        assert!(!is_allowed_shell("rm"));
+        assert!(!is_allowed_shell(""));
+        assert!(!is_allowed_shell("bash\0evil"));
+    }
+
+    #[test]
+    fn resolve_shell_rejects_disallowed() {
+        let err = resolve_shell(Some("curl".to_string())).unwrap_err();
+        assert!(err.contains("not allowed"));
+    }
+
+    #[test]
+    fn resolve_shell_uses_default_when_empty() {
+        let resolved = resolve_shell(Some("   ".to_string())).unwrap();
+        assert!(!resolved.is_empty());
+    }
+
+    #[test]
+    fn validate_args_enforces_caps() {
+        assert!(validate_args(None).unwrap().is_empty());
+        let many = (0..(MAX_ARGS + 1)).map(|_| "x".to_string()).collect();
+        assert!(validate_args(Some(many)).is_err());
+        let huge = "a".repeat(MAX_ARG_LEN + 1);
+        assert!(validate_args(Some(vec![huge])).is_err());
+        assert!(validate_args(Some(vec!["ok\0bad".to_string()])).is_err());
+    }
+
+    #[test]
+    fn validate_cwd_trims_and_caps() {
+        assert!(validate_cwd(None).unwrap().is_none());
+        assert!(validate_cwd(Some("   ".to_string())).unwrap().is_none());
+        assert_eq!(
+            validate_cwd(Some("  /tmp  ".to_string()))
+                .unwrap()
+                .as_deref(),
+            Some("/tmp")
+        );
+        let huge = "a".repeat(MAX_CWD_LEN + 1);
+        assert!(validate_cwd(Some(huge)).is_err());
     }
 }

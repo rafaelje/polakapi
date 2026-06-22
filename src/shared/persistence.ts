@@ -10,6 +10,7 @@ export interface PersistedLayout {
   hideNotes?: boolean;
   notesHeight?: number;
   notesContent?: string;
+  gridCols?: number;
 }
 
 let storePromise: Promise<Store> | null = null;
@@ -42,10 +43,20 @@ export async function flushSave(): Promise<void> {
     saveTimer = null;
   }
   if (Object.keys(pending).length === 0) return;
-  const store = await getStore();
-  const current = (await store.get<PersistedLayout>("layout")) ?? {};
-  const merged = { ...current, ...pending };
+  // Snapshot before any await so concurrent queueSave() calls land in a fresh
+  // `pending` bucket and are not clobbered by `pending = {}` below.
+  const snapshot = pending;
   pending = {};
-  await store.set("layout", merged);
-  await store.save();
+  try {
+    const store = await getStore();
+    const current = (await store.get<PersistedLayout>("layout")) ?? {};
+    const merged = { ...current, ...snapshot };
+    await store.set("layout", merged);
+    await store.save();
+  } catch (error) {
+    // Restore snapshot so the next flush retries it, without clobbering newer
+    // patches that may have been queued during the failed await.
+    pending = { ...snapshot, ...pending };
+    throw error;
+  }
 }

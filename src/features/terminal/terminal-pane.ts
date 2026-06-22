@@ -18,6 +18,7 @@ export class TerminalPane {
   readonly closeBtn: HTMLButtonElement;
   private term: Terminal;
   private fitAddon: FitAddon;
+  private readonly disposables: Array<{ dispose(): void }> = [];
 
   constructor() {
     this.el = document.createElement("div");
@@ -57,8 +58,8 @@ export class TerminalPane {
     this.safeFit();
 
     this.ptyId = await ptySpawn({
-      cols: this.term.cols || 80,
-      rows: this.term.rows || 24,
+      cols: this.term.cols ?? 80,
+      rows: this.term.rows ?? 24,
       command: opts?.command,
       args: opts?.args,
       cwd: opts?.cwd,
@@ -68,12 +69,14 @@ export class TerminalPane {
       ? `${opts.command} · ${this.ptyId.slice(0, 6)}`
       : `shell · ${this.ptyId.slice(0, 6)}`;
 
-    this.term.onData((data) => {
-      void ptyWrite(this.ptyId, data);
-    });
-    this.term.onResize(({ cols, rows }) => {
-      void ptyResize(this.ptyId, cols, rows);
-    });
+    this.disposables.push(
+      this.term.onData((data) => {
+        void ptyWrite(this.ptyId, data);
+      }),
+      this.term.onResize(({ cols, rows }) => {
+        void ptyResize(this.ptyId, cols, rows);
+      }),
+    );
   }
 
   write(data: string): void {
@@ -86,7 +89,12 @@ export class TerminalPane {
 
   fit(): void {
     this.safeFit();
+    if (!this.ptyId) return;
     void ptyResize(this.ptyId, this.term.cols, this.term.rows);
+  }
+
+  focus(): void {
+    this.term.focus();
   }
 
   private safeFit(): void {
@@ -98,9 +106,16 @@ export class TerminalPane {
   }
 
   async dispose(): Promise<void> {
+    for (const disposable of this.disposables.splice(0)) {
+      disposable.dispose();
+    }
     this.term.dispose();
+    this.el.remove();
+    if (!this.ptyId) return;
+    const ptyId = this.ptyId;
+    this.ptyId = "";
     try {
-      await ptyKill(this.ptyId);
+      await ptyKill(ptyId);
     } catch {
       // Already gone.
     }

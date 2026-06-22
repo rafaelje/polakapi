@@ -4,6 +4,11 @@ use std::io::Write;
 use std::sync::Arc;
 use tauri::{AppHandle, State};
 
+/// Max bytes accepted in a single `pty_write` call. Guards against memory
+/// exhaustion from a malicious or runaway frontend loop. 256 KiB is well above
+/// any legitimate keystroke / paste while keeping the writer responsive.
+const MAX_WRITE_BYTES: usize = 256 * 1024;
+
 #[tauri::command]
 pub fn pty_spawn(
     app: AppHandle,
@@ -19,15 +24,20 @@ pub fn pty_spawn(
 
 #[tauri::command]
 pub fn pty_write(store: State<'_, Arc<PtyStore>>, id: String, data: String) -> Result<(), String> {
-    let mut sessions = store.sessions.lock();
-    let session = sessions
-        .get_mut(&id)
+    if data.len() > MAX_WRITE_BYTES {
+        return Err(format!(
+            "pty_write payload too large: {} bytes (max {MAX_WRITE_BYTES})",
+            data.len()
+        ));
+    }
+    let session = store
+        .session(&id)
         .ok_or_else(|| format!("unknown pty: {id}"))?;
-    session
-        .writer
+    let mut writer = session.writer.lock();
+    writer
         .write_all(data.as_bytes())
         .map_err(|e| e.to_string())?;
-    session.writer.flush().map_err(|e| e.to_string())?;
+    writer.flush().map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -38,26 +48,20 @@ pub fn pty_resize(
     cols: u16,
     rows: u16,
 ) -> Result<(), String> {
-    let sessions = store.sessions.lock();
-    let session = sessions
-        .get(&id)
+    let session = store
+        .session(&id)
         .ok_or_else(|| format!("unknown pty: {id}"))?;
-    session
-        .master
-        .resize(PtySize {
-            rows,
-            cols,
-            pixel_width: 0,
-            pixel_height: 0,
-        })
-        .map_err(|e| e.to_string())
+    let result = session.master.lock().resize(PtySize {
+        rows,
+        cols,
+        pixel_width: 0,
+        pixel_height: 0,
+    });
+    result.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn pty_kill(store: State<'_, Arc<PtyStore>>, id: String) -> Result<(), String> {
-    let mut sessions = store.sessions.lock();
-    if let Some(mut session) = sessions.remove(&id) {
-        let _ = session.child.kill();
-    }
+    store.kill_session(&id);
     Ok(())
 }

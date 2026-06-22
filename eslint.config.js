@@ -11,7 +11,7 @@ export default tseslint.config(
     languageOptions: {
       parserOptions: {
         projectService: {
-          allowDefaultProject: ["eslint.config.js", "vite.config.ts"],
+          allowDefaultProject: ["eslint.config.js", "vite.config.ts", "vitest.config.ts"],
         },
         tsconfigRootDir: import.meta.dirname,
       },
@@ -38,7 +38,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ["eslint.config.js", "vite.config.ts"],
+    files: ["eslint.config.js", "vite.config.ts", "vitest.config.ts"],
     extends: [tseslint.configs.disableTypeChecked],
   },
 );

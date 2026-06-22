@@ -15,13 +15,20 @@ pub fn run() {
     let store: Arc<PtyStore> = Arc::new(PtyStore::default());
 
     tauri::Builder::default()
-        .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_store::Builder::default().build())
         .setup({
             let store = store.clone();
             move |app| {
                 app.manage(store);
                 Ok(())
+            }
+        })
+        .on_window_event({
+            let store = store.clone();
+            move |_window, event| {
+                if matches!(event, tauri::WindowEvent::CloseRequested { .. }) {
+                    store.kill_all();
+                }
             }
         })
         .invoke_handler(tauri::generate_handler![
