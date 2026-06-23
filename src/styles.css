@@ -241,6 +241,8 @@ body {
   padding: 6px;
   min-height: 0;
   min-width: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 .grid-row {
@@ -796,6 +798,7 @@ body {
   flex: 1 1 0;
   min-width: 0;
   min-height: 0;
+  overflow: hidden;
 }
 
 .project-pane-toolbar {
