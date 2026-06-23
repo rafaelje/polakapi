@@ -11,7 +11,12 @@ export default tseslint.config(
     languageOptions: {
       parserOptions: {
         projectService: {
-          allowDefaultProject: ["eslint.config.js", "vite.config.ts", "vitest.config.ts"],
+          allowDefaultProject: [
+            "eslint.config.js",
+            "vite.config.ts",
+            "vitest.config.ts",
+            "scripts/tauri-dev.mjs",
+          ],
         },
         tsconfigRootDir: import.meta.dirname,
       },
@@ -38,7 +43,16 @@ export default tseslint.config(
     },
   },
   {
-    files: ["eslint.config.js", "vite.config.ts", "vitest.config.ts"],
+    files: ["eslint.config.js", "vite.config.ts", "vitest.config.ts", "scripts/tauri-dev.mjs"],
     extends: [tseslint.configs.disableTypeChecked],
+  },
+  {
+    files: ["scripts/tauri-dev.mjs"],
+    languageOptions: {
+      globals: {
+        console: "readonly",
+        process: "readonly",
+      },
+    },
   },
 );
