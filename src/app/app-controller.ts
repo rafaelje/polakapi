@@ -187,10 +187,6 @@ export class AppController {
     if (typeof layout.sidebarRightWidth === "number") {
       this.elements.sidebarRight.style.width = `${layout.sidebarRightWidth}px`;
     }
-    if (typeof layout.gridCols === "number") {
-      const clamped = this.clampGridCols(layout.gridCols);
-      this.workspaces?.projectPane.setGridCols(clamped);
-    }
     applyNotesLayout(layout, this.elements.notes);
     if (layout.hideLeft)
       this.toggleClassAndButton(this.elements.mainRow, "hide-left", "toggle-left");

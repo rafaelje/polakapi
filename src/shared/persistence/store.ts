@@ -10,7 +10,6 @@ export interface PersistedLayout {
   hideNotes?: boolean;
   notesHeight?: number;
   notesContent?: string;
-  gridCols?: number;
 }
 
 let storePromise: Promise<Store> | null = null;
