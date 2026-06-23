@@ -93,6 +93,10 @@ export class WorkspacesController {
     if (!target) return;
     const ok = await confirmDeleteWorkspace(target.name, target.projects.length);
     if (!ok) return;
+    await this.runDeleteProjectHooks(
+      target.projects.map((project) => project.id),
+      "Workspace delete teardown failed",
+    );
     this.commit(reduceDeleteWorkspace(this.state, id));
   }
 
@@ -150,14 +154,7 @@ export class WorkspacesController {
     const found = findProject(this.state, id);
     if (!found) return false;
     if (!(await confirmDeleteProject(found.project.name, liveCount))) return false;
-    const hook = onBeforeRemove ?? this.deleteHook;
-    if (hook) {
-      try {
-        await hook(id);
-      } catch (error) {
-        console.error("Project delete teardown failed", error);
-      }
-    }
+    await this.runDeleteProjectHooks([id], "Project delete teardown failed", onBeforeRemove);
     this.commit(reduceDeleteProject(this.state, id));
     return true;
   }
@@ -236,6 +233,22 @@ export class WorkspacesController {
         listener(event);
       } catch (error) {
         console.error("Workspaces listener threw", error);
+      }
+    }
+  }
+
+  private async runDeleteProjectHooks(
+    ids: ProjectId[],
+    errorMessage: string,
+    hookOverride?: (id: ProjectId) => void | Promise<void>,
+  ): Promise<void> {
+    const hook = hookOverride ?? this.deleteHook;
+    if (!hook) return;
+    for (const id of ids) {
+      try {
+        await hook(id);
+      } catch (error) {
+        console.error(errorMessage, error);
       }
     }
   }

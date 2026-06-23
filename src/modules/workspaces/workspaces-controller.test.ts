@@ -16,6 +16,13 @@ const pathValidation = vi.hoisted(() => ({
 
 vi.mock("./path-validation", () => pathValidation);
 
+const confirmDelete = vi.hoisted(() => ({
+  confirmDeleteProject: vi.fn<() => Promise<boolean>>(),
+  confirmDeleteWorkspace: vi.fn<() => Promise<boolean>>(),
+}));
+
+vi.mock("./confirm-delete", () => confirmDelete);
+
 import { WorkspacesController } from "./workspaces-controller";
 
 function pid(id: string): ProjectId {
@@ -40,6 +47,23 @@ function seededState(): WorkspacesState {
   };
 }
 
+function seededWorkspaceWithProjects(): WorkspacesState {
+  return {
+    schemaVersion: 1,
+    activeProjectId: pid("p1"),
+    workspaces: [
+      {
+        id: wid("w1"),
+        name: "Workspace",
+        projects: [
+          { id: pid("p1"), name: "One", path: "/tmp/one" },
+          { id: pid("p2"), name: "Two", path: "/tmp/two" },
+        ],
+      },
+    ],
+  };
+}
+
 async function flushMicrotasks(): Promise<void> {
   await Promise.resolve();
   await Promise.resolve();
@@ -53,6 +77,11 @@ describe("WorkspacesController", () => {
     persistence.flushSaveWorkspaces.mockReset();
     persistence.flushSaveWorkspaces.mockResolvedValue(undefined);
     pathValidation.validatePath.mockReset();
+    pathValidation.validatePath.mockResolvedValue({ ok: true });
+    confirmDelete.confirmDeleteProject.mockReset();
+    confirmDelete.confirmDeleteProject.mockResolvedValue(true);
+    confirmDelete.confirmDeleteWorkspace.mockReset();
+    confirmDelete.confirmDeleteWorkspace.mockResolvedValue(true);
   });
 
   it("applies boot path validation without overwriting concurrent state changes", async () => {
@@ -73,5 +102,23 @@ describe("WorkspacesController", () => {
     const project = controller.getState().workspaces[0].projects[0];
     expect(project.name).toBe("Renamed");
     expect(project.pathInvalid).toBe(true);
+  });
+
+  it("runs project delete hooks before deleting a workspace", async () => {
+    persistence.loadWorkspaces.mockResolvedValueOnce(seededWorkspaceWithProjects());
+    const controller = await WorkspacesController.load();
+    const hookCalls: ProjectId[] = [];
+    const projectsVisibleDuringHook: number[] = [];
+
+    controller.setDeleteProjectHook((projectId) => {
+      hookCalls.push(projectId);
+      projectsVisibleDuringHook.push(controller.getState().workspaces[0]?.projects.length ?? 0);
+    });
+
+    await controller.deleteWorkspace(wid("w1"));
+
+    expect(hookCalls).toEqual([pid("p1"), pid("p2")]);
+    expect(projectsVisibleDuringHook).toEqual([2, 2]);
+    expect(controller.getState().workspaces).toEqual([]);
   });
 });
