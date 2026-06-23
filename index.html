@@ -10,12 +10,7 @@
   <body>
     <div id="app">
       <div class="toolbar">
-        <button id="add-pane">+ Terminal</button>
-        <button id="run-all">Run command in all…</button>
-        <label class="toolbar-field" for="grid-cols">
-          <span>Cols</span>
-          <input id="grid-cols" type="number" min="1" max="8" step="1" />
-        </label>
+        <div id="breadcrumb" class="breadcrumb"></div>
         <span class="spacer"></span>
         <div class="toggle-group">
           <button class="toggle-btn active" id="toggle-left" title="Toggle workspaces panel">
@@ -60,13 +55,13 @@
         </div>
       </div>
       <div class="main-row" id="main-row">
-        <aside class="sidebar sidebar-left" id="sidebar-left">
-          <div class="sidebar-title">workspaces</div>
-        </aside>
+        <aside class="sidebar sidebar-left" id="sidebar-left"></aside>
         <div class="gutter gutter-h" data-resize="sidebar-left"></div>
         <div class="right-col" id="right-col">
           <div class="layout" id="layout">
-            <div id="grid" class="grid"></div>
+            <div class="project-pane" id="project-pane">
+              <div id="grid" class="grid"></div>
+            </div>
             <div class="gutter gutter-h" data-resize="sidebar-right"></div>
             <aside class="sidebar sidebar-right" id="sidebar-right">
               <div class="sidebar-title">agents flow</div>

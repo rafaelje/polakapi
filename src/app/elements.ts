@@ -11,14 +11,13 @@ export interface AppElements {
   rightCol: HTMLElement;
   notesGutter: HTMLElement | null;
   notes: NotesElements;
-  addPaneButton: HTMLElement | null;
-  runAllButton: HTMLElement | null;
-  gridColsInput: HTMLInputElement | null;
+  /** Toolbar slot for the workspace > project breadcrumb. */
+  breadcrumbHost: HTMLElement;
+  /** Wrapper around `#grid` that owns the per-project sub-toolbar. */
+  projectPaneHost: HTMLElement;
 }
 
 export function getAppElements(): AppElements {
-  const gridColsEl = document.getElementById("grid-cols");
-
   return {
     gridEl: requireById<HTMLDivElement>("grid", HTMLDivElement),
     sidebarLeft: requireById("sidebar-left"),
@@ -28,8 +27,7 @@ export function getAppElements(): AppElements {
     rightCol: requireById("right-col"),
     notesGutter: document.getElementById("gutter-notes"),
     notes: getNotesElements(),
-    addPaneButton: document.getElementById("add-pane"),
-    runAllButton: document.getElementById("run-all"),
-    gridColsInput: gridColsEl instanceof HTMLInputElement ? gridColsEl : null,
+    breadcrumbHost: requireById("breadcrumb"),
+    projectPaneHost: requireById("project-pane"),
   };
 }

@@ -7,9 +7,8 @@ import {
 } from "../shared/persistence/store";
 import { wireShortcuts } from "../shared/keyboard/shortcuts";
 import { showToast } from "../shared/ui/toast";
-import { promptModal } from "../shared/ui/modal";
 import { TerminalManager } from "../modules/terminal/terminal-manager";
-import { onPtyData, onPtyExit, ptyKill, ptyWrite } from "../modules/terminal/pty-client";
+import { onPtyData, onPtyExit, ptyKill } from "../modules/terminal/pty-client";
 import { startFlexDrag, wireSidebarGutters } from "../modules/layout/gutters";
 import { wireToggles } from "../modules/layout/panel-toggles";
 import { type SidebarTarget } from "../modules/layout/types";
@@ -18,6 +17,7 @@ import {
   persistNotesHeight as queueNotesHeightSave,
   wireNotesPersistence,
 } from "../modules/notes/notes-persistence";
+import { bootstrapWorkspaces, type WorkspacesBootstrapHandle } from "./workspaces-bootstrap";
 import { wireWindowLifecycle } from "./lifecycle";
 import { type AppElements } from "./elements";
 
@@ -28,6 +28,7 @@ const INITIAL_PANES = 4;
 
 export class AppController {
   private readonly paneManager: TerminalManager;
+  private workspaces: WorkspacesBootstrapHandle | null = null;
   private unwireShortcuts: (() => void) | null = null;
   private unwireWindowLifecycle: (() => void) | null = null;
   private unlistenData: UnlistenFn | null = null;
@@ -47,7 +48,6 @@ export class AppController {
     await this.wirePtyEvents();
     this.wireGutters();
     this.wirePanelToggles();
-    this.wireToolbar();
     wireNotesPersistence(this.elements.notes.textarea);
     this.wireKeyboardShortcuts();
     this.unwireWindowLifecycle = wireWindowLifecycle({
@@ -55,8 +55,19 @@ export class AppController {
       onResize: () => this.paneManager.refit(),
     });
 
-    for (let i = 0; i < INITIAL_PANES; i++) {
-      await this.paneManager.create();
+    this.workspaces = await bootstrapWorkspaces({
+      elements: this.elements,
+      paneManager: this.paneManager,
+      clampGridCols: (value) => this.clampGridCols(value),
+    });
+
+    // F1 decision: only seed default terminals when a project is active. With
+    // no active project the grid is hidden behind the project empty state and
+    // creating panes would render off-screen.
+    if (this.workspaces.controller.getActiveProject()) {
+      for (let i = 0; i < INITIAL_PANES; i++) {
+        await this.paneManager.create();
+      }
     }
   }
 
@@ -73,6 +84,18 @@ export class AppController {
     this.unwireWindowLifecycle?.();
     this.unwireWindowLifecycle = null;
 
+    const workspaces = this.workspaces;
+    this.workspaces = null;
+    if (workspaces) {
+      workspaces.unsubscribe();
+      workspaces.panel.unmount();
+      workspaces.projectPane.dispose();
+      workspaces.breadcrumb.dispose();
+      void workspaces.controller.dispose().catch((error) => {
+        console.error("Failed to dispose workspaces controller", error);
+      });
+    }
+
     for (const id of this.paneManager.ids()) {
       void ptyKill(id);
     }
@@ -86,39 +109,6 @@ export class AppController {
     this.unlistenExit = await onPtyExit(({ id }) => {
       this.paneManager.get(id)?.markExited();
     });
-  }
-
-  private wireToolbar(): void {
-    this.elements.addPaneButton?.addEventListener("click", () => void this.paneManager.create());
-
-    this.elements.runAllButton?.addEventListener("click", () => {
-      void this.runCommandInAllPanes();
-    });
-
-    if (this.elements.gridColsInput) {
-      this.elements.gridColsInput.value = String(this.paneManager.gridCols);
-      this.elements.gridColsInput.addEventListener("change", () => {
-        if (!this.elements.gridColsInput) return;
-        const next = this.clampGridCols(Number(this.elements.gridColsInput.value));
-        this.elements.gridColsInput.value = String(next);
-        this.paneManager.setGridCols(next);
-        queueSave({ gridCols: next });
-      });
-    }
-  }
-
-  private async runCommandInAllPanes(): Promise<void> {
-    const cmd = await promptModal({
-      title: "Run command in all terminals",
-      message: "The command will be sent followed by Enter to every open terminal.",
-      placeholder: "e.g. ls",
-      confirmLabel: "Run",
-    });
-    if (!cmd) return;
-    const payload = `${cmd}\r`;
-    for (const id of this.paneManager.ids()) {
-      void ptyWrite(id, payload);
-    }
   }
 
   private wireGutters(): void {
@@ -188,7 +178,9 @@ export class AppController {
       this.elements.sidebarRight.style.width = `${layout.sidebarRightWidth}px`;
     }
     if (typeof layout.gridCols === "number") {
-      this.paneManager.setGridCols(this.clampGridCols(layout.gridCols));
+      const clamped = this.clampGridCols(layout.gridCols);
+      this.paneManager.setGridCols(clamped);
+      this.workspaces?.projectPane.setGridCols(clamped);
     }
     applyNotesLayout(layout, this.elements.notes);
     if (layout.hideLeft)

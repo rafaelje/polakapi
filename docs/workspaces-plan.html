@@ -1,0 +1,1505 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Plan · Workspaces &amp; Projects · polakapi</title>
+    <style>
+      :root {
+        --bg: #0f1115;
+        --bg-2: #161922;
+        --bg-3: #1d2230;
+        --line: #2a3142;
+        --line-soft: #222838;
+        --text: #e6e8ee;
+        --text-dim: #9aa3b4;
+        --text-mute: #6c7589;
+        --accent: #7cc4ff;
+        --accent-2: #b48cff;
+        --ok: #6ee7a3;
+        --warn: #ffd166;
+        --danger: #ff7a8a;
+        --mono: ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, Consolas, monospace;
+        --sans:
+          -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, Helvetica, Arial,
+          sans-serif;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-family: var(--sans);
+        line-height: 1.55;
+        -webkit-font-smoothing: antialiased;
+      }
+      .wrap {
+        max-width: 980px;
+        margin: 0 auto;
+        padding: 56px 28px 96px;
+      }
+      header.hero {
+        border-bottom: 1px solid var(--line);
+        padding-bottom: 28px;
+        margin-bottom: 36px;
+      }
+      .eyebrow {
+        font-family: var(--mono);
+        font-size: 12px;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: var(--text-mute);
+        margin: 0 0 12px;
+      }
+      h1 {
+        margin: 0 0 12px;
+        font-size: 34px;
+        letter-spacing: -0.01em;
+        font-weight: 700;
+      }
+      h1 small {
+        color: var(--text-dim);
+        font-weight: 500;
+        font-size: 18px;
+        margin-left: 8px;
+      }
+      .lede {
+        color: var(--text-dim);
+        font-size: 16px;
+        max-width: 72ch;
+      }
+      h2 {
+        margin: 56px 0 14px;
+        font-size: 22px;
+        letter-spacing: -0.005em;
+        padding-bottom: 8px;
+        border-bottom: 1px solid var(--line-soft);
+      }
+      h2 .num {
+        color: var(--text-mute);
+        font-family: var(--mono);
+        margin-right: 10px;
+        font-weight: 500;
+      }
+      h3 {
+        margin: 28px 0 8px;
+        font-size: 16px;
+        color: var(--text);
+      }
+      p {
+        margin: 8px 0 12px;
+        color: var(--text);
+      }
+      .dim {
+        color: var(--text-dim);
+      }
+      code,
+      .mono {
+        font-family: var(--mono);
+        font-size: 13px;
+        background: var(--bg-2);
+        border: 1px solid var(--line-soft);
+        padding: 1px 6px;
+        border-radius: 4px;
+        color: #cfd6e4;
+      }
+      pre {
+        background: var(--bg-2);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 16px 18px;
+        overflow-x: auto;
+        font-family: var(--mono);
+        font-size: 13px;
+        line-height: 1.55;
+        color: #d2d8e6;
+        margin: 12px 0 18px;
+      }
+      pre .k {
+        color: var(--accent);
+      }
+      pre .s {
+        color: var(--ok);
+      }
+      pre .c {
+        color: var(--text-mute);
+        font-style: italic;
+      }
+      pre .n {
+        color: var(--accent-2);
+      }
+      .toc {
+        background: var(--bg-2);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 14px 18px;
+        margin: 0 0 36px;
+      }
+      .toc ol {
+        margin: 6px 0 0 18px;
+        padding: 0;
+        columns: 2;
+        column-gap: 28px;
+      }
+      .toc li {
+        margin: 4px 0;
+      }
+      .toc a {
+        color: var(--text-dim);
+        text-decoration: none;
+      }
+      .toc a:hover {
+        color: var(--accent);
+      }
+      .card {
+        background: var(--bg-2);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 18px 20px;
+        margin: 14px 0;
+      }
+      .grid-2 {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+      }
+      .grid-3 {
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr;
+        gap: 14px;
+      }
+      .callout {
+        border-left: 3px solid var(--accent);
+        background: rgba(124, 196, 255, 0.06);
+        padding: 12px 16px;
+        border-radius: 0 8px 8px 0;
+        margin: 14px 0;
+      }
+      .callout.warn {
+        border-left-color: var(--warn);
+        background: rgba(255, 209, 102, 0.06);
+      }
+      .callout.danger {
+        border-left-color: var(--danger);
+        background: rgba(255, 122, 138, 0.06);
+      }
+      .callout strong {
+        display: block;
+        margin-bottom: 4px;
+        font-size: 13px;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--text);
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 14px;
+        margin: 14px 0;
+      }
+      th,
+      td {
+        text-align: left;
+        padding: 10px 12px;
+        border-bottom: 1px solid var(--line-soft);
+      }
+      th {
+        color: var(--text-dim);
+        font-weight: 500;
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        background: var(--bg-2);
+      }
+      tr:last-child td {
+        border-bottom: none;
+      }
+      .badge {
+        display: inline-block;
+        font-family: var(--mono);
+        font-size: 11px;
+        padding: 2px 8px;
+        border-radius: 999px;
+        border: 1px solid var(--line);
+        color: var(--text-dim);
+        background: var(--bg-3);
+      }
+      .badge.ok {
+        color: var(--ok);
+        border-color: rgba(110, 231, 163, 0.4);
+      }
+      .badge.warn {
+        color: var(--warn);
+        border-color: rgba(255, 209, 102, 0.4);
+      }
+      .badge.f1 {
+        color: var(--accent);
+        border-color: rgba(124, 196, 255, 0.4);
+      }
+      .badge.f2 {
+        color: var(--accent-2);
+        border-color: rgba(180, 140, 255, 0.4);
+      }
+      .badge.f3 {
+        color: #ffb38a;
+        border-color: rgba(255, 179, 138, 0.4);
+      }
+
+      /* SVG diagram defaults */
+      .diagram {
+        display: block;
+        margin: 18px auto;
+        background: var(--bg-2);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 18px;
+        max-width: 100%;
+      }
+      svg text {
+        font-family: var(--mono);
+        font-size: 12px;
+        fill: var(--text);
+      }
+      svg .lbl {
+        font-family: var(--sans);
+        font-size: 13px;
+        font-weight: 500;
+      }
+      svg .sub {
+        font-family: var(--mono);
+        font-size: 11px;
+        fill: var(--text-mute);
+      }
+
+      /* ASCII mockup */
+      .mock {
+        font-family: var(--mono);
+        font-size: 13px;
+        background: var(--bg-2);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 18px 20px;
+        white-space: pre;
+        color: #cfd6e4;
+        overflow-x: auto;
+        line-height: 1.5;
+      }
+      .mock .a {
+        color: var(--accent);
+      }
+      .mock .g {
+        color: var(--text-mute);
+      }
+      .mock .ok {
+        color: var(--ok);
+      }
+      .mock .y {
+        color: var(--warn);
+      }
+
+      ul.clean {
+        margin: 8px 0 14px 22px;
+        padding: 0;
+      }
+      ul.clean li {
+        margin: 4px 0;
+      }
+
+      footer {
+        margin-top: 80px;
+        padding-top: 20px;
+        border-top: 1px solid var(--line);
+        color: var(--text-mute);
+        font-size: 12px;
+        font-family: var(--mono);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <header class="hero">
+        <p class="eyebrow">polakapi · plan de diseño</p>
+        <h1>Workspaces &amp; Projects <small>· contexto por proyecto</small></h1>
+        <p class="lede">
+          Un plan para introducir <strong>workspaces</strong> (espacios de trabajo) que agrupan
+          <strong>projects</strong> (carpetas reales en disco). Cada proyecto tiene su propio set de
+          terminales, sus propias notas y, eventualmente, sus propios agentes. Cambiar de proyecto
+          cambia <em>la vista</em> — pero
+          <strong>todos los procesos siguen corriendo en paralelo</strong>: nada se pausa, nada se
+          mata. El proyecto que dejaste sigue compilando, sirviendo, testeando, mientras vos mirás
+          otro.
+        </p>
+      </header>
+
+      <nav class="toc">
+        <strong class="dim">Contenido</strong>
+        <ol>
+          <li><a href="#vision">Visión general</a></li>
+          <li><a href="#paralelo">Principio: ejecución en paralelo</a></li>
+          <li><a href="#modelo">Modelo de datos</a></li>
+          <li><a href="#layout">Layout &amp; UI propuesto</a></li>
+          <li><a href="#flujos">Flujos: crear, editar, eliminar</a></li>
+          <li><a href="#switch">Cambio de contexto</a></li>
+          <li><a href="#terminales">Terminales por proyecto</a></li>
+          <li><a href="#persistencia">Persistencia</a></li>
+          <li><a href="#fases">Plan por fases</a></li>
+          <li><a href="#decisiones">Decisiones abiertas</a></li>
+        </ol>
+      </nav>
+
+      <!-- ======================= VISIÓN ======================= -->
+      <h2 id="vision"><span class="num">01</span>Visión general</h2>
+
+      <p>
+        Hoy <code>polakapi</code> tiene <em>un</em> set global de terminales y notas. La meta es que
+        el usuario pueda saltar entre proyectos y la app recuerde — y restaure — todo lo que estaba
+        haciendo ahí.
+      </p>
+
+      <div class="grid-3">
+        <div class="card">
+          <h3 style="margin-top: 0">Workspace</h3>
+          <p class="dim" style="margin: 0">
+            Carpeta lógica de proyectos relacionados. Ej. <code>Boom</code>, <code>Sockeye</code>.
+            Sólo nombre — no tiene path.
+          </p>
+        </div>
+        <div class="card">
+          <h3 style="margin-top: 0">Project</h3>
+          <p class="dim" style="margin: 0">
+            Una ruta real en disco más metadata: nombre, ícono, color. Es la unidad activa.
+          </p>
+        </div>
+        <div class="card">
+          <h3 style="margin-top: 0">Contexto</h3>
+          <p class="dim" style="margin: 0">
+            Terminales + notas + (futuro) agentes. Vive <strong>dentro</strong> de un proyecto.
+          </p>
+        </div>
+      </div>
+
+      <h3>Jerarquía conceptual</h3>
+
+      <svg class="diagram" viewBox="0 0 900 360" width="100%">
+        <!-- App root -->
+        <rect x="380" y="14" width="140" height="40" rx="8" fill="#1d2230" stroke="#2a3142"></rect>
+        <text x="450" y="39" text-anchor="middle" class="lbl" fill="#e6e8ee">polakapi</text>
+
+        <!-- Workspaces -->
+        <line x1="450" y1="54" x2="450" y2="78" stroke="#2a3142" stroke-width="1.5"></line>
+        <line x1="200" y1="78" x2="700" y2="78" stroke="#2a3142" stroke-width="1.5"></line>
+        <line x1="200" y1="78" x2="200" y2="100" stroke="#2a3142" stroke-width="1.5"></line>
+        <line x1="450" y1="78" x2="450" y2="100" stroke="#2a3142" stroke-width="1.5"></line>
+        <line x1="700" y1="78" x2="700" y2="100" stroke="#2a3142" stroke-width="1.5"></line>
+
+        <rect x="130" y="100" width="140" height="44" rx="8" fill="#161922" stroke="#7cc4ff"></rect>
+        <text x="200" y="121" text-anchor="middle" class="lbl" fill="#7cc4ff">Workspace</text>
+        <text x="200" y="136" text-anchor="middle" class="sub">"Boom"</text>
+
+        <rect x="380" y="100" width="140" height="44" rx="8" fill="#161922" stroke="#7cc4ff"></rect>
+        <text x="450" y="121" text-anchor="middle" class="lbl" fill="#7cc4ff">Workspace</text>
+        <text x="450" y="136" text-anchor="middle" class="sub">"Sockeye"</text>
+
+        <rect x="630" y="100" width="140" height="44" rx="8" fill="#161922" stroke="#7cc4ff"></rect>
+        <text x="700" y="121" text-anchor="middle" class="lbl" fill="#7cc4ff">Workspace</text>
+        <text x="700" y="136" text-anchor="middle" class="sub">"Personal"</text>
+
+        <!-- Projects under Boom -->
+        <line x1="200" y1="144" x2="200" y2="168" stroke="#2a3142" stroke-width="1.5"></line>
+        <line x1="140" y1="168" x2="260" y2="168" stroke="#2a3142" stroke-width="1.5"></line>
+        <line x1="140" y1="168" x2="140" y2="190" stroke="#2a3142" stroke-width="1.5"></line>
+        <line x1="260" y1="168" x2="260" y2="190" stroke="#2a3142" stroke-width="1.5"></line>
+
+        <rect x="70" y="190" width="140" height="44" rx="8" fill="#161922" stroke="#b48cff"></rect>
+        <text x="140" y="211" text-anchor="middle" class="lbl" fill="#b48cff">Project</text>
+        <text x="140" y="226" text-anchor="middle" class="sub">Multiverse Admin</text>
+
+        <rect x="190" y="190" width="140" height="44" rx="8" fill="#161922" stroke="#b48cff"></rect>
+        <text x="260" y="211" text-anchor="middle" class="lbl" fill="#b48cff">Project</text>
+        <text x="260" y="226" text-anchor="middle" class="sub">Boom DFS</text>
+
+        <!-- Projects under Sockeye -->
+        <line x1="450" y1="144" x2="450" y2="168" stroke="#2a3142" stroke-width="1.5"></line>
+        <line x1="390" y1="168" x2="510" y2="168" stroke="#2a3142" stroke-width="1.5"></line>
+        <line x1="390" y1="168" x2="390" y2="190" stroke="#2a3142" stroke-width="1.5"></line>
+        <line x1="510" y1="168" x2="510" y2="190" stroke="#2a3142" stroke-width="1.5"></line>
+
+        <rect x="320" y="190" width="140" height="44" rx="8" fill="#161922" stroke="#b48cff"></rect>
+        <text x="390" y="211" text-anchor="middle" class="lbl" fill="#b48cff">Project</text>
+        <text x="390" y="226" text-anchor="middle" class="sub">Bingo Server</text>
+
+        <rect x="440" y="190" width="140" height="44" rx="8" fill="#161922" stroke="#b48cff"></rect>
+        <text x="510" y="211" text-anchor="middle" class="lbl" fill="#b48cff">Project</text>
+        <text x="510" y="226" text-anchor="middle" class="sub">Candy Bam Bam SDK</text>
+
+        <!-- Project context expanded -->
+        <line x1="260" y1="234" x2="260" y2="258" stroke="#2a3142" stroke-width="1.5"></line>
+        <line x1="160" y1="258" x2="360" y2="258" stroke="#2a3142" stroke-width="1.5"></line>
+        <line x1="160" y1="258" x2="160" y2="280" stroke="#2a3142" stroke-width="1.5"></line>
+        <line x1="260" y1="258" x2="260" y2="280" stroke="#2a3142" stroke-width="1.5"></line>
+        <line x1="360" y1="258" x2="360" y2="280" stroke="#2a3142" stroke-width="1.5"></line>
+
+        <rect x="110" y="280" width="100" height="32" rx="6" fill="#1d2230" stroke="#6ee7a3"></rect>
+        <text x="160" y="300" text-anchor="middle" class="sub" fill="#6ee7a3">terminales</text>
+
+        <rect x="210" y="280" width="100" height="32" rx="6" fill="#1d2230" stroke="#6ee7a3"></rect>
+        <text x="260" y="300" text-anchor="middle" class="sub" fill="#6ee7a3">notas</text>
+
+        <rect
+          x="310"
+          y="280"
+          width="100"
+          height="32"
+          rx="6"
+          fill="#1d2230"
+          stroke="#6ee7a3"
+          stroke-dasharray="3 3"
+        ></rect>
+        <text x="360" y="300" text-anchor="middle" class="sub" fill="#6ee7a3">
+          agentes (futuro)
+        </text>
+
+        <text x="450" y="345" text-anchor="middle" class="sub">
+          Cada Project envuelve su propio set de terminales, notas y agentes.
+        </text>
+      </svg>
+
+      <!-- ======================= PARALELO ======================= -->
+      <h2 id="paralelo"><span class="num">02</span>Principio: ejecución en paralelo</h2>
+
+      <div class="callout">
+        <strong>Regla de oro</strong>
+        Los proyectos <em>nunca</em> se pausan al perder el foco. Cambiar de proyecto o de workspace
+        es puramente un cambio <em>de vista</em>. Todos los procesos — <code>pnpm dev</code>,
+        <code>cargo watch</code>, <code>docker compose</code>, un agente ejecutando — siguen
+        corriendo en background, leyendo y escribiendo a sus PTYs, hasta que vos los matés
+        explícitamente.
+      </div>
+
+      <p>
+        Esto es <strong>lo que diferencia</strong> a polakapi de un editor que “abre” un proyecto a
+        la vez. El modelo mental correcto es:
+      </p>
+
+      <div class="grid-2">
+        <div class="card">
+          <h3 style="margin-top: 0; color: var(--accent)">✓ Sí es</h3>
+          <ul class="clean">
+            <li>Un panel de control de N proyectos corriendo a la vez.</li>
+            <li>El proyecto activo es el que <em>ves</em>.</li>
+            <li>Cambiar de vista = swap de DOM, no de procesos.</li>
+            <li>Cerrar la app = matar todo (con confirmación si hay vivos).</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3 style="margin-top: 0; color: var(--danger)">✗ No es</h3>
+          <ul class="clean">
+            <li>Un editor donde “abrís” un proyecto y “cerrás” otro.</li>
+            <li>Los procesos no se suspenden al cambiar de proyecto.</li>
+            <li>Las terminales no se respawnean cuando volvés.</li>
+            <li>No hay “proyecto cerrado pero con procesos” — si tiene procesos, está vivo.</li>
+          </ul>
+        </div>
+      </div>
+
+      <h3>Diagrama: lo que pasa cuando cambiás de proyecto</h3>
+
+      <svg class="diagram" viewBox="0 0 900 340" width="100%">
+        <!-- Title -->
+        <text x="450" y="22" text-anchor="middle" class="lbl" fill="#e6e8ee">
+          Un proceso visible · N procesos corriendo
+        </text>
+
+        <!-- Window frame -->
+        <rect x="30" y="40" width="840" height="220" rx="10" fill="#161922" stroke="#2a3142"></rect>
+        <text x="50" y="62" class="sub">ventana polakapi · viendo: Bingo Server</text>
+
+        <!-- Visible viewport -->
+        <rect
+          x="50"
+          y="78"
+          width="350"
+          height="160"
+          rx="8"
+          fill="#0f1115"
+          stroke="#6ee7a3"
+          stroke-width="2"
+        ></rect>
+        <text x="225" y="98" text-anchor="middle" class="sub" fill="#6ee7a3">VISIBLE · activo</text>
+        <text x="225" y="118" text-anchor="middle" class="lbl" fill="#e6e8ee">Bingo Server</text>
+        <rect x="65" y="135" width="155" height="40" rx="4" fill="#161922" stroke="#2a3142"></rect>
+        <text x="142" y="158" text-anchor="middle" class="sub" fill="#6ee7a3">
+          $ go run ./cmd/srv
+        </text>
+        <rect x="230" y="135" width="155" height="40" rx="4" fill="#161922" stroke="#2a3142"></rect>
+        <text x="307" y="158" text-anchor="middle" class="sub" fill="#6ee7a3">
+          $ docker logs -f db
+        </text>
+        <rect x="65" y="185" width="320" height="40" rx="4" fill="#161922" stroke="#2a3142"></rect>
+        <text x="225" y="208" text-anchor="middle" class="sub" fill="#6ee7a3">
+          $ tail -f bingo.log
+        </text>
+
+        <!-- Hidden but alive -->
+        <rect
+          x="420"
+          y="78"
+          width="430"
+          height="160"
+          rx="8"
+          fill="#0f1115"
+          stroke="#2a3142"
+          stroke-dasharray="4 3"
+        ></rect>
+        <text x="635" y="98" text-anchor="middle" class="sub" fill="#9aa3b4">
+          OCULTOS · siguen corriendo en paralelo
+        </text>
+
+        <!-- Project box 1 -->
+        <rect x="435" y="110" width="195" height="55" rx="6" fill="#161922" stroke="#7cc4ff"></rect>
+        <text x="532" y="128" text-anchor="middle" class="sub" fill="#7cc4ff">
+          Multiverse Admin
+        </text>
+        <circle cx="450" cy="148" r="3" fill="#6ee7a3"></circle>
+        <text x="500" y="152" class="sub" fill="#9aa3b4">pnpm dev (puerto 5173)</text>
+        <circle cx="450" cy="160" r="3" fill="#ffd166"></circle>
+        <text x="500" y="164" class="sub" fill="#9aa3b4">tests --watch</text>
+
+        <!-- Project box 2 -->
+        <rect x="640" y="110" width="195" height="55" rx="6" fill="#161922" stroke="#7cc4ff"></rect>
+        <text x="737" y="128" text-anchor="middle" class="sub" fill="#7cc4ff">Boom DFS</text>
+        <circle cx="655" cy="148" r="3" fill="#6ee7a3"></circle>
+        <text x="705" y="152" class="sub" fill="#9aa3b4">vite dev</text>
+        <circle cx="655" cy="160" r="3" fill="#6ee7a3"></circle>
+        <text x="705" y="164" class="sub" fill="#9aa3b4">storybook</text>
+
+        <!-- Project box 3 -->
+        <rect x="435" y="170" width="400" height="55" rx="6" fill="#161922" stroke="#7cc4ff"></rect>
+        <text x="635" y="188" text-anchor="middle" class="sub" fill="#7cc4ff">
+          Candy Bam Bam SDK
+        </text>
+        <circle cx="450" cy="208" r="3" fill="#6ee7a3"></circle>
+        <text x="500" y="212" class="sub" fill="#9aa3b4">cargo watch -x test</text>
+
+        <!-- Bottom legend -->
+        <circle cx="60" cy="290" r="4" fill="#6ee7a3"></circle>
+        <text x="74" y="294" class="sub">proceso vivo</text>
+
+        <circle cx="180" cy="290" r="4" fill="#ffd166"></circle>
+        <text x="194" y="294" class="sub">proceso esperando input</text>
+
+        <rect
+          x="340"
+          y="285"
+          width="30"
+          height="10"
+          rx="2"
+          fill="none"
+          stroke="#6ee7a3"
+          stroke-width="2"
+        ></rect>
+        <text x="378" y="294" class="sub">DOM montado (visible)</text>
+
+        <rect
+          x="540"
+          y="285"
+          width="30"
+          height="10"
+          rx="2"
+          fill="none"
+          stroke="#2a3142"
+          stroke-dasharray="3 2"
+        ></rect>
+        <text x="578" y="294" class="sub">DOM desmontado · PTY sigue vivo</text>
+
+        <text x="450" y="326" text-anchor="middle" class="sub">
+          La diferencia entre activo e inactivo es
+          <tspan fill="#6ee7a3">solo</tspan>
+          qué se renderiza. Los procesos no notan el cambio.
+        </text>
+      </svg>
+
+      <h3>Implicaciones concretas</h3>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Acción</th>
+            <th>¿Qué pasa con los procesos?</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Click en otro proyecto</td>
+            <td>
+              <span class="badge ok">SIGUEN VIVOS</span> Sólo se desmonta el DOM xterm del anterior.
+              El PTY sigue recibiendo output, que se acumula en el buffer del terminal.
+            </td>
+          </tr>
+          <tr>
+            <td>Cambio a otro workspace</td>
+            <td>
+              <span class="badge ok">SIGUEN VIVOS</span> Idéntico al caso anterior, no hay
+              diferencia entre cambiar dentro o entre workspaces.
+            </td>
+          </tr>
+          <tr>
+            <td>Volver a un proyecto que dejaste hace 20 min</td>
+            <td>
+              <span class="badge ok">VES EL HISTORIAL</span> El buffer de xterm tiene todo lo que el
+              proceso escribió mientras no mirabas (scrollback completo).
+            </td>
+          </tr>
+          <tr>
+            <td>Cerrar el sidebar / minimizar la app</td>
+            <td><span class="badge ok">SIGUEN VIVOS</span> Sin cambios. Es solo UI.</td>
+          </tr>
+          <tr>
+            <td>Eliminar un proyecto con procesos vivos</td>
+            <td>
+              <span class="badge warn">CONFIRMACIÓN</span> Modal: “Tiene N procesos corriendo.” Si
+              confirmás, se matan todos los PTYs de ese proyecto.
+            </td>
+          </tr>
+          <tr>
+            <td>Cerrar la ventana / quit de la app</td>
+            <td>
+              <span class="badge warn">CONFIRMACIÓN GLOBAL</span> Si hay procesos vivos en cualquier
+              proyecto, modal con la lista antes de matar. Sin confirmación si no hay nada vivo.
+            </td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="callout warn">
+        <strong>El indicador de vida importa más que nunca</strong>
+        Como hay procesos invisibles corriendo, el badge de “N terminales” en el sidebar es crítico.
+        Debería incluir además un punto de color que distinga:
+        <span class="badge ok">●</span> activo con output reciente ·
+        <span class="badge warn">●</span> idle ·
+        <span class="badge" style="color: var(--danger); border-color: rgba(255, 122, 138, 0.4)"
+          >●</span
+        >
+        proceso terminó con error mientras no mirabas.
+      </div>
+
+      <h3>Costo del modelo</h3>
+      <ul class="clean">
+        <li>
+          <strong>Memoria:</strong> cada xterm instance + buffer pesa ~5–15 MB; cada PTY proceso es
+          lo que pese su proceso (un <code>pnpm dev</code> puede ser 200–500 MB). 4–6 proyectos
+          activos = realista. 50 = no es el caso de uso.
+        </li>
+        <li>
+          <strong>CPU:</strong> los terminales ocultos no renderizan nada — su xterm está desmontado
+          del DOM. Solo el PTY consume CPU si su proceso lo consume.
+        </li>
+        <li>
+          <strong>Recursos del sistema:</strong> puertos ocupados, archivos abiertos, locks — son
+          responsabilidad del usuario. polakapi no intenta ser “smart” cerrando cosas; si tenés dos
+          dev servers en el puerto 5173, uno va a fallar y vas a verlo en su terminal.
+        </li>
+      </ul>
+
+      <!-- ======================= MODELO ======================= -->
+      <h2 id="modelo"><span class="num">03</span>Modelo de datos</h2>
+
+      <p>
+        Estructura mínima. Se persiste como JSON en el store de Tauri (mismo plugin que ya usás para
+        layout).
+      </p>
+
+      <pre><span class="c">// src/modules/workspaces/types.ts</span>
+<span class="k">export interface</span> <span class="n">Workspace</span> {
+  <span class="n">id</span>: string;          <span class="c">// uuid</span>
+  <span class="n">name</span>: string;        <span class="c">// "Boom"</span>
+  <span class="n">color</span>?: string;      <span class="c">// tinte opcional para el chip</span>
+  <span class="n">collapsed</span>?: boolean; <span class="c">// estado UI</span>
+  <span class="n">projects</span>: <span class="n">Project</span>[];
+}
+
+<span class="k">export interface</span> <span class="n">Project</span> {
+  <span class="n">id</span>: string;
+  <span class="n">name</span>: string;        <span class="c">// "Multiverse Admin"</span>
+  <span class="n">path</span>: string;        <span class="c">// "/Users/rafaelje/projects/boom/clients/sport-admin"</span>
+  <span class="n">icon</span>?: string;       <span class="c">// emoji o letra inicial</span>
+  <span class="n">notes</span>?: string;      <span class="c">// contenido del panel notes</span>
+  <span class="n">terminals</span>: <span class="n">TerminalSpec</span>[]; <span class="c">// config, no estado vivo</span>
+}
+
+<span class="k">export interface</span> <span class="n">TerminalSpec</span> {
+  <span class="n">id</span>: string;
+  <span class="n">title</span>?: string;     <span class="c">// "dev server", "tests"…</span>
+  <span class="n">shell</span>?: string;     <span class="c">// override del shell por defecto</span>
+  <span class="n">cwd</span>?: string;       <span class="c">// default: project.path</span>
+  <span class="n">startupCmd</span>?: string;<span class="c">// comando opcional auto-ejecutado al spawn</span>
+}
+
+<span class="k">export interface</span> <span class="n">WorkspacesState</span> {
+  <span class="n">workspaces</span>: <span class="n">Workspace</span>[];
+  <span class="n">activeProjectId</span>: string | null;
+}</pre>
+
+      <div class="callout">
+        <strong>Por qué <code>TerminalSpec</code> y no “sesión viva”</strong>
+        Las sesiones PTY no sobreviven a un reinicio: cuando matás el proceso, se va. Lo que
+        persistimos es la <em>configuración</em> de qué terminales abrir cuando el proyecto se
+        active (cwd, comando opcional, título). El estado vivo (PID, buffer, scrollback) vive en
+        memoria mientras la app corre.
+      </div>
+
+      <!-- ======================= LAYOUT ======================= -->
+      <h2 id="layout"><span class="num">04</span>Layout &amp; UI propuesto</h2>
+
+      <p>
+        El sidebar izquierdo ya existe (<code>#sidebar-left</code> con título “workspaces”). La idea
+        es llenarlo con un árbol de 2 niveles: workspace → projects. El header de la app gana un
+        breadcrumb pequeño que muestra <em>dónde estás</em>.
+      </p>
+
+      <h3>Sidebar izquierdo</h3>
+      <div class="mock">
+        <span class="g">┌─</span> <span class="a">Workspaces</span>
+        <span class="g">────────────────────┐ [</span><span class="a">+</span
+        ><span class="g">]</span> <span class="g">│</span> <span class="g">│</span>
+        <span class="g">│</span> <span class="a">▼</span> <span class="lbl">Boom</span>
+        <span class="g">⋮ │</span> <span class="g">│</span> <span class="ok">●</span> Multiverse
+        Admin <span class="ok">3</span> <span class="g">│</span>
+        <span class="g">← activo, 3 terminales</span> <span class="g">│</span>
+        <span class="g">○</span> Boom DFS <span class="g">│</span> <span class="g">│</span>
+        <span class="g">＋ Añadir proyecto…</span> <span class="g">│</span>
+        <span class="g">← aparece on hover</span> <span class="g">│</span> <span class="g">│</span>
+        <span class="g">│</span> <span class="a">▼</span> <span class="lbl">Sockeye</span>
+        <span class="g">⋮ │</span> <span class="g">│</span> <span class="g">○</span> Bingo Server
+        <span class="y">2</span> <span class="g">│</span>
+        <span class="g">← 2 terminales vivas, oculto</span> <span class="g">│</span>
+        <span class="g">○</span> Candy Bam Bam SDK <span class="g">│</span> <span class="g">│</span>
+        <span class="g">│</span> <span class="g">│</span> <span class="a">▶</span>
+        <span class="lbl">Personal</span> <span class="g">⋮ │</span>
+        <span class="g">← colapsado</span> <span class="g">│</span> <span class="g">│</span>
+        <span class="g">└──────────────────────────────────┘</span>
+      </div>
+
+      <h3>Anatomía de cada fila</h3>
+
+      <svg class="diagram" viewBox="0 0 880 130" width="100%">
+        <rect x="20" y="40" width="840" height="48" rx="10" fill="#161922" stroke="#2a3142"></rect>
+        <!-- dot -->
+        <circle cx="50" cy="64" r="5" fill="#6ee7a3"></circle>
+        <text x="80" y="62" class="lbl" fill="#e6e8ee">Multiverse Admin</text>
+        <text x="80" y="80" class="sub">~/projects/boom/clients/sport-admin</text>
+        <!-- badge running -->
+        <rect x="650" y="52" width="44" height="24" rx="12" fill="#1d2230" stroke="#6ee7a3"></rect>
+        <text x="672" y="68" text-anchor="middle" class="sub" fill="#6ee7a3">3 ●</text>
+        <!-- menu dots -->
+        <text x="720" y="70" class="sub">⋮</text>
+        <text x="760" y="70" class="sub">×</text>
+
+        <text x="50" y="22" class="sub">●</text>
+        <text x="65" y="22" class="sub">activo</text>
+        <text x="170" y="22" class="sub">nombre + path tenue</text>
+        <text x="630" y="22" class="sub">terminales vivas</text>
+        <text x="720" y="22" class="sub">menú · eliminar</text>
+
+        <text x="20" y="118" class="sub">
+          La fila completa es clickeable (cambia el proyecto activo). El ⋮ abre rename / cambiar
+          ruta / duplicar / eliminar.
+        </text>
+      </svg>
+
+      <h3>Toolbar superior — solo breadcrumb + toggles</h3>
+      <div class="mock">
+        <span class="g"
+          >┌──────────────────────────────────────────────────────────────────────────┐</span
+        >
+        <span class="g">│</span> <span class="a">Boom</span> <span class="g">›</span>
+        <span class="lbl">Multiverse Admin</span> <span class="g">[◧][▤][◨]│</span>
+        <span class="g"
+          >└──────────────────────────────────────────────────────────────────────────┘</span
+        >
+      </div>
+
+      <p class="dim">
+        Click en el nombre del workspace o del proyecto en el breadcrumb abre un selector rápido
+        tipo command palette (<code>⌘P</code>). El toolbar global queda con dos cosas: breadcrumb y
+        toggles de paneles. Los controles que dependen del proyecto activo (<code>+ Terminal</code>,
+        <code>Run in all…</code>, <code>Cols</code>) se moverán dentro del área del proyecto — ver
+        <a href="#decisiones">§ 10</a>.
+      </p>
+
+      <!-- ======================= FLUJOS ======================= -->
+      <h2 id="flujos"><span class="num">05</span>Flujos: crear, editar, eliminar</h2>
+
+      <h3>Añadir workspace</h3>
+      <div class="callout">
+        <strong>Fricción mínima</strong>
+        Click en <code>[+]</code> del header del sidebar → aparece un input inline al inicio de la
+        lista → escribís el nombre → <kbd>Enter</kbd> guarda, <kbd>Esc</kbd> cancela. Sin modal.
+      </div>
+
+      <h3>Añadir proyecto</h3>
+      <p>Dos caminos, mismo resultado:</p>
+      <ul class="clean">
+        <li>
+          <strong>Hover en un workspace</strong> → aparece <code>＋ Añadir proyecto…</code> debajo.
+        </li>
+        <li><strong>Drag &amp; drop</strong> una carpeta del Finder sobre el workspace.</li>
+      </ul>
+      <p>
+        Al clickear se abre el <em>file picker</em> nativo (<code>tauri-plugin-dialog</code>) en
+        modo carpeta. Una vez seleccionada:
+      </p>
+
+      <svg class="diagram" viewBox="0 0 900 220" width="100%">
+        <!-- step 1 -->
+        <rect x="20" y="30" width="180" height="80" rx="10" fill="#161922" stroke="#7cc4ff"></rect>
+        <text x="110" y="56" text-anchor="middle" class="lbl" fill="#7cc4ff">1 · Pick</text>
+        <text x="110" y="80" text-anchor="middle" class="sub">file picker carpeta</text>
+        <text x="110" y="96" text-anchor="middle" class="sub">(tauri-plugin-dialog)</text>
+
+        <path d="M200 70 L240 70" stroke="#2a3142" stroke-width="2" marker-end="url(#arr)"></path>
+
+        <!-- step 2 -->
+        <rect x="240" y="30" width="200" height="80" rx="10" fill="#161922" stroke="#b48cff"></rect>
+        <text x="340" y="56" text-anchor="middle" class="lbl" fill="#b48cff">2 · Sugerir</text>
+        <text x="340" y="80" text-anchor="middle" class="sub">nombre = basename(path)</text>
+        <text x="340" y="96" text-anchor="middle" class="sub">"sport-admin" editable</text>
+
+        <path d="M440 70 L480 70" stroke="#2a3142" stroke-width="2" marker-end="url(#arr)"></path>
+
+        <!-- step 3 -->
+        <rect x="480" y="30" width="200" height="80" rx="10" fill="#161922" stroke="#ffd166"></rect>
+        <text x="580" y="56" text-anchor="middle" class="lbl" fill="#ffd166">3 · Confirmar</text>
+        <text x="580" y="80" text-anchor="middle" class="sub">nombre · ícono · color</text>
+        <text x="580" y="96" text-anchor="middle" class="sub">opcional: terminales iniciales</text>
+
+        <path d="M680 70 L720 70" stroke="#2a3142" stroke-width="2" marker-end="url(#arr)"></path>
+
+        <!-- step 4 -->
+        <rect x="720" y="30" width="160" height="80" rx="10" fill="#161922" stroke="#6ee7a3"></rect>
+        <text x="800" y="56" text-anchor="middle" class="lbl" fill="#6ee7a3">4 · Activar</text>
+        <text x="800" y="80" text-anchor="middle" class="sub">proyecto creado</text>
+        <text x="800" y="96" text-anchor="middle" class="sub">+ seleccionado</text>
+
+        <defs>
+          <marker
+            id="arr"
+            viewBox="0 0 10 10"
+            refX="8"
+            refY="5"
+            markerWidth="6"
+            markerHeight="6"
+            orient="auto"
+          >
+            <path d="M0 0 L10 5 L0 10 z" fill="#7cc4ff"></path>
+          </marker>
+        </defs>
+
+        <text x="450" y="170" text-anchor="middle" class="sub">
+          Cada paso permite cancelar con
+          <tspan fill="#ffd166">Esc</tspan>
+          . Sólo
+          <tspan fill="#6ee7a3">step 1</tspan>
+          bloquea la UI (picker nativo).
+        </text>
+      </svg>
+
+      <h3>Editar</h3>
+      <p>
+        Doble-click sobre el nombre = rename inline. El menú <code>⋮</code> ofrece acciones extras:
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>Acción</th>
+            <th>Workspace</th>
+            <th>Project</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Renombrar</td>
+            <td>✓ (doble-click o ⋮)</td>
+            <td>✓ (doble-click o ⋮)</td>
+          </tr>
+          <tr>
+            <td>Cambiar color / ícono</td>
+            <td>✓</td>
+            <td>✓</td>
+          </tr>
+          <tr>
+            <td>Cambiar ruta</td>
+            <td>—</td>
+            <td>✓ (re-abre picker)</td>
+          </tr>
+          <tr>
+            <td>Duplicar</td>
+            <td>—</td>
+            <td>✓ (mismo path, nuevo nombre — útil para “sandbox”)</td>
+          </tr>
+          <tr>
+            <td>Mover a otro workspace</td>
+            <td>—</td>
+            <td>✓ (drag &amp; drop o submenú)</td>
+          </tr>
+          <tr>
+            <td>Eliminar</td>
+            <td>✓ (confirmación si tiene projects)</td>
+            <td>✓ (confirmación si tiene terminales vivas)</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>Eliminar — niveles de fricción</h3>
+      <div class="grid-2">
+        <div class="callout warn">
+          <strong>Proyecto sin terminales vivas</strong>
+          Click eliminar → toast con <em>Deshacer</em> durante 5s. Sin confirmación.
+        </div>
+        <div class="callout danger">
+          <strong>Proyecto con terminales vivas</strong>
+          Modal con resumen: “Tiene 3 terminales corriendo. Se cerrarán todas.” Botón
+          <em>Eliminar</em> destacado pero no por defecto — el botón por defecto es
+          <em>Cancelar</em>.
+        </div>
+      </div>
+
+      <p class="dim">
+        Mismo patrón para workspace: si tiene projects, modal explícito; si está vacío, undo-toast.
+      </p>
+
+      <!-- ======================= SWITCH ======================= -->
+      <h2 id="switch"><span class="num">06</span>Cambio de contexto</h2>
+
+      <p>
+        Cuando hacés click en un proyecto, todo el espacio central, las notas y (futuro) los
+        agentes, cambian. Los procesos del proyecto anterior <strong>siguen corriendo</strong> — ver
+        <a href="#paralelo">§ 02 Principio: ejecución en paralelo</a>. Solo se desmonta el DOM xterm
+        del anterior; los PTYs siguen recibiendo output, el cual se acumula en el buffer del
+        terminal para cuando vuelvas.
+      </p>
+
+      <svg class="diagram" viewBox="0 0 900 360" width="100%">
+        <!-- Before -->
+        <text x="200" y="22" text-anchor="middle" class="lbl" fill="#7cc4ff">ANTES</text>
+        <rect x="40" y="35" width="320" height="280" rx="10" fill="#161922" stroke="#2a3142"></rect>
+        <text x="60" y="60" class="sub">activeProject: Multiverse Admin</text>
+
+        <!-- sidebar -->
+        <rect x="55" y="80" width="90" height="220" rx="6" fill="#1d2230" stroke="#2a3142"></rect>
+        <text x="100" y="100" text-anchor="middle" class="sub">workspaces</text>
+        <circle cx="68" cy="125" r="3" fill="#6ee7a3"></circle>
+        <text x="78" y="129" class="sub" fill="#6ee7a3">Multiverse</text>
+        <circle cx="68" cy="145" r="3" fill="#6c7589"></circle>
+        <text x="78" y="149" class="sub" fill="#6c7589">Boom DFS</text>
+        <circle cx="68" cy="170" r="3" fill="#6c7589"></circle>
+        <text x="78" y="174" class="sub" fill="#6c7589">Bingo Server</text>
+
+        <!-- grid -->
+        <rect x="160" y="80" width="180" height="160" rx="6" fill="#1d2230" stroke="#6ee7a3"></rect>
+        <text x="250" y="100" text-anchor="middle" class="sub" fill="#6ee7a3">3 terminales</text>
+        <rect x="170" y="115" width="75" height="55" rx="4" fill="#0f1115" stroke="#2a3142"></rect>
+        <rect x="255" y="115" width="75" height="55" rx="4" fill="#0f1115" stroke="#2a3142"></rect>
+        <rect x="170" y="180" width="160" height="50" rx="4" fill="#0f1115" stroke="#2a3142"></rect>
+
+        <!-- notes -->
+        <rect x="160" y="250" width="180" height="50" rx="6" fill="#1d2230" stroke="#b48cff"></rect>
+        <text x="250" y="280" text-anchor="middle" class="sub" fill="#b48cff">
+          notas de Multiverse
+        </text>
+
+        <!-- arrow -->
+        <path
+          d="M380 175 L500 175"
+          stroke="#7cc4ff"
+          stroke-width="2"
+          marker-end="url(#arr2)"
+        ></path>
+        <text x="440" y="160" text-anchor="middle" class="sub" fill="#7cc4ff">
+          click "Bingo Server"
+        </text>
+
+        <!-- After -->
+        <text x="710" y="22" text-anchor="middle" class="lbl" fill="#b48cff">DESPUÉS</text>
+        <rect
+          x="550"
+          y="35"
+          width="320"
+          height="280"
+          rx="10"
+          fill="#161922"
+          stroke="#2a3142"
+        ></rect>
+        <text x="570" y="60" class="sub">activeProject: Bingo Server</text>
+
+        <!-- sidebar -->
+        <rect x="565" y="80" width="90" height="220" rx="6" fill="#1d2230" stroke="#2a3142"></rect>
+        <text x="610" y="100" text-anchor="middle" class="sub">workspaces</text>
+        <circle cx="578" cy="125" r="3" fill="#6c7589"></circle>
+        <text x="588" y="129" class="sub" fill="#6c7589">Multiverse</text>
+        <text x="588" y="139" class="sub" fill="#ffd166">› 3 vivas</text>
+        <circle cx="578" cy="160" r="3" fill="#6c7589"></circle>
+        <text x="588" y="164" class="sub" fill="#6c7589">Boom DFS</text>
+        <circle cx="578" cy="180" r="3" fill="#6ee7a3"></circle>
+        <text x="588" y="184" class="sub" fill="#6ee7a3">Bingo Server</text>
+
+        <!-- grid -->
+        <rect x="670" y="80" width="180" height="160" rx="6" fill="#1d2230" stroke="#6ee7a3"></rect>
+        <text x="760" y="100" text-anchor="middle" class="sub" fill="#6ee7a3">2 terminales</text>
+        <rect x="680" y="115" width="160" height="55" rx="4" fill="#0f1115" stroke="#2a3142"></rect>
+        <rect x="680" y="180" width="160" height="50" rx="4" fill="#0f1115" stroke="#2a3142"></rect>
+
+        <!-- notes -->
+        <rect x="670" y="250" width="180" height="50" rx="6" fill="#1d2230" stroke="#b48cff"></rect>
+        <text x="760" y="280" text-anchor="middle" class="sub" fill="#b48cff">notas de Bingo</text>
+
+        <defs>
+          <marker
+            id="arr2"
+            viewBox="0 0 10 10"
+            refX="8"
+            refY="5"
+            markerWidth="6"
+            markerHeight="6"
+            orient="auto"
+          >
+            <path d="M0 0 L10 5 L0 10 z" fill="#7cc4ff"></path>
+          </marker>
+        </defs>
+
+        <text x="450" y="345" text-anchor="middle" class="sub">
+          Las 3 terminales de Multiverse se ocultan pero siguen corriendo (badge "3 vivas" en el
+          sidebar).
+        </text>
+      </svg>
+
+      <h3>Detalles importantes</h3>
+      <ul class="clean">
+        <li>
+          <strong>El cambio es síncrono y barato.</strong> No matamos PTYs, no recreamos xterm
+          instances — solo intercambiamos qué contenedor está visible.
+        </li>
+        <li>
+          <strong>Las notas se guardan al salir.</strong> El <code>textarea</code> dispara save
+          cuando el proyecto deja de ser activo.
+        </li>
+        <li>
+          <strong>Si el proyecto destino no tiene terminales abiertas todavía</strong>, se
+          auto-spawn las definidas en <code>terminals[]</code> (si las hay) o se queda vacío con el
+          botón <code>+ Terminal</code> visible.
+        </li>
+        <li>
+          <strong>“Live indicator” en el sidebar:</strong> badge con número de terminales corriendo
+          del proyecto, aunque no esté activo. Da paz mental.
+        </li>
+      </ul>
+
+      <!-- ======================= TERMINALES ======================= -->
+      <h2 id="terminales"><span class="num">07</span>Terminales por proyecto</h2>
+
+      <p>
+        Hoy <code>TerminalManager</code> es global. Hay que refactorizarlo a uno-por-proyecto. La
+        pieza clave: <em>nunca</em> destruimos el manager — sólo cambiamos cuál está montado.
+      </p>
+
+      <svg class="diagram" viewBox="0 0 880 280" width="100%">
+        <!-- title -->
+        <text x="440" y="20" text-anchor="middle" class="lbl" fill="#e6e8ee">
+          Múltiples managers, un sólo visible
+        </text>
+
+        <!-- TerminalRouter -->
+        <rect x="320" y="50" width="240" height="50" rx="8" fill="#1d2230" stroke="#7cc4ff"></rect>
+        <text x="440" y="72" text-anchor="middle" class="lbl" fill="#7cc4ff">TerminalRouter</text>
+        <text x="440" y="90" text-anchor="middle" class="sub">
+          mount(activeProjectId), hide(prev)
+        </text>
+
+        <line x1="440" y1="100" x2="440" y2="120" stroke="#2a3142" stroke-width="2"></line>
+        <line x1="140" y1="120" x2="740" y2="120" stroke="#2a3142" stroke-width="2"></line>
+        <line x1="140" y1="120" x2="140" y2="145" stroke="#2a3142" stroke-width="2"></line>
+        <line x1="440" y1="120" x2="440" y2="145" stroke="#2a3142" stroke-width="2"></line>
+        <line x1="740" y1="120" x2="740" y2="145" stroke="#2a3142" stroke-width="2"></line>
+
+        <!-- Managers -->
+        <rect x="50" y="145" width="180" height="100" rx="8" fill="#161922" stroke="#6ee7a3"></rect>
+        <text x="140" y="165" text-anchor="middle" class="lbl" fill="#6ee7a3">TerminalManager</text>
+        <text x="140" y="182" text-anchor="middle" class="sub">project: Multiverse</text>
+        <rect x="65" y="195" width="70" height="38" rx="4" fill="#0f1115" stroke="#2a3142"></rect>
+        <rect x="145" y="195" width="70" height="38" rx="4" fill="#0f1115" stroke="#2a3142"></rect>
+        <text x="140" y="263" text-anchor="middle" class="sub" fill="#6ee7a3">
+          ◉ montado · visible
+        </text>
+
+        <rect
+          x="350"
+          y="145"
+          width="180"
+          height="100"
+          rx="8"
+          fill="#161922"
+          stroke="#6c7589"
+        ></rect>
+        <text x="440" y="165" text-anchor="middle" class="lbl" fill="#6c7589">TerminalManager</text>
+        <text x="440" y="182" text-anchor="middle" class="sub">project: Bingo Server</text>
+        <rect x="365" y="195" width="70" height="38" rx="4" fill="#0f1115" stroke="#2a3142"></rect>
+        <rect x="445" y="195" width="70" height="38" rx="4" fill="#0f1115" stroke="#2a3142"></rect>
+        <text x="440" y="263" text-anchor="middle" class="sub" fill="#6c7589">
+          ○ vivo · desmontado del DOM
+        </text>
+
+        <rect
+          x="650"
+          y="145"
+          width="180"
+          height="100"
+          rx="8"
+          fill="#161922"
+          stroke="#6c7589"
+        ></rect>
+        <text x="740" y="165" text-anchor="middle" class="lbl" fill="#6c7589">TerminalManager</text>
+        <text x="740" y="182" text-anchor="middle" class="sub">project: Candy SDK</text>
+        <text x="740" y="218" text-anchor="middle" class="sub" fill="#6c7589">
+          (sin terminales)
+        </text>
+        <text x="740" y="263" text-anchor="middle" class="sub" fill="#6c7589">○ aún no creado</text>
+      </svg>
+
+      <div class="callout">
+        <strong>Estrategia de montaje</strong>
+        <code>TerminalManager</code> recibe su DOM root en <code>mount(root)</code> y se puede
+        <code>unmount()</code> (preserva las xterm instances en memoria). El router llama
+        <code>unmount(oldProject); mount(newProject, gridRoot)</code> al cambiar. xterm.js soporta
+        bien esto con <code>terminal.open(newContainer)</code>.
+      </div>
+
+      <h3>“Run command in all…” — alcance</h3>
+      <p>
+        El botón actual ejecuta el comando en todas las terminales globales. Con workspaces, debe
+        ejecutar <strong>sólo</strong> en las del proyecto activo. Si querés cross-project, hay que
+        pensarlo aparte (probablemente no es lo que se quiere por defecto).
+      </p>
+
+      <!-- ======================= PERSISTENCIA ======================= -->
+      <h2 id="persistencia"><span class="num">08</span>Persistencia</h2>
+
+      <p>
+        Usar el mismo plugin <code>@tauri-apps/plugin-store</code>. Dos archivos separados para
+        evitar acoplar dominios:
+      </p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Archivo</th>
+            <th>Contenido</th>
+            <th>Frecuencia de escritura</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>layout.json</code> <span class="dim">(ya existe)</span></td>
+            <td>Anchos de paneles, toggles, cols del grid</td>
+            <td>Al cambiar UI (debounced 250ms)</td>
+          </tr>
+          <tr>
+            <td><code>workspaces.json</code> <span class="badge f1">nuevo</span></td>
+            <td>Workspaces, projects, terminals specs, activeProjectId</td>
+            <td>Al CRUD + cambio de proyecto (debounced)</td>
+          </tr>
+          <tr>
+            <td><code>notes/&lt;projectId&gt;.json</code> <span class="badge f2">nuevo</span></td>
+            <td>Contenido del textarea por proyecto</td>
+            <td>Debounced 500ms mientras escribís</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <p class="dim">
+        Las notas en archivo separado para no reescribir el JSON gordo de workspaces en cada
+        teclazo. Alternativa: dejarlas inline en <code>Project</code> con debounce más agresivo.
+      </p>
+
+      <div class="callout warn">
+        <strong>Migración del estado actual</strong>
+        El <code>notesContent</code> que hoy guarda <code>layout.json</code> debería migrar a un
+        proyecto “Default” o quedarse como notas globales del workspace por defecto. Vale la pena
+        decidirlo antes de la fase 1.
+      </div>
+
+      <!-- ======================= FASES ======================= -->
+      <h2 id="fases"><span class="num">09</span>Plan por fases</h2>
+
+      <p>
+        Cada fase termina en un estado funcional y commiteable. No hace falta hacer todo de una vez.
+      </p>
+
+      <div class="card">
+        <h3 style="margin-top: 0">
+          <span class="badge f1">Fase 1</span> Modelo + CRUD + reestructura del toolbar
+        </h3>
+        <p class="dim">
+          Objetivo: poder crear/listar/editar/eliminar workspaces y projects. Y dejar el toolbar
+          global limpio.
+        </p>
+        <ul class="clean">
+          <li>
+            Crear <code>src/modules/workspaces/</code> con <code>types.ts</code>,
+            <code>store.ts</code>, <code>workspaces-panel.ts</code>.
+          </li>
+          <li>Implementar render del árbol en el sidebar izquierdo (reemplaza el placeholder).</li>
+          <li>
+            Orden alfabético por defecto al insertar. Drag &amp; drop entre hermanos y entre
+            workspaces, que setea <code>order</code> explícito.
+          </li>
+          <li>
+            Añadir comando Rust <code>fs_validate_path</code> + <code>tauri-plugin-dialog</code>
+            para el file picker.
+          </li>
+          <li>
+            Validación al crear/editar: path debe existir, ser directorio y ser legible. Sin path =
+            no se puede guardar.
+          </li>
+          <li>Persistencia en <code>workspaces.json</code> + carga al startup.</li>
+          <li>
+            Empty state cuando no hay proyecto activo + restauración del último activo al arrancar
+            (si su path sigue siendo válido).
+          </li>
+          <li>
+            <strong>Reestructurar toolbar:</strong> sacar <code>+ Terminal</code>,
+            <code>Run in all…</code>, <code>Cols</code> del toolbar global. Por ahora caen en el
+            mismo lugar pero condicionados a “hay proyecto activo”. El refactor a sub-toolbar de
+            proyecto se completa en Fase 2.
+          </li>
+          <li>
+            <strong>Marcar proyectos con path inválido</strong> en rojo al arrancar, con opciones de
+            re-elegir o eliminar.
+          </li>
+          <li>
+            <strong>Sin afectar PTYs todavía</strong> — el manager sigue siendo global. Solo
+            seleccionás un proyecto visualmente y el breadcrumb refleja eso.
+          </li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <h3 style="margin-top: 0"><span class="badge f2">Fase 2</span> Terminales por proyecto</h3>
+        <p class="dim">Objetivo: el set de terminales cambia con el proyecto activo.</p>
+        <ul class="clean">
+          <li>
+            Refactor: <code>TerminalManager</code> deja de ser singleton. Se crea uno por proyecto
+            on-demand.
+          </li>
+          <li>
+            Nuevo <code>TerminalRouter</code> en <code>app/</code> que monta/desmonta managers.
+          </li>
+          <li>
+            <code>cwd</code> de cada nueva terminal usa <code>project.path</code> por defecto.
+          </li>
+          <li>Badge de “terminales vivas” en el sidebar.</li>
+          <li>“Run in all” limita su scope al proyecto activo.</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <h3 style="margin-top: 0"><span class="badge f3">Fase 3</span> Notas por proyecto</h3>
+        <p class="dim">Objetivo: las notas siguen al proyecto.</p>
+        <ul class="clean">
+          <li><code>notes-persistence</code> recibe <code>projectId</code> como parámetro.</li>
+          <li>Migración de notas existentes a un proyecto “Default” o a un workspace nuevo.</li>
+          <li>Auto-save al cambiar de proyecto (flush antes del swap).</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <h3 style="margin-top: 0"><span class="badge">Fase 4 · opcional</span> Quality of life</h3>
+        <ul class="clean">
+          <li>Command palette <code>⌘P</code> para saltar a proyecto.</li>
+          <li>Drag &amp; drop de carpetas del Finder al sidebar.</li>
+          <li>Drag &amp; drop para reordenar / mover entre workspaces.</li>
+          <li>Color/ícono por workspace y por proyecto.</li>
+          <li>
+            <code>TerminalSpec.startupCmd</code>: comando opcional auto-ejecutado al spawn (ej.
+            <code>pnpm dev</code>).
+          </li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <h3 style="margin-top: 0"><span class="badge">Fase 5 · futuro</span> Agentes</h3>
+        <p class="dim">
+          Cuando esto exista, el sidebar derecho (“agents flow”) se llenará con agentes vinculados
+          al proyecto activo. Misma mecánica de swap. No diseñar todavía — definir bien Fase 1–3
+          primero.
+        </p>
+      </div>
+
+      <!-- ======================= DECISIONES ======================= -->
+      <h2 id="decisiones"><span class="num">10</span>Decisiones tomadas</h2>
+
+      <p class="dim">Resueltas. Estas son las reglas con las que arrancamos.</p>
+
+      <div class="card">
+        <h3 style="margin-top: 0">
+          <span class="badge ok">✓ Resuelta</span> Estado actual: se descarta
+        </h3>
+        <p style="margin: 0">
+          Estamos en pruebas — las notas globales y configuración actual no se migran. El primer
+          arranque tras el cambio parte de cero (cero workspaces, cero proyectos). El usuario tiene
+          que crear el primer workspace + proyecto a mano.
+        </p>
+        <p class="dim" style="margin: 8px 0 0">
+          <strong>Implicación técnica:</strong> al inicializar, si <code>workspaces.json</code> no
+          existe o está vacío, se muestra un estado vacío con CTA grande:
+          <em>“Crea tu primer workspace”</em>.
+        </p>
+      </div>
+
+      <div class="card">
+        <h3 style="margin-top: 0">
+          <span class="badge ok">✓ Resuelta</span> Proyectos simultáneos: sin límite
+        </h3>
+        <p style="margin: 0">
+          Todos los proyectos que hagan falta, todos vivos en paralelo (ya cubierto en
+          <a href="#paralelo">§ 02</a>). No imponemos un máximo, no mostramos warnings de memoria,
+          no “pausamos” proyectos viejos automáticamente. Si el usuario abre 30, la app respeta esa
+          decisión.
+        </p>
+        <p class="dim" style="margin: 8px 0 0">
+          <strong>Implicación técnica:</strong> no hay LRU, no hay quotas, no hay
+          <code>maxActiveProjects</code>. El único límite real es la RAM de la máquina y eso es
+          responsabilidad del usuario.
+        </p>
+      </div>
+
+      <div class="card">
+        <h3 style="margin-top: 0">
+          <span class="badge ok">✓ Resuelta</span> Orden: alfabético por defecto + drag &amp; drop
+        </h3>
+        <p style="margin: 0">
+          Al crear un proyecto se inserta en su posición alfabética dentro del workspace. El usuario
+          puede arrastrar para reordenar manualmente — esto fija un <code>order</code> explícito en
+          el proyecto. Mismo comportamiento para workspaces a nivel raíz.
+        </p>
+        <p class="dim" style="margin: 8px 0 0">
+          <strong>Implicación técnica:</strong>
+          <code>Project</code> gana un campo <code>order?: number</code> opcional. Si no está
+          definido → orden alfabético por <code>name</code>. Si está definido → respeta el número.
+          Drag &amp; drop reasigna <code>order</code> en todos los hermanos. Hay un menú “Ordenar
+          alfabéticamente” en el ⋮ del workspace que limpia los <code>order</code> y vuelve al
+          default.
+        </p>
+      </div>
+
+      <div class="card">
+        <h3 style="margin-top: 0">
+          <span class="badge ok">✓ Resuelta</span> Path: obligatorio y validado
+        </h3>
+        <p style="margin: 0">
+          Un proyecto <strong>siempre</strong> tiene un path. No se puede agregar un proyecto con
+          path inválido — el formulario de creación lo rechaza antes de guardar.
+        </p>
+        <ul class="clean" style="margin-top: 8px">
+          <li>
+            <strong>Al crear:</strong> el file picker devuelve siempre una ruta real (filesystem
+            picker nativo). Adicionalmente, antes de guardar se llama a un comando Rust
+            <code>fs_validate_path(path)</code> que verifica:
+            <code>existe + es directorio + es readable</code>. Si falla → toast de error y no se
+            guarda.
+          </li>
+          <li><strong>Al editar “cambiar ruta”:</strong> misma validación.</li>
+          <li>
+            <strong>Al arrancar la app, si un path persistido ya no existe</strong> (carpeta borrada
+            externamente): el proyecto se muestra <strong>en rojo</strong> con ícono de advertencia
+            y deshabilitado. Al clickearlo se ofrecen 2 acciones: <em>Re-elegir ruta</em> o
+            <em>Eliminar proyecto</em>. No se silencia, no se borra solo.
+          </li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <h3 style="margin-top: 0">
+          <span class="badge ok">✓ Resuelta</span> Toolbar limpio · controles vinculados al proyecto
+        </h3>
+        <p style="margin: 0">
+          El toolbar superior actual tiene tres controles que
+          <strong>no tienen sentido sin un proyecto activo</strong>: <code>+ Terminal</code>,
+          <code>Run command in all…</code>, <code>Cols</code>. Salen del toolbar global.
+        </p>
+        <p style="margin: 8px 0 0">El nuevo toolbar global queda mínimo:</p>
+        <div class="mock" style="margin-top: 8px">
+          <span class="g">┌─────────────────────────────────────────────────────────────┐</span>
+          <span class="g">│</span> <span class="a">Boom</span> <span class="g">›</span>
+          <span class="lbl">Multiverse Admin</span> <span class="g">[◧][▤][◨] │</span>
+          <span class="g">└─────────────────────────────────────────────────────────────┘</span>
+          <span class="g">↑ breadcrumb (click = command palette)</span>
+          <span class="g">↑ panel toggles</span>
+        </div>
+        <p style="margin: 12px 0 0">
+          Los controles <em>específicos del proyecto</em> viven dentro del área del proyecto, sobre
+          el grid de terminales:
+        </p>
+        <div class="mock" style="margin-top: 8px">
+          <span class="g">┌─ Multiverse Admin ──────────────────────────────────────────┐</span>
+          <span class="g">│ </span><span class="a">[+ Terminal]</span><span class="g"> </span
+          ><span class="a">[Run in all…]</span><span class="g"> </span><span class="g">Cols [</span
+          ><span class="lbl">3</span><span class="g">] │</span>
+          <span class="g">├─────────────────────────────────────────────────────────────┤</span>
+          <span class="g">│ </span>┌──────────┐ ┌──────────┐<span class="g"> │</span>
+          <span class="g">│ </span>│ pnpm dev │ │ tests │<span class="g">
+            ← grid de terminales │</span
+          >
+          <span class="g">│ </span>└──────────┘ └──────────┘<span class="g"> │</span>
+          <span class="g">└─────────────────────────────────────────────────────────────┘</span>
+        </div>
+        <p style="margin: 12px 0 0">
+          Si <strong>no hay proyecto activo</strong> (estado inicial o último proyecto eliminado),
+          toda esta zona se reemplaza por un <strong>empty state</strong>:
+        </p>
+        <div class="mock" style="margin-top: 8px">
+          <span class="g">┌─────────────────────────────────────────────────────────────┐</span>
+          <span class="g">│</span> <span class="g">│</span> <span class="g">│ </span
+          ><span class="lbl">Sin proyecto activo</span><span class="g"> │</span>
+          <span class="g">│ </span
+          ><span class="g">Crea o selecciona un proyecto en el sidebar.</span
+          ><span class="g"> │</span> <span class="g">│ </span><span class="g">│</span>
+          <span class="g">│ </span><span class="a">[+ Crear workspace]</span
+          ><span class="g"> │</span> <span class="g">│ </span><span class="g">│</span>
+          <span class="g">└─────────────────────────────────────────────────────────────┘</span>
+        </div>
+        <p class="dim" style="margin: 12px 0 0">
+          <strong>Implicación técnica:</strong> el <code>+ Terminal</code>, <code>Run in all</code>,
+          y <code>Cols</code> dejan de ser hijos de <code>.toolbar</code> y pasan a ser hijos del
+          template del project pane (sub-toolbar interno). La columna <code>Cols</code> se persiste
+          <strong>por proyecto</strong>, no global — cada uno puede tener su propio layout.
+        </p>
+      </div>
+
+      <h3 style="margin-top: 36px">Decisiones derivadas</h3>
+      <ul class="clean">
+        <li>
+          <strong>Eliminar el último proyecto:</strong> no se auto-activa otro. La vista vuelve al
+          empty state, aunque haya otros proyectos disponibles. El usuario elige conscientemente qué
+          activar.
+        </li>
+        <li>
+          <strong>Workspace sin proyectos:</strong> se permite (recién creado). En el sidebar
+          aparece con <code>＋ Añadir proyecto…</code> directamente debajo del nombre, sin la
+          fricción del hover.
+        </li>
+        <li>
+          <strong>Persistir el último proyecto activo</strong> al cerrar la app, y restaurarlo al
+          abrir. Si ese proyecto tiene path inválido al restaurar → empty state (no auto-saltar a
+          otro).
+        </li>
+      </ul>
+
+      <footer>
+        polakapi · workspaces plan · <span class="dim">docs/workspaces-plan.html</span>
+      </footer>
+    </div>
+  </body>
+</html>

@@ -443,3 +443,426 @@ body {
   color: #1a1208;
   opacity: 0.92;
 }
+
+.modal-btn-danger {
+  background: #ff5b5b;
+  border-color: #ff5b5b;
+  color: #190606;
+}
+
+.modal-btn-danger:hover {
+  color: #190606;
+  opacity: 0.92;
+}
+
+/* ----------------------------------------------------------------------
+ * Workspaces panel (.ws-*)
+ * ---------------------------------------------------------------------- */
+
+.ws-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.ws-panel-header {
+  display: flex;
+  align-items: center;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  user-select: none;
+}
+
+.ws-panel-title {
+  flex: 1;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #8a8a8a;
+}
+
+.ws-panel-add {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+  line-height: 1;
+  padding: 2px 8px;
+}
+
+.ws-panel-add:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.ws-panel-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 4px 0;
+}
+
+.ws-workspace {
+  display: flex;
+  flex-direction: column;
+}
+
+.ws-workspace-header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  font-size: 12px;
+  color: var(--text);
+  user-select: none;
+}
+
+.ws-workspace-header:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.ws-chevron {
+  background: transparent;
+  border: none;
+  color: #8a8a8a;
+  cursor: pointer;
+  font-size: 10px;
+  padding: 0 2px;
+  width: 16px;
+  text-align: center;
+}
+
+.ws-workspace-name {
+  flex: 1;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ws-row-add,
+.ws-row-kebab {
+  background: transparent;
+  border: none;
+  color: #8a8a8a;
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.ws-row-add:hover,
+.ws-row-kebab:hover {
+  background: var(--border);
+  color: var(--text);
+}
+
+.ws-projects {
+  display: flex;
+  flex-direction: column;
+}
+
+.ws-workspace.collapsed .ws-projects {
+  display: none;
+}
+
+.ws-project-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px 4px 24px;
+  font-size: 12px;
+  color: var(--text);
+  cursor: pointer;
+  position: relative;
+}
+
+.ws-project-row:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.ws-project-row.active {
+  background: rgba(255, 140, 42, 0.1);
+}
+
+.ws-project-row.dragging {
+  opacity: 0.4;
+}
+
+.ws-active-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: transparent;
+  flex: 0 0 6px;
+}
+
+.ws-project-row.active .ws-active-dot {
+  background: var(--accent);
+}
+
+.ws-project-label {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.ws-project-name-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ws-project-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ws-project-path {
+  color: #6a6a6a;
+  font-size: 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ws-project-row.invalid .ws-project-name,
+.ws-project-row.invalid .ws-project-path {
+  color: #ff8a8a;
+}
+
+.ws-terminals-badge {
+  background: var(--border);
+  color: var(--text);
+  border-radius: 8px;
+  padding: 0 6px;
+  font-size: 10px;
+  min-width: 18px;
+  text-align: center;
+}
+
+.ws-terminals-badge.hidden,
+.ws-warn.hidden {
+  display: none;
+}
+
+.ws-warn {
+  background: #ff5b5b;
+  color: #190606;
+  border: none;
+  border-radius: 50%;
+  width: 16px;
+  height: 16px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.ws-warn:hover {
+  opacity: 0.85;
+}
+
+.ws-rename-input {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  font: inherit;
+  padding: 1px 4px;
+  width: 100%;
+  min-width: 0;
+  outline: none;
+}
+
+.ws-insertion-line {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  height: 2px;
+  background: var(--accent);
+  border-radius: 1px;
+  pointer-events: none;
+}
+
+.ws-drop-target {
+  outline: 1px dashed var(--accent);
+  outline-offset: -2px;
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  border-radius: 4px;
+}
+
+.ws-workspace.dragging {
+  opacity: 0.5;
+}
+
+.ws-row-menu {
+  position: fixed;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+  min-width: 180px;
+  padding: 4px;
+  z-index: 1500;
+}
+
+.ws-row-menu-item {
+  background: transparent;
+  border: none;
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+  padding: 6px 10px;
+  text-align: left;
+  border-radius: 4px;
+}
+
+.ws-row-menu-item:hover:not(:disabled) {
+  background: var(--border);
+}
+
+.ws-row-menu-item:disabled {
+  color: #5a5a5a;
+  cursor: default;
+}
+
+.ws-row-menu-item.danger {
+  color: #ff8a8a;
+}
+
+.ws-row-menu-item.danger:hover:not(:disabled) {
+  background: rgba(255, 91, 91, 0.15);
+}
+
+.ws-empty {
+  padding: 16px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-start;
+}
+
+.ws-empty-title {
+  font-size: 12px;
+  color: var(--text);
+  font-weight: 600;
+}
+
+.ws-empty-message {
+  font-size: 11px;
+  color: #8a8a8a;
+  line-height: 1.4;
+}
+
+.ws-empty-cta {
+  margin-top: 8px;
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  color: #1a1208;
+  cursor: pointer;
+  font: inherit;
+  padding: 4px 10px;
+}
+
+.ws-empty-cta:hover {
+  opacity: 0.92;
+}
+
+.ws-empty-project {
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 32px;
+}
+
+/* ----------------------------------------------------------------------
+ * Project pane (wraps #grid + per-project sub-toolbar)
+ * ---------------------------------------------------------------------- */
+
+.project-pane {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+}
+
+.project-pane-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+}
+
+.project-pane-toolbar button {
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 10px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.project-pane-toolbar button:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.project-pane-toolbar input[type="number"] {
+  width: 48px;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 2px 6px;
+  font: inherit;
+}
+
+.project-pane.inactive .project-pane-toolbar,
+.project-pane.inactive #grid {
+  display: none;
+}
+
+/* ----------------------------------------------------------------------
+ * Breadcrumb
+ * ---------------------------------------------------------------------- */
+
+.breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text);
+}
+
+.breadcrumb-segment {
+  color: var(--text);
+}
+
+.breadcrumb-segment.workspace {
+  color: #8a8a8a;
+}
+
+.breadcrumb-separator {
+  color: #5a5a5a;
+}
+
+.breadcrumb-placeholder {
+  color: #6a6a6a;
+  font-style: italic;
+}

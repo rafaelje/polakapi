@@ -24,3 +24,4 @@ portable-pty = "0.8"
 uuid = { version = "1", features = ["v4"] }
 parking_lot = "0.12"
 tauri-plugin-store = "2.4.3"
+tauri-plugin-dialog = "2"

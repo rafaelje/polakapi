@@ -1,3 +1,4 @@
+use crate::fs::validate_path;
 use crate::pty::{spawn_session, PtyStore};
 use portable_pty::PtySize;
 use std::io::Write;
@@ -64,4 +65,15 @@ pub fn pty_resize(
 pub fn pty_kill(store: State<'_, Arc<PtyStore>>, id: String) -> Result<(), String> {
     store.kill_session(&id);
     Ok(())
+}
+
+/// Validates a filesystem path on behalf of the workspaces module.
+///
+/// Returns `Ok(())` if the path exists, is a directory and is readable by the
+/// current process. On failure, returns a stable string consumed by
+/// `path-validation.ts`: `"not_found" | "not_directory" | "not_readable" |
+/// "unknown:<msg>"`.
+#[tauri::command]
+pub fn fs_validate_path(path: String) -> Result<(), String> {
+    validate_path(&path).map_err(|err| err.as_contract_string())
 }
