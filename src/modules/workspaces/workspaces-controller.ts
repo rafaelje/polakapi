@@ -6,7 +6,7 @@ import {
 import { confirmDeleteProject, confirmDeleteWorkspace } from "./confirm-delete";
 import { validatePath } from "./path-validation";
 import { openCreateProjectForm, openEditProjectPathForm } from "./project-form";
-import { revalidatePersistedPaths } from "./revalidate-paths";
+import { applyPathValidationResults, collectPathValidationResults } from "./revalidate-paths";
 import { openCreateWorkspaceForm } from "./workspace-form";
 import type {
   Project,
@@ -241,7 +241,8 @@ export class WorkspacesController {
   }
 
   private async revalidatePersistedPaths(): Promise<void> {
-    const next = await revalidatePersistedPaths(this.state);
+    const results = await collectPathValidationResults(this.state);
+    const next = applyPathValidationResults(this.state, results);
     if (next === this.state) return;
     this.state = next;
     queueSaveWorkspaces(this.state);
