@@ -1,3 +1,5 @@
+import { deterministicColor } from "./appearance-defaults";
+import { openAppearancePicker } from "./appearance-picker";
 import { createProjectRow, type ProjectRowHandle } from "./project-row";
 import { openRowMenu } from "./row-menu";
 import { startInlineRename } from "./rename-inline";
@@ -23,6 +25,11 @@ export interface WorkspaceRowHandle {
    * No-op when the project is not currently rendered under this row.
    */
   setLiveCount(projectId: ProjectId, n: number): void;
+  /**
+   * F5: forward a bell-pending toggle to the matching ProjectRow. No-op when
+   * the project is not currently rendered under this row.
+   */
+  setBellPending(projectId: ProjectId, pending: boolean): void;
   dispose(): void;
 }
 
@@ -37,6 +44,10 @@ export function createWorkspaceRow(opts: WorkspaceRowOptions): WorkspaceRowHandl
   const wrapper = document.createElement("div");
   wrapper.className = "ws-workspace";
   wrapper.dataset.workspaceId = workspace.id;
+  // F4: tint the workspace row using the explicit color, or a stable
+  // deterministic fallback derived from the id. CSS maps [data-color="X"] to
+  // var(--ws-color-X) — see styles.css.
+  wrapper.dataset.color = workspace.color ?? deterministicColor(workspace.id);
   if (workspace.collapsed) wrapper.classList.add("collapsed");
 
   const header = document.createElement("div");
@@ -140,6 +151,10 @@ export function createWorkspaceRow(opts: WorkspaceRowOptions): WorkspaceRowHandl
           onSelect: () => controller.resetAlphabeticalOrder(workspace.id),
         },
         {
+          label: "Apariencia…",
+          onSelect: () => openAppearance(),
+        },
+        {
           label: "Delete workspace",
           danger: true,
           onSelect: () => void controller.deleteWorkspace(workspace.id),
@@ -159,12 +174,29 @@ export function createWorkspaceRow(opts: WorkspaceRowOptions): WorkspaceRowHandl
     }
   }
 
+  // Track the currently open appearance picker so we can tear it down on row
+  // dispose (e.g. when the workspace tree re-renders mid-edit).
+  let appearancePicker: { dispose(): void } | null = null;
+  function openAppearance(): void {
+    appearancePicker?.dispose();
+    appearancePicker = openAppearancePicker({
+      trigger: menuBtn,
+      currentColor: workspace.color,
+      onPickColor: (color) => controller.setWorkspaceColor(workspace.id, color),
+    });
+  }
+
   return {
     element: wrapper,
     setLiveCount(projectId: ProjectId, n: number): void {
       projectHandles.get(projectId)?.setLiveCount(n);
     },
+    setBellPending(projectId: ProjectId, pending: boolean): void {
+      projectHandles.get(projectId)?.setBellPending(pending);
+    },
     dispose(): void {
+      appearancePicker?.dispose();
+      appearancePicker = null;
       for (const off of listeners.splice(0)) off();
       for (const handle of projectHandles.values()) handle.dispose();
       projectHandles.clear();

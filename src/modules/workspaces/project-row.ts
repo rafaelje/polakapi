@@ -1,3 +1,5 @@
+import { deterministicColor } from "./appearance-defaults";
+import { openAppearancePicker } from "./appearance-picker";
 import { openRowMenu } from "./row-menu";
 import { startInlineRename } from "./rename-inline";
 import type { Project, ProjectId, Workspace, WorkspaceId } from "./types";
@@ -26,6 +28,12 @@ export interface ProjectRowHandle {
   element: HTMLElement;
   /** Update the live-terminals badge without re-rendering the row. */
   setLiveCount(n: number): void;
+  /**
+   * F5: toggles `.has-bell` on the row. The class drives the unread-bell
+   * visual (small dot / red glow) defined in styles.css. Cleared by the
+   * bootstrap when the project becomes active.
+   */
+  setBellPending(pending: boolean): void;
   dispose(): void;
 }
 
@@ -45,6 +53,9 @@ export function createProjectRow(opts: ProjectRowOptions): ProjectRowHandle {
   if (project.pathInvalid) row.classList.add("invalid");
   row.dataset.projectId = project.id;
   row.dataset.workspaceId = workspaceId;
+  // F4: same color resolution as workspace-row — explicit override wins,
+  // otherwise the deterministic palette so the row still picks up a tint.
+  row.dataset.color = project.color ?? deterministicColor(project.id);
   row.setAttribute("draggable", "true");
 
   const dot = document.createElement("span");
@@ -137,6 +148,10 @@ export function createProjectRow(opts: ProjectRowOptions): ProjectRowHandle {
         { label: "Duplicate", onSelect: () => controller.duplicateProject(project.id) },
         ...buildMoveSubmenuItems(controller, project.id, workspaceId),
         {
+          label: "Apariencia…",
+          onSelect: () => openAppearance(),
+        },
+        {
           label: "Delete",
           danger: true,
           onSelect: () => void runDelete(),
@@ -189,12 +204,29 @@ export function createProjectRow(opts: ProjectRowOptions): ProjectRowHandle {
     }
   }
 
+  // F4: appearance picker handle, disposed alongside the row so a popover
+  // left open during a re-render is cleaned up.
+  let appearancePicker: { dispose(): void } | null = null;
+  function openAppearance(): void {
+    appearancePicker?.dispose();
+    appearancePicker = openAppearancePicker({
+      trigger: menuBtn,
+      currentColor: project.color,
+      onPickColor: (color) => controller.setProjectColor(project.id, color),
+    });
+  }
+
   return {
     element: row,
     setLiveCount(n: number): void {
       applyBadge(n);
     },
+    setBellPending(pending: boolean): void {
+      row.classList.toggle("has-bell", pending);
+    },
     dispose(): void {
+      appearancePicker?.dispose();
+      appearancePicker = null;
       for (const off of listeners.splice(0)) off();
       row.remove();
     },

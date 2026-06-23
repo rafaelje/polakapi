@@ -13,6 +13,10 @@ import { wireToggles } from "../modules/layout/panel-toggles";
 import { type SidebarTarget } from "../modules/layout/types";
 import { applyNotesHeight } from "../modules/notes/notes-panel";
 import { persistNotesHeight as queueNotesHeightSave } from "../modules/notes/notes-persistence";
+import {
+  mountCommandPalette,
+  type CommandPaletteHandle,
+} from "../modules/workspaces/command-palette";
 import { bootstrapWorkspaces, type WorkspacesBootstrapHandle } from "./workspaces-bootstrap";
 import { wireWindowLifecycle } from "./lifecycle";
 import { wireQuitConfirm } from "./quit-confirm";
@@ -26,11 +30,20 @@ const MAX_GRID_COLS = 8;
 export class AppController {
   private readonly router: TerminalRouter;
   private workspaces: WorkspacesBootstrapHandle | null = null;
+  private palette: CommandPaletteHandle | null = null;
   private unwireShortcuts: (() => void) | null = null;
   private unwireWindowLifecycle: (() => void) | null = null;
   private unwireQuitConfirm: (() => void) | null = null;
+  private unwireFocus: (() => void) | null = null;
   private unlistenData: UnlistenFn | null = null;
   private unlistenExit: UnlistenFn | null = null;
+  /**
+   * F5: cached window focus state. document.hasFocus() can lie momentarily
+   * during alt-tab on macOS, so we track the focus/blur transitions ourselves
+   * and treat the initial "before first focus event" as not-focused so the
+   * first bell after launch still fires when warranted.
+   */
+  private windowFocused = false;
   private disposed = false;
 
   constructor(private readonly elements: AppElements) {
@@ -52,6 +65,7 @@ export class AppController {
     this.wireGutters();
     this.wirePanelToggles();
     this.wireKeyboardShortcuts();
+    this.wireWindowFocus();
     this.unwireWindowLifecycle = wireWindowLifecycle({
       onBeforeUnload: () => this.dispose(),
       onResize: () => this.router.getActive()?.refit(),
@@ -61,7 +75,13 @@ export class AppController {
       elements: this.elements,
       router: this.router,
       clampGridCols: (value) => this.clampGridCols(value),
+      isWindowFocused: () => this.windowFocused,
     });
+
+    // Mount the command palette once the controller is ready. The shortcut
+    // handler resolves through `this.palette?` so the Cmd-P keybinding wired
+    // earlier in start() is a no-op until this line runs.
+    this.palette = mountCommandPalette({ controller: this.workspaces.controller });
 
     // Wire the quit hook *after* workspaces is ready so the modal can resolve
     // project names by looking the controller's state up at confirm time.
@@ -86,6 +106,11 @@ export class AppController {
     this.unwireWindowLifecycle = null;
     this.unwireQuitConfirm?.();
     this.unwireQuitConfirm = null;
+    this.unwireFocus?.();
+    this.unwireFocus = null;
+
+    this.palette?.dispose();
+    this.palette = null;
 
     const workspaces = this.workspaces;
     this.workspaces = null;
@@ -162,6 +187,25 @@ export class AppController {
     );
   }
 
+  private wireWindowFocus(): void {
+    // Seed from the synchronous probe — false on cold start (no focus event
+    // fired yet) is intentional: first bell after launch should still fire if
+    // the user is alt-tabbed away.
+    this.windowFocused = document.hasFocus();
+    const onFocus = (): void => {
+      this.windowFocused = true;
+    };
+    const onBlur = (): void => {
+      this.windowFocused = false;
+    };
+    window.addEventListener("focus", onFocus);
+    window.addEventListener("blur", onBlur);
+    this.unwireFocus = (): void => {
+      window.removeEventListener("focus", onFocus);
+      window.removeEventListener("blur", onBlur);
+    };
+  }
+
   private wireKeyboardShortcuts(): void {
     this.unwireShortcuts = wireShortcuts({
       newPane: () => void this.router.getActive()?.addPane(),
@@ -169,6 +213,8 @@ export class AppController {
       focusByIndex: (idx) => this.router.getActive()?.focusByIndex(idx),
       focusPrev: () => this.router.getActive()?.focusRelative(-1),
       focusNext: () => this.router.getActive()?.focusRelative(1),
+      // Resolved lazily so the keybinding is harmless before bootstrap mounts.
+      togglePalette: () => this.palette?.toggle(),
     });
   }
 

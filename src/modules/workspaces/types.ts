@@ -7,13 +7,21 @@ export type { TerminalSpec };
 export type WorkspaceId = string & { readonly __brand: "WorkspaceId" };
 export type ProjectId = string & { readonly __brand: "ProjectId" };
 
+/**
+ * F4: closed set of color tokens applied to workspaces and projects. Kept as a
+ * union literal so reducer helpers, the appearance picker and the CSS layer
+ * can all rely on the same vocabulary. Persisted as a plain string at
+ * runtime — older payloads with arbitrary strings are tolerated by readers
+ * (they fall back to the deterministic palette via `deriveFallbackColor`).
+ */
+export type ColorToken = "slate" | "blue" | "purple" | "pink" | "green" | "orange";
+
 export interface Project {
   id: ProjectId;
   name: string;
   /** Absolute path. Validated at creation time and on startup. */
   path: string;
-  icon?: string;
-  color?: string;
+  color?: ColorToken;
   /** If undefined, the row is sorted alphabetically by name. */
   order?: number;
   /** Set on startup when fs_validate_path fails for this project. */
@@ -39,7 +47,7 @@ export interface Project {
 export interface Workspace {
   id: WorkspaceId;
   name: string;
-  color?: string;
+  color?: ColorToken;
   collapsed?: boolean;
   /** If undefined, the workspace is sorted alphabetically by name. */
   order?: number;
@@ -65,8 +73,7 @@ export interface CreateProjectInput {
   name: string;
   /** Must already be validated by the caller. */
   path: string;
-  icon?: string;
-  color?: string;
+  color?: ColorToken;
 }
 
 export type WorkspacesEvent =

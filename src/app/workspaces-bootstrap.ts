@@ -3,6 +3,7 @@ import { ptyWrite } from "../modules/terminal/pty-client";
 import { WorkspacesController } from "../modules/workspaces/workspaces-controller";
 import {
   mountWorkspacesPanel,
+  type BellPendingSource,
   type WorkspacesPanelHandle,
 } from "../modules/workspaces/workspaces-panel";
 import type { Project, ProjectId } from "../modules/workspaces/types";
@@ -12,12 +13,18 @@ import type { NotesPanelHandle, NotesSource } from "../modules/notes/types";
 import { mountProjectPane, type ProjectPaneHandle } from "./project-pane";
 import { mountBreadcrumb, type BreadcrumbHandle } from "./breadcrumb";
 import { type AppElements } from "./elements";
-import type { TerminalRouter } from "./terminal-router";
+import type { TerminalRouter, TerminalRouterEvent } from "./terminal-router";
 
 export interface WorkspacesBootstrapOptions {
   elements: AppElements;
   router: TerminalRouter;
   clampGridCols: (value: number) => number;
+  /**
+   * F5: live OS window focus probe. Wired in AppController from window
+   * focus/blur listeners so the bell wiring can suppress notifications while
+   * the user is actively looking at the active project.
+   */
+  isWindowFocused: () => boolean;
 }
 
 export interface WorkspacesBootstrapHandle {
@@ -40,13 +47,71 @@ export interface WorkspacesBootstrapHandle {
 export async function bootstrapWorkspaces(
   opts: WorkspacesBootstrapOptions,
 ): Promise<WorkspacesBootstrapHandle> {
-  const { elements, router, clampGridCols } = opts;
+  const { elements, router, clampGridCols, isWindowFocused } = opts;
 
   const controller = await WorkspacesController.load();
+
+  // F5: tiny bell bus. The router emits per-pane `bell-pending` events; the
+  // panel only needs an `on(listener)` subscription. We re-broadcast the
+  // router's events through this bus so the bootstrap can also synthesise a
+  // reset event when a project becomes active (no router event would fire
+  // for "the user just looked at the bells", so we do it here).
+  type BellEvent = {
+    type: "bell-pending";
+    projectId: ProjectId;
+    paneId: string;
+    pending: boolean;
+  };
+  const bellListeners = new Set<(e: BellEvent) => void>();
+  const bellSource: BellPendingSource = {
+    on: (listener) => {
+      bellListeners.add(listener);
+      return () => {
+        bellListeners.delete(listener);
+      };
+    },
+  };
+  const emitBell = (event: BellEvent): void => {
+    for (const listener of bellListeners) {
+      try {
+        listener(event);
+      } catch (error) {
+        console.error("Bell listener threw", error);
+      }
+    }
+  };
+  const unsubscribeRouterBell = router.on((event: TerminalRouterEvent) => {
+    if (event.type !== "bell-pending") return;
+    emitBell({
+      type: "bell-pending",
+      projectId: event.projectId,
+      paneId: event.paneId,
+      pending: event.pending,
+    });
+  });
+
+  // F5: wire the router's notification context. The lookups are late-bound so
+  // project renames flow into OS notifications without re-registration.
+  router.setNotificationContext({
+    getActiveProjectId: () => controller.getActiveProject()?.id ?? null,
+    isWindowFocused,
+    getProjectName: (projectId) =>
+      findProject(controller.getState(), projectId)?.project.name ?? "",
+    onBellPending: (projectId, paneId, pending) => {
+      // Router already re-emits via its own listener path; nothing to do here
+      // beyond satisfying the manager's interface. Kept as an explicit hook in
+      // case a future feature wants per-manager analytics.
+      void projectId;
+      void paneId;
+      void pending;
+    },
+  });
+
   const panel = mountWorkspacesPanel({
     root: elements.sidebarLeft,
     controller,
     liveCounts: router,
+    bellSource,
   });
 
   // Track which projects have already restored their persisted specs so a
@@ -138,6 +203,12 @@ export async function bootstrapWorkspaces(
       refreshActiveContext();
       void activateProject(event.project);
       const pid = event.project?.id ?? null;
+      // F5: clear any pending bells for the project the user just opened.
+      // paneId="" is the panel-side convention for "clear all panes of this
+      // project" (see workspaces-panel.ts coalesce logic).
+      if (pid) {
+        emitBell({ type: "bell-pending", projectId: pid, paneId: "", pending: false });
+      }
       for (const listener of notesListeners) {
         try {
           listener(pid);
@@ -159,6 +230,9 @@ export async function bootstrapWorkspaces(
   const unsubscribe = (): void => {
     unsubscribeController();
     unwireDeleteHook();
+    unsubscribeRouterBell();
+    bellListeners.clear();
+    router.setNotificationContext(null);
     notesListeners.clear();
   };
 

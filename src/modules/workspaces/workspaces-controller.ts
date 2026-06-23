@@ -9,6 +9,7 @@ import { openCreateProjectForm, openEditProjectPathForm } from "./project-form";
 import { applyPathValidationResults, collectPathValidationResults } from "./revalidate-paths";
 import { openCreateWorkspaceForm } from "./workspace-form";
 import type {
+  ColorToken,
   Project,
   ProjectId,
   TerminalSpec,
@@ -35,9 +36,11 @@ import {
   replaceTerminalSpecs,
   resetAlphabeticalOrder,
   setActiveProject,
+  setProjectColor,
   setProjectCols,
   setProjectNotes,
   setProjectPathInvalid,
+  setWorkspaceColor,
   toggleCollapsed,
   updateTerminalSpec,
 } from "./workspaces-reducer";
@@ -123,6 +126,21 @@ export class WorkspacesController {
     return created;
   }
 
+  /**
+   * Non-interactive project creation. Callers (e.g. Finder drop) must have
+   * already validated the path. The resulting commit fires the same
+   * `state-changed` event as `createProjectInteractive`, so the sidebar
+   * re-renders normally.
+   */
+  addProject(workspaceId: WorkspaceId, input: { name: string; path: string }): Project | null {
+    const workspace = this.state.workspaces.find((w) => w.id === workspaceId);
+    if (!workspace) return null;
+    const before = workspace.projects.length;
+    this.commit(addProject(this.state, { workspaceId, name: input.name, path: input.path }));
+    const updated = this.state.workspaces.find((w) => w.id === workspaceId);
+    return updated?.projects[before] ?? null;
+  }
+
   renameProject(id: ProjectId, name: string): void {
     const trimmed = name.trim();
     if (!trimmed) return;
@@ -187,6 +205,15 @@ export class WorkspacesController {
   // queueSaveWorkspaces 300ms window collapse adjacent writes.
   setProjectNotes = (projectId: ProjectId, notes: string): void =>
     this.commit(setProjectNotes(this.state, projectId, notes));
+
+  // F4: appearance (color) wrappers. Thin commit wrappers — same
+  // arrow-property style as the terminal/notes setters above. Pass `undefined`
+  // to clear the field and fall back to the deterministic palette at render
+  // time.
+  setWorkspaceColor = (id: WorkspaceId, color: ColorToken | undefined): void =>
+    this.commit(setWorkspaceColor(this.state, id, color));
+  setProjectColor = (id: ProjectId, color: ColorToken | undefined): void =>
+    this.commit(setProjectColor(this.state, id, color));
 
   /** Returns the project's notes, or '' when project is missing or unset. */
   getProjectNotes(projectId: ProjectId): string {

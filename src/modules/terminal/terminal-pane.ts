@@ -3,7 +3,11 @@ import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { ptySpawn, ptyWrite, ptyResize, ptyKill } from "./pty-client";
 import { terminalTheme } from "./terminal-theme";
+import { openPaneMenu } from "./terminal-pane-menu";
+import type { StartupCmdEditCallbacks } from "./terminal-pane-types";
 import { type PaneCreateOptions } from "./types";
+
+export type { StartupCmdEditCallbacks };
 
 export class TerminalPane {
   ptyId = "";
@@ -11,9 +15,11 @@ export class TerminalPane {
   readonly bodyEl: HTMLElement;
   readonly titleEl: HTMLElement;
   readonly closeBtn: HTMLButtonElement;
+  readonly menuBtn: HTMLButtonElement;
   private term: Terminal;
   private fitAddon: FitAddon;
   private readonly disposables: Array<{ dispose(): void }> = [];
+  private startupCmdCallbacks: StartupCmdEditCallbacks | null = null;
 
   constructor() {
     this.el = document.createElement("div");
@@ -25,10 +31,19 @@ export class TerminalPane {
     this.titleEl = document.createElement("div");
     this.titleEl.className = "title";
     this.titleEl.textContent = "shell";
+    this.menuBtn = document.createElement("button");
+    this.menuBtn.type = "button";
+    this.menuBtn.className = "pane-menu-btn";
+    this.menuBtn.textContent = "⋮";
+    this.menuBtn.title = "Pane menu";
     this.closeBtn = document.createElement("button");
     this.closeBtn.textContent = "×";
     this.closeBtn.title = "Close terminal";
-    header.append(this.titleEl, this.closeBtn);
+    header.append(this.titleEl, this.menuBtn, this.closeBtn);
+    this.menuBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      this.openPaneMenu();
+    });
 
     this.bodyEl = document.createElement("div");
     this.bodyEl.className = "pane-body";
@@ -90,6 +105,44 @@ export class TerminalPane {
 
   focus(): void {
     this.term.focus();
+  }
+
+  /**
+   * F5: thin wrapper around xterm's `onBell`. Returns the IDisposable directly
+   * so the notification module can tear it down without holding a reference to
+   * the underlying Terminal instance. Also tracked here in `disposables` so a
+   * pane.dispose() always cleans up even if the caller forgets to dispose.
+   */
+  onBell(callback: () => void): { dispose(): void } {
+    const xtermDisposable = this.term.onBell(callback);
+    const wrapper = {
+      dispose: (): void => {
+        xtermDisposable.dispose();
+        const idx = this.disposables.indexOf(wrapper);
+        if (idx >= 0) this.disposables.splice(idx, 1);
+      },
+    };
+    this.disposables.push(wrapper);
+    return wrapper;
+  }
+
+  /**
+   * Wires the callbacks that drive the "Edit startup command" menu item.
+   * Called by TerminalManager once the spec for this pane is known. Without
+   * callbacks the menu still opens but the item is hidden.
+   */
+  setStartupCmdCallbacks(callbacks: StartupCmdEditCallbacks | null): void {
+    this.startupCmdCallbacks = callbacks;
+  }
+
+  private openPaneMenu(): void {
+    const callbacks = this.startupCmdCallbacks;
+    if (!callbacks) return;
+    openPaneMenu({
+      trigger: this.menuBtn,
+      getStartupCmd: () => callbacks.getStartupCmd(),
+      onChangeStartupCmd: (next) => callbacks.onChange(next),
+    });
   }
 
   private safeFit(): void {

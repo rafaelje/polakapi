@@ -1,4 +1,7 @@
+import { showToast } from "../../shared/ui/toast";
 import { attach as attachDragDrop, type DragDropHandle } from "./drag-drop";
+import { attachFinderDrop, type FinderDropHandle } from "./finder-drop";
+import { validatePath } from "./path-validation";
 import { createWorkspaceRow, type WorkspaceRowHandle } from "./workspace-row";
 import { createSidebarEmptyState, type EmptyStateHandle } from "./workspaces-empty-state";
 import { sortedWorkspaces } from "./workspaces-reducer";
@@ -10,11 +13,34 @@ import type { WorkspacesController } from "./workspaces-controller";
  * minimal structural type so the panel does not depend on the router class
  * directly (avoids an import cycle and keeps the module testable in isolation).
  */
+/**
+ * Live-count event the panel cares about. Kept as a discriminated union with
+ * an open shape so callers (the TerminalRouter) can emit additional variants
+ * — only `counts-changed` is consumed here.
+ */
+export type LiveCountEvent =
+  | { type: "counts-changed"; counts: ReadonlyMap<ProjectId, number> }
+  | { type: string; [key: string]: unknown };
+
 export interface LiveCountSource {
   getCount(projectId: ProjectId): number;
   liveCountsByProject(): ReadonlyMap<ProjectId, number>;
+  on(listener: (event: LiveCountEvent) => void): () => void;
+}
+
+/**
+ * F5: optional bell-pending stream the panel forwards to project rows. Kept
+ * structural (and decoupled from TerminalRouter) so the panel module remains
+ * unit-testable without the router dependency.
+ */
+export interface BellPendingSource {
   on(
-    listener: (event: { type: "counts-changed"; counts: ReadonlyMap<ProjectId, number> }) => void,
+    listener: (event: {
+      type: "bell-pending";
+      projectId: ProjectId;
+      paneId: string;
+      pending: boolean;
+    }) => void,
   ): () => void;
 }
 
@@ -23,6 +49,8 @@ export interface WorkspacesPanelOptions {
   controller: WorkspacesController;
   /** Optional. When provided, the panel surfaces live PTY counts in badges. */
   liveCounts?: LiveCountSource;
+  /** Optional. When provided, the panel toggles `.has-bell` on rows. */
+  bellSource?: BellPendingSource;
 }
 
 export interface WorkspacesPanelHandle {
@@ -38,7 +66,7 @@ export interface WorkspacesPanelHandle {
  * updates out to the matching rows without re-rendering the panel.
  */
 export function mountWorkspacesPanel(opts: WorkspacesPanelOptions): WorkspacesPanelHandle {
-  const { root, controller, liveCounts } = opts;
+  const { root, controller, liveCounts, bellSource } = opts;
 
   const previousContent = Array.from(root.childNodes);
   root.replaceChildren();
@@ -73,6 +101,14 @@ export function mountWorkspacesPanel(opts: WorkspacesPanelOptions): WorkspacesPa
   addBtn.addEventListener("click", onAddClick);
 
   const dnd: DragDropHandle = attachDragDrop(body, { controller });
+  // F4 Feature 2: native Finder drag&drop of folders into workspaces. The
+  // highlight reuses `.ws-drop-target` so the visual language matches the
+  // in-app dnd above.
+  const finderDrop: FinderDropHandle = attachFinderDrop(body, {
+    controller,
+    validatePath,
+    toast: (msg, kind) => showToast(msg, kind ?? "info"),
+  });
 
   const liveCountFor = (projectId: ProjectId): number => liveCounts?.getCount(projectId) ?? 0;
 
@@ -112,20 +148,51 @@ export function mountWorkspacesPanel(opts: WorkspacesPanelOptions): WorkspacesPa
   const unsubscribeCounts =
     liveCounts?.on((event) => {
       if (event.type !== "counts-changed") return;
-      for (const [projectId, count] of event.counts) {
+      const counts = (event as { counts: ReadonlyMap<ProjectId, number> }).counts;
+      for (const [projectId, count] of counts) {
         for (const handle of handles) handle.setLiveCount(projectId, count);
       }
+    }) ?? null;
+
+  // F5: coalesce rapid bells at the panel layer. The router emits one event
+  // per pane bell; the row only cares whether ANY of its panes has a pending
+  // bell. We map projectId → Set<paneId> of pending panes; the row class is
+  // toggled on the size transition 0↔1.
+  const pendingByProject = new Map<ProjectId, Set<string>>();
+  const unsubscribeBells =
+    bellSource?.on((event) => {
+      if (event.type !== "bell-pending") return;
+      let set = pendingByProject.get(event.projectId);
+      const wasPending = (set?.size ?? 0) > 0;
+      if (event.pending) {
+        if (!set) {
+          set = new Set();
+          pendingByProject.set(event.projectId, set);
+        }
+        set.add(event.paneId);
+      } else if (set) {
+        // pending=false with paneId clears that pane only; pending=false with
+        // an empty paneId (sent by the activation reset) clears everything.
+        if (event.paneId) set.delete(event.paneId);
+        else set.clear();
+      }
+      const isPending = (pendingByProject.get(event.projectId)?.size ?? 0) > 0;
+      if (wasPending === isPending) return;
+      for (const handle of handles) handle.setBellPending(event.projectId, isPending);
     }) ?? null;
 
   return {
     unmount(): void {
       unsubscribeController();
       unsubscribeCounts?.();
+      unsubscribeBells?.();
+      finderDrop.detach();
       dnd.detach();
       addBtn.removeEventListener("click", onAddClick);
       for (const handle of handles.splice(0)) handle.dispose();
       emptyState?.dispose();
       emptyState = null;
+      pendingByProject.clear();
       root.replaceChildren(...previousContent);
       root.classList.remove("ws-panel");
     },

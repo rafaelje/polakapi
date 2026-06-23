@@ -4,6 +4,8 @@ export interface ShortcutHandlers {
   focusByIndex: (idx: number) => void;
   focusPrev: () => void;
   focusNext: () => void;
+  /** F4: Cmd-P / Ctrl-P → toggle the global command palette. */
+  togglePalette: () => void;
 }
 
 /**
@@ -29,6 +31,13 @@ export function wireShortcuts(handlers: ShortcutHandlers): () => void {
     if (e.key.toLowerCase() === "w" && !e.shiftKey) {
       e.preventDefault();
       handlers.closeFocused();
+      return;
+    }
+    // Cmd+P → toggle command palette. Cmd-P is the browser/webview print
+    // shortcut so we MUST preventDefault before the OS panel surfaces.
+    if (e.key.toLowerCase() === "p" && !e.shiftKey) {
+      e.preventDefault();
+      handlers.togglePalette();
       return;
     }
     // Cmd+[ / Cmd+] → prev/next

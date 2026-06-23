@@ -1,3 +1,4 @@
+import { deterministicColor } from "../modules/workspaces/appearance-defaults";
 import type { Project, Workspace } from "../modules/workspaces/types";
 
 export interface BreadcrumbOptions {
@@ -39,7 +40,15 @@ export function mountBreadcrumb(opts: BreadcrumbOptions): BreadcrumbHandle {
       host.append(placeholder);
       return;
     }
+    // F4: surface the workspace tint on the breadcrumb segment so the CSS
+    // `[data-color="X"]` rule maps to `--ws-accent`. Project segment picks up
+    // its own color when set, falling back to the workspace's color (so the
+    // breadcrumb reads as one tinted chain rather than two unrelated chips).
+    const wsColor = workspace.color ?? deterministicColor(workspace.id);
+    workspaceEl.dataset.color = wsColor;
     workspaceEl.textContent = workspace.name;
+    const projColor = project.color ?? wsColor;
+    projectEl.dataset.color = projColor;
     projectEl.textContent = project.name;
     host.append(workspaceEl, separator, projectEl);
   };

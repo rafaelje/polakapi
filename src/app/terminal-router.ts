@@ -1,13 +1,16 @@
-import { TerminalManager, type TerminalManagerEvent } from "../modules/terminal/terminal-manager";
+import {
+  TerminalManager,
+  type NotificationContext,
+  type TerminalManagerEvent,
+} from "../modules/terminal/terminal-manager";
 import type { TerminalPane } from "../modules/terminal/terminal-pane";
 import type { TerminalSpec } from "../modules/terminal/types";
 import { ptyKill } from "../modules/terminal/pty-client";
 import type { Project, ProjectId } from "../modules/workspaces/types";
 
-export type TerminalRouterEvent = {
-  type: "counts-changed";
-  counts: ReadonlyMap<ProjectId, number>;
-};
+export type TerminalRouterEvent =
+  | { type: "counts-changed"; counts: ReadonlyMap<ProjectId, number> }
+  | { type: "bell-pending"; projectId: ProjectId; paneId: string; pending: boolean };
 
 export type TerminalRouterListener = (event: TerminalRouterEvent) => void;
 
@@ -34,8 +37,20 @@ export class TerminalRouter {
   private activeProjectId: ProjectId | null = null;
   private activeHost: HTMLElement | null = null;
   private mountToken = 0;
+  private notificationContext: NotificationContext | null = null;
 
   constructor(private readonly opts: TerminalRouterOptions) {}
+
+  /**
+   * F5: late-bind a notification context that every existing AND future
+   * TerminalManager will use. Applied retroactively to the managers map so a
+   * manager created during boot (before workspaces-bootstrap had a chance to
+   * wire window-focus state) still picks up bell wiring on the next addPane.
+   */
+  setNotificationContext(ctx: NotificationContext | null): void {
+    this.notificationContext = ctx;
+    for (const manager of this.managers.values()) manager.setNotificationContext(ctx);
+  }
 
   getOrCreate(project: Project): TerminalManager {
     const existing = this.managers.get(project.id);
@@ -44,6 +59,7 @@ export class TerminalRouter {
       projectId: project.id,
       defaultCwd: project.path,
       gridCols: project.terminalCols ?? this.opts.defaultGridCols,
+      notificationContext: this.notificationContext ?? undefined,
     });
     this.managers.set(project.id, manager);
     const unsubscribe = manager.on((event) => this.onManagerEvent(event));
@@ -177,14 +193,24 @@ export class TerminalRouter {
       this.emitCounts();
     } else if (event.type === "spec-changed") {
       this.opts.onPersistSpecs(event.projectId, event.specs);
+    } else if (event.type === "bell-pending") {
+      this.emit({
+        type: "bell-pending",
+        projectId: event.projectId,
+        paneId: event.paneId,
+        pending: event.pending,
+      });
     }
   }
 
   private emitCounts(): void {
-    const counts = this.liveCountsByProject();
+    this.emit({ type: "counts-changed", counts: this.liveCountsByProject() });
+  }
+
+  private emit(event: TerminalRouterEvent): void {
     for (const listener of this.listeners) {
       try {
-        listener({ type: "counts-changed", counts });
+        listener(event);
       } catch (error) {
         console.error("TerminalRouter listener threw", error);
       }

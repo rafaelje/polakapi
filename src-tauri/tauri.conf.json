@@ -16,7 +16,8 @@
         "title": "polakapi",
         "label": "main",
         "width": 1400,
-        "height": 900
+        "height": 900,
+        "dragDropEnabled": true
       }
     ],
     "security": {

@@ -80,7 +80,6 @@ export function addProject(state: WorkspacesState, input: CreateProjectInput): W
     id: newProjectId(),
     name: input.name,
     path: input.path,
-    icon: input.icon,
     color: input.color,
   };
   return mapWorkspaces(state, (w) =>
@@ -244,3 +243,12 @@ export {
 
 // F3 per-project notes helper — same pattern as the terminals re-export above.
 export { setProjectNotes } from "./workspaces-reducer-notes";
+
+// F4 appearance (color) helpers — same re-export pattern so callers can
+// keep importing from "./workspaces-reducer".
+export {
+  PALETTE,
+  deriveFallbackColor,
+  setProjectColor,
+  setWorkspaceColor,
+} from "./workspaces-reducer-appearance";
