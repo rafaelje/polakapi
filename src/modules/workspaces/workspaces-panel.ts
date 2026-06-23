@@ -1,6 +1,7 @@
 import { showToast } from "../../shared/ui/toast";
 import { attach as attachDragDrop, type DragDropHandle } from "./drag-drop";
 import { attachFinderDrop, type FinderDropHandle } from "./finder-drop";
+import { matchesProject } from "./project-filter";
 import { validatePath } from "./path-validation";
 import { createWorkspaceRow, type WorkspaceRowHandle } from "./workspace-row";
 import { createSidebarEmptyState, type EmptyStateHandle } from "./workspaces-empty-state";
@@ -79,13 +80,21 @@ export function mountWorkspacesPanel(opts: WorkspacesPanelOptions): WorkspacesPa
   title.className = "ws-panel-title";
   title.textContent = "workspaces";
 
+  const search = document.createElement("input");
+  search.type = "search";
+  search.className = "ws-panel-search";
+  search.placeholder = "Filter projects…";
+  search.setAttribute("aria-label", "Filter projects");
+  search.autocomplete = "off";
+  search.spellcheck = false;
+
   const addBtn = document.createElement("button");
   addBtn.type = "button";
   addBtn.className = "ws-panel-add";
   addBtn.title = "New workspace";
   addBtn.textContent = "+";
 
-  header.append(title, addBtn);
+  header.append(title, search, addBtn);
 
   const body = document.createElement("div");
   body.className = "ws-panel-body";
@@ -94,11 +103,18 @@ export function mountWorkspacesPanel(opts: WorkspacesPanelOptions): WorkspacesPa
 
   const handles: WorkspaceRowHandle[] = [];
   let emptyState: EmptyStateHandle | null = null;
+  let query = "";
 
   const onAddClick = (): void => {
     void controller.createWorkspaceInteractive();
   };
   addBtn.addEventListener("click", onAddClick);
+
+  const onSearchInput = (): void => {
+    query = search.value;
+    render();
+  };
+  search.addEventListener("input", onSearchInput);
 
   const dnd: DragDropHandle = attachDragDrop(body, { controller });
   // F4 Feature 2: native Finder drag&drop of folders into workspaces. The
@@ -127,11 +143,22 @@ export function mountWorkspacesPanel(opts: WorkspacesPanelOptions): WorkspacesPa
       return;
     }
 
+    const activeQuery = query.trim();
     for (const workspace of sortedWorkspaces(state)) {
+      // When a search is active, skip workspaces that have no matching
+      // projects entirely — the row helper would render an empty header
+      // with no children, which is noise.
+      if (activeQuery) {
+        const hasMatch = workspace.projects.some((p) =>
+          matchesProject(activeQuery, workspace.name, p),
+        );
+        if (!hasMatch) continue;
+      }
       const handle = createWorkspaceRow({
         workspace,
         controller,
         liveCountFor: liveCounts ? liveCountFor : undefined,
+        filterQuery: activeQuery,
       });
       handles.push(handle);
       body.append(handle.element);
@@ -189,6 +216,7 @@ export function mountWorkspacesPanel(opts: WorkspacesPanelOptions): WorkspacesPa
       finderDrop.detach();
       dnd.detach();
       addBtn.removeEventListener("click", onAddClick);
+      search.removeEventListener("input", onSearchInput);
       for (const handle of handles.splice(0)) handle.dispose();
       emptyState?.dispose();
       emptyState = null;

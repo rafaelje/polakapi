@@ -1,9 +1,10 @@
 import { deterministicColor } from "./appearance-defaults";
 import { openAppearancePicker } from "./appearance-picker";
 import { createProjectRow, type ProjectRowHandle } from "./project-row";
+import { filterProjects } from "./project-filter";
 import { openRowMenu } from "./row-menu";
 import { startInlineRename } from "./rename-inline";
-import type { ProjectId, Workspace } from "./types";
+import type { Project, ProjectId, Workspace } from "./types";
 import type { WorkspacesController } from "./workspaces-controller";
 import { sortedProjects } from "./workspaces-reducer";
 
@@ -16,6 +17,11 @@ export interface WorkspaceRowOptions {
    * created rows already show the right badge before the next event fires.
    */
   liveCountFor?: (projectId: ProjectId) => number;
+  /**
+   * Optional sidebar search query. When non-empty, only projects matching the
+   * query are rendered. Workspaces with zero matches are hidden by the panel.
+   */
+  filterQuery?: string;
 }
 
 export interface WorkspaceRowHandle {
@@ -88,7 +94,13 @@ export function createWorkspaceRow(opts: WorkspaceRowOptions): WorkspaceRowHandl
   const activeProjectId = controller.getState().activeProjectId;
   const liveCountFor = opts.liveCountFor;
 
-  for (const project of sortedProjects(workspace)) {
+  const visibleProjects: Project[] = filterProjects(
+    opts.filterQuery ?? "",
+    workspace,
+    sortedProjects(workspace),
+  );
+
+  for (const project of visibleProjects) {
     const initialCount = liveCountFor ? liveCountFor(project.id) : 0;
     const handle = createProjectRow({
       project,
