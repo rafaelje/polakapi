@@ -8,3 +8,13 @@ export interface StartupCmdEditCallbacks {
   getStartupCmd(): string | undefined;
   onChange(next: string | undefined): void;
 }
+
+/**
+ * Callbacks driving the CLI badge click → respawn flow. Injected by the
+ * TerminalManager so the pane can show the respawn menu without knowing how
+ * to swap a PTY in place.
+ */
+export interface CliRespawnCallbacks {
+  getCurrentCliId(): string;
+  onRespawnRequest(cliId: string): void;
+}

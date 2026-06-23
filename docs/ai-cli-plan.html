@@ -1,0 +1,1554 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Plan · AI CLI en Terminales · polakapi</title>
+    <style>
+      :root {
+        --bg: #0f1115;
+        --bg-2: #161922;
+        --bg-3: #1d2230;
+        --bg-4: #232a3a;
+        --line: #2a3142;
+        --line-soft: #222838;
+        --text: #e6e8ee;
+        --text-dim: #9aa3b4;
+        --text-mute: #6c7589;
+        --accent: #7cc4ff;
+        --accent-2: #b48cff;
+        --ok: #6ee7a3;
+        --warn: #ffd166;
+        --danger: #ff7a8a;
+        --claude: #d97757;
+        --codex: #10a37f;
+        --opencode: #7cc4ff;
+        --mono: ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, Consolas, monospace;
+        --sans:
+          -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, Helvetica, Arial,
+          sans-serif;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-family: var(--sans);
+        line-height: 1.55;
+        -webkit-font-smoothing: antialiased;
+      }
+      .wrap {
+        max-width: 980px;
+        margin: 0 auto;
+        padding: 56px 28px 96px;
+      }
+      header.hero {
+        border-bottom: 1px solid var(--line);
+        padding-bottom: 28px;
+        margin-bottom: 36px;
+      }
+      .eyebrow {
+        font-family: var(--mono);
+        font-size: 12px;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: var(--text-mute);
+        margin: 0 0 12px;
+      }
+      h1 {
+        margin: 0 0 12px;
+        font-size: 34px;
+        letter-spacing: -0.01em;
+        font-weight: 700;
+      }
+      h1 small {
+        color: var(--text-dim);
+        font-weight: 500;
+        font-size: 18px;
+        margin-left: 8px;
+      }
+      .lede {
+        color: var(--text-dim);
+        font-size: 16px;
+        max-width: 72ch;
+      }
+      h2 {
+        margin: 56px 0 14px;
+        font-size: 22px;
+        letter-spacing: -0.005em;
+        padding-bottom: 8px;
+        border-bottom: 1px solid var(--line-soft);
+      }
+      h2 .num {
+        color: var(--text-mute);
+        font-family: var(--mono);
+        margin-right: 10px;
+        font-weight: 500;
+      }
+      h3 {
+        margin: 28px 0 8px;
+        font-size: 16px;
+        color: var(--text);
+      }
+      p {
+        margin: 8px 0 12px;
+        color: var(--text);
+      }
+      .dim {
+        color: var(--text-dim);
+      }
+      code,
+      .mono {
+        font-family: var(--mono);
+        font-size: 13px;
+        background: var(--bg-2);
+        border: 1px solid var(--line-soft);
+        padding: 1px 6px;
+        border-radius: 4px;
+        color: #cfd6e4;
+      }
+      pre {
+        background: var(--bg-2);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 16px 18px;
+        overflow-x: auto;
+        font-family: var(--mono);
+        font-size: 13px;
+        line-height: 1.55;
+        color: #d2d8e6;
+        margin: 12px 0 18px;
+      }
+      pre .k {
+        color: var(--accent);
+      }
+      pre .s {
+        color: var(--ok);
+      }
+      pre .c {
+        color: var(--text-mute);
+        font-style: italic;
+      }
+      pre .n {
+        color: var(--accent-2);
+      }
+      .toc {
+        background: var(--bg-2);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 14px 18px;
+        margin: 0 0 36px;
+      }
+      .toc ol {
+        margin: 6px 0 0 18px;
+        padding: 0;
+        columns: 2;
+        column-gap: 28px;
+      }
+      .toc li {
+        margin: 4px 0;
+      }
+      .toc a {
+        color: var(--text-dim);
+        text-decoration: none;
+      }
+      .toc a:hover {
+        color: var(--accent);
+      }
+      .card {
+        background: var(--bg-2);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 18px 20px;
+        margin: 14px 0;
+      }
+      .grid-2 {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+      }
+      .callout {
+        border-left: 3px solid var(--accent);
+        background: rgba(124, 196, 255, 0.06);
+        padding: 12px 16px;
+        border-radius: 0 8px 8px 0;
+        margin: 14px 0;
+      }
+      .callout.warn {
+        border-left-color: var(--warn);
+        background: rgba(255, 209, 102, 0.06);
+      }
+      .callout.danger {
+        border-left-color: var(--danger);
+        background: rgba(255, 122, 138, 0.06);
+      }
+      .callout strong {
+        display: block;
+        margin-bottom: 4px;
+        font-size: 13px;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--text);
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 14px;
+        margin: 14px 0;
+      }
+      th,
+      td {
+        text-align: left;
+        padding: 10px 12px;
+        border-bottom: 1px solid var(--line-soft);
+      }
+      th {
+        color: var(--text-dim);
+        font-weight: 500;
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        background: var(--bg-2);
+      }
+      tr:last-child td {
+        border-bottom: none;
+      }
+      .badge {
+        display: inline-block;
+        font-family: var(--mono);
+        font-size: 11px;
+        padding: 2px 8px;
+        border-radius: 999px;
+        border: 1px solid var(--line);
+        color: var(--text-dim);
+        background: var(--bg-3);
+      }
+      .badge.ok {
+        color: var(--ok);
+        border-color: rgba(110, 231, 163, 0.4);
+      }
+      .badge.rec {
+        color: var(--ok);
+        border-color: rgba(110, 231, 163, 0.4);
+        background: rgba(110, 231, 163, 0.08);
+      }
+      ul.clean {
+        margin: 8px 0 14px 22px;
+        padding: 0;
+      }
+      ul.clean li {
+        margin: 4px 0;
+      }
+      footer {
+        margin-top: 80px;
+        padding-top: 20px;
+        border-top: 1px solid var(--line);
+        color: var(--text-mute);
+        font-size: 12px;
+        font-family: var(--mono);
+      }
+
+      /* ── Visual mock components ── */
+      .mock-frame {
+        background: var(--bg);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 0;
+        overflow: hidden;
+        margin: 16px 0;
+      }
+      .mock-caption {
+        font-family: var(--mono);
+        font-size: 11px;
+        color: var(--text-mute);
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        padding: 10px 16px;
+        background: var(--bg-2);
+        border-bottom: 1px solid var(--line-soft);
+      }
+      .mock-app {
+        background: var(--bg);
+        padding: 14px;
+      }
+      .mock-toolbar {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+        padding: 8px 10px;
+        background: var(--bg-2);
+        border: 1px solid var(--line-soft);
+        border-radius: 8px;
+        margin-bottom: 12px;
+      }
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-family: var(--sans);
+        font-size: 13px;
+        padding: 5px 12px;
+        border-radius: 6px;
+        border: 1px solid var(--line);
+        background: var(--bg-3);
+        color: var(--text);
+        cursor: default;
+        white-space: nowrap;
+      }
+      .btn.primary {
+        background: var(--accent);
+        color: #0f1115;
+        border-color: var(--accent);
+        font-weight: 600;
+      }
+      .btn.ghost {
+        background: transparent;
+      }
+      .btn-caret {
+        font-size: 10px;
+        opacity: 0.6;
+        margin-left: 2px;
+      }
+      .split-btn {
+        display: inline-flex;
+        border: 1px solid var(--accent);
+        border-radius: 6px;
+        overflow: hidden;
+      }
+      .split-btn .split-main {
+        background: var(--accent);
+        color: #0f1115;
+        font-weight: 600;
+        font-size: 13px;
+        padding: 5px 12px;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .split-btn .split-arrow {
+        background: var(--accent);
+        color: #0f1115;
+        padding: 5px 8px;
+        border-left: 1px solid rgba(15, 17, 21, 0.25);
+        font-size: 10px;
+        display: inline-flex;
+        align-items: center;
+      }
+      .split-btn.shell {
+        border-color: var(--line);
+      }
+      .split-btn.shell .split-main,
+      .split-btn.shell .split-arrow {
+        background: var(--bg-3);
+        color: var(--text);
+      }
+      .split-btn.shell .split-arrow {
+        border-left-color: var(--line);
+      }
+      .cli-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        display: inline-block;
+        flex-shrink: 0;
+      }
+      .menu {
+        position: relative;
+        display: inline-block;
+      }
+      .menu-pop {
+        position: absolute;
+        top: calc(100% + 6px);
+        left: 0;
+        background: var(--bg-3);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 6px;
+        min-width: 200px;
+        z-index: 10;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+      }
+      .menu-item {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 8px 10px;
+        border-radius: 6px;
+        font-size: 13px;
+        color: var(--text);
+      }
+      .menu-item.active {
+        background: rgba(124, 196, 255, 0.1);
+      }
+      .menu-item .check {
+        margin-left: auto;
+        color: var(--accent);
+        font-size: 14px;
+      }
+      .menu-sep {
+        height: 1px;
+        background: var(--line-soft);
+        margin: 4px 0;
+      }
+      .chips {
+        display: inline-flex;
+        gap: 0;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        overflow: hidden;
+      }
+      .chip {
+        font-size: 13px;
+        padding: 5px 12px;
+        background: var(--bg-3);
+        color: var(--text-dim);
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        border-right: 1px solid var(--line);
+      }
+      .chip:last-child {
+        border-right: none;
+      }
+      .chip.active {
+        background: var(--accent);
+        color: #0f1115;
+        font-weight: 600;
+      }
+      .pane-grid {
+        display: grid;
+        gap: 8px;
+      }
+      .pane-grid.g2 {
+        grid-template-columns: 1fr 1fr;
+      }
+      .pane {
+        background: #0c0e12;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        overflow: hidden;
+      }
+      .pane-head {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 5px 10px;
+        background: var(--bg-2);
+        border-bottom: 1px solid var(--line-soft);
+        font-size: 12px;
+        font-family: var(--mono);
+      }
+      .pane-head .pane-title {
+        color: var(--text-dim);
+        flex: 1;
+      }
+      .pane-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        font-size: 10px;
+        font-family: var(--mono);
+        padding: 1px 7px;
+        border-radius: 999px;
+        border: 1px solid var(--line);
+        background: var(--bg-3);
+        color: var(--text-dim);
+      }
+      .pane-badge.claude {
+        color: var(--claude);
+        border-color: rgba(217, 119, 87, 0.4);
+        background: rgba(217, 119, 87, 0.08);
+      }
+      .pane-badge.codex {
+        color: var(--codex);
+        border-color: rgba(16, 163, 127, 0.4);
+        background: rgba(16, 163, 127, 0.08);
+      }
+      .pane-badge.opencode {
+        color: var(--opencode);
+        border-color: rgba(124, 196, 255, 0.4);
+        background: rgba(124, 196, 255, 0.08);
+      }
+      .pane-badge.shell {
+        color: var(--text-mute);
+      }
+      .pane-body {
+        padding: 10px;
+        font-family: var(--mono);
+        font-size: 12px;
+        color: var(--text-mute);
+        min-height: 56px;
+      }
+      .pane-close {
+        color: var(--text-mute);
+        font-size: 14px;
+        cursor: default;
+      }
+      .stepper {
+        display: inline-flex;
+        align-items: center;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        overflow: hidden;
+      }
+      .stepper button {
+        background: var(--bg-3);
+        border: none;
+        color: var(--text);
+        width: 26px;
+        height: 28px;
+        font-size: 15px;
+      }
+      .stepper .val {
+        background: var(--bg-2);
+        padding: 0 10px;
+        font-family: var(--mono);
+        font-size: 13px;
+        min-width: 24px;
+        text-align: center;
+      }
+      .flow {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        flex-wrap: wrap;
+        margin: 10px 0;
+      }
+      .flow-step {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 13px;
+        color: var(--text-dim);
+      }
+      .flow-step .step-num {
+        width: 22px;
+        height: 22px;
+        border-radius: 50%;
+        background: var(--bg-3);
+        border: 1px solid var(--line);
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-family: var(--mono);
+        font-size: 11px;
+        color: var(--accent);
+        flex-shrink: 0;
+      }
+      .arrow {
+        color: var(--text-mute);
+        font-size: 16px;
+      }
+      .click-hint {
+        outline: 2px dashed var(--warn);
+        outline-offset: 2px;
+        border-radius: 6px;
+      }
+      .compare {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+        margin: 16px 0;
+      }
+      @media (max-width: 720px) {
+        .compare,
+        .grid-2 {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <header class="hero">
+        <p class="eyebrow">Plan de feature · polakapi</p>
+        <h1>AI CLI en Terminales <small>v0.1 · draft</small></h1>
+        <p class="lede">
+          Permitir que cada terminal de un proyecto arranque un CLI de AI (Claude Code, Codex,
+          opencode) en lugar del shell por defecto. El objetivo: seleccionar el CLI de forma
+          extremadamente sencilla, soportar mezclas (4× Claude, 2× Codex + 2× opencode) y que
+          agregar un nuevo CLI en el futuro sea una línea en un registro.
+        </p>
+      </header>
+
+      <nav class="toc">
+        <p class="eyebrow" style="margin: 0">Contenido</p>
+        <ol>
+          <li><a href="#contexto">Contexto actual</a></li>
+          <li><a href="#objetivos">Objetivos y escenarios</a></li>
+          <li><a href="#alternativas">UX: Fila de chips + Badge</a></li>
+          <li><a href="#recomendada">Opción elegida</a></li>
+          <li><a href="#mocks">Mocks de los flujos</a></li>
+          <li><a href="#cli-research">Investigación de CLIs</a></li>
+          <li><a href="#arquitectura">Arquitectura</a></li>
+          <li><a href="#persistencia">Persistencia</a></li>
+          <li><a href="#rust">Cambios en Rust</a></li>
+          <li><a href="#plan">Plan de implementación</a></li>
+        </ol>
+      </nav>
+
+      <!-- ─────────────────────────────────────────────── -->
+      <h2 id="contexto"><span class="num">1</span>Contexto actual</h2>
+
+      <p>
+        Hoy cada terminal que se abre lanza el <strong>shell por defecto del sistema</strong> (<code
+          >$SHELL</code
+        >
+        en macOS/Linux, <code>%COMSPEC%</code> en Windows) dentro de <code>project.path</code>. No
+        existe ningún selector de shell ni CLI.
+      </p>
+
+      <div class="card">
+        <p class="eyebrow" style="margin: 0 0 8px">Toolbar actual</p>
+        <div class="mock-toolbar" style="margin: 0">
+          <button class="btn primary">+ Terminal</button>
+          <button class="btn ghost">Run command in all…</button>
+          <span class="dim" style="font-size: 12px; margin-left: auto">Cols</span>
+          <input
+            type="text"
+            value="2"
+            style="
+              width: 40px;
+              text-align: center;
+              background: var(--bg-3);
+              border: 1px solid var(--line);
+              color: var(--text);
+              border-radius: 4px;
+              padding: 3px;
+            "
+          />
+        </div>
+      </div>
+
+      <p>
+        Lo importante: el <em>plumbing</em> ya existe. <code>pty_spawn</code> acepta
+        <code>command</code> y <code>args</code>, y <code>PaneCreateOptions</code> ya los reenvía
+        hasta Rust. El único bloqueo es que <code>TerminalManager.addPane</code> nunca los popula y
+        el <em>allowlist</em> de Rust solo deja pasar shells POSIX.
+      </p>
+
+      <div class="callout warn">
+        <strong>Bloqueo en Rust</strong>
+        <code>is_allowed_shell</code> en <code>pty.rs</code> rechaza todo lo que no sea
+        <code>sh/bash/zsh/fish/…</code>. Lanzar <code>claude</code> como comando devuelve
+        <code>"shell not allowed: claude"</code>. Hay que extender el allowlist.
+      </div>
+
+      <!-- ─────────────────────────────────────────────── -->
+      <h2 id="objetivos"><span class="num">2</span>Objetivos y escenarios</h2>
+
+      <p>El feature debe resolver estos tres escenarios con la mínima fricción:</p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Escenario</th>
+            <th>Acción deseada</th>
+            <th>Métrica de fricción</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>4 terminales todas Claude Code</td>
+            <td>Seleccionar Claude Code una vez, añadir 4</td>
+            <td>1 selección + 4 clics</td>
+          </tr>
+          <tr>
+            <td>4 terminales todas Codex</td>
+            <td>Seleccionar Codex una vez, añadir 4</td>
+            <td>1 selección + 4 clics</td>
+          </tr>
+          <tr>
+            <td>2 Codex + 2 opencode</td>
+            <td>Seleccionar Codex, añadir 2, seleccionar opencode, añadir 2</td>
+            <td>2 selecciones + 4 clics</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <p class="dim">
+        Plus: al reabrir la app, los terminales persistidos deben respawn con su CLI correcto
+        automáticamente.
+      </p>
+
+      <!-- ─────────────────────────────────────────────── -->
+      <h2 id="alternativas"><span class="num">3</span>UX: Fila de chips + Badge por pane</h2>
+
+      <p>
+        Una fila de chips (<em>segmented control</em>) en la toolbar junto al botón
+        <code>+ Terminal</code>. El chip activo determina el CLI del próximo terminal. Un clic para
+        cambiar, visible siempre. La selección es <strong>sticky</strong>: se mantiene hasta que el
+        usuario cambia explícitamente de chip.
+      </p>
+
+      <div class="mock-frame">
+        <div class="mock-caption">Fila de chips · Codex activo</div>
+        <div class="mock-app">
+          <div class="mock-toolbar">
+            <div class="chips">
+              <span class="chip">
+                <span class="cli-dot" style="background: var(--text-mute)"></span>
+                Shell
+              </span>
+              <span class="chip">
+                <span class="cli-dot" style="background: var(--claude)"></span>
+                Claude
+              </span>
+              <span class="chip active">
+                <span class="cli-dot" style="background: #0f1115"></span>
+                Codex
+              </span>
+              <span class="chip">
+                <span class="cli-dot" style="background: var(--opencode)"></span>
+                opencode
+              </span>
+            </div>
+            <button class="btn primary">+ Terminal</button>
+          </div>
+        </div>
+      </div>
+
+      <p>
+        Cada pane muestra además un <strong>badge</strong> en su header con el color y nombre del
+        CLI que está corriendo. Click del badge = cerrar y re-abrir con otro CLI (respawn).
+      </p>
+
+      <div class="mock-frame">
+        <div class="mock-caption">Badge por pane · mixto 2 Codex + 2 opencode</div>
+        <div class="mock-app">
+          <div class="pane-grid g2">
+            <div class="pane">
+              <div class="pane-head">
+                <span class="pane-badge codex">
+                  <span class="cli-dot" style="background: var(--codex)"></span>
+                  codex
+                </span>
+                <span class="pane-title">codex · a1b2</span>
+                <span class="pane-close">×</span>
+              </div>
+              <div class="pane-body">codex &gt; _</div>
+            </div>
+            <div class="pane">
+              <div class="pane-head">
+                <span class="pane-badge codex">
+                  <span class="cli-dot" style="background: var(--codex)"></span>
+                  codex
+                </span>
+                <span class="pane-title">codex · c3d4</span>
+                <span class="pane-close">×</span>
+              </div>
+              <div class="pane-body">codex &gt; _</div>
+            </div>
+            <div class="pane">
+              <div class="pane-head">
+                <span class="pane-badge opencode">
+                  <span class="cli-dot" style="background: var(--opencode)"></span>
+                  opencode
+                </span>
+                <span class="pane-title">opencode · e5f6</span>
+                <span class="pane-close">×</span>
+              </div>
+              <div class="pane-body">opencode &gt; _</div>
+            </div>
+            <div class="pane">
+              <div class="pane-head">
+                <span class="pane-badge opencode">
+                  <span class="cli-dot" style="background: var(--opencode)"></span>
+                  opencode
+                </span>
+                <span class="pane-title">opencode · g7h8</span>
+                <span class="pane-close">×</span>
+              </div>
+              <div class="pane-body">opencode &gt; _</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="callout warn">
+        <strong>Nota sobre escalabilidad</strong>
+        Con 4 CLIs (Shell + 3 AI) la fila de chips es ideal. Si en el futuro se superan 6–7 CLIs,
+        se puede migrar a un overflow menu al final de la fila sin romper la arquitectura. El
+        registro de perfiles ya está diseñado para eso.
+      </div>
+
+      <!-- ─────────────────────────────────────────────── -->
+      <h2 id="recomendada"><span class="num">4</span>Opción elegida</h2>
+
+      <div class="callout">
+        <strong>Fila de chips + Badge por pane</strong>
+        Fila de chips visible siempre en la toolbar: un clic para cambiar de CLI, sin abrir menús.
+        La selección es sticky —se mantiene hasta que se cambia—. Cada pane muestra un badge de
+        color con su CLI. Los tres CLIs de AI + Shell son solo 4 chips, cabe holgado en la toolbar.
+      </div>
+
+      <p>
+        El badge por pane es <em>display + respawn</em>: muestra el CLI actual y, al hacer click,
+        ofrece re-abrir el terminal con otro CLI. El respawn mata el PTY viejo y crea uno nuevo en
+        el mismo <code>cwd</code> — es destructivo pero explícito (modal de confirmación si el
+        terminal tiene output).
+      </p>
+      <!-- ─────────────────────────────────────────────── -->
+      <h2 id="mocks"><span class="num">5</span>Mocks de los flujos</h2>
+
+      <h3>Flujo 1 · 4 terminales todas Claude Code</h3>
+
+      <div class="flow">
+        <div class="flow-step">
+          <span class="step-num">1</span>
+          <span>Clic chip <strong>Claude</strong></span>
+        </div>
+        <span class="arrow">→</span>
+        <div class="flow-step">
+          <span class="step-num">2</span>
+          <span>Clic <strong>+ Terminal</strong> × 4</span>
+        </div>
+      </div>
+
+      <div class="mock-frame">
+        <div class="mock-caption">Paso 1 · Clic en chip Claude (queda activo/sticky)</div>
+        <div class="mock-app">
+          <div class="mock-toolbar">
+            <div class="chips">
+              <span class="chip">
+                <span class="cli-dot" style="background: var(--text-mute)"></span>
+                Shell
+              </span>
+              <span class="chip active click-hint">
+                <span class="cli-dot" style="background: #0f1115"></span>
+                Claude
+              </span>
+              <span class="chip">
+                <span class="cli-dot" style="background: var(--codex)"></span>
+                Codex
+              </span>
+              <span class="chip">
+                <span class="cli-dot" style="background: var(--opencode)"></span>
+                opencode
+              </span>
+            </div>
+            <button class="btn primary">+ Terminal</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="mock-frame">
+        <div class="mock-caption">Paso 2 · Clic + Terminal × 4 → 2×2 grid todas Claude</div>
+        <div class="mock-app">
+          <div class="mock-toolbar">
+            <div class="chips">
+              <span class="chip">
+                <span class="cli-dot" style="background: var(--text-mute)"></span>
+                Shell
+              </span>
+              <span class="chip active">
+                <span class="cli-dot" style="background: #0f1115"></span>
+                Claude
+              </span>
+              <span class="chip">
+                <span class="cli-dot" style="background: var(--codex)"></span>
+                Codex
+              </span>
+              <span class="chip">
+                <span class="cli-dot" style="background: var(--opencode)"></span>
+                opencode
+              </span>
+            </div>
+            <button class="btn primary">+ Terminal</button>
+            <span class="dim" style="font-size: 12px; margin-left: auto">Cols</span>
+            <input
+              type="text"
+              value="2"
+              style="width: 40px; text-align: center; background: var(--bg-3); border: 1px solid var(--line); color: var(--text); border-radius: 4px; padding: 3px"
+            />
+          </div>
+          <div class="pane-grid g2">
+            <div class="pane">
+              <div class="pane-head">
+                <span class="pane-badge claude">
+                  <span class="cli-dot" style="background: var(--claude)"></span>
+                  claude
+                </span>
+                <span class="pane-title">claude · a1b2</span>
+                <span class="pane-close">×</span>
+              </div>
+              <div class="pane-body">╭── Claude Code ──╮<br />│ &gt; _<br />╰────────────────╯</div>
+            </div>
+            <div class="pane">
+              <div class="pane-head">
+                <span class="pane-badge claude">
+                  <span class="cli-dot" style="background: var(--claude)"></span>
+                  claude
+                </span>
+                <span class="pane-title">claude · c3d4</span>
+                <span class="pane-close">×</span>
+              </div>
+              <div class="pane-body">╭── Claude Code ──╮<br />│ &gt; _<br />╰────────────────╯</div>
+            </div>
+            <div class="pane">
+              <div class="pane-head">
+                <span class="pane-badge claude">
+                  <span class="cli-dot" style="background: var(--claude)"></span>
+                  claude
+                </span>
+                <span class="pane-title">claude · e5f6</span>
+                <span class="pane-close">×</span>
+              </div>
+              <div class="pane-body">╭── Claude Code ──╮<br />│ &gt; _<br />╰────────────────╯</div>
+            </div>
+            <div class="pane">
+              <div class="pane-head">
+                <span class="pane-badge claude">
+                  <span class="cli-dot" style="background: var(--claude)"></span>
+                  claude
+                </span>
+                <span class="pane-title">claude · g7h8</span>
+                <span class="pane-close">×</span>
+              </div>
+              <div class="pane-body">╭── Claude Code ──╮<br />│ &gt; _<br />╰────────────────╯</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <h3>Flujo 2 · 2 Codex + 2 opencode</h3>
+
+      <div class="flow">
+        <div class="flow-step">
+          <span class="step-num">1</span>
+          <span>Clic chip <strong>Codex</strong></span>
+        </div>
+        <span class="arrow">→</span>
+        <div class="flow-step">
+          <span class="step-num">2</span>
+          <span>+ Terminal × 2</span>
+        </div>
+        <span class="arrow">→</span>
+        <div class="flow-step">
+          <span class="step-num">3</span>
+          <span>Clic chip <strong>opencode</strong></span>
+        </div>
+        <span class="arrow">→</span>
+        <div class="flow-step">
+          <span class="step-num">4</span>
+          <span>+ Terminal × 2</span>
+        </div>
+      </div>
+
+      <div class="mock-frame">
+        <div class="mock-caption">Paso 1-2 · Codex activo, añadir 2</div>
+        <div class="mock-app">
+          <div class="mock-toolbar">
+            <div class="chips">
+              <span class="chip">
+                <span class="cli-dot" style="background: var(--text-mute)"></span>
+                Shell
+              </span>
+              <span class="chip">
+                <span class="cli-dot" style="background: var(--claude)"></span>
+                Claude
+              </span>
+              <span class="chip active">
+                <span class="cli-dot" style="background: #0f1115"></span>
+                Codex
+              </span>
+              <span class="chip">
+                <span class="cli-dot" style="background: var(--opencode)"></span>
+                opencode
+              </span>
+            </div>
+            <button class="btn primary">+ Terminal</button>
+          </div>
+          <div class="pane-grid g2">
+            <div class="pane">
+              <div class="pane-head">
+                <span class="pane-badge codex">
+                  <span class="cli-dot" style="background: var(--codex)"></span>
+                  codex
+                </span>
+                <span class="pane-title">codex · a1b2</span>
+                <span class="pane-close">×</span>
+              </div>
+              <div class="pane-body">codex CLI v1.0<br />&gt; _</div>
+            </div>
+            <div class="pane">
+              <div class="pane-head">
+                <span class="pane-badge codex">
+                  <span class="cli-dot" style="background: var(--codex)"></span>
+                  codex
+                </span>
+                <span class="pane-title">codex · c3d4</span>
+                <span class="pane-close">×</span>
+              </div>
+              <div class="pane-body">codex CLI v1.0<br />&gt; _</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="mock-frame">
+        <div class="mock-caption">Paso 3-4 · Cambiar a opencode, añadir 2 más</div>
+        <div class="mock-app">
+          <div class="mock-toolbar">
+            <div class="chips">
+              <span class="chip">
+                <span class="cli-dot" style="background: var(--text-mute)"></span>
+                Shell
+              </span>
+              <span class="chip">
+                <span class="cli-dot" style="background: var(--claude)"></span>
+                Claude
+              </span>
+              <span class="chip">
+                <span class="cli-dot" style="background: var(--codex)"></span>
+                Codex
+              </span>
+              <span class="chip active">
+                <span class="cli-dot" style="background: #0f1115"></span>
+                opencode
+              </span>
+            </div>
+            <button class="btn primary">+ Terminal</button>
+          </div>
+          <div class="pane-grid g2">
+            <div class="pane">
+              <div class="pane-head">
+                <span class="pane-badge codex">
+                  <span class="cli-dot" style="background: var(--codex)"></span>
+                  codex
+                </span>
+                <span class="pane-title">codex · a1b2</span>
+                <span class="pane-close">×</span>
+              </div>
+              <div class="pane-body">codex CLI v1.0<br />&gt; _</div>
+            </div>
+            <div class="pane">
+              <div class="pane-head">
+                <span class="pane-badge codex">
+                  <span class="cli-dot" style="background: var(--codex)"></span>
+                  codex
+                </span>
+                <span class="pane-title">codex · c3d4</span>
+                <span class="pane-close">×</span>
+              </div>
+              <div class="pane-body">codex CLI v1.0<br />&gt; _</div>
+            </div>
+            <div class="pane">
+              <div class="pane-head">
+                <span class="pane-badge opencode">
+                  <span class="cli-dot" style="background: var(--opencode)"></span>
+                  opencode
+                </span>
+                <span class="pane-title">opencode · e5f6</span>
+                <span class="pane-close">×</span>
+              </div>
+              <div class="pane-body">opencode &gt; _</div>
+            </div>
+            <div class="pane">
+              <div class="pane-head">
+                <span class="pane-badge opencode">
+                  <span class="cli-dot" style="background: var(--opencode)"></span>
+                  opencode
+                </span>
+                <span class="pane-title">opencode · g7h8</span>
+                <span class="pane-close">×</span>
+              </div>
+              <div class="pane-body">opencode &gt; _</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <h3>Flujo 3 · Cambiar CLI de un terminal existente (respawn)</h3>
+
+      <div class="flow">
+        <div class="flow-step">
+          <span class="step-num">1</span>
+          <span>Clic en el <strong>badge</strong> del pane</span>
+        </div>
+        <span class="arrow">→</span>
+        <div class="flow-step">
+          <span class="step-num">2</span>
+          <span>Menú: elegir nuevo CLI</span>
+        </div>
+        <span class="arrow">→</span>
+        <div class="flow-step">
+          <span class="step-num">3</span>
+          <span>Confirmar respawn</span>
+        </div>
+        <span class="arrow">→</span>
+        <div class="flow-step">
+          <span class="step-num">4</span>
+          <span>PTY viejo muere, nuevo arranca</span>
+        </div>
+      </div>
+
+      <div class="mock-frame">
+        <div class="mock-caption">Clic en badge → menú de cambio</div>
+        <div class="mock-app">
+          <div class="pane-grid" style="grid-template-columns: 1fr">
+            <div class="pane">
+              <div class="pane-head">
+                <div class="menu">
+                  <span class="pane-badge shell click-hint">
+                    <span class="cli-dot" style="background: var(--text-mute)"></span>
+                    shell
+                  </span>
+                  <div class="menu-pop" style="left: 0; top: calc(100% + 4px)">
+                    <div class="menu-item active">
+                      <span class="cli-dot" style="background: var(--text-mute)"></span>
+                      Shell
+                      <span class="check">✓</span>
+                    </div>
+                    <div class="menu-sep"></div>
+                    <div class="menu-item">
+                      <span class="cli-dot" style="background: var(--claude)"></span>
+                      Claude Code
+                    </div>
+                    <div class="menu-item">
+                      <span class="cli-dot" style="background: var(--codex)"></span>
+                      Codex
+                    </div>
+                    <div class="menu-item">
+                      <span class="cli-dot" style="background: var(--opencode)"></span>
+                      opencode
+                    </div>
+                  </div>
+                </div>
+                <span class="pane-title">shell · a1b2c3</span>
+                <span class="pane-close">×</span>
+              </div>
+              <div class="pane-body">$ ls<br />src/ dist/ package.json</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="callout warn">
+        <strong>Respawn es destructivo</strong>
+        Cambiar CLI de un terminal existente mata el PTY actual. Si el terminal tiene output o un
+        proceso corriendo (ej. Claude a mitad de una tarea), se pierde. Por eso el modal de
+        confirmación solo aparece si el pane <em>no</em> está vacío/recién abierto.
+      </div>
+
+      <!-- ─────────────────────────────────────────────── -->
+      <h2 id="cli-research"><span class="num">6</span>Investigación de CLIs</h2>
+
+      <p>
+        Verificación in-situ de los tres CLIs instalados en el sistema: binario, versión, y modo
+        interactivo por defecto (sin subcomando). Los tres arrancan interactivos por defecto, lo
+        que permite lanzarlos directamente como comando del PTY sin wrappers.
+      </p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>CLI</th>
+            <th>Binario</th>
+            <th>Versión</th>
+            <th>Path</th>
+            <th>Modo por defecto</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="cli-dot" style="background: var(--claude); display: inline-block; vertical-align: middle; margin-right: 4px"></span> Claude Code</td>
+            <td><code>claude</code></td>
+            <td>2.1.170</td>
+            <td><code>~/.nvm/.../bin/claude</code></td>
+            <td>Interactivo (sesión TUI)</td>
+          </tr>
+          <tr>
+            <td><span class="cli-dot" style="background: var(--codex); display: inline-block; vertical-align: middle; margin-right: 4px"></span> Codex</td>
+            <td><code>codex</code></td>
+            <td>0.141.0</td>
+            <td><code>~/.nvm/.../bin/codex</code></td>
+            <td>Interactivo (sin subcomando)</td>
+          </tr>
+          <tr>
+            <td><span class="cli-dot" style="background: var(--opencode); display: inline-block; vertical-align: middle; margin-right: 4px"></span> opencode</td>
+            <td><code>opencode</code></td>
+            <td>1.17.9</td>
+            <td><code>~/.opencode/bin/opencode</code></td>
+            <td>TUI por defecto</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="callout">
+        <strong>Confirmación clave</strong>
+        Ninguno de los tres requiere <code>args</code> especiales ni shell wrapper. Lanzar
+        <code>claude</code>, <code>codex</code>, o <code>opencode</code> como comando directo del
+        PTY arranca la interfaz interactiva en el directorio de trabajo del proyecto.
+      </div>
+
+      <!-- ─────────────────────────────────────────────── -->
+      <h2 id="arquitectura"><span class="num">7</span>Arquitectura</h2>
+
+      <p>
+        El núcleo es un <strong>registro único de perfiles CLI</strong> que es la fuente de verdad
+        para todo: la fila de chips del toolbar, el badge del pane, la lógica de spawn, y la
+        resolución al restaurar terminales persistidos.
+      </p>
+
+      <h3>Registro de CLI</h3>
+      <pre><span class="c">// src/modules/terminal/cli-registry.ts</span>
+
+<span class="k">export interface</span> <span class="n">CliProfile</span> {
+  id: <span class="k">string</span>;          <span class="c">// estable, se persista en TerminalSpec.cliId</span>
+  label: <span class="k">string</span>;        <span class="c">// texto del chip: "Claude Code"</span>
+  shortLabel: <span class="k">string</span>;  <span class="c">// texto compacto del chip: "Claude"</span>
+  command: <span class="k">string</span>;      <span class="c">// binario: "claude", "codex", "opencode"</span>
+  args?: <span class="k">string</span>[];       <span class="c">// args fijos si aplica (ninguno por ahora)</span>
+  color: <span class="k">string</span>;        <span class="c">// token CSS para el badge/dot: "orange" | "green" | "blue" | "slate"</span>
+  kind: <span class="s">"shell"</span> | <span class="s">"ai-cli"</span>;
+}
+
+<span class="k">export const</span> SHELL_PROFILE: CliProfile = {
+  id: <span class="s">"shell"</span>,
+  label: <span class="s">"Shell"</span>,
+  shortLabel: <span class="s">"Shell"</span>,
+  command: <span class="s">""</span>,        <span class="c">// "" = resolver $SHELL en Rust</span>
+  color: <span class="s">"slate"</span>,
+  kind: <span class="s">"shell"</span>,
+};
+
+<span class="k">export const</span> AI_CLI_PROFILES: CliProfile[] = [
+  { id: <span class="s">"claude"</span>,   label: <span class="s">"Claude Code"</span>, shortLabel: <span class="s">"Claude"</span>,   command: <span class="s">"claude"</span>,   color: <span class="s">"orange"</span>, kind: <span class="s">"ai-cli"</span> },
+  { id: <span class="s">"codex"</span>,    label: <span class="s">"Codex"</span>,       shortLabel: <span class="s">"Codex"</span>,    command: <span class="s">"codex"</span>,    color: <span class="s">"green"</span>,  kind: <span class="s">"ai-cli"</span> },
+  { id: <span class="s">"opencode"</span>, label: <span class="s">"opencode"</span>,    shortLabel: <span class="s">"opencode"</span>, command: <span class="s">"opencode"</span>, color: <span class="s">"blue"</span>,   kind: <span class="s">"ai-cli"</span> },
+];
+
+<span class="k">export const</span> ALL_PROFILES = [SHELL_PROFILE, ...AI_CLI_PROFILES];
+
+<span class="k">export function</span> <span class="n">resolveProfile</span>(cliId?: <span class="k">string</span>): CliProfile {
+  <span class="k">return</span> ALL_PROFILES.find(p => p.id === cliId) ?? SHELL_PROFILE;
+}</pre>
+
+      <div class="callout">
+        <strong>Agregar un CLI nuevo = una entrada</strong>
+        Para soportar un nuevo CLI en el futuro, se añade un objeto al array
+        <code>AI_CLI_PROFILES</code> y su basename al allowlist de Rust. La fila de chips lo
+        renderiza automáticamente. Nada más cambia.
+      </div>
+
+      <h3>Flujo de datos</h3>
+      <pre>
+Toolbar (fila de chips)
+  │  clic en chip → setActiveCli(profile.id) en TerminalManager
+  ▼
+addPane(spec: { cliId: activeCliId, cwd })
+  │  resolveProfile(cliId) → { command, args }
+  ▼
+pane.attach(grid, { command, args, cwd })
+  │
+  ▼
+ptySpawn({ command, args, cwd })
+  │
+  ▼
+Rust: resolve_command(command) → allowlist check → spawn PTY
+  │
+  ▼
+pty:data / pty:exit events → xterm.js
+
+Persistencia: TerminalSpec.cliId se guarda en workspaces.json
+Restore:      resolveProfile(spec.cliId) → command/args → respawn</pre>
+
+      <h3>Cambios por archivo</h3>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Archivo</th>
+            <th>Cambio</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>cli-registry.ts</code> <span class="badge">nuevo</span></td>
+            <td>Perfiles, <code>resolveProfile</code>, exports</td>
+          </tr>
+          <tr>
+            <td><code>terminal/types.ts</code></td>
+            <td><code>cliId?: string</code> en <code>TerminalSpec</code></td>
+          </tr>
+          <tr>
+            <td><code>terminal-manager.ts</code></td>
+            <td>
+              Campo <code>activeCliId</code>, <code>setActiveCli()</code>, <code>addPane</code>
+              reenvía <code>command</code>/<code>args</code> desde <code>resolveProfile</code>,
+              <code>updateSpec</code> compara <code>cliId</code>
+            </td>
+          </tr>
+          <tr>
+            <td><code>terminal-pane.ts</code></td>
+            <td>Badge CLI en header, menú de respawn via <code>openPaneMenu</code></td>
+          </tr>
+          <tr>
+            <td><code>project-pane.ts</code></td>
+            <td>
+              Reemplaza botón <code>+ Terminal</code> con fila de chips + botón. Callback
+              <code>onAddTerminal(cliId)</code> en vez de <code>onAddTerminal()</code>
+            </td>
+          </tr>
+          <tr>
+            <td><code>workspaces-bootstrap.ts</code></td>
+            <td>Wire <code>onAddTerminal</code> → <code>manager.setActiveCli(id); manager.addPane()</code></td>
+          </tr>
+          <tr>
+            <td><code>workspaces-reducer-terminals.ts</code></td>
+            <td><code>shallowEqualSpec</code> compara <code>cliId</code></td>
+          </tr>
+          <tr>
+            <td><code>pty.rs</code></td>
+            <td><code>ALLOWED_AI_CLI_BASENAMES</code>, <code>is_allowed_command</code></td>
+          </tr>
+          <tr>
+            <td><code>styles.css</code></td>
+            <td>Estilos de <code>.cli-chips</code>, <code>.cli-chip</code>, <code>.pane-badge.cli-*</code></td>
+          </tr>
+        </tbody>
+      </table>
+
+      <!-- ─────────────────────────────────────────────── -->
+      <h2 id="persistencia"><span class="num">8</span>Persistencia</h2>
+
+      <p>
+        Se extiende <code>TerminalSpec</code> con un campo <code>cliId</code> que referencia un
+        perfil del registro por id estable. No se persiste el <code>command</code> ni los
+        <code>args</code> —se resuelven en runtime desde el registro—, lo que permite que el binario
+        cambie de máquina o versión sin romper los terminales guardados.
+      </p>
+
+      <pre><span class="c">// src/modules/terminal/types.ts</span>
+
+<span class="k">export interface</span> <span class="n">TerminalSpec</span> {
+  id: <span class="k">string</span>;
+  title?: <span class="k">string</span>;
+  cwd?: <span class="k">string</span>;
+  startupCmd?: <span class="k">string</span>;
+  cliId?: <span class="k">string</span>;    <span class="c">// ← nuevo. undefined | "shell" = shell default</span>
+}</pre>
+
+      <p>
+        <code>schemaVersion</code> se mantiene en <code>1</code>. <code>cliId</code> es opcional;
+        los specs existentes sin <code>cliId</code> se interpretan como shell por defecto
+        (<code>resolveProfile(undefined)</code> → <code>SHELL_PROFILE</code>). No requiere migración.
+      </p>
+
+      <p>
+        <code>shallowEqualSpec</code> en <code>workspaces-reducer-terminals.ts:101</code> debe
+        comparar <code>cliId</code> para que <code>spec-changed</code> dispare al cambiar el CLI de
+        un pane. También <code>TerminalManager.updateSpec</code> en <code>terminal-manager.ts:99-104</code>
+        debe incluir <code>cliId</code> en su comparación identity.
+      </p>
+
+      <!-- ─────────────────────────────────────────────── -->
+      <h2 id="rust"><span class="num">9</span>Cambios en Rust</h2>
+
+      <p>
+        <code>is_allowed_shell</code> en <code>pty.rs:199</code> actualmente rechaza todo lo que no
+        sea un shell POSIX. Se extiende con un allowlist separado para CLIs de AI.
+      </p>
+
+      <pre><span class="c">// src-tauri/src/pty.rs</span>
+
+<span class="c">/// Basenames permitidos para CLIs de AI. Distinto del allowlist de</span>
+<span class="c">/// shells porque estos no son shells interactivos —se lanzan dentro</span>
+<span class="c">/// de un PTY como un proceso normal.</span>
+<span class="k">const</span> ALLOWED_AI_CLI_BASENAMES: &[&str] = &[
+    <span class="s">"claude"</span>,
+    <span class="s">"codex"</span>,
+    <span class="s">"opencode"</span>,
+];
+
+<span class="k">fn</span> <span class="n">is_allowed_command</span>(cmd: &str) -> bool {
+    is_allowed_shell(cmd) || basename_in(cmd, ALLOWED_AI_CLI_BASENAMES)
+}
+
+<span class="c">// resolve_shell (línea 184) → resolve_command, usa is_allowed_command</span></pre>
+
+      <div class="callout warn">
+        <strong>Decisión de diseño</strong>
+        Los CLIs de AI se lanzan como el comando del PTY directamente (no dentro de un shell
+        wrapper). <code>command = "claude"</code> arranca Claude Code como proceso del PTY en el
+        <code>cwd</code> del proyecto. Los tres CLIs confirmados arrancan interactivos por defecto
+        sin necesitar args.
+      </div>
+
+      <!-- ─────────────────────────────────────────────── -->
+      <h2 id="plan"><span class="num">10</span>Plan de implementación</h2>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Fase</th>
+            <th>Archivos</th>
+            <th>Qué</th>
+            <th>Validación</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>1. Registro</td>
+            <td><code>cli-registry.ts</code> (nuevo), <code>cli-registry.test.ts</code></td>
+            <td>Crear <code>CliProfile</code>, perfiles, <code>resolveProfile</code></td>
+            <td><code>pnpm test</code></td>
+          </tr>
+          <tr>
+            <td>2. Rust allowlist</td>
+            <td><code>pty.rs</code></td>
+            <td><code>ALLOWED_AI_CLI_BASENAMES</code>, <code>is_allowed_command</code>, rename <code>resolve_shell</code> → <code>resolve_command</code></td>
+            <td><code>pnpm rs:test && pnpm rs:clippy</code></td>
+          </tr>
+          <tr>
+            <td>3. Persistencia</td>
+            <td><code>terminal/types.ts</code>, <code>workspaces-reducer-terminals.ts</code>, <code>terminal-manager.ts</code></td>
+            <td><code>cliId</code> en <code>TerminalSpec</code>, <code>shallowEqualSpec</code>, <code>updateSpec</code> identity check</td>
+            <td><code>pnpm typecheck && pnpm test</code></td>
+          </tr>
+          <tr>
+            <td>4. Spawn wiring</td>
+            <td><code>terminal-manager.ts</code>, <code>terminal-pane.ts</code></td>
+            <td>
+              <code>activeCliId</code> + <code>setActiveCli()</code> en manager,
+              <code>addPane</code> resuelve <code>resolveProfile(cliId)</code> y reenvía
+              <code>command</code>/<code>args</code> al <code>pane.attach</code>,
+              <code>restoreSpecs</code> respawna con CLI del spec
+            </td>
+            <td><code>pnpm typecheck && pnpm test</code></td>
+          </tr>
+          <tr>
+            <td>5. Chip row UI</td>
+            <td><code>project-pane.ts</code>, <code>styles.css</code></td>
+            <td>
+              Renderizar fila de chips desde <code>ALL_PROFILES</code>, chip activo =
+              <code>activeCliId</code>, callback <code>onAddTerminal(cliId)</code> cambia a
+              <code>onSetActiveCli(id)</code> + <code>onAddTerminal()</code>
+            </td>
+            <td>Manual: <code>pnpm tauri dev</code></td>
+          </tr>
+          <tr>
+            <td>6. Badge por pane</td>
+            <td><code>terminal-pane.ts</code>, <code>styles.css</code></td>
+            <td>Badge en header con color del perfil, clic → menú respawn, confirmación modal</td>
+            <td>Manual</td>
+          </tr>
+          <tr>
+            <td>7. Bootstrap wiring</td>
+            <td><code>workspaces-bootstrap.ts</code></td>
+            <td>
+              <code>onSetActiveCli</code> → <code>manager.setActiveCli(id)</code>,
+              <code>onAddTerminal</code> → <code>manager.addPane({ cliId: manager.activeCliId })</code>
+            </td>
+            <td>Manual</td>
+          </tr>
+          <tr>
+            <td>8. Restore</td>
+            <td><code>workspaces-bootstrap.ts</code></td>
+            <td>Verificar que specs persistidos respawnen con CLI correcto al reabrir app</td>
+            <td>Manual: cerrar app, reabrir</td>
+          </tr>
+          <tr>
+            <td>9. Tests finales</td>
+            <td><code>*.test.ts</code></td>
+            <td>Reducer con <code>cliId</code>, registry, integración manager + restore</td>
+            <td><code>pnpm run check</code></td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="callout">
+        <strong>Orden recomendado</strong>
+        Fases 1–4 son plumbing sin UI (se validan con tests automáticos). Fases 5–7 son la
+        interfaz y el wiring. La fase 8 valida el flujo completo end-to-end. La fase 9 cierra con
+        <code>pnpm run check</code> completo. Cada fase debe pasar <code>pnpm run check</code>
+        antes de avanzar a la siguiente.
+      </div>
+
+      <h3>Detalle: cambios exactos en terminal-manager.ts</h3>
+      <pre><span class="c">// Nuevo campo</span>
+<span class="k">private</span> activeCliId: <span class="k">string</span> = <span class="s">"shell"</span>;
+
+<span class="c">// Nuevo método</span>
+<span class="n">setActiveCli</span>(cliId: <span class="k">string</span>): void {
+  <span class="k">this</span>.activeCliId = cliId;
+}
+
+<span class="c">// addPane — línea 164, antes solo reenviaba cwd</span>
+<span class="k">async</span> <span class="n">addPane</span>(spec?: Partial&lt;TerminalSpec&gt;): Promise&lt;TerminalPane | null&gt; {
+  <span class="k">const</span> cliId = spec?.cliId ?? <span class="k">this</span>.activeCliId;
+  <span class="k">const</span> profile = resolveProfile(cliId);
+  <span class="k">const</span> cwd = spec?.cwd ?? <span class="k">this</span>.defaultCwd;
+
+  <span class="c">// Antes: await pane.attach(this.grid, { cwd });</span>
+  <span class="c">// Ahora:</span>
+  <span class="k">await</span> pane.attach(<span class="k">this</span>.grid, {
+    command: profile.command || undefined,  <span class="c">// "" → undefined → Rust usa $SHELL</span>
+    args: profile.args,
+    cwd,
+  });
+
+  <span class="c">// finalSpec incluye cliId</span>
+  <span class="k">const</span> finalSpec: TerminalSpec = {
+    id: ptyId,
+    title: spec?.title,
+    cwd: spec?.cwd,
+    startupCmd: spec?.startupCmd,
+    cliId,  <span class="c">// ← nuevo</span>
+  };
+  ...
+}</pre>
+
+      <h3>Detalle: cambios exactos en project-pane.ts</h3>
+      <pre><span class="c">// ProjectPaneCallbacks cambia</span>
+<span class="k">export interface</span> <span class="n">ProjectPaneCallbacks</span> {
+  onSetActiveCli(cliId: <span class="k">string</span>): void;  <span class="c">// ← nuevo</span>
+  onAddTerminal(): void;             <span class="c">// sin cambio</span>
+  onRunInAll(): void;
+  onSetGridCols(value: number): void;
+}
+
+<span class="c">// El toolbar construye chips dinámicamente desde ALL_PROFILES</span>
+<span class="k">const</span> chips = document.createElement(<span class="s">"div"</span>);
+chips.className = <span class="s">"cli-chips"</span>;
+<span class="k">for</span> (<span class="k">const</span> profile <span class="k">of</span> ALL_PROFILES) {
+  <span class="k">const</span> chip = document.createElement(<span class="s">"button"</span>);
+  chip.type = <span class="s">"button"</span>;
+  chip.className = <span class="s">"cli-chip"</span>;
+  chip.dataset.cliId = profile.id;
+  chip.textContent = profile.shortLabel;
+  chip.addEventListener(<span class="s">"click"</span>, () => callbacks.onSetActiveCli(profile.id));
+  chips.append(chip);
+}
+subToolbar.append(chips, addBtn, runAllBtn, colsLabel);</pre>
+
+      <h3>Out of scope (futuro)</h3>
+      <ul class="clean">
+        <li>
+          <strong>Detección de CLIs instalados</strong>: filtrar los chips a solo los CLIs presentes
+          en <code>$PATH</code> (requiere un comando <code>which</code> en Rust).
+        </li>
+        <li>
+          <strong>Configuración de args por CLI</strong>: permitir que el usuario pase flags custom
+          (ej. <code>claude --model opus</code>).
+        </li>
+        <li><strong>Plantillas de layout</strong>: "4× Claude" como preset guardable.</li>
+        <li>
+          <strong>Autenticación por CLI</strong>: detectar si un CLI no está logueado y mostrar un
+          hint.
+        </li>
+        <li>
+          <strong>Overflow menu</strong>: si se superan 6 CLIs, colapsar los menos usados en un
+          chip "Más…" con dropdown.
+        </li>
+      </ul>
+
+      <footer>polakapi · AI CLI plan · chip row approach · 2026-06-23</footer>
+    </div>
+  </body>
+</html>

@@ -3,12 +3,14 @@ import {
   createProjectEmptyState,
   type EmptyStateHandle,
 } from "../modules/workspaces/workspaces-empty-state";
+import { ALL_PROFILES, type CliProfile } from "../modules/terminal/cli-registry";
 
 export interface ProjectPaneCallbacks {
   onAddTerminal(): void;
   onRunInAll(): void;
   onRevealFolder(path: string): void;
   onOpenInEditor(path: string): void;
+  onSetActiveCli(cliId: string): void;
 }
 
 export interface ProjectPaneOptions {
@@ -19,7 +21,52 @@ export interface ProjectPaneOptions {
 
 export interface ProjectPaneHandle {
   setActiveProject(project: Project | null): void;
+  setActiveCli(cliId: string): void;
   dispose(): void;
+}
+
+interface ChipRow {
+  element: HTMLDivElement;
+  setActive(cliId: string): void;
+  setDisabled(disabled: boolean): void;
+  dispose(): void;
+}
+
+function createChipRow(onSelect: (cliId: string) => void): ChipRow {
+  const element = document.createElement("div");
+  element.className = "cli-chips";
+
+  const chips: HTMLButtonElement[] = ALL_PROFILES.map((profile) => createChip(profile, onSelect));
+  for (const chip of chips) element.append(chip);
+
+  return {
+    element,
+    setActive(cliId: string): void {
+      for (const chip of chips) {
+        chip.classList.toggle("is-active", chip.dataset.cliId === cliId);
+      }
+    },
+    setDisabled(disabled: boolean): void {
+      for (const chip of chips) chip.disabled = disabled;
+    },
+    dispose(): void {
+      for (const chip of chips) chip.replaceWith(chip.cloneNode(true));
+      element.remove();
+    },
+  };
+}
+
+function createChip(profile: CliProfile, onSelect: (cliId: string) => void): HTMLButtonElement {
+  const chip = document.createElement("button");
+  chip.type = "button";
+  chip.className = `cli-chip cli-chip--${profile.id}`;
+  chip.dataset.cliId = profile.id;
+  chip.textContent = profile.label;
+  chip.addEventListener("click", () => {
+    if (chip.classList.contains("is-active")) return;
+    onSelect(profile.id);
+  });
+  return chip;
 }
 
 /**
@@ -63,7 +110,13 @@ export function mountProjectPane(opts: ProjectPaneOptions): ProjectPaneHandle {
   runAllBtn.id = "run-all";
   runAllBtn.textContent = "Run command in all…";
 
-  subToolbar.append(addBtn, runAllBtn, externalGroup);
+  const chipRow = createChipRow((cliId) => {
+    chipRow.setActive(cliId);
+    callbacks.onSetActiveCli(cliId);
+  });
+  chipRow.setActive("shell");
+
+  subToolbar.append(chipRow.element, addBtn, runAllBtn, externalGroup);
 
   let emptyState: EmptyStateHandle | null = createProjectEmptyState();
   let currentProject: Project | null = null;
@@ -79,6 +132,7 @@ export function mountProjectPane(opts: ProjectPaneOptions): ProjectPaneHandle {
   runAllBtn.disabled = true;
   revealBtn.disabled = true;
   editorBtn.disabled = true;
+  chipRow.setDisabled(true);
 
   const onAdd = (): void => callbacks.onAddTerminal();
   const onRunAll = (): void => callbacks.onRunInAll();
@@ -105,6 +159,7 @@ export function mountProjectPane(opts: ProjectPaneOptions): ProjectPaneHandle {
       runAllBtn.disabled = !active;
       revealBtn.disabled = project === null || !project.path;
       editorBtn.disabled = project === null || !project.path;
+      chipRow.setDisabled(!active);
       if (active && emptyState) {
         emptyState.dispose();
         emptyState = null;
@@ -113,11 +168,15 @@ export function mountProjectPane(opts: ProjectPaneOptions): ProjectPaneHandle {
         host.append(emptyState.element);
       }
     },
+    setActiveCli(cliId: string): void {
+      chipRow.setActive(cliId);
+    },
     dispose(): void {
       addBtn.removeEventListener("click", onAdd);
       runAllBtn.removeEventListener("click", onRunAll);
       revealBtn.removeEventListener("click", onReveal);
       editorBtn.removeEventListener("click", onEditor);
+      chipRow.dispose();
       emptyState?.dispose();
       emptyState = null;
       subToolbar.remove();

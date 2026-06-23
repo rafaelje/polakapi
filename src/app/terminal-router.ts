@@ -58,6 +58,7 @@ export class TerminalRouter {
       projectId: project.id,
       defaultCwd: project.path,
       gridCols: DEFAULT_GRID_COLS,
+      activeCliId: project.activeCliId,
       notificationContext: this.notificationContext ?? undefined,
     });
     this.managers.set(project.id, manager);

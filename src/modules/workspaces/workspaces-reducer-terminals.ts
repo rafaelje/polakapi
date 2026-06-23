@@ -81,6 +81,29 @@ export function replaceTerminalSpecs(
   );
 }
 
+/**
+ * Set the per-project active CLI id (the chip row selection). Passing an empty
+ * string or "shell" clears the field so older payloads stay clean.
+ */
+export function setProjectActiveCli(
+  state: WorkspacesState,
+  projectId: ProjectId,
+  cliId: string,
+): WorkspacesState {
+  const normalized = cliId && cliId !== "shell" ? cliId : undefined;
+  return mapWorkspaces(state, (w) =>
+    mapProjectInWorkspace(w, projectId, (p) =>
+      p.activeCliId === normalized ? p : { ...p, activeCliId: normalized },
+    ),
+  );
+}
+
 function shallowEqualSpec(a: TerminalSpec, b: TerminalSpec): boolean {
-  return a.id === b.id && a.title === b.title && a.cwd === b.cwd && a.startupCmd === b.startupCmd;
+  return (
+    a.id === b.id &&
+    a.title === b.title &&
+    a.cwd === b.cwd &&
+    a.startupCmd === b.startupCmd &&
+    a.cliId === b.cliId
+  );
 }

@@ -134,6 +134,12 @@ export async function bootstrapWorkspaces(
       onOpenInEditor: (path) => {
         void openInEditor(path);
       },
+      onSetActiveCli: (cliId) => {
+        const active = controller.getActiveProject();
+        if (!active) return;
+        router.getById(active.id)?.setActiveCli(cliId);
+        controller.setProjectActiveCli(active.id, cliId);
+      },
     },
   });
   const breadcrumb = mountBreadcrumb({ host: elements.breadcrumbHost });
@@ -145,6 +151,7 @@ export async function bootstrapWorkspaces(
     }
     const manager = router.getOrCreate(project);
     router.mount(project.id, elements.gridEl);
+    projectPane.setActiveCli(manager.getActiveCli());
     if (!restored.has(project.id)) {
       restored.add(project.id);
       const specs = project.terminals ?? [];

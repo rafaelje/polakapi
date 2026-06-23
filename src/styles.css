@@ -12,6 +12,10 @@
   --border: #24262d;
   --accent: #ff8c2a;
   --text: #d8d8d8;
+  --cli-shell: #8a8a8a;
+  --cli-claude: #d97757;
+  --cli-codex: #10a37f;
+  --cli-opencode: #7cc4ff;
 }
 
 * {
@@ -900,6 +904,116 @@ body {
 .project-pane.inactive .project-pane-toolbar,
 .project-pane.inactive #grid {
   display: none;
+}
+
+.cli-chips {
+  display: inline-flex;
+  gap: 2px;
+}
+
+.cli-chip {
+  --cli-color: var(--cli-shell);
+  padding: 4px 10px;
+  font: inherit;
+  color: #6a6a6a;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.cli-chip:hover:not(:disabled) {
+  color: var(--cli-color);
+  border-color: var(--cli-color);
+}
+
+.cli-chip.is-active {
+  color: var(--text);
+  background: color-mix(in srgb, var(--cli-color) 22%, transparent);
+  border-color: var(--cli-color);
+}
+
+.cli-chip:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.cli-chip--shell {
+  --cli-color: var(--cli-shell);
+}
+
+.cli-chip--claude {
+  --cli-color: var(--cli-claude);
+}
+
+.cli-chip--codex {
+  --cli-color: var(--cli-codex);
+}
+
+.cli-chip--opencode {
+  --cli-color: var(--cli-opencode);
+}
+
+/* ----------------------------------------------------------------------
+ * Pane header CLI badge
+ * Small filled pill (left-most element in the pane header) that opens the
+ * CLI respawn menu. Color matches the chip variants 1:1.
+ * ---------------------------------------------------------------------- */
+
+.pane-header .pane-badge {
+  --cli-color: var(--cli-shell);
+  padding: 1px 7px;
+  font-size: 10px;
+  line-height: 1.4;
+  color: #1a1208;
+  background: var(--cli-color);
+  border: 1px solid var(--cli-color);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.pane-header .pane-badge:hover {
+  background: var(--cli-color);
+  color: #1a1208;
+  filter: brightness(1.1);
+}
+
+.pane-badge--shell {
+  --cli-color: var(--cli-shell);
+}
+
+.pane-badge--claude {
+  --cli-color: var(--cli-claude);
+}
+
+.pane-badge--codex {
+  --cli-color: var(--cli-codex);
+}
+
+.pane-badge--opencode {
+  --cli-color: var(--cli-opencode);
+}
+
+/* Respawn menu items reuse .pane-menu-item; the cli-color tint comes from
+ * the matching .pane-badge--<id> class added in terminal-pane-menu.ts. */
+.pane-menu-item.pane-badge--shell,
+.pane-menu-item.pane-badge--claude,
+.pane-menu-item.pane-badge--codex,
+.pane-menu-item.pane-badge--opencode {
+  background: transparent;
+  color: var(--text);
+  border-left: 3px solid var(--cli-color);
+  padding-left: 7px;
+}
+
+/* Scoped to respawn menu items only: they have a `.pane-badge--<id>` class
+ * which sets `--cli-color`. Other future menu items that reuse the
+ * `.pane-menu-item` base + `.is-active` will NOT inherit this tint. */
+.pane-menu-item.pane-badge--shell.is-active,
+.pane-menu-item.pane-badge--claude.is-active,
+.pane-menu-item.pane-badge--codex.is-active,
+.pane-menu-item.pane-badge--opencode.is-active {
+  background: color-mix(in srgb, var(--cli-color) 18%, transparent);
 }
 
 /* ----------------------------------------------------------------------

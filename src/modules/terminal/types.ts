@@ -2,6 +2,7 @@ export interface PaneCreateOptions {
   command?: string;
   args?: string[];
   cwd?: string;
+  cliId?: string;
 }
 
 /**
@@ -15,10 +16,12 @@ export interface PaneCreateOptions {
  * - `cwd`       — when undefined, the manager falls back to its `defaultCwd`
  *                 (i.e. the owning project's `path`).
  * - `startupCmd` — optional one-shot command piped into the shell on spawn.
+ * - `cliId`     — optional CLI profile id; undefined resolves to SHELL_PROFILE.
  */
 export interface TerminalSpec {
   id: string;
   title?: string;
   cwd?: string;
   startupCmd?: string;
+  cliId?: string;
 }

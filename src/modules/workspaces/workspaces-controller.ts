@@ -36,6 +36,7 @@ import {
   replaceTerminalSpecs,
   resetAlphabeticalOrder,
   setActiveProject,
+  setProjectActiveCli,
   setProjectColor,
   setProjectNotes,
   setProjectPathInvalid,
@@ -196,6 +197,8 @@ export class WorkspacesController {
   ): void => this.commit(updateTerminalSpec(this.state, projectId, terminalId, patch));
   replaceTerminalSpecs = (projectId: ProjectId, specs: TerminalSpec[]): void =>
     this.commit(replaceTerminalSpecs(this.state, projectId, specs));
+  setProjectActiveCli = (projectId: ProjectId, cliId: string): void =>
+    this.commit(setProjectActiveCli(this.state, projectId, cliId));
 
   // F3: per-project notes. The debounce lives in the notes panel (400ms), so
   // each call here is already coalesced — we just commit and let the existing
