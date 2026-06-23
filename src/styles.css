@@ -248,6 +248,18 @@ body {
   overflow-y: auto;
 }
 
+/* Per-project container that TerminalManager mounts inside `#grid`. Must be a
+ * flex column that fills its parent so the `.grid-row` children (flex: 1 1 0)
+ * actually receive height — without this it collapses to content-height and
+ * panes only render as tall as their last xterm output. */
+.terminal-grid {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0;
+  min-height: 0;
+  min-width: 0;
+}
+
 .grid-row {
   display: flex;
   flex-direction: row;
