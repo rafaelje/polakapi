@@ -71,7 +71,7 @@ export function attachFinderDrop(panelRoot: HTMLElement, deps: FinderDropDeps): 
   ): Promise<void> => {
     const workspaceId = workspaceIdOf(target);
     if (!workspaceId) {
-      toast("Solta sobre un workspace", "info");
+      toast("Drop on a workspace", "info");
       return;
     }
     let added = 0;
@@ -85,9 +85,9 @@ export function attachFinderDrop(panelRoot: HTMLElement, deps: FinderDropDeps): 
       added += 1;
     }
     if (added > 1) {
-      toast(`${added} proyectos agregados`, "info");
+      toast(`${added} projects added`, "info");
     } else if (added === 1) {
-      toast("Proyecto agregado", "info");
+      toast("Project added", "info");
     }
   };
 

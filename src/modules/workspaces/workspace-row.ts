@@ -151,7 +151,7 @@ export function createWorkspaceRow(opts: WorkspaceRowOptions): WorkspaceRowHandl
           onSelect: () => controller.resetAlphabeticalOrder(workspace.id),
         },
         {
-          label: "Apariencia…",
+          label: "Appearance…",
           onSelect: () => openAppearance(),
         },
         {

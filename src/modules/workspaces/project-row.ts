@@ -87,7 +87,7 @@ export function createProjectRow(opts: ProjectRowOptions): ProjectRowHandle {
     badge.textContent = String(safe);
     badge.classList.toggle("hidden", safe === 0);
     badge.classList.toggle("live", safe > 0);
-    badge.title = safe === 1 ? "1 terminal activa" : `${safe} terminales activas`;
+    badge.title = safe === 1 ? "1 active terminal" : `${safe} active terminals`;
   };
   applyBadge(opts.liveTerminalsCount);
 
@@ -148,7 +148,7 @@ export function createProjectRow(opts: ProjectRowOptions): ProjectRowHandle {
         { label: "Duplicate", onSelect: () => controller.duplicateProject(project.id) },
         ...buildMoveSubmenuItems(controller, project.id, workspaceId),
         {
-          label: "Apariencia…",
+          label: "Appearance…",
           onSelect: () => openAppearance(),
         },
         {
