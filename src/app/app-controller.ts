@@ -7,7 +7,6 @@ import {
 } from "../shared/persistence/store";
 import { wireShortcuts } from "../shared/keyboard/shortcuts";
 import { showToast } from "../shared/ui/toast";
-import { TerminalManager } from "../modules/terminal/terminal-manager";
 import { onPtyData, onPtyExit, ptyKill } from "../modules/terminal/pty-client";
 import { startFlexDrag, wireSidebarGutters } from "../modules/layout/gutters";
 import { wireToggles } from "../modules/layout/panel-toggles";
@@ -19,26 +18,33 @@ import {
 } from "../modules/notes/notes-persistence";
 import { bootstrapWorkspaces, type WorkspacesBootstrapHandle } from "./workspaces-bootstrap";
 import { wireWindowLifecycle } from "./lifecycle";
+import { wireQuitConfirm } from "./quit-confirm";
+import { TerminalRouter } from "./terminal-router";
 import { type AppElements } from "./elements";
 
 const DEFAULT_GRID_COLS = 2;
 const MIN_GRID_COLS = 1;
 const MAX_GRID_COLS = 8;
-const INITIAL_PANES = 4;
 
 export class AppController {
-  private readonly paneManager: TerminalManager;
+  private readonly router: TerminalRouter;
   private workspaces: WorkspacesBootstrapHandle | null = null;
   private unwireShortcuts: (() => void) | null = null;
   private unwireWindowLifecycle: (() => void) | null = null;
+  private unwireQuitConfirm: (() => void) | null = null;
   private unlistenData: UnlistenFn | null = null;
   private unlistenExit: UnlistenFn | null = null;
   private disposed = false;
 
   constructor(private readonly elements: AppElements) {
-    this.paneManager = new TerminalManager({
-      gridEl: elements.gridEl,
-      gridCols: DEFAULT_GRID_COLS,
+    this.router = new TerminalRouter({
+      defaultGridCols: DEFAULT_GRID_COLS,
+      onPersistSpecs: (projectId, specs) => {
+        this.workspaces?.controller.replaceTerminalSpecs(projectId, specs);
+      },
+      onPersistCols: (projectId, cols) => {
+        this.workspaces?.controller.setProjectCols(projectId, cols);
+      },
     });
   }
 
@@ -52,23 +58,22 @@ export class AppController {
     this.wireKeyboardShortcuts();
     this.unwireWindowLifecycle = wireWindowLifecycle({
       onBeforeUnload: () => this.dispose(),
-      onResize: () => this.paneManager.refit(),
+      onResize: () => this.router.getActive()?.refit(),
     });
 
     this.workspaces = await bootstrapWorkspaces({
       elements: this.elements,
-      paneManager: this.paneManager,
+      router: this.router,
       clampGridCols: (value) => this.clampGridCols(value),
     });
 
-    // F1 decision: only seed default terminals when a project is active. With
-    // no active project the grid is hidden behind the project empty state and
-    // creating panes would render off-screen.
-    if (this.workspaces.controller.getActiveProject()) {
-      for (let i = 0; i < INITIAL_PANES; i++) {
-        await this.paneManager.create();
-      }
-    }
+    // Wire the quit hook *after* workspaces is ready so the modal can resolve
+    // project names by looking the controller's state up at confirm time.
+    const workspaces = this.workspaces;
+    this.unwireQuitConfirm = wireQuitConfirm({
+      router: this.router,
+      getState: () => workspaces.controller.getState(),
+    });
   }
 
   dispose(): void {
@@ -83,6 +88,8 @@ export class AppController {
     this.unwireShortcuts = null;
     this.unwireWindowLifecycle?.();
     this.unwireWindowLifecycle = null;
+    this.unwireQuitConfirm?.();
+    this.unwireQuitConfirm = null;
 
     const workspaces = this.workspaces;
     this.workspaces = null;
@@ -96,18 +103,21 @@ export class AppController {
       });
     }
 
-    for (const id of this.paneManager.ids()) {
+    for (const id of this.router.allPaneIds()) {
       void ptyKill(id);
     }
+    void this.router.disposeAll().catch((error) => {
+      console.error("Failed to dispose terminal router", error);
+    });
     void flushSave().catch((error) => console.error("Failed to flush layout before unload", error));
   }
 
   private async wirePtyEvents(): Promise<void> {
     this.unlistenData = await onPtyData(({ id, data }) => {
-      this.paneManager.get(id)?.write(data);
+      this.router.findPaneById(id)?.pane.write(data);
     });
     this.unlistenExit = await onPtyExit(({ id }) => {
-      this.paneManager.get(id)?.markExited();
+      this.router.findPaneById(id)?.pane.markExited();
     });
   }
 
@@ -117,14 +127,14 @@ export class AppController {
       "sidebar-right": this.elements.sidebarRight,
     };
     wireSidebarGutters(sidebars, () => {
-      this.paneManager.refit();
+      this.router.getActive()?.refit();
       this.persistSidebarWidths();
     });
     const notesGutter = this.elements.notesGutter;
     if (notesGutter) {
       notesGutter.addEventListener("mousedown", (e) =>
         startFlexDrag(e, notesGutter, "v", () => {
-          this.paneManager.refit();
+          this.router.getActive()?.refit();
           this.persistCurrentNotesHeight();
         }),
       );
@@ -139,7 +149,7 @@ export class AppController {
         { btnId: "toggle-bottom", target: this.elements.rightCol, cls: "hide-notes" },
       ],
       () => {
-        this.paneManager.refit();
+        this.router.getActive()?.refit();
         queueSave({
           hideLeft: this.elements.mainRow.classList.contains("hide-left"),
           hideRight: this.elements.layoutEl.classList.contains("hide-right"),
@@ -151,11 +161,11 @@ export class AppController {
 
   private wireKeyboardShortcuts(): void {
     this.unwireShortcuts = wireShortcuts({
-      newPane: () => void this.paneManager.create(),
-      closeFocused: () => this.paneManager.closeFocused(),
-      focusByIndex: (idx) => this.paneManager.focusByIndex(idx),
-      focusPrev: () => this.paneManager.focusRelative(-1),
-      focusNext: () => this.paneManager.focusRelative(1),
+      newPane: () => void this.router.getActive()?.addPane(),
+      closeFocused: () => this.router.getActive()?.closeFocused(),
+      focusByIndex: (idx) => this.router.getActive()?.focusByIndex(idx),
+      focusPrev: () => this.router.getActive()?.focusRelative(-1),
+      focusNext: () => this.router.getActive()?.focusRelative(1),
     });
   }
 
@@ -179,7 +189,6 @@ export class AppController {
     }
     if (typeof layout.gridCols === "number") {
       const clamped = this.clampGridCols(layout.gridCols);
-      this.paneManager.setGridCols(clamped);
       this.workspaces?.projectPane.setGridCols(clamped);
     }
     applyNotesLayout(layout, this.elements.notes);

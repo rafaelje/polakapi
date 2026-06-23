@@ -1,17 +1,28 @@
 import { createProjectRow, type ProjectRowHandle } from "./project-row";
 import { openRowMenu } from "./row-menu";
 import { startInlineRename } from "./rename-inline";
-import type { Workspace } from "./types";
+import type { ProjectId, Workspace } from "./types";
 import type { WorkspacesController } from "./workspaces-controller";
 import { sortedProjects } from "./workspaces-reducer";
 
 export interface WorkspaceRowOptions {
   workspace: Workspace;
   controller: WorkspacesController;
+  /**
+   * Resolves the live-terminal count for any project in this workspace at
+   * render time. The panel feeds router.getCount via this callback so newly
+   * created rows already show the right badge before the next event fires.
+   */
+  liveCountFor?: (projectId: ProjectId) => number;
 }
 
 export interface WorkspaceRowHandle {
   element: HTMLElement;
+  /**
+   * Update the live-terminal badge for one of this workspace's projects.
+   * No-op when the project is not currently rendered under this row.
+   */
+  setLiveCount(projectId: ProjectId, n: number): void;
   dispose(): void;
 }
 
@@ -62,18 +73,21 @@ export function createWorkspaceRow(opts: WorkspaceRowOptions): WorkspaceRowHandl
   projectsList.dataset.workspaceId = workspace.id;
   wrapper.append(projectsList);
 
-  const projectHandles: ProjectRowHandle[] = [];
+  const projectHandles = new Map<ProjectId, ProjectRowHandle>();
   const activeProjectId = controller.getState().activeProjectId;
+  const liveCountFor = opts.liveCountFor;
 
   for (const project of sortedProjects(workspace)) {
+    const initialCount = liveCountFor ? liveCountFor(project.id) : 0;
     const handle = createProjectRow({
       project,
       workspaceId: workspace.id,
       isActive: activeProjectId === project.id,
-      liveTerminalsCount: 0,
+      liveTerminalsCount: initialCount,
       controller,
+      getLiveCount: liveCountFor ? () => liveCountFor(project.id) : undefined,
     });
-    projectHandles.push(handle);
+    projectHandles.set(project.id, handle);
     projectsList.append(handle.element);
   }
 
@@ -147,9 +161,13 @@ export function createWorkspaceRow(opts: WorkspaceRowOptions): WorkspaceRowHandl
 
   return {
     element: wrapper,
+    setLiveCount(projectId: ProjectId, n: number): void {
+      projectHandles.get(projectId)?.setLiveCount(n);
+    },
     dispose(): void {
       for (const off of listeners.splice(0)) off();
-      for (const handle of projectHandles.splice(0)) handle.dispose();
+      for (const handle of projectHandles.values()) handle.dispose();
+      projectHandles.clear();
       wrapper.remove();
     },
   };

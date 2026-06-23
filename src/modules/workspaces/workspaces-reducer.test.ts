@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import type { ProjectId, WorkspaceId } from "./types";
+import type { ProjectId, TerminalSpec, WorkspaceId } from "./types";
 import {
   addProject,
+  addTerminalSpec,
   addWorkspace,
   changeProjectPath,
   createEmptyState,
@@ -11,16 +12,20 @@ import {
   duplicateProject,
   findProject,
   moveProject,
+  removeTerminalSpec,
   renameProject,
   renameWorkspace,
   reorderProjects,
   reorderWorkspaces,
+  replaceTerminalSpecs,
   resetAlphabeticalOrder,
   setActiveProject,
+  setProjectCols,
   setProjectPathInvalid,
   sortedProjects,
   sortedWorkspaces,
   toggleCollapsed,
+  updateTerminalSpec,
 } from "./workspaces-reducer";
 
 function wsId(state: ReturnType<typeof createEmptyState>, idx: number): WorkspaceId {
@@ -193,6 +198,119 @@ describe("workspaces-reducer", () => {
     s = reorderProjects(s, wsId(s, 0), [projectId(s, 0, 1), projectId(s, 0, 0)]);
     s = resetAlphabeticalOrder(s, wsId(s, 0));
     expect(s.workspaces[0].projects.every((p) => p.order === undefined)).toBe(true);
+  });
+
+  // ---------------------------------------------------------------------
+  // F2 helpers
+  // ---------------------------------------------------------------------
+
+  function seededProject(): {
+    state: ReturnType<typeof createEmptyState>;
+    pid: ProjectId;
+  } {
+    let s = addWorkspace(createEmptyState(), "W");
+    s = addProject(s, { workspaceId: wsId(s, 0), name: "p", path: "/p" });
+    return { state: s, pid: projectId(s, 0, 0) };
+  }
+
+  function spec(id: string, overrides: Partial<TerminalSpec> = {}): TerminalSpec {
+    return { id, ...overrides };
+  }
+
+  it("addTerminalSpec appends specs and preserves prior order", () => {
+    const { state, pid } = seededProject();
+    let s = addTerminalSpec(state, pid, spec("t1", { title: "First" }));
+    s = addTerminalSpec(s, pid, spec("t2", { startupCmd: "ls" }));
+    const p = findProject(s, pid)!.project;
+    expect(p.terminals).toEqual([
+      { id: "t1", title: "First" },
+      { id: "t2", startupCmd: "ls" },
+    ]);
+  });
+
+  it("addTerminalSpec is a no-op when the project does not exist", () => {
+    const { state } = seededProject();
+    const ghost = "ghost-id" as ProjectId;
+    const next = addTerminalSpec(state, ghost, spec("t1"));
+    // No mutation reaches a project => identity preserved at the project level.
+    expect(next.workspaces[0].projects[0].terminals).toBeUndefined();
+  });
+
+  it("removeTerminalSpec drops the matching spec and is a no-op when missing", () => {
+    const { state, pid } = seededProject();
+    let s = addTerminalSpec(state, pid, spec("t1"));
+    s = addTerminalSpec(s, pid, spec("t2"));
+    s = removeTerminalSpec(s, pid, "t1");
+    expect(findProject(s, pid)!.project.terminals).toEqual([{ id: "t2" }]);
+
+    // Missing id: project is returned by identity (no terminals array change).
+    const prevProject = findProject(s, pid)!.project;
+    const next = removeTerminalSpec(s, pid, "does-not-exist");
+    expect(findProject(next, pid)!.project).toBe(prevProject);
+  });
+
+  it("removeTerminalSpec on a project with no terminals is a no-op", () => {
+    const { state, pid } = seededProject();
+    const next = removeTerminalSpec(state, pid, "anything");
+    expect(findProject(next, pid)!.project.terminals).toBeUndefined();
+  });
+
+  it("updateTerminalSpec patches partial fields and never changes the id", () => {
+    const { state, pid } = seededProject();
+    let s = addTerminalSpec(state, pid, spec("t1", { title: "Old", cwd: "/a" }));
+    s = updateTerminalSpec(s, pid, "t1", { title: "New", startupCmd: "echo hi" });
+    const updated = findProject(s, pid)!.project.terminals![0];
+    expect(updated).toEqual({
+      id: "t1",
+      title: "New",
+      cwd: "/a",
+      startupCmd: "echo hi",
+    });
+  });
+
+  it("updateTerminalSpec preserves identity when nothing changes", () => {
+    const { state, pid } = seededProject();
+    const s = addTerminalSpec(state, pid, spec("t1", { title: "Same" }));
+    const beforeProject = findProject(s, pid)!.project;
+    const next = updateTerminalSpec(s, pid, "t1", { title: "Same" });
+    expect(findProject(next, pid)!.project).toBe(beforeProject);
+  });
+
+  it("updateTerminalSpec is a no-op when terminal or project is missing", () => {
+    const { state, pid } = seededProject();
+    const ghost = "ghost-id" as ProjectId;
+    const a = updateTerminalSpec(state, pid, "missing", { title: "x" });
+    expect(findProject(a, pid)!.project.terminals).toBeUndefined();
+    const b = updateTerminalSpec(state, ghost, "any", { title: "x" });
+    expect(findProject(b, pid)!.project.terminals).toBeUndefined();
+  });
+
+  it("replaceTerminalSpecs swaps the full list in one shot", () => {
+    const { state, pid } = seededProject();
+    let s = addTerminalSpec(state, pid, spec("t1"));
+    s = replaceTerminalSpecs(s, pid, [spec("a"), spec("b"), spec("c")]);
+    expect(findProject(s, pid)!.project.terminals).toEqual([{ id: "a" }, { id: "b" }, { id: "c" }]);
+  });
+
+  it("setProjectCols stores the clamped value and preserves identity when unchanged", () => {
+    const { state, pid } = seededProject();
+    let s = setProjectCols(state, pid, 0); // clamps up to 1
+    expect(findProject(s, pid)!.project.terminalCols).toBe(1);
+    s = setProjectCols(s, pid, 3);
+    expect(findProject(s, pid)!.project.terminalCols).toBe(3);
+    const beforeProject = findProject(s, pid)!.project;
+    const next = setProjectCols(s, pid, 3);
+    expect(findProject(next, pid)!.project).toBe(beforeProject);
+    // floor: 2.9 -> 2
+    const floored = setProjectCols(s, pid, 2.9);
+    expect(findProject(floored, pid)!.project.terminalCols).toBe(2);
+  });
+
+  it("setProjectCols is a no-op when the project does not exist", () => {
+    const { state } = seededProject();
+    const ghost = "ghost-id" as ProjectId;
+    const next = setProjectCols(state, ghost, 4);
+    expect(next.workspaces[0].projects[0].terminalCols).toBeUndefined();
   });
 
   it("setActiveProject ignores unknown ids and accepts null", () => {

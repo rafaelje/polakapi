@@ -76,6 +76,11 @@ export function mountProjectPane(opts: ProjectPaneOptions): ProjectPaneHandle {
   // hidden via the `inactive` modifier).
   host.replaceChildren(subToolbar, gridEl, emptyState.element);
   host.classList.add("inactive");
+  // Start disabled — setActiveProject(project) flips them on once the
+  // bootstrap layer wires the router to an active project.
+  addBtn.disabled = true;
+  runAllBtn.disabled = true;
+  colsInput.disabled = true;
 
   const onAdd = (): void => callbacks.onAddTerminal();
   const onRunAll = (): void => callbacks.onRunInAll();
@@ -93,6 +98,12 @@ export function mountProjectPane(opts: ProjectPaneOptions): ProjectPaneHandle {
     setActiveProject(project: Project | null): void {
       const active = project !== null;
       host.classList.toggle("inactive", !active);
+      // Toolbar actions are meaningless without an active project (no router
+      // target). Disable the controls so keyboard activation cannot reach a
+      // null manager and quietly no-op.
+      addBtn.disabled = !active;
+      runAllBtn.disabled = !active;
+      colsInput.disabled = !active;
       if (active && emptyState) {
         emptyState.dispose();
         emptyState = null;

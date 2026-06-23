@@ -102,7 +102,7 @@ describe("workspaces store", () => {
     queueSaveWorkspaces(s2);
     expect(mockStore.set).not.toHaveBeenCalled();
 
-    await vi.advanceTimersByTimeAsync(250);
+    await vi.advanceTimersByTimeAsync(300);
     await flushSaveWorkspaces();
 
     expect(mockStore.set).toHaveBeenCalledTimes(1);

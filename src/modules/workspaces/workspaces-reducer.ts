@@ -230,3 +230,14 @@ export function setActiveProject(state: WorkspacesState, id: ProjectId | null): 
   if (id !== null && !findProject(state, id)) return state;
   return { ...state, activeProjectId: id };
 }
+
+// F2 per-project terminal helpers live in their own module to keep this file
+// focused on the workspace/project CRUD surface. Re-export them so callers can
+// keep importing from "./workspaces-reducer".
+export {
+  addTerminalSpec,
+  removeTerminalSpec,
+  replaceTerminalSpecs,
+  setProjectCols,
+  updateTerminalSpec,
+} from "./workspaces-reducer-terminals";

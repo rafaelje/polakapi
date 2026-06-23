@@ -6,10 +6,12 @@ import {
 import { confirmDeleteProject, confirmDeleteWorkspace } from "./confirm-delete";
 import { validatePath } from "./path-validation";
 import { openCreateProjectForm, openEditProjectPathForm } from "./project-form";
+import { revalidatePersistedPaths } from "./revalidate-paths";
 import { openCreateWorkspaceForm } from "./workspace-form";
 import type {
   Project,
   ProjectId,
+  TerminalSpec,
   Workspace,
   WorkspaceId,
   WorkspacesEvent,
@@ -17,6 +19,7 @@ import type {
 } from "./types";
 import {
   addProject,
+  addTerminalSpec,
   addWorkspace,
   changeProjectPath,
   deleteProject as reduceDeleteProject,
@@ -24,14 +27,18 @@ import {
   duplicateProject,
   findProject,
   moveProject,
+  removeTerminalSpec,
   renameProject,
   renameWorkspace,
   reorderProjects,
   reorderWorkspaces,
+  replaceTerminalSpecs,
   resetAlphabeticalOrder,
   setActiveProject,
+  setProjectCols,
   setProjectPathInvalid,
   toggleCollapsed,
+  updateTerminalSpec,
 } from "./workspaces-reducer";
 
 export type WorkspacesChangeListener = (event: WorkspacesEvent) => void;
@@ -40,6 +47,7 @@ export class WorkspacesController {
   private state: WorkspacesState;
   private readonly listeners = new Set<WorkspacesChangeListener>();
   private disposed = false;
+  private deleteHook: ((id: ProjectId) => void | Promise<void>) | null = null;
 
   private constructor(initial: WorkspacesState) {
     this.state = initial;
@@ -65,8 +73,6 @@ export class WorkspacesController {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
   }
-
-  // ---- Workspace mutations -----------------------------------------------
 
   async createWorkspaceInteractive(): Promise<Workspace | null> {
     const result = await openCreateWorkspaceForm();
@@ -98,8 +104,6 @@ export class WorkspacesController {
     this.commit(reorderWorkspaces(this.state, ordered));
   }
 
-  // ---- Project mutations -------------------------------------------------
-
   async createProjectInteractive(workspaceId: WorkspaceId): Promise<Project | null> {
     const result = await openCreateProjectForm();
     if (result.kind !== "ok") return null;
@@ -130,28 +134,63 @@ export class WorkspacesController {
   }
 
   async deleteProject(id: ProjectId): Promise<void> {
+    await this.deleteProjectWithLiveCount(id, 0);
+  }
+
+  /**
+   * Confirms deletion with the live PTY count from the router. The optional
+   * `onBeforeRemove` (or `setDeleteProjectHook`) tears down PTYs after the
+   * user confirms and before the reducer removes the project.
+   */
+  async deleteProjectWithLiveCount(
+    id: ProjectId,
+    liveCount: number,
+    onBeforeRemove?: (id: ProjectId) => void | Promise<void>,
+  ): Promise<boolean> {
     const found = findProject(this.state, id);
-    if (!found) return;
-    const ok = await confirmDeleteProject(found.project.name, 0);
-    if (!ok) return;
+    if (!found) return false;
+    if (!(await confirmDeleteProject(found.project.name, liveCount))) return false;
+    const hook = onBeforeRemove ?? this.deleteHook;
+    if (hook) {
+      try {
+        await hook(id);
+      } catch (error) {
+        console.error("Project delete teardown failed", error);
+      }
+    }
     this.commit(reduceDeleteProject(this.state, id));
+    return true;
   }
 
-  duplicateProject(id: ProjectId): void {
-    this.commit(duplicateProject(this.state, id));
+  /** Registered by the app bootstrap so PTYs tear down before reducer remove. */
+  setDeleteProjectHook(hook: ((id: ProjectId) => void | Promise<void>) | null): () => void {
+    this.deleteHook = hook;
+    return () => {
+      if (this.deleteHook === hook) this.deleteHook = null;
+    };
   }
 
-  moveProject(id: ProjectId, toWorkspaceId: WorkspaceId, atIndex: number): void {
+  addTerminalSpec = (projectId: ProjectId, spec: TerminalSpec): void =>
+    this.commit(addTerminalSpec(this.state, projectId, spec));
+  removeTerminalSpec = (projectId: ProjectId, terminalId: string): void =>
+    this.commit(removeTerminalSpec(this.state, projectId, terminalId));
+  updateTerminalSpec = (
+    projectId: ProjectId,
+    terminalId: string,
+    patch: Partial<Omit<TerminalSpec, "id">>,
+  ): void => this.commit(updateTerminalSpec(this.state, projectId, terminalId, patch));
+  replaceTerminalSpecs = (projectId: ProjectId, specs: TerminalSpec[]): void =>
+    this.commit(replaceTerminalSpecs(this.state, projectId, specs));
+  setProjectCols = (projectId: ProjectId, cols: number): void =>
+    this.commit(setProjectCols(this.state, projectId, cols));
+
+  duplicateProject = (id: ProjectId): void => this.commit(duplicateProject(this.state, id));
+  moveProject = (id: ProjectId, toWorkspaceId: WorkspaceId, atIndex: number): void =>
     this.commit(moveProject(this.state, id, toWorkspaceId, atIndex));
-  }
-
-  reorderProjects(workspaceId: WorkspaceId, ordered: ProjectId[]): void {
+  reorderProjects = (workspaceId: WorkspaceId, ordered: ProjectId[]): void =>
     this.commit(reorderProjects(this.state, workspaceId, ordered));
-  }
-
-  resetAlphabeticalOrder(workspaceId: WorkspaceId): void {
+  resetAlphabeticalOrder = (workspaceId: WorkspaceId): void =>
     this.commit(resetAlphabeticalOrder(this.state, workspaceId));
-  }
 
   setActiveProject(id: ProjectId | null): void {
     const next = setActiveProject(this.state, id);
@@ -180,8 +219,6 @@ export class WorkspacesController {
     }
   }
 
-  // ---- Internals ---------------------------------------------------------
-
   private commit(next: WorkspacesState): void {
     if (next === this.state) return;
     const prevActive = this.state.activeProjectId;
@@ -204,22 +241,10 @@ export class WorkspacesController {
   }
 
   private async revalidatePersistedPaths(): Promise<void> {
-    const checks: Array<Promise<{ id: ProjectId; invalid: boolean }>> = [];
-    for (const workspace of this.state.workspaces) {
-      for (const project of workspace.projects) {
-        checks.push(validatePath(project.path).then((v) => ({ id: project.id, invalid: !v.ok })));
-      }
-    }
-    if (checks.length === 0) return;
-    const results = await Promise.all(checks);
-    let next = this.state;
-    for (const { id, invalid } of results) {
-      next = setProjectPathInvalid(next, id, invalid);
-    }
-    if (next !== this.state) {
-      this.state = next;
-      queueSaveWorkspaces(this.state);
-      this.emit({ type: "state-changed", state: this.state });
-    }
+    const next = await revalidatePersistedPaths(this.state);
+    if (next === this.state) return;
+    this.state = next;
+    queueSaveWorkspaces(this.state);
+    this.emit({ type: "state-changed", state: this.state });
   }
 }

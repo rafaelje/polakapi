@@ -1,3 +1,7 @@
+import type { TerminalSpec } from "../terminal/types";
+
+export type { TerminalSpec };
+
 // Branded IDs to keep workspace/project identifiers from being mixed up at the
 // type level. They are still plain strings at runtime (crypto.randomUUID()).
 export type WorkspaceId = string & { readonly __brand: "WorkspaceId" };
@@ -14,6 +18,16 @@ export interface Project {
   order?: number;
   /** Set on startup when fs_validate_path fails for this project. */
   pathInvalid?: boolean;
+  /**
+   * Persisted terminal specs to spawn on next activation of this project.
+   * Optional/additive — projects created before F2 simply have no field.
+   */
+  terminals?: TerminalSpec[];
+  /**
+   * Per-project terminal grid columns. When undefined the router falls back to
+   * the global default (kept for backward compat with the layout store).
+   */
+  terminalCols?: number;
 }
 
 export interface Workspace {

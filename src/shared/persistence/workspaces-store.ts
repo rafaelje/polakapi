@@ -4,7 +4,10 @@ import type { WorkspacesState } from "../../modules/workspaces/types";
 
 const STORE_FILE = "workspaces.json";
 const STATE_KEY = "state";
-const DEBOUNCE_MS = 250;
+// Bumped from 250ms in F1 to 300ms for F2: terminal-spec writes fire more
+// frequently (spawn/close/rename/cols) and tend to cluster, so the wider
+// window collapses more of them into a single full-state snapshot.
+const DEBOUNCE_MS = 300;
 const CURRENT_SCHEMA_VERSION = 1;
 
 let storePromise: Promise<Store> | null = null;

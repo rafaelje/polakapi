@@ -7,12 +7,25 @@ export interface ProjectRowOptions {
   project: Project;
   workspaceId: WorkspaceId;
   isActive: boolean;
+  /**
+   * Initial live-terminal count for this project. Subsequent updates flow
+   * through `ProjectRowHandle.setLiveCount(n)` so the panel can mutate the
+   * badge in place instead of re-rendering the whole row.
+   */
   liveTerminalsCount: number;
   controller: WorkspacesController;
+  /**
+   * Resolves the current live count when the row triggers the delete flow —
+   * the confirm modal must show the up-to-date number even if the badge has
+   * not been touched since the last render.
+   */
+  getLiveCount?: () => number;
 }
 
 export interface ProjectRowHandle {
   element: HTMLElement;
+  /** Update the live-terminals badge without re-rendering the row. */
+  setLiveCount(n: number): void;
   dispose(): void;
 }
 
@@ -57,8 +70,15 @@ export function createProjectRow(opts: ProjectRowOptions): ProjectRowHandle {
 
   const badge = document.createElement("span");
   badge.className = "ws-terminals-badge";
-  badge.textContent = String(opts.liveTerminalsCount);
-  if (opts.liveTerminalsCount === 0) badge.classList.add("hidden");
+
+  const applyBadge = (n: number): void => {
+    const safe = Math.max(0, Math.floor(n));
+    badge.textContent = String(safe);
+    badge.classList.toggle("hidden", safe === 0);
+    badge.classList.toggle("live", safe > 0);
+    badge.title = safe === 1 ? "1 terminal activa" : `${safe} terminales activas`;
+  };
+  applyBadge(opts.liveTerminalsCount);
 
   const warn = document.createElement("button");
   warn.type = "button";
@@ -119,7 +139,7 @@ export function createProjectRow(opts: ProjectRowOptions): ProjectRowHandle {
         {
           label: "Delete",
           danger: true,
-          onSelect: () => void controller.deleteProject(project.id),
+          onSelect: () => void runDelete(),
         },
       ],
     });
@@ -140,10 +160,22 @@ export function createProjectRow(opts: ProjectRowOptions): ProjectRowHandle {
         {
           label: "Delete project",
           danger: true,
-          onSelect: () => void controller.deleteProject(project.id),
+          onSelect: () => void runDelete(),
         },
       ],
     });
+  }
+
+  async function runDelete(): Promise<void> {
+    // When the panel injects `getLiveCount` we surface the real PTY count in
+    // the confirm modal. The PTY teardown itself lives in the bootstrap layer
+    // (router.dispose) and runs after this resolves true.
+    const liveCount = opts.getLiveCount?.() ?? 0;
+    if (opts.getLiveCount) {
+      await controller.deleteProjectWithLiveCount(project.id, liveCount);
+    } else {
+      await controller.deleteProject(project.id);
+    }
   }
 
   async function runRename(): Promise<void> {
@@ -159,6 +191,9 @@ export function createProjectRow(opts: ProjectRowOptions): ProjectRowHandle {
 
   return {
     element: row,
+    setLiveCount(n: number): void {
+      applyBadge(n);
+    },
     dispose(): void {
       for (const off of listeners.splice(0)) off();
       row.remove();
