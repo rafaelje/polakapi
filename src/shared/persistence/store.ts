@@ -9,6 +9,11 @@ export interface PersistedLayout {
   hideRight?: boolean;
   hideNotes?: boolean;
   notesHeight?: number;
+  /**
+   * @deprecated F3: notes content is now stored per-project in workspaces.json.
+   * Kept in the type so older layout.json files still load without runtime
+   * narrowing errors. No code reads or writes this field after F3.
+   */
   notesContent?: string;
 }
 

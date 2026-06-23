@@ -212,6 +212,18 @@ body {
   display: none;
 }
 
+/* F3 empty state: no active project => textarea is disabled and shows a
+   centered placeholder. We avoid inserting extra DOM by styling the disabled
+   textarea's placeholder. */
+.notes.notes-empty .notes-body {
+  opacity: 0.6;
+  cursor: not-allowed;
+  text-align: center;
+}
+.notes.notes-empty .notes-body::placeholder {
+  text-align: center;
+}
+
 .toolbar input[type="number"] {
   width: 48px;
   background: var(--bg);

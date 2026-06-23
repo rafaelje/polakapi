@@ -11,11 +11,8 @@ import { onPtyData, onPtyExit, ptyKill } from "../modules/terminal/pty-client";
 import { startFlexDrag, wireSidebarGutters } from "../modules/layout/gutters";
 import { wireToggles } from "../modules/layout/panel-toggles";
 import { type SidebarTarget } from "../modules/layout/types";
-import { applyNotesLayout } from "../modules/notes/notes-panel";
-import {
-  persistNotesHeight as queueNotesHeightSave,
-  wireNotesPersistence,
-} from "../modules/notes/notes-persistence";
+import { applyNotesHeight } from "../modules/notes/notes-panel";
+import { persistNotesHeight as queueNotesHeightSave } from "../modules/notes/notes-persistence";
 import { bootstrapWorkspaces, type WorkspacesBootstrapHandle } from "./workspaces-bootstrap";
 import { wireWindowLifecycle } from "./lifecycle";
 import { wireQuitConfirm } from "./quit-confirm";
@@ -54,7 +51,6 @@ export class AppController {
     await this.wirePtyEvents();
     this.wireGutters();
     this.wirePanelToggles();
-    wireNotesPersistence(this.elements.notes.textarea);
     this.wireKeyboardShortcuts();
     this.unwireWindowLifecycle = wireWindowLifecycle({
       onBeforeUnload: () => this.dispose(),
@@ -94,6 +90,13 @@ export class AppController {
     const workspaces = this.workspaces;
     this.workspaces = null;
     if (workspaces) {
+      // Dispose order contract (F3):
+      //   1. notesPanel — flushes pending text SYNCHRONOUSLY into the
+      //      controller so it lands in state before flushSaveWorkspaces runs.
+      //   2. unsubscribe — drop event listeners.
+      //   3. panel/projectPane/breadcrumb — UI teardown.
+      //   4. controller.dispose() — awaits flushSaveWorkspaces().
+      workspaces.notesPanel.dispose();
       workspaces.unsubscribe();
       workspaces.panel.unmount();
       workspaces.projectPane.dispose();
@@ -187,7 +190,7 @@ export class AppController {
     if (typeof layout.sidebarRightWidth === "number") {
       this.elements.sidebarRight.style.width = `${layout.sidebarRightWidth}px`;
     }
-    applyNotesLayout(layout, this.elements.notes);
+    applyNotesHeight(layout, this.elements.notes);
     if (layout.hideLeft)
       this.toggleClassAndButton(this.elements.mainRow, "hide-left", "toggle-left");
     if (layout.hideRight) {

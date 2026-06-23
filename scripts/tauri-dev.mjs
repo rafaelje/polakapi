@@ -14,6 +14,8 @@
 // (`build`, `info`, ...) are forwarded untouched.
 
 import { spawn } from "node:child_process";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
 
 const [subcommand, ...rest] = process.argv.slice(2);
 const args = [subcommand, ...rest];
@@ -34,10 +36,15 @@ if (subcommand === "dev") {
   args.push("--config", JSON.stringify({ build: { devUrl } }));
 }
 
-const child = spawn("tauri", args, {
+// Resolve the local `@tauri-apps/cli` JS entry directly and run it with node.
+// Going through `node_modules/.bin/tauri` (a shell shim) re-parses argv via
+// `"$@"` and strips the double quotes from the JSON `--config` value.
+const projectRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
+const tauriJs = join(projectRoot, "node_modules", "@tauri-apps", "cli", "tauri.js");
+
+const child = spawn(process.execPath, [tauriJs, ...args], {
   stdio: "inherit",
   env,
-  shell: true,
 });
 
 child.on("exit", (code) => process.exit(code ?? 0));

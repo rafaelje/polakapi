@@ -36,6 +36,7 @@ import {
   resetAlphabeticalOrder,
   setActiveProject,
   setProjectCols,
+  setProjectNotes,
   setProjectPathInvalid,
   toggleCollapsed,
   updateTerminalSpec,
@@ -180,6 +181,17 @@ export class WorkspacesController {
     this.commit(replaceTerminalSpecs(this.state, projectId, specs));
   setProjectCols = (projectId: ProjectId, cols: number): void =>
     this.commit(setProjectCols(this.state, projectId, cols));
+
+  // F3: per-project notes. The debounce lives in the notes panel (400ms), so
+  // each call here is already coalesced — we just commit and let the existing
+  // queueSaveWorkspaces 300ms window collapse adjacent writes.
+  setProjectNotes = (projectId: ProjectId, notes: string): void =>
+    this.commit(setProjectNotes(this.state, projectId, notes));
+
+  /** Returns the project's notes, or '' when project is missing or unset. */
+  getProjectNotes(projectId: ProjectId): string {
+    return findProject(this.state, projectId)?.project.notes ?? "";
+  }
 
   duplicateProject = (id: ProjectId): void => this.commit(duplicateProject(this.state, id));
   moveProject = (id: ProjectId, toWorkspaceId: WorkspaceId, atIndex: number): void =>

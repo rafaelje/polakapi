@@ -7,6 +7,8 @@ import {
 } from "../modules/workspaces/workspaces-panel";
 import type { Project, ProjectId } from "../modules/workspaces/types";
 import { findProject } from "../modules/workspaces/workspaces-reducer";
+import { mountNotesPanel } from "../modules/notes/notes-panel";
+import type { NotesPanelHandle, NotesSource } from "../modules/notes/types";
 import { mountProjectPane, type ProjectPaneHandle } from "./project-pane";
 import { mountBreadcrumb, type BreadcrumbHandle } from "./breadcrumb";
 import { type AppElements } from "./elements";
@@ -23,6 +25,9 @@ export interface WorkspacesBootstrapHandle {
   panel: WorkspacesPanelHandle;
   projectPane: ProjectPaneHandle;
   breadcrumb: BreadcrumbHandle;
+  /** F3: disposed by AppController BEFORE controller.dispose() so the panel's
+   * synchronous final flush lands in state before flushSaveWorkspaces runs. */
+  notesPanel: NotesPanelHandle;
   unsubscribe: () => void;
 }
 
@@ -106,6 +111,22 @@ export async function bootstrapWorkspaces(
     restored.delete(projectId);
   });
 
+  // F3: NotesSource adapter. The panel only needs a narrow view of the
+  // controller — current active id, current notes for any id, a write path,
+  // and a subscription that fires when the active project changes.
+  const notesListeners = new Set<(pid: ProjectId | null) => void>();
+  const notesSource: NotesSource = {
+    getActiveProjectId: () => controller.getActiveProject()?.id ?? null,
+    getNotes: (projectId) => controller.getProjectNotes(projectId),
+    setNotes: (projectId, value) => controller.setProjectNotes(projectId, value),
+    on: (_event, cb) => {
+      notesListeners.add(cb);
+      return () => {
+        notesListeners.delete(cb);
+      };
+    },
+  };
+
   const unsubscribeController = controller.on((event) => {
     if (event.type === "state-changed") {
       refreshActiveContext();
@@ -116,18 +137,32 @@ export async function bootstrapWorkspaces(
     if (event.type === "active-project-changed") {
       refreshActiveContext();
       void activateProject(event.project);
+      const pid = event.project?.id ?? null;
+      for (const listener of notesListeners) {
+        try {
+          listener(pid);
+        } catch (error) {
+          console.error("Notes source listener threw", error);
+        }
+      }
     }
   });
   refreshActiveContext();
   // Restore on boot if a project was already active.
   void activateProject(controller.getActiveProject());
 
+  const notesPanel = mountNotesPanel({
+    elements: elements.notes,
+    source: notesSource,
+  });
+
   const unsubscribe = (): void => {
     unsubscribeController();
     unwireDeleteHook();
+    notesListeners.clear();
   };
 
-  return { controller, panel, projectPane, breadcrumb, unsubscribe };
+  return { controller, panel, projectPane, breadcrumb, notesPanel, unsubscribe };
 }
 
 async function runCommandInActivePanes(router: TerminalRouter): Promise<void> {

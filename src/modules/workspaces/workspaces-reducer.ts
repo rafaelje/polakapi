@@ -241,3 +241,6 @@ export {
   setProjectCols,
   updateTerminalSpec,
 } from "./workspaces-reducer-terminals";
+
+// F3 per-project notes helper — same pattern as the terminals re-export above.
+export { setProjectNotes } from "./workspaces-reducer-notes";
