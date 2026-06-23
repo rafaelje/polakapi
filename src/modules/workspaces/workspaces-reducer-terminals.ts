@@ -2,7 +2,7 @@ import type { ProjectId, TerminalSpec, WorkspacesState } from "./types";
 import { mapProjectInWorkspace, mapWorkspaces } from "./workspaces-reducer-helpers";
 
 // ---------------------------------------------------------------------------
-// F2: per-project terminal specs and grid columns.
+// F2: per-project terminal specs.
 // All helpers are no-ops (identity-preserving) when the project is missing or
 // when the requested mutation would not change anything. Split out of
 // `workspaces-reducer.ts` to keep each reducer file focused on one concern.
@@ -78,23 +78,6 @@ export function replaceTerminalSpecs(
 ): WorkspacesState {
   return mapWorkspaces(state, (w) =>
     mapProjectInWorkspace(w, projectId, (p) => ({ ...p, terminals: specs })),
-  );
-}
-
-/**
- * Set the per-project terminal grid columns. Clamped to >= 1 so the UI never
- * stores a value the layout cannot honor.
- */
-export function setProjectCols(
-  state: WorkspacesState,
-  projectId: ProjectId,
-  cols: number,
-): WorkspacesState {
-  const clamped = Math.max(1, Math.floor(cols));
-  return mapWorkspaces(state, (w) =>
-    mapProjectInWorkspace(w, projectId, (p) =>
-      p.terminalCols === clamped ? p : { ...p, terminalCols: clamped },
-    ),
   );
 }
 

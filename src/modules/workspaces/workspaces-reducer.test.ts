@@ -20,7 +20,6 @@ import {
   replaceTerminalSpecs,
   resetAlphabeticalOrder,
   setActiveProject,
-  setProjectCols,
   setProjectPathInvalid,
   sortedProjects,
   sortedWorkspaces,
@@ -290,27 +289,6 @@ describe("workspaces-reducer", () => {
     let s = addTerminalSpec(state, pid, spec("t1"));
     s = replaceTerminalSpecs(s, pid, [spec("a"), spec("b"), spec("c")]);
     expect(findProject(s, pid)!.project.terminals).toEqual([{ id: "a" }, { id: "b" }, { id: "c" }]);
-  });
-
-  it("setProjectCols stores the clamped value and preserves identity when unchanged", () => {
-    const { state, pid } = seededProject();
-    let s = setProjectCols(state, pid, 0); // clamps up to 1
-    expect(findProject(s, pid)!.project.terminalCols).toBe(1);
-    s = setProjectCols(s, pid, 3);
-    expect(findProject(s, pid)!.project.terminalCols).toBe(3);
-    const beforeProject = findProject(s, pid)!.project;
-    const next = setProjectCols(s, pid, 3);
-    expect(findProject(next, pid)!.project).toBe(beforeProject);
-    // floor: 2.9 -> 2
-    const floored = setProjectCols(s, pid, 2.9);
-    expect(findProject(floored, pid)!.project.terminalCols).toBe(2);
-  });
-
-  it("setProjectCols is a no-op when the project does not exist", () => {
-    const { state } = seededProject();
-    const ghost = "ghost-id" as ProjectId;
-    const next = setProjectCols(state, ghost, 4);
-    expect(next.workspaces[0].projects[0].terminalCols).toBeUndefined();
   });
 
   it("setActiveProject ignores unknown ids and accepts null", () => {

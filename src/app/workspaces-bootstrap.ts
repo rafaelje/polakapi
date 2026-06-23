@@ -1,5 +1,6 @@
 import { promptModal } from "../shared/ui/modal";
 import { ptyWrite } from "../modules/terminal/pty-client";
+import { openInEditor, revealFolder } from "../modules/workspaces/open-external";
 import { WorkspacesController } from "../modules/workspaces/workspaces-controller";
 import {
   mountWorkspacesPanel,
@@ -18,7 +19,6 @@ import type { TerminalRouter, TerminalRouterEvent } from "./terminal-router";
 export interface WorkspacesBootstrapOptions {
   elements: AppElements;
   router: TerminalRouter;
-  clampGridCols: (value: number) => number;
   /**
    * F5: live OS window focus probe. Wired in AppController from window
    * focus/blur listeners so the bell wiring can suppress notifications while
@@ -47,7 +47,7 @@ export interface WorkspacesBootstrapHandle {
 export async function bootstrapWorkspaces(
   opts: WorkspacesBootstrapOptions,
 ): Promise<WorkspacesBootstrapHandle> {
-  const { elements, router, clampGridCols, isWindowFocused } = opts;
+  const { elements, router, isWindowFocused } = opts;
 
   const controller = await WorkspacesController.load();
 
@@ -121,7 +121,6 @@ export async function bootstrapWorkspaces(
   const projectPane = mountProjectPane({
     host: elements.projectPaneHost,
     gridEl: elements.gridEl,
-    gridCols: controller.getActiveProject()?.terminalCols ?? 2,
     callbacks: {
       onAddTerminal: () => {
         const manager = router.getActive();
@@ -129,12 +128,11 @@ export async function bootstrapWorkspaces(
         void manager.addPane();
       },
       onRunInAll: () => void runCommandInActivePanes(router),
-      onSetGridCols: (value) => {
-        const next = clampGridCols(value);
-        const active = controller.getActiveProject();
-        if (!active) return;
-        router.getById(active.id)?.setGridCols(next);
-        controller.setProjectCols(active.id, next);
+      onRevealFolder: (path) => {
+        void revealFolder(path);
+      },
+      onOpenInEditor: (path) => {
+        void openInEditor(path);
       },
     },
   });
@@ -147,7 +145,6 @@ export async function bootstrapWorkspaces(
     }
     const manager = router.getOrCreate(project);
     router.mount(project.id, elements.gridEl);
-    projectPane.setGridCols(manager.gridCols);
     if (!restored.has(project.id)) {
       restored.add(project.id);
       const specs = project.terminals ?? [];

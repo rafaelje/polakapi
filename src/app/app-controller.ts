@@ -23,10 +23,6 @@ import { wireQuitConfirm } from "./quit-confirm";
 import { TerminalRouter } from "./terminal-router";
 import { type AppElements } from "./elements";
 
-const DEFAULT_GRID_COLS = 2;
-const MIN_GRID_COLS = 1;
-const MAX_GRID_COLS = 8;
-
 export class AppController {
   private readonly router: TerminalRouter;
   private workspaces: WorkspacesBootstrapHandle | null = null;
@@ -48,12 +44,8 @@ export class AppController {
 
   constructor(private readonly elements: AppElements) {
     this.router = new TerminalRouter({
-      defaultGridCols: DEFAULT_GRID_COLS,
       onPersistSpecs: (projectId, specs) => {
         this.workspaces?.controller.replaceTerminalSpecs(projectId, specs);
-      },
-      onPersistCols: (projectId, cols) => {
-        this.workspaces?.controller.setProjectCols(projectId, cols);
       },
     });
   }
@@ -74,7 +66,6 @@ export class AppController {
     this.workspaces = await bootstrapWorkspaces({
       elements: this.elements,
       router: this.router,
-      clampGridCols: (value) => this.clampGridCols(value),
       isWindowFocused: () => this.windowFocused,
     });
 
@@ -260,10 +251,5 @@ export class AppController {
       showToast("Could not load saved layout", "error");
       return {};
     }
-  }
-
-  private clampGridCols(value: number): number {
-    if (!Number.isFinite(value)) return DEFAULT_GRID_COLS;
-    return Math.min(MAX_GRID_COLS, Math.max(MIN_GRID_COLS, Math.floor(value)));
   }
 }

@@ -3,12 +3,15 @@
 
 mod commands;
 mod fs;
+mod open;
 mod pty;
 
 use std::sync::Arc;
 use tauri::Manager;
 
-use crate::commands::{fs_validate_path, pty_kill, pty_resize, pty_spawn, pty_write};
+use crate::commands::{
+    fs_validate_path, open_in_editor, open_in_explorer, pty_kill, pty_resize, pty_spawn, pty_write,
+};
 use crate::pty::PtyStore;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -39,7 +42,9 @@ pub fn run() {
             pty_write,
             pty_resize,
             pty_kill,
-            fs_validate_path
+            fs_validate_path,
+            open_in_explorer,
+            open_in_editor
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

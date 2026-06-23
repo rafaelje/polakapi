@@ -234,19 +234,6 @@ body {
   font: inherit;
 }
 
-.toolbar-field {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: #8a8a8a;
-}
-
-.toolbar-field span {
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-}
-
 .grid {
   display: flex;
   flex-direction: column;
@@ -893,14 +880,21 @@ body {
   color: var(--accent);
 }
 
-.project-pane-toolbar input[type="number"] {
-  width: 48px;
-  background: var(--bg);
+.project-pane-toolbar button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.project-pane-toolbar button:disabled:hover {
+  border-color: var(--border);
   color: var(--text);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 2px 6px;
-  font: inherit;
+}
+
+.project-pane-external {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .project-pane.inactive .project-pane-toolbar,

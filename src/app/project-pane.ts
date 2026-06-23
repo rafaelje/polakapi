@@ -7,24 +7,20 @@ import {
 export interface ProjectPaneCallbacks {
   onAddTerminal(): void;
   onRunInAll(): void;
-  onSetGridCols(value: number): void;
+  onRevealFolder(path: string): void;
+  onOpenInEditor(path: string): void;
 }
 
 export interface ProjectPaneOptions {
   host: HTMLElement;
   gridEl: HTMLDivElement;
-  gridCols: number;
   callbacks: ProjectPaneCallbacks;
 }
 
 export interface ProjectPaneHandle {
   setActiveProject(project: Project | null): void;
-  setGridCols(value: number): void;
   dispose(): void;
 }
-
-const MIN_COLS = 1;
-const MAX_COLS = 8;
 
 /**
  * Wraps the existing `#grid` with a local sub-toolbar containing the actions
@@ -48,28 +44,29 @@ export function mountProjectPane(opts: ProjectPaneOptions): ProjectPaneHandle {
   addBtn.id = "add-pane";
   addBtn.textContent = "+ Terminal";
 
+  const revealBtn = document.createElement("button");
+  revealBtn.type = "button";
+  revealBtn.title = "Reveal in file manager";
+  revealBtn.textContent = "Reveal";
+
+  const editorBtn = document.createElement("button");
+  editorBtn.type = "button";
+  editorBtn.title = "Open in IDE";
+  editorBtn.textContent = "Open in IDE";
+
+  const externalGroup = document.createElement("div");
+  externalGroup.className = "project-pane-external";
+  externalGroup.append(revealBtn, editorBtn);
+
   const runAllBtn = document.createElement("button");
   runAllBtn.type = "button";
   runAllBtn.id = "run-all";
   runAllBtn.textContent = "Run command in all…";
 
-  const colsLabel = document.createElement("label");
-  colsLabel.className = "toolbar-field";
-  colsLabel.htmlFor = "grid-cols";
-  const colsSpan = document.createElement("span");
-  colsSpan.textContent = "Cols";
-  const colsInput = document.createElement("input");
-  colsInput.id = "grid-cols";
-  colsInput.type = "number";
-  colsInput.min = String(MIN_COLS);
-  colsInput.max = String(MAX_COLS);
-  colsInput.step = "1";
-  colsInput.value = String(clamp(opts.gridCols));
-  colsLabel.append(colsSpan, colsInput);
-
-  subToolbar.append(addBtn, runAllBtn, colsLabel);
+  subToolbar.append(addBtn, runAllBtn, externalGroup);
 
   let emptyState: EmptyStateHandle | null = createProjectEmptyState();
+  let currentProject: Project | null = null;
 
   // Insert sub-toolbar and the grid into `host`, then append the empty state
   // below them (it is only visible when no project is active — `gridEl` is
@@ -80,30 +77,34 @@ export function mountProjectPane(opts: ProjectPaneOptions): ProjectPaneHandle {
   // bootstrap layer wires the router to an active project.
   addBtn.disabled = true;
   runAllBtn.disabled = true;
-  colsInput.disabled = true;
+  revealBtn.disabled = true;
+  editorBtn.disabled = true;
 
   const onAdd = (): void => callbacks.onAddTerminal();
   const onRunAll = (): void => callbacks.onRunInAll();
-  const onColsChange = (): void => {
-    const next = clamp(Number(colsInput.value));
-    colsInput.value = String(next);
-    callbacks.onSetGridCols(next);
+  const onReveal = (): void => {
+    const path = currentProject?.path;
+    if (path) callbacks.onRevealFolder(path);
+  };
+  const onEditor = (): void => {
+    const path = currentProject?.path;
+    if (path) callbacks.onOpenInEditor(path);
   };
 
   addBtn.addEventListener("click", onAdd);
   runAllBtn.addEventListener("click", onRunAll);
-  colsInput.addEventListener("change", onColsChange);
+  revealBtn.addEventListener("click", onReveal);
+  editorBtn.addEventListener("click", onEditor);
 
   return {
     setActiveProject(project: Project | null): void {
+      currentProject = project;
       const active = project !== null;
       host.classList.toggle("inactive", !active);
-      // Toolbar actions are meaningless without an active project (no router
-      // target). Disable the controls so keyboard activation cannot reach a
-      // null manager and quietly no-op.
       addBtn.disabled = !active;
       runAllBtn.disabled = !active;
-      colsInput.disabled = !active;
+      revealBtn.disabled = project === null || !project.path;
+      editorBtn.disabled = project === null || !project.path;
       if (active && emptyState) {
         emptyState.dispose();
         emptyState = null;
@@ -112,13 +113,11 @@ export function mountProjectPane(opts: ProjectPaneOptions): ProjectPaneHandle {
         host.append(emptyState.element);
       }
     },
-    setGridCols(value: number): void {
-      colsInput.value = String(clamp(value));
-    },
     dispose(): void {
       addBtn.removeEventListener("click", onAdd);
       runAllBtn.removeEventListener("click", onRunAll);
-      colsInput.removeEventListener("change", onColsChange);
+      revealBtn.removeEventListener("click", onReveal);
+      editorBtn.removeEventListener("click", onEditor);
       emptyState?.dispose();
       emptyState = null;
       subToolbar.remove();
@@ -130,9 +129,4 @@ export function mountProjectPane(opts: ProjectPaneOptions): ProjectPaneHandle {
       }
     },
   };
-}
-
-function clamp(value: number): number {
-  if (!Number.isFinite(value)) return MIN_COLS;
-  return Math.min(MAX_COLS, Math.max(MIN_COLS, Math.floor(value)));
 }

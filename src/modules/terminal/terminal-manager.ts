@@ -119,17 +119,6 @@ export class TerminalManager {
     return this.focusedId;
   }
 
-  get gridCols(): number {
-    return this.cols;
-  }
-
-  setGridCols(cols: number): void {
-    const next = Math.max(1, Math.floor(cols));
-    if (next === this.cols) return;
-    this.cols = next;
-    this.relayout();
-  }
-
   setDefaultCwd(cwd: string): void {
     this.defaultCwd = cwd;
   }

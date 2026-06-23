@@ -77,3 +77,16 @@ pub fn pty_kill(store: State<'_, Arc<PtyStore>>, id: String) -> Result<(), Strin
 pub fn fs_validate_path(path: String) -> Result<(), String> {
     validate_path(&path).map_err(|err| err.as_contract_string())
 }
+
+/// Opens `path` in the OS file manager (Finder / Explorer / xdg-open).
+#[tauri::command]
+pub fn open_in_explorer(path: String) -> Result<(), String> {
+    crate::open::open_in_explorer(&path)
+}
+
+/// Opens `path` in an editor. When `editor` is `None`, the first available
+/// binary from the fallback order (agy-ide, code) is used.
+#[tauri::command]
+pub fn open_in_editor(path: String, editor: Option<String>) -> Result<(), String> {
+    crate::open::open_in_editor(&path, editor.as_deref())
+}

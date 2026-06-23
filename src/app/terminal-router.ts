@@ -15,11 +15,10 @@ export type TerminalRouterEvent =
 export type TerminalRouterListener = (event: TerminalRouterEvent) => void;
 
 export interface TerminalRouterOptions {
-  /** Fallback when project.terminalCols is unset. */
-  defaultGridCols: number;
   onPersistSpecs(projectId: ProjectId, specs: TerminalSpec[]): void;
-  onPersistCols(projectId: ProjectId, cols: number): void;
 }
+
+const DEFAULT_GRID_COLS = 2;
 
 /**
  * Owns one TerminalManager per ProjectId. Manages mount/unmount via DOM
@@ -58,7 +57,7 @@ export class TerminalRouter {
     const manager = new TerminalManager({
       projectId: project.id,
       defaultCwd: project.path,
-      gridCols: project.terminalCols ?? this.opts.defaultGridCols,
+      gridCols: DEFAULT_GRID_COLS,
       notificationContext: this.notificationContext ?? undefined,
     });
     this.managers.set(project.id, manager);
