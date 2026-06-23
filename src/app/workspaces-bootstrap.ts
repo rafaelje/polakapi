@@ -136,6 +136,9 @@ export async function bootstrapWorkspaces(
         router.getById(active.id)?.setGridCols(next);
         controller.setProjectCols(active.id, next);
       },
+      onSetActiveCli: (cliId) => {
+        router.getActive()?.setActiveCli(cliId);
+      },
     },
   });
   const breadcrumb = mountBreadcrumb({ host: elements.breadcrumbHost });
@@ -148,6 +151,7 @@ export async function bootstrapWorkspaces(
     const manager = router.getOrCreate(project);
     router.mount(project.id, elements.gridEl);
     projectPane.setGridCols(manager.gridCols);
+    projectPane.setActiveCli(manager.getActiveCli());
     if (!restored.has(project.id)) {
       restored.add(project.id);
       const specs = project.terminals ?? [];

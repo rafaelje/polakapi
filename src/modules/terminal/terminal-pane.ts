@@ -1,25 +1,30 @@
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
+import { resolveProfile } from "./cli-registry";
 import { ptySpawn, ptyWrite, ptyResize, ptyKill } from "./pty-client";
 import { terminalTheme } from "./terminal-theme";
-import { openPaneMenu } from "./terminal-pane-menu";
-import type { StartupCmdEditCallbacks } from "./terminal-pane-types";
+import { openPaneMenu, openCliRespawnMenu } from "./terminal-pane-menu";
+import type { CliRespawnCallbacks, StartupCmdEditCallbacks } from "./terminal-pane-types";
 import { type PaneCreateOptions } from "./types";
 
 export type { StartupCmdEditCallbacks };
 
 export class TerminalPane {
   ptyId = "";
+  bytesReceived = 0;
   readonly el: HTMLElement;
   readonly bodyEl: HTMLElement;
   readonly titleEl: HTMLElement;
+  readonly badgeEl: HTMLButtonElement;
   readonly closeBtn: HTMLButtonElement;
   readonly menuBtn: HTMLButtonElement;
   private term: Terminal;
   private fitAddon: FitAddon;
   private readonly disposables: Array<{ dispose(): void }> = [];
   private startupCmdCallbacks: StartupCmdEditCallbacks | null = null;
+  private cliRespawnCallbacks: CliRespawnCallbacks | null = null;
+  private spawnFailed = false;
 
   constructor() {
     this.el = document.createElement("div");
@@ -28,6 +33,11 @@ export class TerminalPane {
 
     const header = document.createElement("div");
     header.className = "pane-header";
+    this.badgeEl = document.createElement("button");
+    this.badgeEl.type = "button";
+    this.badgeEl.className = "pane-badge pane-badge--shell";
+    this.badgeEl.title = "Respawn with…";
+    this.badgeEl.textContent = "Shell";
     this.titleEl = document.createElement("div");
     this.titleEl.className = "title";
     this.titleEl.textContent = "shell";
@@ -39,10 +49,14 @@ export class TerminalPane {
     this.closeBtn = document.createElement("button");
     this.closeBtn.textContent = "×";
     this.closeBtn.title = "Close terminal";
-    header.append(this.titleEl, this.menuBtn, this.closeBtn);
+    header.append(this.badgeEl, this.titleEl, this.menuBtn, this.closeBtn);
     this.menuBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       this.openPaneMenu();
+    });
+    this.badgeEl.addEventListener("click", (e) => {
+      e.stopPropagation();
+      this.openCliMenu();
     });
 
     this.bodyEl = document.createElement("div");
@@ -66,6 +80,7 @@ export class TerminalPane {
     host.append(this.el);
     this.term.open(this.bodyEl);
     this.safeFit();
+    this.updateCliBadge(opts?.cliId);
 
     this.ptyId = await ptySpawn({
       cols: this.term.cols ?? 80,
@@ -81,20 +96,41 @@ export class TerminalPane {
 
     this.disposables.push(
       this.term.onData((data) => {
+        if (this.spawnFailed) return;
         void ptyWrite(this.ptyId, data);
       }),
       this.term.onResize(({ cols, rows }) => {
+        if (this.spawnFailed || !this.ptyId) return;
         void ptyResize(this.ptyId, cols, rows);
       }),
     );
   }
 
   write(data: string): void {
+    this.bytesReceived += data.length;
     this.term.write(data);
   }
 
   markExited(): void {
     this.term.write("\r\n\x1b[90m[process exited]\x1b[0m\r\n");
+  }
+
+  /**
+   * Renders an inline error in the pane body when the Rust spawn rejects the
+   * command (e.g. binary not on PATH, basename not in allowlist). The pane is
+   * kept mounted so the user sees the failure and can dismiss with the close
+   * button. Subsequent write/resize calls become no-ops.
+   */
+  markSpawnFailed(command: string, reason: string): void {
+    this.spawnFailed = true;
+    const display = command.length > 0 ? command : "shell";
+    this.term.write(`\r\n\x1b[91mFailed to spawn '${display}': ${reason}\x1b[0m\r\n`);
+  }
+
+  private updateCliBadge(cliId: string | undefined): void {
+    const profile = resolveProfile(cliId);
+    this.badgeEl.className = `pane-badge pane-badge--${profile.id}`;
+    this.badgeEl.textContent = profile.label;
   }
 
   fit(): void {
@@ -135,6 +171,10 @@ export class TerminalPane {
     this.startupCmdCallbacks = callbacks;
   }
 
+  setCliRespawnCallbacks(callbacks: CliRespawnCallbacks | null): void {
+    this.cliRespawnCallbacks = callbacks;
+  }
+
   private openPaneMenu(): void {
     const callbacks = this.startupCmdCallbacks;
     if (!callbacks) return;
@@ -142,6 +182,16 @@ export class TerminalPane {
       trigger: this.menuBtn,
       getStartupCmd: () => callbacks.getStartupCmd(),
       onChangeStartupCmd: (next) => callbacks.onChange(next),
+    });
+  }
+
+  private openCliMenu(): void {
+    const callbacks = this.cliRespawnCallbacks;
+    if (!callbacks) return;
+    openCliRespawnMenu({
+      trigger: this.badgeEl,
+      getCurrentCliId: () => callbacks.getCurrentCliId(),
+      onSelect: (cliId) => callbacks.onRespawnRequest(cliId),
     });
   }
 

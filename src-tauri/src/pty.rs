@@ -21,6 +21,8 @@ const ALLOWED_SHELL_BASENAMES: &[&str] = &[
 const ALLOWED_SHELL_BASENAMES: &[&str] =
     &["sh", "bash", "zsh", "fish", "dash", "ksh", "tcsh", "csh"];
 
+const ALLOWED_AI_CLI_BASENAMES: &[&str] = &["claude", "codex", "opencode"];
+
 const MAX_ARG_LEN: usize = 4096;
 const MAX_ARGS: usize = 64;
 const MAX_CWD_LEN: usize = 4096;
@@ -104,7 +106,7 @@ pub fn spawn_session(
         })
         .map_err(|e| e.to_string())?;
 
-    let shell = resolve_shell(command)?;
+    let shell = resolve_command(command)?;
     let validated_args = validate_args(args)?;
     let validated_cwd = validate_cwd(cwd)?;
 
@@ -181,14 +183,14 @@ pub fn spawn_session(
     Ok(id)
 }
 
-fn resolve_shell(command: Option<String>) -> Result<String, String> {
+fn resolve_command(command: Option<String>) -> Result<String, String> {
     let requested = command
         .map(|c| c.trim().to_string())
         .filter(|c| !c.is_empty());
     match requested {
         Some(cmd) => {
-            if !is_allowed_shell(&cmd) {
-                return Err(format!("shell not allowed: {cmd}"));
+            if !is_allowed_command(&cmd) {
+                return Err(format!("command not allowed: {cmd}"));
             }
             Ok(cmd)
         }
@@ -196,7 +198,7 @@ fn resolve_shell(command: Option<String>) -> Result<String, String> {
     }
 }
 
-fn is_allowed_shell(cmd: &str) -> bool {
+fn basename_in(cmd: &str, list: &[&str]) -> bool {
     if cmd.contains('\0') {
         return false;
     }
@@ -205,9 +207,16 @@ fn is_allowed_shell(cmd: &str) -> bool {
         .and_then(|n| n.to_str())
         .unwrap_or(cmd);
     let normalized = basename.to_ascii_lowercase();
-    ALLOWED_SHELL_BASENAMES
-        .iter()
+    list.iter()
         .any(|allowed| allowed.eq_ignore_ascii_case(&normalized))
+}
+
+fn is_allowed_shell(cmd: &str) -> bool {
+    basename_in(cmd, ALLOWED_SHELL_BASENAMES)
+}
+
+fn is_allowed_command(cmd: &str) -> bool {
+    is_allowed_shell(cmd) || basename_in(cmd, ALLOWED_AI_CLI_BASENAMES)
 }
 
 fn validate_args(args: Option<Vec<String>>) -> Result<Vec<String>, String> {
@@ -390,15 +399,54 @@ mod tests {
     }
 
     #[test]
-    fn resolve_shell_rejects_disallowed() {
-        let err = resolve_shell(Some("curl".to_string())).unwrap_err();
+    fn resolve_command_rejects_disallowed() {
+        let err = resolve_command(Some("curl".to_string())).unwrap_err();
         assert!(err.contains("not allowed"));
     }
 
     #[test]
-    fn resolve_shell_uses_default_when_empty() {
-        let resolved = resolve_shell(Some("   ".to_string())).unwrap();
+    fn resolve_command_uses_default_when_empty() {
+        let resolved = resolve_command(Some("   ".to_string())).unwrap();
         assert!(!resolved.is_empty());
+    }
+
+    #[test]
+    fn is_allowed_command_accepts_ai_clis() {
+        assert!(is_allowed_command("claude"));
+        assert!(is_allowed_command("codex"));
+        assert!(is_allowed_command("opencode"));
+        assert!(is_allowed_command("/usr/local/bin/claude"));
+        assert!(is_allowed_command("/opt/homebrew/bin/codex"));
+        assert!(is_allowed_command("/usr/bin/opencode"));
+    }
+
+    #[test]
+    fn is_allowed_command_still_accepts_shells() {
+        #[cfg(not(target_os = "windows"))]
+        {
+            assert!(is_allowed_command("bash"));
+            assert!(is_allowed_command("/bin/zsh"));
+        }
+        #[cfg(target_os = "windows")]
+        {
+            assert!(is_allowed_command("cmd.exe"));
+            assert!(is_allowed_command("pwsh.exe"));
+        }
+    }
+
+    #[test]
+    fn is_allowed_command_rejects_arbitrary() {
+        assert!(!is_allowed_command("/usr/bin/curl"));
+        assert!(!is_allowed_command("rm"));
+        assert!(!is_allowed_command("python"));
+        assert!(!is_allowed_command(""));
+        assert!(!is_allowed_command("claude\0evil"));
+    }
+
+    #[test]
+    fn resolve_command_accepts_ai_cli() {
+        let resolved = resolve_command(Some("claude".to_string())).unwrap();
+        assert_eq!(resolved, "claude");
     }
 
     #[test]

@@ -99,5 +99,11 @@ export function setProjectCols(
 }
 
 function shallowEqualSpec(a: TerminalSpec, b: TerminalSpec): boolean {
-  return a.id === b.id && a.title === b.title && a.cwd === b.cwd && a.startupCmd === b.startupCmd;
+  return (
+    a.id === b.id &&
+    a.title === b.title &&
+    a.cwd === b.cwd &&
+    a.startupCmd === b.startupCmd &&
+    a.cliId === b.cliId
+  );
 }
