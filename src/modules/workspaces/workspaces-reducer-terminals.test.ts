@@ -8,6 +8,7 @@ import {
   createEmptyState,
   findProject,
   replaceTerminalSpecs,
+  setProjectActiveCli,
   updateTerminalSpec,
 } from "./workspaces-reducer";
 
@@ -80,6 +81,30 @@ describe("updateTerminalSpec with cliId", () => {
     const before = findProject(state, pid)!.project;
     state = updateTerminalSpec(state, pid, "t1", { cliId: undefined });
     expect(findProject(state, pid)!.project).toBe(before);
+  });
+});
+
+describe("setProjectActiveCli", () => {
+  it("sets the activeCliId on the project", () => {
+    const { state, pid } = seed();
+    const next = setProjectActiveCli(state, pid, "claude");
+    expect(findProject(next, pid)?.project.activeCliId).toBe("claude");
+  });
+
+  it("clears the field when set back to shell (default)", () => {
+    const seeded = seed();
+    const pid = seeded.pid;
+    let state = seeded.state;
+    state = setProjectActiveCli(state, pid, "claude");
+    state = setProjectActiveCli(state, pid, "shell");
+    expect(findProject(state, pid)?.project.activeCliId).toBeUndefined();
+  });
+
+  it("preserves project identity when value does not change", () => {
+    const { state, pid } = seed();
+    const before = findProject(state, pid)!.project;
+    const next = setProjectActiveCli(state, pid, "shell");
+    expect(findProject(next, pid)!.project).toBe(before);
   });
 });
 

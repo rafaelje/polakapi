@@ -33,7 +33,7 @@ vi.mock("./terminal-pane", () => {
       return Promise.resolve();
     }
 
-    bytesReceived = 0;
+    hasOutput = false;
     fit(): void {}
     focus(): void {}
     write(): void {}
@@ -73,11 +73,12 @@ function pid(id: string): ProjectId {
   return id as ProjectId;
 }
 
-function makeManager(): TerminalManager {
+function makeManager(opts?: { activeCliId?: string }): TerminalManager {
   return new TerminalManager({
     projectId: pid("p1"),
     defaultCwd: "/tmp/project",
     gridCols: 2,
+    activeCliId: opts?.activeCliId,
   });
 }
 
@@ -180,6 +181,30 @@ describe("TerminalManager CLI wiring", () => {
     expect(newSpec?.startupCmd).toBe("pnpm dev");
     // The id changes because a new PTY is minted.
     expect(newSpec?.id).not.toBe(oldSpec.id);
+  });
+
+  it("seeds activeCliId from options when provided", async () => {
+    const manager = makeManager({ activeCliId: "codex" });
+    expect(manager.getActiveCli()).toBe("codex");
+
+    await manager.addPane();
+
+    expect(fake.attachCalls[0]?.opts?.command).toBe("codex");
+  });
+
+  it("respawnPane ignores re-entrant calls for the same ptyId", async () => {
+    const manager = makeManager();
+    await manager.addPane({ title: "x" });
+    const [oldSpec] = manager.specs();
+    if (!oldSpec) throw new Error("expected an initial spec");
+
+    const first = manager.respawnPane(oldSpec.id, "claude");
+    // Second call while the first is still in flight — must be a no-op.
+    const second = manager.respawnPane(oldSpec.id, "codex");
+    await Promise.all([first, second]);
+
+    expect(manager.specs()).toHaveLength(1);
+    expect(manager.specs()[0]?.cliId).toBe("claude");
   });
 
   it("respawnPane preserves the pane's grid slot", async () => {

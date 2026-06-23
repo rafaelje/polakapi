@@ -137,7 +137,10 @@ export async function bootstrapWorkspaces(
         controller.setProjectCols(active.id, next);
       },
       onSetActiveCli: (cliId) => {
-        router.getActive()?.setActiveCli(cliId);
+        const active = controller.getActiveProject();
+        if (!active) return;
+        router.getById(active.id)?.setActiveCli(cliId);
+        controller.setProjectActiveCli(active.id, cliId);
       },
     },
   });

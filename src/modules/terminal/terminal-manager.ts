@@ -44,6 +44,11 @@ export interface TerminalManagerOptions {
   defaultCwd: string;
   /** Initial number of columns per row. Must be >= 1. */
   gridCols: number;
+  /**
+   * Default CLI id for new panes. Undefined falls back to "shell". Persisted
+   * by the bootstrap so chip selection survives restart.
+   */
+  activeCliId?: string;
   /** Optional. When omitted, panes do not register bell notifications. */
   notificationContext?: NotificationContext;
 }
@@ -74,13 +79,21 @@ export class TerminalManager {
   private notificationContext: NotificationContext | null;
   /** Per-pane bell handles, disposed on close() / dispose(). */
   private readonly bellHandles = new Map<string, BellNotificationHandle>();
-  private activeCliId: string = "shell";
+  /**
+   * Guards `respawnPane` against re-entry — a double click on the badge menu
+   * (or two close-together IPC events) would otherwise spawn two replacement
+   * panes for one slot, with the second seeing the first's already-deleted
+   * spec and silently no-oping.
+   */
+  private readonly respawning = new Set<string>();
+  private activeCliId: string;
   readonly projectId: ProjectId;
 
   constructor(opts: TerminalManagerOptions) {
     this.projectId = opts.projectId;
     this.defaultCwd = opts.defaultCwd;
     this.cols = Math.max(1, Math.floor(opts.gridCols));
+    this.activeCliId = opts.activeCliId && opts.activeCliId.length > 0 ? opts.activeCliId : "shell";
     this.notificationContext = opts.notificationContext ?? null;
     const grid = document.createElement("div");
     grid.className = "terminal-grid";
@@ -223,16 +236,9 @@ export class TerminalManager {
 
     if (spawnError) {
       pane.markSpawnFailed(command ?? "shell", spawnError);
-      if (!opts?.silent) {
-        this.setFocus(ptyId);
-        this.relayout();
-        this.emitCount();
-        this.emitSpecs();
-      }
-      return pane;
+    } else {
+      this.registerBell(pane, ptyId);
     }
-
-    this.registerBell(pane, ptyId);
 
     if (!opts?.silent) {
       this.setFocus(ptyId);
@@ -240,7 +246,10 @@ export class TerminalManager {
       this.emitCount();
       this.emitSpecs();
     }
-    this.scheduleStartupCmd(ptyId, finalSpec.startupCmd);
+
+    if (!spawnError) {
+      this.scheduleStartupCmd(ptyId, finalSpec.startupCmd);
+    }
     return pane;
   }
 
@@ -321,7 +330,7 @@ export class TerminalManager {
   private async requestRespawn(ptyId: string, cliId: string): Promise<void> {
     const pane = this.panes.get(ptyId);
     if (!pane) return;
-    if (pane.bytesReceived > 0) {
+    if (pane.hasOutput) {
       const profile = resolveProfile(cliId);
       const ok = await confirmModal({
         title: `Respawn terminal with ${profile.label}?`,
@@ -340,34 +349,40 @@ export class TerminalManager {
    * ptyId changes — external holders of the old id must invalidate.
    */
   async respawnPane(ptyId: string, cliId: string): Promise<void> {
+    if (this.respawning.has(ptyId)) return;
     const current = this.specsById.get(ptyId);
     if (!current) return;
-    const targetIdx = this.order.indexOf(ptyId);
-    const preserved: Partial<TerminalSpec> = {
-      title: current.title,
-      cwd: current.cwd,
-      startupCmd: current.startupCmd,
-      cliId,
-    };
-    await this.close(ptyId, { silent: true });
-    const pane = await this.addPane(preserved, { silent: true });
-    if (!pane) {
-      this.relayout();
-      this.emitCount();
-      this.emitSpecs();
-      return;
-    }
-    const newId = pane.ptyId || this.order[this.order.length - 1];
-    if (newId && targetIdx >= 0) {
-      const fromIdx = this.order.indexOf(newId);
-      if (fromIdx >= 0 && fromIdx !== targetIdx) {
-        this.order.splice(fromIdx, 1);
-        this.order.splice(targetIdx, 0, newId);
+    this.respawning.add(ptyId);
+    try {
+      const targetIdx = this.order.indexOf(ptyId);
+      const preserved: Partial<TerminalSpec> = {
+        title: current.title,
+        cwd: current.cwd,
+        startupCmd: current.startupCmd,
+        cliId,
+      };
+      await this.close(ptyId, { silent: true });
+      const pane = await this.addPane(preserved, { silent: true });
+      if (!pane) {
+        this.relayout();
+        this.emitCount();
+        this.emitSpecs();
+        return;
       }
-      this.setFocus(newId);
+      const newId = pane.ptyId || this.order[this.order.length - 1];
+      if (newId && targetIdx >= 0) {
+        const fromIdx = this.order.indexOf(newId);
+        if (fromIdx >= 0 && fromIdx !== targetIdx) {
+          this.order.splice(fromIdx, 1);
+          this.order.splice(targetIdx, 0, newId);
+        }
+        this.setFocus(newId);
+      }
+      this.relayout();
+      this.emitSpecs();
+    } finally {
+      this.respawning.delete(ptyId);
     }
-    this.relayout();
-    this.emitSpecs();
   }
 
   /** Backward-compat alias used by code paths that have not migrated yet. */

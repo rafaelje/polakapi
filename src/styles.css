@@ -986,7 +986,13 @@ body {
   padding-left: 7px;
 }
 
-.pane-menu-item.is-active {
+/* Scoped to respawn menu items only: they have a `.pane-badge--<id>` class
+ * which sets `--cli-color`. Other future menu items that reuse the
+ * `.pane-menu-item` base + `.is-active` will NOT inherit this tint. */
+.pane-menu-item.pane-badge--shell.is-active,
+.pane-menu-item.pane-badge--claude.is-active,
+.pane-menu-item.pane-badge--codex.is-active,
+.pane-menu-item.pane-badge--opencode.is-active {
   background: color-mix(in srgb, var(--cli-color) 18%, transparent);
 }
 

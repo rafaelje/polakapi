@@ -37,6 +37,11 @@ export interface Project {
    */
   terminalCols?: number;
   /**
+   * Per-project default CLI for new panes (chip row selection). Undefined is
+   * treated as "shell". Persisted so the chip selection survives restart.
+   */
+  activeCliId?: string;
+  /**
    * F3: per-project notes body. Undefined is treated as ''. Persisted in
    * workspaces.json. Optional/additive — projects created before F3 simply
    * have no field, which readers must treat as the empty string.

@@ -12,7 +12,12 @@ export type { StartupCmdEditCallbacks };
 
 export class TerminalPane {
   ptyId = "";
-  bytesReceived = 0;
+  /**
+   * Becomes true after the first chunk of PTY output is written into the
+   * terminal. Used as a "has the process produced anything?" heuristic — e.g.
+   * to skip the respawn confirmation for empty panes.
+   */
+  hasOutput = false;
   readonly el: HTMLElement;
   readonly bodyEl: HTMLElement;
   readonly titleEl: HTMLElement;
@@ -107,7 +112,7 @@ export class TerminalPane {
   }
 
   write(data: string): void {
-    this.bytesReceived += data.length;
+    if (data.length > 0) this.hasOutput = true;
     this.term.write(data);
   }
 
