@@ -40,32 +40,28 @@ export interface DragDropHandle {
 // press is treated as a click and the row's click handler runs normally.
 const DRAG_THRESHOLD_PX = 5;
 
+interface SessionBase {
+  sourceEl: HTMLElement;
+  startX: number;
+  startY: number;
+  pointerId: number;
+  committed: boolean;
+  idSet: ReadonlySet<string>;
+  ghost: HTMLElement | null;
+}
+
 type Session =
-  | {
+  | (SessionBase & {
       kind: "project";
-      sourceEl: HTMLElement;
       sourceId: ProjectId;
       fromWorkspace: WorkspaceId;
-      startX: number;
-      startY: number;
-      pointerId: number;
-      committed: boolean;
       ids: ProjectId[];
-      idSet: ReadonlySet<string>;
-      ghost: HTMLElement | null;
-    }
-  | {
+    })
+  | (SessionBase & {
       kind: "workspace";
-      sourceEl: HTMLElement;
       sourceId: WorkspaceId;
-      startX: number;
-      startY: number;
-      pointerId: number;
-      committed: boolean;
       ids: WorkspaceId[];
-      idSet: ReadonlySet<string>;
-      ghost: HTMLElement | null;
-    };
+    });
 
 export function attach(panelRoot: HTMLElement, deps: DragDropDeps): DragDropHandle {
   const { controller, selection } = deps;
