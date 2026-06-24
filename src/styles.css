@@ -666,8 +666,8 @@ body {
   display: flex;
   align-items: center;
   gap: 4px;
-  padding: 4px 10px;
-  font-size: 12px;
+  padding: 8px 10px;
+  font-size: 16px;
   color: var(--text);
   user-select: none;
 }
@@ -727,8 +727,8 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 4px 10px 4px 24px;
-  font-size: 12px;
+  padding: 7px 10px 7px 28px;
+  font-size: 15px;
   color: var(--text);
   cursor: pointer;
   position: relative;
@@ -779,7 +779,7 @@ body {
 
 .ws-project-path {
   color: #6a6a6a;
-  font-size: 10px;
+  font-size: 12px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
