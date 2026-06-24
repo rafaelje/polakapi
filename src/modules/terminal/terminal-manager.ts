@@ -220,6 +220,7 @@ export class TerminalManager {
     this.panes.set(ptyId, pane);
     this.order.push(ptyId);
     this.specsById.set(ptyId, finalSpec);
+    pane.el.dataset.ptyId = ptyId;
 
     this.wirePaneCallbacks(pane, ptyId);
 

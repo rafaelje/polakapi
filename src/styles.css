@@ -770,6 +770,11 @@ body {
   border-radius: 4px;
 }
 
+.pane.pane-drop-target {
+  outline: 2px dashed var(--accent);
+  outline-offset: -3px;
+}
+
 .ws-workspace.dragging {
   opacity: 0.5;
 }

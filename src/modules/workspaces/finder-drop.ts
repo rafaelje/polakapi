@@ -49,15 +49,21 @@ export function attachFinderDrop(panelRoot: HTMLElement, deps: FinderDropDeps): 
     if (currentTarget) currentTarget.classList.add(DROP_TARGET_CLASS);
   };
 
-  const resolveWorkspaceAt = (physicalX: number, physicalY: number): HTMLElement | null => {
+  interface DropResolution {
+    insidePanel: boolean;
+    workspaceEl: HTMLElement | null;
+  }
+
+  const resolveAt = (physicalX: number, physicalY: number): DropResolution => {
     // Tauri delivers physical pixels; the DOM uses CSS pixels.
     const ratio = window.devicePixelRatio || 1;
     const x = physicalX / ratio;
     const y = physicalY / ratio;
     const el = document.elementFromPoint(x, y);
-    if (!el) return null;
-    if (!panelRoot.contains(el)) return null;
-    return el.closest<HTMLElement>(".ws-workspace");
+    if (!el || !panelRoot.contains(el)) {
+      return { insidePanel: false, workspaceEl: null };
+    }
+    return { insidePanel: true, workspaceEl: el.closest<HTMLElement>(".ws-workspace") };
   };
 
   const workspaceIdOf = (el: HTMLElement | null): WorkspaceId | null => {
@@ -67,9 +73,12 @@ export function attachFinderDrop(panelRoot: HTMLElement, deps: FinderDropDeps): 
 
   const handleDrop = async (
     paths: readonly string[],
-    target: HTMLElement | null,
+    resolution: DropResolution,
   ): Promise<void> => {
-    const workspaceId = workspaceIdOf(target);
+    // Drop landed outside the workspaces panel — let other surfaces (terminal
+    // grid, agent flows, ...) react via their own onDragDropEvent listeners.
+    if (!resolution.insidePanel) return;
+    const workspaceId = workspaceIdOf(resolution.workspaceEl);
     if (!workspaceId) {
       toast("Drop on a workspace", "info");
       return;
@@ -97,8 +106,8 @@ export function attachFinderDrop(panelRoot: HTMLElement, deps: FinderDropDeps): 
     switch (payload.type) {
       case "enter":
       case "over": {
-        const target = resolveWorkspaceAt(payload.position.x, payload.position.y);
-        setTarget(target);
+        const { workspaceEl } = resolveAt(payload.position.x, payload.position.y);
+        setTarget(workspaceEl);
         return;
       }
       case "leave": {
@@ -106,11 +115,9 @@ export function attachFinderDrop(panelRoot: HTMLElement, deps: FinderDropDeps): 
         return;
       }
       case "drop": {
-        const target = resolveWorkspaceAt(payload.position.x, payload.position.y);
-        // Capture before clearing — handleDrop reads the data-attribute.
-        const captured = target;
+        const resolution = resolveAt(payload.position.x, payload.position.y);
         setTarget(null);
-        void handleDrop(payload.paths, captured);
+        void handleDrop(payload.paths, resolution);
         return;
       }
     }

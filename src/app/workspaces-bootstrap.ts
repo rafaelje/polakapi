@@ -1,5 +1,6 @@
 import { promptModal } from "../shared/ui/modal";
 import { ptyWrite } from "../modules/terminal/pty-client";
+import { attachTerminalDrop, type TerminalDropHandle } from "../modules/terminal/terminal-drop";
 import { openInEditor, revealFolder } from "../modules/workspaces/open-external";
 import { WorkspacesController } from "../modules/workspaces/workspaces-controller";
 import {
@@ -112,6 +113,14 @@ export async function bootstrapWorkspaces(
     controller,
     liveCounts: router,
     bellSource,
+  });
+
+  // Bridges native Finder drops and HTML5 URL/text drops into whichever pane
+  // sits under the pointer. Workspaces' own finder-drop ignores drops outside
+  // its panel, so the two listeners coexist without stealing from each other.
+  const terminalDrop: TerminalDropHandle = attachTerminalDrop({
+    gridEl: elements.gridEl,
+    router,
   });
 
   // Track which projects have already restored their persisted specs so a
@@ -232,6 +241,7 @@ export async function bootstrapWorkspaces(
   });
 
   const unsubscribe = (): void => {
+    terminalDrop.detach();
     unsubscribeController();
     unwireDeleteHook();
     unsubscribeRouterBell();
