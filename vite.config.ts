@@ -1,4 +1,6 @@
 import { defineConfig } from "vite";
+import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 // @ts-expect-error process is a nodejs global
 const host = process.env.TAURI_DEV_HOST;
@@ -6,6 +8,8 @@ const host = process.env.TAURI_DEV_HOST;
 // checkout + a worktree) can run `tauri dev` side by side. Defaults to the
 // canonical 1420 used by `tauri.conf.json`'s `devUrl`.
 const port = Number(process.env.TAURI_DEV_PORT) || 1420;
+
+const projectRoot = fileURLToPath(new URL(".", import.meta.url));
 
 // https://vite.dev/config/
 export default defineConfig(async () => ({
@@ -28,6 +32,14 @@ export default defineConfig(async () => ({
     watch: {
       // 3. tell Vite to ignore watching `src-tauri`
       ignored: ["**/src-tauri/**"],
+    },
+  },
+  build: {
+    rollupOptions: {
+      input: {
+        main: resolve(projectRoot, "index.html"),
+        loop: resolve(projectRoot, "loop.html"),
+      },
     },
   },
 }));

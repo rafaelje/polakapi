@@ -216,6 +216,36 @@ body {
   display: none;
 }
 
+.agents-flow-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+}
+
+.agents-flow-btn {
+  appearance: none;
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font:
+    12px ui-monospace,
+    "SF Mono",
+    Menlo,
+    Consolas,
+    monospace;
+  cursor: pointer;
+  text-align: left;
+  opacity: 0.85;
+}
+
+.agents-flow-btn:hover {
+  opacity: 1;
+  border-color: var(--accent, #8aa1ff);
+}
+
 .bottom-tabs {
   display: flex;
   align-items: stretch;

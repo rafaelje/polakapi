@@ -19,6 +19,7 @@ import {
 } from "../modules/workspaces/command-palette";
 import { mountBottomPanel, type BottomPanelHandle } from "../modules/bottom-panel/bottom-panel";
 import { isBottomTab } from "../modules/bottom-panel/types";
+import { mountLoopButton, type LoopButtonHandle } from "../modules/agents-flow/loop-window";
 import { bootstrapWorkspaces, type WorkspacesBootstrapHandle } from "./workspaces-bootstrap";
 import { wireWindowLifecycle } from "./lifecycle";
 import { wireQuitConfirm } from "./quit-confirm";
@@ -30,6 +31,7 @@ export class AppController {
   private workspaces: WorkspacesBootstrapHandle | null = null;
   private palette: CommandPaletteHandle | null = null;
   private bottomPanel: BottomPanelHandle | null = null;
+  private loopButton: LoopButtonHandle | null = null;
   private unwireShortcuts: (() => void) | null = null;
   private unwireWindowLifecycle: (() => void) | null = null;
   private unwireQuitConfirm: (() => void) | null = null;
@@ -60,6 +62,7 @@ export class AppController {
       initialTab: isBottomTab(layout.activeBottomTab) ? layout.activeBottomTab : "notes",
       onTabChange: (tab) => queueSave({ activeBottomTab: tab }),
     });
+    this.loopButton = mountLoopButton();
     await this.wirePtyEvents();
     this.wireGutters();
     this.wirePanelToggles();
@@ -120,6 +123,9 @@ export class AppController {
         console.error("Failed to dispose bottom panel", error);
       });
     }
+
+    this.loopButton?.dispose();
+    this.loopButton = null;
 
     const workspaces = this.workspaces;
     this.workspaces = null;
