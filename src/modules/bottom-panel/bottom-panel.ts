@@ -1,19 +1,10 @@
-import { TerminalPane } from "../terminal/terminal-pane";
-import { ptyKill } from "../terminal/pty-client";
+import { mountShellPanel, type ShellPanelHandle } from "../shell/shell-panel";
 import { BOTTOM_TABS, isBottomTab, type BottomTab } from "./types";
 
-// ---------------------------------------------------------------------------
-// Bottom panel with notes + shell tabs.
-//
-// The shell is a single persistent TerminalPane instance shared across
-// projects (not per-project). It is spawned lazily on first switch to the
-// "shell" tab and respawned automatically the next time the user enters
-// the tab after the process exits.
-//
-// PTY routing: AppController's pty:data/pty:exit listeners must consult
-// `handlePtyData` / `handlePtyExit` BEFORE the TerminalRouter so the shell
-// pane (which the router does not own) receives its own events.
-// ---------------------------------------------------------------------------
+// Orchestrates the tab strip + per-tab containers in the bottom panel. The
+// notes textarea lives inside `[data-tab-panel="notes"]` and is driven by
+// the existing notes-panel module untouched. The shell tab is delegated to
+// the shell-panel module, which owns the TerminalPane lifecycle.
 
 export interface BottomPanelOptions {
   /** Persist active tab on switch. */
@@ -25,7 +16,7 @@ export interface BottomPanelOptions {
 export interface BottomPanelHandle {
   setActiveTab(tab: BottomTab): void;
   getActiveTab(): BottomTab;
-  /** Refit the shell pane if it exists and the shell tab is active. */
+  /** Refit the shell pane when the bottom panel is resized/toggled. */
   refit(): void;
   /** Route a pty:data event. Returns true when consumed by the shell. */
   handlePtyData(id: string, data: string): boolean;
@@ -50,12 +41,11 @@ export function mountBottomPanel(opts: BottomPanelOptions = {}): BottomPanelHand
   if (!shellHost) return null;
 
   let activeTab: BottomTab = opts.initialTab ?? "notes";
-  let shellPane: TerminalPane | null = null;
-  // Tracked separately from `shellPane` so a respawn after exit knows to tear
-  // the old instance down before creating a fresh one.
-  let shellExited = false;
-  let spawning = false;
   let disposed = false;
+
+  const shell: ShellPanelHandle = mountShellPanel(shellHost, {
+    isVisible: () => !disposed && activeTab === "shell",
+  });
 
   const setButtonState = (tab: BottomTab): void => {
     for (const btn of tabButtons) {
@@ -71,34 +61,6 @@ export function mountBottomPanel(opts: BottomPanelOptions = {}): BottomPanelHand
     }
   };
 
-  const ensureShell = async (): Promise<void> => {
-    if (disposed) return;
-    if (shellPane && !shellExited) return;
-    if (spawning) return;
-    spawning = true;
-    try {
-      if (shellPane && shellExited) {
-        const stale = shellPane;
-        shellPane = null;
-        shellExited = false;
-        await stale.dispose();
-      }
-      const pane = new TerminalPane();
-      shellPane = pane;
-      await pane.attach(shellHost);
-      // The host may have been measured at zero size during attach if the
-      // tab was hidden when first opened. Refit on the next frame to pick up
-      // the real dimensions.
-      requestAnimationFrame(() => {
-        if (shellPane === pane && activeTab === "shell") pane.fit();
-      });
-    } catch (error) {
-      console.error("Failed to spawn bottom shell", error);
-    } finally {
-      spawning = false;
-    }
-  };
-
   const setActiveTab = (tab: BottomTab): void => {
     if (disposed) return;
     if (!BOTTOM_TABS.includes(tab)) return;
@@ -106,14 +68,7 @@ export function mountBottomPanel(opts: BottomPanelOptions = {}): BottomPanelHand
     activeTab = tab;
     setButtonState(tab);
     setPanelVisibility(tab);
-    if (tab === "shell") {
-      void ensureShell().then(() => {
-        if (activeTab === "shell" && shellPane) {
-          shellPane.fit();
-          shellPane.focus();
-        }
-      });
-    }
+    if (tab === "shell") shell.activate();
     if (changed) opts.onTabChange?.(tab);
   };
 
@@ -130,42 +85,23 @@ export function mountBottomPanel(opts: BottomPanelOptions = {}): BottomPanelHand
   // Apply initial visual state without firing onTabChange.
   setButtonState(activeTab);
   setPanelVisibility(activeTab);
-  if (activeTab === "shell") {
-    void ensureShell().then(() => {
-      if (activeTab === "shell" && shellPane) shellPane.fit();
-    });
-  }
+  if (activeTab === "shell") shell.activate();
 
   return {
     setActiveTab,
     getActiveTab: () => activeTab,
     refit: () => {
-      if (activeTab === "shell" && shellPane && !shellExited) shellPane.fit();
+      if (activeTab === "shell") shell.refit();
     },
-    handlePtyData: (id, data) => {
-      if (!shellPane || shellPane.ptyId !== id) return false;
-      shellPane.write(data);
-      return true;
-    },
-    handlePtyExit: (id) => {
-      if (!shellPane || shellPane.ptyId !== id) return false;
-      shellPane.markExited();
-      shellExited = true;
-      return true;
-    },
+    handlePtyData: (id, data) => shell.handlePtyData(id, data),
+    handlePtyExit: (id) => shell.handlePtyExit(id),
     dispose: async () => {
       if (disposed) return;
       disposed = true;
       for (const btn of tabButtons) {
         btn.removeEventListener("click", onButtonClick);
       }
-      const pane = shellPane;
-      shellPane = null;
-      if (pane) {
-        // Kill PTY eagerly so the Rust side tears down even if dispose throws.
-        if (pane.ptyId) void ptyKill(pane.ptyId);
-        await pane.dispose();
-      }
+      await shell.dispose();
     },
   };
 }
