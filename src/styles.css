@@ -216,6 +216,57 @@ body {
   display: none;
 }
 
+.bottom-tabs {
+  display: flex;
+  align-items: stretch;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+  flex: 0 0 auto;
+}
+
+.bottom-tab {
+  appearance: none;
+  background: transparent;
+  border: none;
+  color: var(--text);
+  opacity: 0.55;
+  padding: 6px 12px;
+  font:
+    12px ui-sans-serif,
+    system-ui,
+    -apple-system,
+    sans-serif;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+}
+
+.bottom-tab:hover {
+  opacity: 0.85;
+}
+
+.bottom-tab.active {
+  opacity: 1;
+  border-bottom-color: var(--text);
+}
+
+.bottom-tab-panel {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.bottom-tab-panel[hidden] {
+  display: none;
+}
+
+/* Shell tab hosts a TerminalPane directly. Hide its per-pane header (badge,
+   title, menu, close) — the tab strip above already labels it, and the
+   per-pane controls don't apply to the persistent bottom shell. */
+.bottom-tab-panel[data-tab-panel="shell"] .pane-header {
+  display: none;
+}
+
 /* F3 empty state: no active project => textarea is disabled and shows a
    centered placeholder. We avoid inserting extra DOM by styling the disabled
    textarea's placeholder. */

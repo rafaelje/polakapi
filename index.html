@@ -69,8 +69,30 @@
           </div>
           <div class="gutter gutter-v" id="gutter-notes"></div>
           <section class="notes" id="notes">
-            <div class="sidebar-title">notes</div>
-            <textarea class="notes-body" placeholder="Write notes here…"></textarea>
+            <div class="bottom-tabs" role="tablist">
+              <button
+                type="button"
+                class="bottom-tab active"
+                role="tab"
+                data-tab="notes"
+                aria-selected="true"
+              >
+                notes
+              </button>
+              <button
+                type="button"
+                class="bottom-tab"
+                role="tab"
+                data-tab="shell"
+                aria-selected="false"
+              >
+                shell
+              </button>
+            </div>
+            <div class="bottom-tab-panel" data-tab-panel="notes">
+              <textarea class="notes-body" placeholder="Write notes here…"></textarea>
+            </div>
+            <div class="bottom-tab-panel" data-tab-panel="shell" hidden></div>
           </section>
         </div>
       </div>

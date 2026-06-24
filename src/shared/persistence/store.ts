@@ -1,4 +1,5 @@
 import { load, type Store } from "@tauri-apps/plugin-store";
+import type { BottomTab } from "../../modules/bottom-panel/types";
 
 const STORE_FILE = "layout.json";
 
@@ -9,6 +10,7 @@ export interface PersistedLayout {
   hideRight?: boolean;
   hideNotes?: boolean;
   notesHeight?: number;
+  activeBottomTab?: BottomTab;
   /**
    * @deprecated F3: notes content is now stored per-project in workspaces.json.
    * Kept in the type so older layout.json files still load without runtime

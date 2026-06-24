@@ -17,6 +17,8 @@ import {
   mountCommandPalette,
   type CommandPaletteHandle,
 } from "../modules/workspaces/command-palette";
+import { mountBottomPanel, type BottomPanelHandle } from "../modules/bottom-panel/bottom-panel";
+import { isBottomTab } from "../modules/bottom-panel/types";
 import { bootstrapWorkspaces, type WorkspacesBootstrapHandle } from "./workspaces-bootstrap";
 import { wireWindowLifecycle } from "./lifecycle";
 import { wireQuitConfirm } from "./quit-confirm";
@@ -27,6 +29,7 @@ export class AppController {
   private readonly router: TerminalRouter;
   private workspaces: WorkspacesBootstrapHandle | null = null;
   private palette: CommandPaletteHandle | null = null;
+  private bottomPanel: BottomPanelHandle | null = null;
   private unwireShortcuts: (() => void) | null = null;
   private unwireWindowLifecycle: (() => void) | null = null;
   private unwireQuitConfirm: (() => void) | null = null;
@@ -53,6 +56,10 @@ export class AppController {
   async start(): Promise<void> {
     const layout = await this.loadSavedLayout();
     this.applyLayout(layout);
+    this.bottomPanel = mountBottomPanel({
+      initialTab: isBottomTab(layout.activeBottomTab) ? layout.activeBottomTab : "notes",
+      onTabChange: (tab) => queueSave({ activeBottomTab: tab }),
+    });
     await this.wirePtyEvents();
     this.wireGutters();
     this.wirePanelToggles();
@@ -60,7 +67,10 @@ export class AppController {
     this.wireWindowFocus();
     this.unwireWindowLifecycle = wireWindowLifecycle({
       onBeforeUnload: () => this.dispose(),
-      onResize: () => this.router.getActive()?.refit(),
+      onResize: () => {
+        this.router.getActive()?.refit();
+        this.bottomPanel?.refit();
+      },
     });
 
     this.workspaces = await bootstrapWorkspaces({
@@ -103,6 +113,14 @@ export class AppController {
     this.palette?.dispose();
     this.palette = null;
 
+    const bottomPanel = this.bottomPanel;
+    this.bottomPanel = null;
+    if (bottomPanel) {
+      void bottomPanel.dispose().catch((error) => {
+        console.error("Failed to dispose bottom panel", error);
+      });
+    }
+
     const workspaces = this.workspaces;
     this.workspaces = null;
     if (workspaces) {
@@ -133,9 +151,11 @@ export class AppController {
 
   private async wirePtyEvents(): Promise<void> {
     this.unlistenData = await onPtyData(({ id, data }) => {
+      if (this.bottomPanel?.handlePtyData(id, data)) return;
       this.router.findPaneById(id)?.pane.write(data);
     });
     this.unlistenExit = await onPtyExit(({ id }) => {
+      if (this.bottomPanel?.handlePtyExit(id)) return;
       this.router.findPaneById(id)?.pane.markExited();
     });
   }
@@ -154,6 +174,7 @@ export class AppController {
       notesGutter.addEventListener("mousedown", (e) =>
         startFlexDrag(e, notesGutter, "v", () => {
           this.router.getActive()?.refit();
+          this.bottomPanel?.refit();
           this.persistCurrentNotesHeight();
         }),
       );
@@ -169,6 +190,7 @@ export class AppController {
       ],
       () => {
         this.router.getActive()?.refit();
+        this.bottomPanel?.refit();
         queueSave({
           hideLeft: this.elements.mainRow.classList.contains("hide-left"),
           hideRight: this.elements.layoutEl.classList.contains("hide-right"),
