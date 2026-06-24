@@ -4,6 +4,7 @@ import { createProjectRow, type ProjectRowHandle } from "./project-row";
 import { filterProjects } from "./project-filter";
 import { openRowMenu } from "./row-menu";
 import { startInlineRename } from "./rename-inline";
+import type { SelectionStore } from "./selection";
 import type { Project, ProjectId, Workspace } from "./types";
 import type { WorkspacesController } from "./workspaces-controller";
 import { sortedProjects } from "./workspaces-reducer";
@@ -22,6 +23,8 @@ export interface WorkspaceRowOptions {
    * query are rendered. Workspaces with zero matches are hidden by the panel.
    */
   filterQuery?: string;
+  /** Multi-selection store shared across all rows. */
+  selection: SelectionStore;
 }
 
 export interface WorkspaceRowHandle {
@@ -58,7 +61,6 @@ export function createWorkspaceRow(opts: WorkspaceRowOptions): WorkspaceRowHandl
 
   const header = document.createElement("div");
   header.className = "ws-workspace-header";
-  header.setAttribute("draggable", "true");
 
   const chevron = document.createElement("button");
   chevron.type = "button";
@@ -109,6 +111,7 @@ export function createWorkspaceRow(opts: WorkspaceRowOptions): WorkspaceRowHandl
       liveTerminalsCount: initialCount,
       controller,
       getLiveCount: liveCountFor ? () => liveCountFor(project.id) : undefined,
+      selection: opts.selection,
     });
     projectHandles.set(project.id, handle);
     projectsList.append(handle.element);

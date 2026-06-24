@@ -11,7 +11,7 @@ export interface VisualsHandle {
     container: HTMLElement,
     clientY: number,
     rowSelector: RowSelector,
-    ignoreId: string,
+    ignoreIds: ReadonlySet<string>,
   ): void;
   setDropTarget(el: HTMLElement | null): void;
   clear(): void;
@@ -25,7 +25,7 @@ export function createVisuals(): VisualsHandle {
     container: HTMLElement,
     clientY: number,
     rowSelector: RowSelector,
-    ignoreId: string,
+    ignoreIds: ReadonlySet<string>,
   ): void {
     if (!insertionLine) {
       insertionLine = document.createElement("div");
@@ -35,7 +35,8 @@ export function createVisuals(): VisualsHandle {
     const rows = Array.from(container.querySelectorAll<HTMLElement>(rowSelector));
     let topPx = container.scrollHeight;
     for (const row of rows) {
-      if (datasetIdFor(row, rowSelector) === ignoreId) continue;
+      const id = datasetIdFor(row, rowSelector);
+      if (id && ignoreIds.has(id)) continue;
       const r = row.getBoundingClientRect();
       const mid = r.top + r.height / 2;
       if (clientY < mid) {
@@ -73,11 +74,12 @@ export function computeInsertionIndex(
   container: HTMLElement,
   clientY: number,
   rowSelector: RowSelector,
-  ignoreId: string,
+  ignoreIds: ReadonlySet<string>,
 ): number {
-  const rows = Array.from(container.querySelectorAll<HTMLElement>(rowSelector)).filter(
-    (row) => datasetIdFor(row, rowSelector) !== ignoreId,
-  );
+  const rows = Array.from(container.querySelectorAll<HTMLElement>(rowSelector)).filter((row) => {
+    const id = datasetIdFor(row, rowSelector);
+    return !id || !ignoreIds.has(id);
+  });
   for (let i = 0; i < rows.length; i++) {
     const r = rows[i].getBoundingClientRect();
     const mid = r.top + r.height / 2;

@@ -2,6 +2,7 @@ import { deterministicColor } from "./appearance-defaults";
 import { openAppearancePicker } from "./appearance-picker";
 import { openRowMenu } from "./row-menu";
 import { startInlineRename } from "./rename-inline";
+import type { SelectionStore } from "./selection";
 import type { Project, ProjectId, Workspace, WorkspaceId } from "./types";
 import type { WorkspacesController } from "./workspaces-controller";
 
@@ -22,6 +23,11 @@ export interface ProjectRowOptions {
    * not been touched since the last render.
    */
   getLiveCount?: () => number;
+  /**
+   * Multi-selection store shared across all rows. Modifier-aware clicks
+   * mutate it; rows subscribe to apply the `.selected` visual.
+   */
+  selection: SelectionStore;
 }
 
 export interface ProjectRowHandle {
@@ -45,7 +51,7 @@ export interface ProjectRowHandle {
  *   - invalid-path affordance (re-pick or delete)
  */
 export function createProjectRow(opts: ProjectRowOptions): ProjectRowHandle {
-  const { project, workspaceId, isActive, controller } = opts;
+  const { project, workspaceId, isActive, controller, selection } = opts;
 
   const row = document.createElement("div");
   row.className = "ws-project-row";
@@ -56,7 +62,6 @@ export function createProjectRow(opts: ProjectRowOptions): ProjectRowHandle {
   // F4: same color resolution as workspace-row — explicit override wins,
   // otherwise the deterministic palette so the row still picks up a tint.
   row.dataset.color = project.color ?? deterministicColor(project.id);
-  row.setAttribute("draggable", "true");
 
   const dot = document.createElement("span");
   dot.className = "ws-active-dot";
@@ -118,6 +123,21 @@ export function createProjectRow(opts: ProjectRowOptions): ProjectRowHandle {
 
   on(row, "click", (e) => {
     if (e.defaultPrevented) return;
+    // Modifier-aware multi-select. shift = range, meta/ctrl = toggle. Both
+    // skip setActiveProject so the user can build a selection without
+    // hijacking the focused-project state.
+    if (e.shiftKey) {
+      e.preventDefault();
+      const orderedIds = readOrderedProjectIds(row.parentElement);
+      selection.selectRange(project.id, orderedIds);
+      return;
+    }
+    if (e.metaKey || e.ctrlKey) {
+      e.preventDefault();
+      selection.toggle(project.id);
+      return;
+    }
+    selection.setSingle(project.id);
     controller.setActiveProject(project.id);
   });
 
@@ -204,6 +224,13 @@ export function createProjectRow(opts: ProjectRowOptions): ProjectRowHandle {
     }
   }
 
+  // Apply initial selected state (survives re-renders since the selection
+  // store lives at the panel level), then subscribe for live updates.
+  if (selection.has(project.id)) row.classList.add("selected");
+  const unsubscribeSelection = selection.on((selected) => {
+    row.classList.toggle("selected", selected.has(project.id));
+  });
+
   // F4: appearance picker handle, disposed alongside the row so a popover
   // left open during a re-render is cleaned up.
   let appearancePicker: { dispose(): void } | null = null;
@@ -227,10 +254,21 @@ export function createProjectRow(opts: ProjectRowOptions): ProjectRowHandle {
     dispose(): void {
       appearancePicker?.dispose();
       appearancePicker = null;
+      unsubscribeSelection();
       for (const off of listeners.splice(0)) off();
       row.remove();
     },
   };
+}
+
+function readOrderedProjectIds(listEl: HTMLElement | null): ProjectId[] {
+  if (!listEl) return [];
+  const out: ProjectId[] = [];
+  listEl.querySelectorAll<HTMLElement>(".ws-project-row[data-project-id]").forEach((row) => {
+    const id = row.dataset.projectId as ProjectId | undefined;
+    if (id) out.push(id);
+  });
+  return out;
 }
 
 function buildMoveSubmenuItems(

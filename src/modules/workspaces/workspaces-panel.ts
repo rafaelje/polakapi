@@ -3,6 +3,7 @@ import { attach as attachDragDrop, type DragDropHandle } from "./drag-drop";
 import { attachFinderDrop, type FinderDropHandle } from "./finder-drop";
 import { matchesProject } from "./project-filter";
 import { validatePath } from "./path-validation";
+import { createSelectionStore } from "./selection";
 import { createWorkspaceRow, type WorkspaceRowHandle } from "./workspace-row";
 import { createSidebarEmptyState, type EmptyStateHandle } from "./workspaces-empty-state";
 import { sortedWorkspaces } from "./workspaces-reducer";
@@ -104,6 +105,7 @@ export function mountWorkspacesPanel(opts: WorkspacesPanelOptions): WorkspacesPa
   const handles: WorkspaceRowHandle[] = [];
   let emptyState: EmptyStateHandle | null = null;
   let query = "";
+  const selection = createSelectionStore();
 
   const onAddClick = (): void => {
     void controller.createWorkspaceInteractive();
@@ -116,7 +118,20 @@ export function mountWorkspacesPanel(opts: WorkspacesPanelOptions): WorkspacesPa
   };
   search.addEventListener("input", onSearchInput);
 
-  const dnd: DragDropHandle = attachDragDrop(body, { controller });
+  // Clear the multi-selection when the user clicks the panel chrome (header,
+  // body background, between rows) without a modifier. Row clicks stop short
+  // of "outside" because they sit deeper in the tree and either set the
+  // selection themselves or get caught by capture-phase preventDefault.
+  const onPanelClick = (e: MouseEvent): void => {
+    if (e.shiftKey || e.metaKey || e.ctrlKey) return;
+    const target = e.target as HTMLElement | null;
+    if (!target) return;
+    if (target.closest(".ws-project-row")) return;
+    selection.clear();
+  };
+  root.addEventListener("click", onPanelClick);
+
+  const dnd: DragDropHandle = attachDragDrop(body, { controller, selection });
   // F4 Feature 2: native Finder drag&drop of folders into workspaces. The
   // highlight reuses `.ws-drop-target` so the visual language matches the
   // in-app dnd above.
@@ -159,6 +174,7 @@ export function mountWorkspacesPanel(opts: WorkspacesPanelOptions): WorkspacesPa
         controller,
         liveCountFor: liveCounts ? liveCountFor : undefined,
         filterQuery: activeQuery,
+        selection,
       });
       handles.push(handle);
       body.append(handle.element);
@@ -169,6 +185,11 @@ export function mountWorkspacesPanel(opts: WorkspacesPanelOptions): WorkspacesPa
 
   const unsubscribeController = controller.on((event) => {
     if (event.type !== "state-changed") return;
+    // GC selection: drop ids that no longer exist (project deleted, moved
+    // workspace deleted, etc.) before re-rendering.
+    const validIds = new Set<ProjectId>();
+    for (const w of event.state.workspaces) for (const p of w.projects) validIds.add(p.id);
+    selection.prune(validIds);
     render();
   });
 
@@ -217,6 +238,8 @@ export function mountWorkspacesPanel(opts: WorkspacesPanelOptions): WorkspacesPa
       dnd.detach();
       addBtn.removeEventListener("click", onAddClick);
       search.removeEventListener("input", onSearchInput);
+      root.removeEventListener("click", onPanelClick);
+      selection.clear();
       for (const handle of handles.splice(0)) handle.dispose();
       emptyState?.dispose();
       emptyState = null;

@@ -175,6 +175,41 @@ export function moveProject(
   });
 }
 
+/**
+ * Move several projects in one commit. `ids` is the list to move in the
+ * order they should land at the destination. The destination index is
+ * interpreted against the destination workspace **after** the moving ids
+ * have been filtered out — same convention as `moveProject` to keep the
+ * "drop at index N" insertion-line UX coherent.
+ */
+export function moveProjects(
+  state: WorkspacesState,
+  ids: readonly ProjectId[],
+  toWorkspaceId: WorkspaceId,
+  atIndex: number,
+): WorkspacesState {
+  if (ids.length === 0) return state;
+  const movingSet = new Set<ProjectId>(ids);
+  const movingProjects: Project[] = [];
+  for (const id of ids) {
+    const found = findProject(state, id);
+    if (found) movingProjects.push({ ...found.project, order: undefined });
+  }
+  if (movingProjects.length === 0) return state;
+  return mapWorkspaces(state, (w) => {
+    if (w.id === toWorkspaceId) {
+      const filtered = w.projects.filter((p) => !movingSet.has(p.id));
+      const clamped = Math.max(0, Math.min(atIndex, filtered.length));
+      const next = [...filtered];
+      next.splice(clamped, 0, ...movingProjects);
+      return { ...w, projects: reassignOrder(next) };
+    }
+    const hadAny = w.projects.some((p) => movingSet.has(p.id));
+    if (!hadAny) return w;
+    return { ...w, projects: w.projects.filter((p) => !movingSet.has(p.id)) };
+  });
+}
+
 export function reorderProjects(
   state: WorkspacesState,
   workspaceId: WorkspaceId,

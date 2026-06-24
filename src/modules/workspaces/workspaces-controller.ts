@@ -28,6 +28,7 @@ import {
   duplicateProject,
   findProject,
   moveProject,
+  moveProjects,
   removeTerminalSpec,
   renameProject,
   renameWorkspace,
@@ -223,6 +224,8 @@ export class WorkspacesController {
   duplicateProject = (id: ProjectId): void => this.commit(duplicateProject(this.state, id));
   moveProject = (id: ProjectId, toWorkspaceId: WorkspaceId, atIndex: number): void =>
     this.commit(moveProject(this.state, id, toWorkspaceId, atIndex));
+  moveProjects = (ids: readonly ProjectId[], toWorkspaceId: WorkspaceId, atIndex: number): void =>
+    this.commit(moveProjects(this.state, ids, toWorkspaceId, atIndex));
   reorderProjects = (workspaceId: WorkspaceId, ordered: ProjectId[]): void =>
     this.commit(reorderProjects(this.state, workspaceId, ordered));
   resetAlphabeticalOrder = (workspaceId: WorkspaceId): void =>

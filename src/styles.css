@@ -719,6 +719,13 @@ body {
   flex-direction: column;
 }
 
+/* Empty workspace: leave a small drop target below the header so users can
+   drag a project into a freshly created (or emptied) workspace. The hint
+   stays subtle until the drop-target highlight fires. */
+.ws-projects:empty {
+  min-height: 18px;
+}
+
 .ws-workspace.collapsed .ws-projects {
   display: none;
 }
@@ -740,6 +747,15 @@ body {
 
 .ws-project-row.active {
   background: rgba(255, 140, 42, 0.1);
+}
+
+.ws-project-row.selected {
+  background: rgba(138, 161, 255, 0.14);
+  box-shadow: inset 2px 0 0 var(--accent, #8aa1ff);
+}
+
+.ws-project-row.selected.active {
+  background: rgba(255, 140, 42, 0.14);
 }
 
 .ws-project-row.dragging {
@@ -849,6 +865,27 @@ body {
   outline-offset: -2px;
   background: color-mix(in srgb, var(--accent) 8%, transparent);
   border-radius: 4px;
+}
+
+/* Floating ghost that follows the cursor during an internal drag. The
+   pointer-events: none is required so document.elementFromPoint resolves
+   the actual hovered element instead of the ghost. */
+.ws-drag-ghost {
+  position: fixed;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 12px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+  opacity: 0.92;
+  z-index: 10000;
+  white-space: nowrap;
+  user-select: none;
 }
 
 .pane.pane-drop-target {

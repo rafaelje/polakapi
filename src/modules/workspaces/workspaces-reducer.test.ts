@@ -12,6 +12,7 @@ import {
   duplicateProject,
   findProject,
   moveProject,
+  moveProjects,
   removeTerminalSpec,
   renameProject,
   renameWorkspace,
@@ -165,6 +166,34 @@ describe("workspaces-reducer", () => {
     s = moveProject(s, c, wsId(s, 0), 0);
     expect(s.workspaces[0].projects.map((p) => p.name)).toEqual(["C", "A", "B"]);
     expect(s.workspaces[0].projects.every((p) => typeof p.order === "number")).toBe(true);
+  });
+
+  it("moveProjects moves a multi-selection across workspaces preserving order", () => {
+    let s = addWorkspace(createEmptyState(), "W1");
+    s = addWorkspace(s, "W2");
+    s = addProject(s, { workspaceId: wsId(s, 0), name: "A", path: "/a" });
+    s = addProject(s, { workspaceId: wsId(s, 0), name: "B", path: "/b" });
+    s = addProject(s, { workspaceId: wsId(s, 0), name: "C", path: "/c" });
+    s = addProject(s, { workspaceId: wsId(s, 1), name: "X", path: "/x" });
+    const a = projectId(s, 0, 0);
+    const c = projectId(s, 0, 2);
+    s = moveProjects(s, [a, c], wsId(s, 1), 1);
+    expect(s.workspaces[0].projects.map((p) => p.name)).toEqual(["B"]);
+    expect(s.workspaces[1].projects.map((p) => p.name)).toEqual(["X", "A", "C"]);
+  });
+
+  it("moveProjects intra-workspace re-clusters the selection at the drop index", () => {
+    let s = addWorkspace(createEmptyState(), "W");
+    s = addProject(s, { workspaceId: wsId(s, 0), name: "A", path: "/a" });
+    s = addProject(s, { workspaceId: wsId(s, 0), name: "B", path: "/b" });
+    s = addProject(s, { workspaceId: wsId(s, 0), name: "C", path: "/c" });
+    s = addProject(s, { workspaceId: wsId(s, 0), name: "D", path: "/d" });
+    const a = projectId(s, 0, 0);
+    const c = projectId(s, 0, 2);
+    // Move {A, C} after B+D were filtered out, dropping at index 1 of the
+    // filtered list [B, D].
+    s = moveProjects(s, [a, c], wsId(s, 0), 1);
+    expect(s.workspaces[0].projects.map((p) => p.name)).toEqual(["B", "A", "C", "D"]);
   });
 
   it("reorderProjects applies an explicit ordering and assigns order indexes", () => {
