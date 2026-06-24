@@ -771,9 +771,9 @@
 
       <div class="callout warn">
         <strong>Nota sobre escalabilidad</strong>
-        Con 4 CLIs (Shell + 3 AI) la fila de chips es ideal. Si en el futuro se superan 6–7 CLIs,
-        se puede migrar a un overflow menu al final de la fila sin romper la arquitectura. El
-        registro de perfiles ya está diseñado para eso.
+        Con 4 CLIs (Shell + 3 AI) la fila de chips es ideal. Si en el futuro se superan 6–7 CLIs, se
+        puede migrar a un overflow menu al final de la fila sin romper la arquitectura. El registro
+        de perfiles ya está diseñado para eso.
       </div>
 
       <!-- ─────────────────────────────────────────────── -->
@@ -863,7 +863,15 @@
             <input
               type="text"
               value="2"
-              style="width: 40px; text-align: center; background: var(--bg-3); border: 1px solid var(--line); color: var(--text); border-radius: 4px; padding: 3px"
+              style="
+                width: 40px;
+                text-align: center;
+                background: var(--bg-3);
+                border: 1px solid var(--line);
+                color: var(--text);
+                border-radius: 4px;
+                padding: 3px;
+              "
             />
           </div>
           <div class="pane-grid g2">
@@ -1140,8 +1148,8 @@
 
       <p>
         Verificación in-situ de los tres CLIs instalados en el sistema: binario, versión, y modo
-        interactivo por defecto (sin subcomando). Los tres arrancan interactivos por defecto, lo
-        que permite lanzarlos directamente como comando del PTY sin wrappers.
+        interactivo por defecto (sin subcomando). Los tres arrancan interactivos por defecto, lo que
+        permite lanzarlos directamente como comando del PTY sin wrappers.
       </p>
 
       <table>
@@ -1156,21 +1164,54 @@
         </thead>
         <tbody>
           <tr>
-            <td><span class="cli-dot" style="background: var(--claude); display: inline-block; vertical-align: middle; margin-right: 4px"></span> Claude Code</td>
+            <td>
+              <span
+                class="cli-dot"
+                style="
+                  background: var(--claude);
+                  display: inline-block;
+                  vertical-align: middle;
+                  margin-right: 4px;
+                "
+              ></span>
+              Claude Code
+            </td>
             <td><code>claude</code></td>
             <td>2.1.170</td>
             <td><code>~/.nvm/.../bin/claude</code></td>
             <td>Interactivo (sesión TUI)</td>
           </tr>
           <tr>
-            <td><span class="cli-dot" style="background: var(--codex); display: inline-block; vertical-align: middle; margin-right: 4px"></span> Codex</td>
+            <td>
+              <span
+                class="cli-dot"
+                style="
+                  background: var(--codex);
+                  display: inline-block;
+                  vertical-align: middle;
+                  margin-right: 4px;
+                "
+              ></span>
+              Codex
+            </td>
             <td><code>codex</code></td>
             <td>0.141.0</td>
             <td><code>~/.nvm/.../bin/codex</code></td>
             <td>Interactivo (sin subcomando)</td>
           </tr>
           <tr>
-            <td><span class="cli-dot" style="background: var(--opencode); display: inline-block; vertical-align: middle; margin-right: 4px"></span> opencode</td>
+            <td>
+              <span
+                class="cli-dot"
+                style="
+                  background: var(--opencode);
+                  display: inline-block;
+                  vertical-align: middle;
+                  margin-right: 4px;
+                "
+              ></span>
+              opencode
+            </td>
             <td><code>opencode</code></td>
             <td>1.17.9</td>
             <td><code>~/.opencode/bin/opencode</code></td>
@@ -1256,7 +1297,8 @@ Rust: resolve_command(command) → allowlist check → spawn PTY
 pty:data / pty:exit events → xterm.js
 
 Persistencia: TerminalSpec.cliId se guarda en workspaces.json
-Restore:      resolveProfile(spec.cliId) → command/args → respawn</pre>
+Restore:      resolveProfile(spec.cliId) → command/args → respawn</pre
+      >
 
       <h3>Cambios por archivo</h3>
 
@@ -1279,9 +1321,9 @@ Restore:      resolveProfile(spec.cliId) → command/args → respawn</pre>
           <tr>
             <td><code>terminal-manager.ts</code></td>
             <td>
-              Campo <code>activeCliId</code>, <code>setActiveCli()</code>, <code>addPane</code>
-              reenvía <code>command</code>/<code>args</code> desde <code>resolveProfile</code>,
-              <code>updateSpec</code> compara <code>cliId</code>
+              Campo <code>activeCliId</code>, <code>setActiveCli()</code>,
+              <code>addPane</code> reenvía <code>command</code>/<code>args</code> desde
+              <code>resolveProfile</code>, <code>updateSpec</code> compara <code>cliId</code>
             </td>
           </tr>
           <tr>
@@ -1297,7 +1339,10 @@ Restore:      resolveProfile(spec.cliId) → command/args → respawn</pre>
           </tr>
           <tr>
             <td><code>workspaces-bootstrap.ts</code></td>
-            <td>Wire <code>onAddTerminal</code> → <code>manager.setActiveCli(id); manager.addPane()</code></td>
+            <td>
+              Wire <code>onAddTerminal</code> →
+              <code>manager.setActiveCli(id); manager.addPane()</code>
+            </td>
           </tr>
           <tr>
             <td><code>workspaces-reducer-terminals.ts</code></td>
@@ -1309,7 +1354,10 @@ Restore:      resolveProfile(spec.cliId) → command/args → respawn</pre>
           </tr>
           <tr>
             <td><code>styles.css</code></td>
-            <td>Estilos de <code>.cli-chips</code>, <code>.cli-chip</code>, <code>.pane-badge.cli-*</code></td>
+            <td>
+              Estilos de <code>.cli-chips</code>, <code>.cli-chip</code>,
+              <code>.pane-badge.cli-*</code>
+            </td>
           </tr>
         </tbody>
       </table>
@@ -1336,15 +1384,18 @@ Restore:      resolveProfile(spec.cliId) → command/args → respawn</pre>
 
       <p>
         <code>schemaVersion</code> se mantiene en <code>1</code>. <code>cliId</code> es opcional;
-        los specs existentes sin <code>cliId</code> se interpretan como shell por defecto
-        (<code>resolveProfile(undefined)</code> → <code>SHELL_PROFILE</code>). No requiere migración.
+        los specs existentes sin <code>cliId</code> se interpretan como shell por defecto (<code
+          >resolveProfile(undefined)</code
+        >
+        → <code>SHELL_PROFILE</code>). No requiere migración.
       </p>
 
       <p>
         <code>shallowEqualSpec</code> en <code>workspaces-reducer-terminals.ts:101</code> debe
         comparar <code>cliId</code> para que <code>spec-changed</code> dispare al cambiar el CLI de
-        un pane. También <code>TerminalManager.updateSpec</code> en <code>terminal-manager.ts:99-104</code>
-        debe incluir <code>cliId</code> en su comparación identity.
+        un pane. También <code>TerminalManager.updateSpec</code> en
+        <code>terminal-manager.ts:99-104</code> debe incluir <code>cliId</code> en su comparación
+        identity.
       </p>
 
       <!-- ─────────────────────────────────────────────── -->
@@ -1402,13 +1453,22 @@ Restore:      resolveProfile(spec.cliId) → command/args → respawn</pre>
           <tr>
             <td>2. Rust allowlist</td>
             <td><code>pty.rs</code></td>
-            <td><code>ALLOWED_AI_CLI_BASENAMES</code>, <code>is_allowed_command</code>, rename <code>resolve_shell</code> → <code>resolve_command</code></td>
+            <td>
+              <code>ALLOWED_AI_CLI_BASENAMES</code>, <code>is_allowed_command</code>, rename
+              <code>resolve_shell</code> → <code>resolve_command</code>
+            </td>
             <td><code>pnpm rs:test && pnpm rs:clippy</code></td>
           </tr>
           <tr>
             <td>3. Persistencia</td>
-            <td><code>terminal/types.ts</code>, <code>workspaces-reducer-terminals.ts</code>, <code>terminal-manager.ts</code></td>
-            <td><code>cliId</code> en <code>TerminalSpec</code>, <code>shallowEqualSpec</code>, <code>updateSpec</code> identity check</td>
+            <td>
+              <code>terminal/types.ts</code>, <code>workspaces-reducer-terminals.ts</code>,
+              <code>terminal-manager.ts</code>
+            </td>
+            <td>
+              <code>cliId</code> en <code>TerminalSpec</code>, <code>shallowEqualSpec</code>,
+              <code>updateSpec</code> identity check
+            </td>
             <td><code>pnpm typecheck && pnpm test</code></td>
           </tr>
           <tr>
@@ -1443,7 +1503,8 @@ Restore:      resolveProfile(spec.cliId) → command/args → respawn</pre>
             <td><code>workspaces-bootstrap.ts</code></td>
             <td>
               <code>onSetActiveCli</code> → <code>manager.setActiveCli(id)</code>,
-              <code>onAddTerminal</code> → <code>manager.addPane({ cliId: manager.activeCliId })</code>
+              <code>onAddTerminal</code> →
+              <code>manager.addPane({ cliId: manager.activeCliId })</code>
             </td>
             <td>Manual</td>
           </tr>
@@ -1464,8 +1525,8 @@ Restore:      resolveProfile(spec.cliId) → command/args → respawn</pre>
 
       <div class="callout">
         <strong>Orden recomendado</strong>
-        Fases 1–4 son plumbing sin UI (se validan con tests automáticos). Fases 5–7 son la
-        interfaz y el wiring. La fase 8 valida el flujo completo end-to-end. La fase 9 cierra con
+        Fases 1–4 son plumbing sin UI (se validan con tests automáticos). Fases 5–7 son la interfaz
+        y el wiring. La fase 8 valida el flujo completo end-to-end. La fase 9 cierra con
         <code>pnpm run check</code> completo. Cada fase debe pasar <code>pnpm run check</code>
         antes de avanzar a la siguiente.
       </div>
@@ -1543,8 +1604,8 @@ subToolbar.append(chips, addBtn, runAllBtn, colsLabel);</pre>
           hint.
         </li>
         <li>
-          <strong>Overflow menu</strong>: si se superan 6 CLIs, colapsar los menos usados en un
-          chip "Más…" con dropdown.
+          <strong>Overflow menu</strong>: si se superan 6 CLIs, colapsar los menos usados en un chip
+          "Más…" con dropdown.
         </li>
       </ul>
 
