@@ -1,4 +1,4 @@
-import type { ColorToken, ProjectId } from "./types";
+import type { ColorToken, ProjectId } from "../state/types";
 
 // ---------------------------------------------------------------------------
 // F4 command palette — list rendering. Pure DOM, no state ownership.

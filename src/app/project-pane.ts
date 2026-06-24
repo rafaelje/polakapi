@@ -1,8 +1,8 @@
-import type { Project } from "../modules/workspaces/types";
+import type { Project } from "../modules/workspaces/state/types";
 import {
   createProjectEmptyState,
   type EmptyStateHandle,
-} from "../modules/workspaces/workspaces-empty-state";
+} from "../modules/workspaces/panel/workspaces-empty-state";
 import { ALL_PROFILES, type CliProfile } from "../modules/terminal/cli-registry";
 
 export interface ProjectPaneCallbacks {

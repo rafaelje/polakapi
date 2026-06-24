@@ -1,13 +1,13 @@
-import { deterministicColor } from "./appearance-defaults";
-import { openAppearancePicker } from "./appearance-picker";
+import { deterministicColor } from "../appearance-defaults";
+import { openAppearancePicker } from "../forms/appearance-picker";
 import { createProjectRow, type ProjectRowHandle } from "./project-row";
-import { filterProjects } from "./project-filter";
-import { openRowMenu } from "./row-menu";
-import { startInlineRename } from "./rename-inline";
-import type { SelectionStore } from "./selection";
-import type { Project, ProjectId, Workspace } from "./types";
-import type { WorkspacesController } from "./workspaces-controller";
-import { sortedProjects } from "./workspaces-reducer";
+import { filterProjects } from "../project-filter";
+import { openRowMenu } from "../forms/row-menu";
+import { startInlineRename } from "../forms/rename-inline";
+import type { SelectionStore } from "../state/selection";
+import type { Project, ProjectId, Workspace } from "../state/types";
+import type { WorkspacesController } from "../state/workspaces-controller";
+import { sortedProjects } from "../state/workspaces-reducer";
 
 export interface WorkspaceRowOptions {
   workspace: Workspace;

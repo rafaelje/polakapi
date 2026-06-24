@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { ProjectId } from "../workspaces/types";
+import type { ProjectId } from "../workspaces/state/types";
 import type { PaneCreateOptions, TerminalSpec } from "./types";
 
 const fake = vi.hoisted(() => {

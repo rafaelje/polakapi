@@ -1,5 +1,5 @@
-import type { ProjectId } from "../workspaces/types";
-import { confirmModal } from "../workspaces/confirm-delete";
+import type { ProjectId } from "../workspaces/state/types";
+import { confirmModal } from "../workspaces/forms/confirm-delete";
 import { resolveProfile } from "./cli-registry";
 import { layoutTerminalGrid } from "./terminal-grid-layout";
 import { TerminalPane } from "./terminal-pane";

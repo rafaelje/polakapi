@@ -1,5 +1,5 @@
 import { deterministicColor } from "../modules/workspaces/appearance-defaults";
-import type { Project, Workspace } from "../modules/workspaces/types";
+import type { Project, Workspace } from "../modules/workspaces/state/types";
 
 export interface BreadcrumbOptions {
   host: HTMLElement;

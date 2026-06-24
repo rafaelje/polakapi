@@ -8,20 +8,20 @@ const persistence = vi.hoisted(() => ({
   flushSaveWorkspaces: vi.fn<() => Promise<void>>(),
 }));
 
-vi.mock("../../shared/persistence/workspaces-store", () => persistence);
+vi.mock("../../../shared/persistence/workspaces-store", () => persistence);
 
 const pathValidation = vi.hoisted(() => ({
   validatePath: vi.fn<(path: string) => Promise<PathValidation>>(),
 }));
 
-vi.mock("./path-validation", () => pathValidation);
+vi.mock("../path-validation", () => pathValidation);
 
 const confirmDelete = vi.hoisted(() => ({
   confirmDeleteProject: vi.fn<() => Promise<boolean>>(),
   confirmDeleteWorkspace: vi.fn<() => Promise<boolean>>(),
 }));
 
-vi.mock("./confirm-delete", () => confirmDelete);
+vi.mock("../forms/confirm-delete", () => confirmDelete);
 
 import { WorkspacesController } from "./workspaces-controller";
 

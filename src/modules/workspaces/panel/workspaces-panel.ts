@@ -1,14 +1,14 @@
-import { showToast } from "../../shared/ui/toast";
-import { attach as attachDragDrop, type DragDropHandle } from "./drag-drop";
-import { attachFinderDrop, type FinderDropHandle } from "./finder-drop";
-import { matchesProject } from "./project-filter";
-import { validatePath } from "./path-validation";
-import { createSelectionStore } from "./selection";
+import { showToast } from "../../../shared/ui/toast";
+import { attach as attachDragDrop, type DragDropHandle } from "../drag-drop/drag-drop";
+import { attachFinderDrop, type FinderDropHandle } from "../drag-drop/finder-drop";
+import { matchesProject } from "../project-filter";
+import { validatePath } from "../path-validation";
+import { createSelectionStore } from "../state/selection";
 import { createWorkspaceRow, type WorkspaceRowHandle } from "./workspace-row";
 import { createSidebarEmptyState, type EmptyStateHandle } from "./workspaces-empty-state";
-import { sortedWorkspaces } from "./workspaces-reducer";
-import type { ProjectId } from "./types";
-import type { WorkspacesController } from "./workspaces-controller";
+import { sortedWorkspaces } from "../state/workspaces-reducer";
+import type { ProjectId } from "../state/types";
+import type { WorkspacesController } from "../state/workspaces-controller";
 
 /**
  * Live-count surface the panel needs from the TerminalRouter. Kept as a

@@ -1,5 +1,5 @@
-import type { ColorToken } from "./types";
-import { PALETTE } from "./workspaces-reducer-appearance";
+import type { ColorToken } from "../state/types";
+import { PALETTE } from "../state/workspaces-reducer-appearance";
 
 // ---------------------------------------------------------------------------
 // F4 appearance picker — small popover anchored to the menu trigger that lets

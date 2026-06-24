@@ -1,8 +1,8 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
-import { confirmModal } from "../modules/workspaces/confirm-delete";
-import type { WorkspacesState } from "../modules/workspaces/types";
-import { findProject } from "../modules/workspaces/workspaces-reducer";
+import { confirmModal } from "../modules/workspaces/forms/confirm-delete";
+import type { WorkspacesState } from "../modules/workspaces/state/types";
+import { findProject } from "../modules/workspaces/state/workspaces-reducer";
 import type { TerminalRouter } from "./terminal-router";
 
 export interface QuitConfirmOptions {

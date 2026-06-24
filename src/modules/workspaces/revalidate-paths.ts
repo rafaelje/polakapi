@@ -1,6 +1,6 @@
 import { validatePath } from "./path-validation";
-import type { ProjectId, WorkspacesState } from "./types";
-import { findProject, setProjectPathInvalid } from "./workspaces-reducer";
+import type { ProjectId, WorkspacesState } from "./state/types";
+import { findProject, setProjectPathInvalid } from "./state/workspaces-reducer";
 
 export interface PathRevalidationResult {
   id: ProjectId;

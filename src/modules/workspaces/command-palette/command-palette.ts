@@ -3,9 +3,9 @@ import {
   updatePaletteSelection,
   type PaletteItem,
 } from "./command-palette-list";
-import { deriveFallbackColor } from "./workspaces-reducer-appearance";
-import type { ColorToken, WorkspacesState } from "./types";
-import type { WorkspacesController } from "./workspaces-controller";
+import { deriveFallbackColor } from "../state/workspaces-reducer-appearance";
+import type { ColorToken, WorkspacesState } from "../state/types";
+import type { WorkspacesController } from "../state/workspaces-controller";
 
 // ---------------------------------------------------------------------------
 // F4 — Command Palette (CMD-P / Ctrl-P).

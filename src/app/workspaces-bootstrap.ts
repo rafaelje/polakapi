@@ -2,14 +2,14 @@ import { promptModal } from "../shared/ui/modal";
 import { ptyWrite } from "../modules/terminal/pty-client";
 import { attachTerminalDrop, type TerminalDropHandle } from "../modules/terminal/terminal-drop";
 import { openInEditor, revealFolder } from "../modules/workspaces/open-external";
-import { WorkspacesController } from "../modules/workspaces/workspaces-controller";
+import { WorkspacesController } from "../modules/workspaces/state/workspaces-controller";
 import {
   mountWorkspacesPanel,
   type BellPendingSource,
   type WorkspacesPanelHandle,
-} from "../modules/workspaces/workspaces-panel";
-import type { Project, ProjectId } from "../modules/workspaces/types";
-import { findProject } from "../modules/workspaces/workspaces-reducer";
+} from "../modules/workspaces/panel/workspaces-panel";
+import type { Project, ProjectId } from "../modules/workspaces/state/types";
+import { findProject } from "../modules/workspaces/state/workspaces-reducer";
 import { mountNotesPanel } from "../modules/notes/notes-panel";
 import type { NotesPanelHandle, NotesSource } from "../modules/notes/types";
 import { mountProjectPane, type ProjectPaneHandle } from "./project-pane";

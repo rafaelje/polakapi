@@ -1,4 +1,4 @@
-import type { ProjectId } from "../workspaces/types";
+import type { ProjectId } from "../workspaces/state/types";
 import type { NotesElements, NotesPanelHandle, NotesSource } from "./types";
 
 // ---------------------------------------------------------------------------

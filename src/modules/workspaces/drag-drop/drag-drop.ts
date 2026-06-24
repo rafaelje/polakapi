@@ -4,9 +4,9 @@ import {
   currentOrder,
   type VisualsHandle,
 } from "./drag-drop-visuals";
-import type { SelectionStore } from "./selection";
-import type { ProjectId, WorkspaceId } from "./types";
-import type { WorkspacesController } from "./workspaces-controller";
+import type { SelectionStore } from "../state/selection";
+import type { ProjectId, WorkspaceId } from "../state/types";
+import type { WorkspacesController } from "../state/workspaces-controller";
 
 // Pointer-event drag-drop for the workspaces panel.
 //

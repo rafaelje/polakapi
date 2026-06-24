@@ -1,4 +1,4 @@
-import type { Project, Workspace } from "./types";
+import type { Project, Workspace } from "./state/types";
 
 /**
  * Pure helpers for sidebar project filtering. No I/O, no classes — kept in a

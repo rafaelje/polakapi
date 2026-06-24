@@ -1,4 +1,4 @@
-import type { TerminalSpec } from "../terminal/types";
+import type { TerminalSpec } from "../../terminal/types";
 
 export type { TerminalSpec };
 

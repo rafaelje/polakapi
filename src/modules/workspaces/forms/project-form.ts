@@ -1,8 +1,8 @@
-import { promptModal } from "../../shared/ui/modal";
-import { showToast } from "../../shared/ui/toast";
-import { pickProjectFolder } from "./path-picker";
-import { formatPathError, validatePath } from "./path-validation";
-import type { PathValidation, Project } from "./types";
+import { promptModal } from "../../../shared/ui/modal";
+import { showToast } from "../../../shared/ui/toast";
+import { pickProjectFolder } from "../path-picker";
+import { formatPathError, validatePath } from "../path-validation";
+import type { PathValidation, Project } from "../state/types";
 
 /**
  * Result of a project-form flow. The `cancelled` discriminant captures the

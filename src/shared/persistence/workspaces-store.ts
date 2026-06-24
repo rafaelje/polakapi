@@ -1,6 +1,6 @@
 import { load, type Store } from "@tauri-apps/plugin-store";
 
-import type { WorkspacesState } from "../../modules/workspaces/types";
+import type { WorkspacesState } from "../../modules/workspaces/state/types";
 
 const STORE_FILE = "workspaces.json";
 const STATE_KEY = "state";

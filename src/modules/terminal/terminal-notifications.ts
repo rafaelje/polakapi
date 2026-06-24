@@ -3,7 +3,7 @@ import {
   requestPermission,
   sendNotification,
 } from "@tauri-apps/plugin-notification";
-import type { ProjectId } from "../workspaces/types";
+import type { ProjectId } from "../workspaces/state/types";
 import type { TerminalPane } from "./terminal-pane";
 
 /**

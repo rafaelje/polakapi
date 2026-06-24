@@ -1,10 +1,10 @@
-import { deterministicColor } from "./appearance-defaults";
-import { openAppearancePicker } from "./appearance-picker";
-import { openRowMenu } from "./row-menu";
-import { startInlineRename } from "./rename-inline";
-import type { SelectionStore } from "./selection";
-import type { Project, ProjectId, Workspace, WorkspaceId } from "./types";
-import type { WorkspacesController } from "./workspaces-controller";
+import { deterministicColor } from "../appearance-defaults";
+import { openAppearancePicker } from "../forms/appearance-picker";
+import { openRowMenu } from "../forms/row-menu";
+import { startInlineRename } from "../forms/rename-inline";
+import type { SelectionStore } from "../state/selection";
+import type { Project, ProjectId, Workspace, WorkspaceId } from "../state/types";
+import type { WorkspacesController } from "../state/workspaces-controller";
 
 export interface ProjectRowOptions {
   project: Project;

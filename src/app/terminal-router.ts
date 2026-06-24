@@ -6,7 +6,7 @@ import {
 import type { TerminalPane } from "../modules/terminal/terminal-pane";
 import type { TerminalSpec } from "../modules/terminal/types";
 import { ptyKill } from "../modules/terminal/pty-client";
-import type { Project, ProjectId } from "../modules/workspaces/types";
+import type { Project, ProjectId } from "../modules/workspaces/state/types";
 
 export type TerminalRouterEvent =
   | { type: "counts-changed"; counts: ReadonlyMap<ProjectId, number> }

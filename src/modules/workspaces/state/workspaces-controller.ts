@@ -2,12 +2,12 @@ import {
   flushSaveWorkspaces,
   loadWorkspaces,
   queueSaveWorkspaces,
-} from "../../shared/persistence/workspaces-store";
-import { confirmDeleteProject, confirmDeleteWorkspace } from "./confirm-delete";
-import { validatePath } from "./path-validation";
-import { openCreateProjectForm, openEditProjectPathForm } from "./project-form";
-import { applyPathValidationResults, collectPathValidationResults } from "./revalidate-paths";
-import { openCreateWorkspaceForm } from "./workspace-form";
+} from "../../../shared/persistence/workspaces-store";
+import { confirmDeleteProject, confirmDeleteWorkspace } from "../forms/confirm-delete";
+import { validatePath } from "../path-validation";
+import { openCreateProjectForm, openEditProjectPathForm } from "../forms/project-form";
+import { applyPathValidationResults, collectPathValidationResults } from "../revalidate-paths";
+import { openCreateWorkspaceForm } from "../forms/workspace-form";
 import type {
   ColorToken,
   Project,

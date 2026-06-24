@@ -16,7 +16,7 @@ import { persistNotesHeight as queueNotesHeightSave } from "../modules/notes/not
 import {
   mountCommandPalette,
   type CommandPaletteHandle,
-} from "../modules/workspaces/command-palette";
+} from "../modules/workspaces/command-palette/command-palette";
 import { mountBottomPanel, type BottomPanelHandle } from "../modules/bottom-panel/bottom-panel";
 import { isBottomTab } from "../modules/bottom-panel/types";
 import { mountLoopButton, type LoopButtonHandle } from "../modules/agents-flow/loop-window";

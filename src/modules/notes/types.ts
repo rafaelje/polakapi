@@ -1,4 +1,4 @@
-import type { ProjectId } from "../workspaces/types";
+import type { ProjectId } from "../workspaces/state/types";
 
 export interface NotesElements {
   panel: HTMLElement | null;

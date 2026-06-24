@@ -1,8 +1,8 @@
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import type { UnlistenFn } from "@tauri-apps/api/event";
-import { formatPathError } from "./path-validation";
-import type { PathValidation, WorkspaceId } from "./types";
-import type { WorkspacesController } from "./workspaces-controller";
+import { formatPathError } from "../path-validation";
+import type { PathValidation, WorkspaceId } from "../state/types";
+import type { WorkspacesController } from "../state/workspaces-controller";
 
 /**
  * Dependencies for the Finder drag-and-drop bridge. `validatePath` is injected

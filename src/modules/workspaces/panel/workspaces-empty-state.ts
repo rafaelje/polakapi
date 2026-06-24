@@ -1,4 +1,4 @@
-import type { WorkspacesController } from "./workspaces-controller";
+import type { WorkspacesController } from "../state/workspaces-controller";
 
 export interface EmptyStateHandle {
   element: HTMLElement;

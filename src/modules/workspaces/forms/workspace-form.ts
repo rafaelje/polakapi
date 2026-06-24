@@ -1,4 +1,4 @@
-import { promptModal } from "../../shared/ui/modal";
+import { promptModal } from "../../../shared/ui/modal";
 
 /**
  * Result of the workspace name form. `cancelled` covers Escape, empty input,

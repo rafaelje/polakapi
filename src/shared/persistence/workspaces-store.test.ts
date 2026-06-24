@@ -6,7 +6,7 @@ import type {
   Workspace,
   WorkspaceId,
   WorkspacesState,
-} from "../../modules/workspaces/types";
+} from "../../modules/workspaces/state/types";
 
 interface MockStore {
   store: Map<string, unknown>;

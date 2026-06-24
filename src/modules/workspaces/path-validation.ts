@@ -1,5 +1,5 @@
 import { invoke } from "../../shared/tauri/invoke";
-import type { PathValidation } from "./types";
+import type { PathValidation } from "./state/types";
 
 /**
  * Validates a filesystem path via the `fs_validate_path` Rust command.
