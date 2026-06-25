@@ -150,6 +150,152 @@ describe("RunScheduler — atomic totals under concurrent batch (hybrid)", () =>
   });
 });
 
+// Helper: track every runAgent invocation. Returns invokers + the call log
+// + a `prepare(fn)` setter so each test can customize the response shape
+// without losing the per-invocation tally.
+const trackingInvokers = (
+  respond: (
+    agent: string,
+    args: Parameters<SchedulerInvokers["runAgent"]>[0],
+  ) => Promise<Awaited<ReturnType<SchedulerInvokers["runAgent"]>>>,
+): { invokers: SchedulerInvokers; calls: { agent: string }[] } => {
+  const calls: { agent: string }[] = [];
+  const invokers: SchedulerInvokers = {
+    runAgent: async (args) => {
+      const agent = args.systemPromptPath?.match(/([a-z]+)\.md$/)?.[1] ?? "?";
+      calls.push({ agent });
+      return respond(agent, args);
+    },
+    readOutput: () => Promise.resolve(""),
+    writeOutput: () => Promise.resolve(),
+    writeState: () => Promise.resolve(),
+    gitDiffSnapshot: () => Promise.resolve(""),
+    readPhaseFile: () => Promise.resolve(""),
+    readBatchFile: () => Promise.resolve(""),
+    writeBatchFile: () => Promise.resolve(),
+  };
+  return { invokers, calls };
+};
+
+describe("RunScheduler — reviewer cap (sequential)", () => {
+  it("marks the review stage `warning` and continues to knowledge after maxRetries", async () => {
+    // The reviewer never approves: every call returns `VERDICT: retry`. The
+    // loop is `attempt < maxRetries`: each iteration runs `review`, then if
+    // not the last iteration runs `implementation` again with the notes. So
+    // for maxRetries=3 → 3 reviews + 2 retry-impls + 1 initial impl + 1
+    // analysis + 1 knowledge.
+    const settings = { ...baseSettings(), maxRetries: 3 };
+    const { invokers, calls } = trackingInvokers((agent) =>
+      Promise.resolve({
+        text: agent === "review" ? "VERDICT: retry\nneeds work" : "ok",
+        tokensIn: 0,
+        tokensOut: 0,
+        costUsd: 0,
+      }),
+    );
+    const scheduler = new RunScheduler(invokers);
+    scheduler.initialize([phase("a")], settings, "sequential");
+
+    await scheduler.start();
+
+    const tally = calls.reduce<Record<string, number>>((acc, c) => {
+      acc[c.agent] = (acc[c.agent] ?? 0) + 1;
+      return acc;
+    }, {});
+    expect(tally.analysis).toBe(1);
+    expect(tally.implementation).toBe(3); // 1 initial + 2 retry-impls
+    expect(tally.review).toBe(3); // cap
+    expect(tally.knowledge).toBe(1); // still runs despite the cap
+
+    const phaseState = scheduler.getState().phases[0];
+    expect(phaseState.reviewerExhausted).toBe(true);
+    expect(phaseState.stages.review.status).toBe("warning");
+    expect(phaseState.status).toBe("warning");
+    expect(scheduler.getState().status).toBe("completed");
+  });
+});
+
+describe("RunScheduler — fatal errors stop the cycle", () => {
+  it("returns status=error and does not start the next phase", async () => {
+    const { invokers } = trackingInvokers((agent) => {
+      if (agent === "implementation") {
+        return Promise.resolve({
+          text: "",
+          tokensIn: 0,
+          tokensOut: 0,
+          costUsd: 0,
+          error: "model down",
+        });
+      }
+      const text = agent === "review" ? "VERDICT: ok" : "ok";
+      return Promise.resolve({ text, tokensIn: 0, tokensOut: 0, costUsd: 0 });
+    });
+    const scheduler = new RunScheduler(invokers);
+    scheduler.initialize([phase("a"), phase("b")], baseSettings(), "sequential");
+    await scheduler.start();
+
+    const state = scheduler.getState();
+    expect(state.status).toBe("error");
+    expect(state.phases[0].stages.implementation.status).toBe("error");
+    // The second phase must NOT have started.
+    expect(state.phases[1].stages.analysis.status).toBe("pending");
+  });
+});
+
+describe("RunScheduler — abort sets status=aborted", () => {
+  it("flips to aborted when abort() runs mid-cycle", async () => {
+    let firstStarted: (() => void) | null = null;
+    const started = new Promise<void>((r) => {
+      firstStarted = r;
+    });
+    let release: (() => void) | null = null;
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    const { invokers } = trackingInvokers(async (agent) => {
+      if (firstStarted) {
+        firstStarted();
+        firstStarted = null;
+      }
+      await gate;
+      const text = agent === "review" ? "VERDICT: ok" : "ok";
+      return { text, tokensIn: 0, tokensOut: 0, costUsd: 0 };
+    });
+    const scheduler = new RunScheduler(invokers);
+    scheduler.initialize([phase("a"), phase("b")], baseSettings(), "sequential");
+    const run = scheduler.start();
+    await started;
+    scheduler.abort();
+    release!();
+    await run;
+
+    expect(scheduler.getState().status).toBe("aborted");
+  });
+});
+
+describe("RunScheduler — hybrid integrator", () => {
+  it("invokes the integrator agent once after each batch", async () => {
+    const { invokers, calls } = trackingInvokers((agent) =>
+      Promise.resolve({
+        text:
+          agent === "review" ? "VERDICT: ok" : agent === "integration" ? "INTEGRATION: ok" : "ok",
+        tokensIn: 0,
+        tokensOut: 0,
+        costUsd: 0,
+      }),
+    );
+    const scheduler = new RunScheduler(invokers);
+    // Two phases, one depends on the other → two batches → two integrator runs.
+    scheduler.initialize([phase("a"), phase("b", ["a"])], baseSettings(), "hybrid");
+    await scheduler.start();
+
+    const integratorCalls = calls.filter((c) => c.agent === "integration");
+    expect(integratorCalls).toHaveLength(2);
+    expect(scheduler.getState().integrators.every((i) => i.status === "done")).toBe(true);
+    expect(scheduler.getState().status).toBe("completed");
+  });
+});
+
 describe("pure helpers", () => {
   it("parseReviewVerdict accepts ok/approved synonyms", () => {
     expect(parseReviewVerdict("VERDICT: ok").approved).toBe(true);
