@@ -101,6 +101,26 @@ pub fn open_in_editor(path: &str, editor: Option<&str>) -> Result<(), String> {
     Ok(())
 }
 
+/// Opens a single file `path` in an editor. Same resolver/allowlist as
+/// [`open_in_editor`], but accepts files (not directories). Used by `/loop`
+/// step 1 to open `<run>/prompts/problem-intake.md` for editing.
+pub fn open_file_in_editor(path: &str, editor: Option<&str>) -> Result<(), String> {
+    let p = std::path::Path::new(path);
+    let metadata = std::fs::metadata(p).map_err(|e| format!("path inválido: {e}"))?;
+    if metadata.is_dir() {
+        return Err("path es un directorio, usá open_in_editor".to_string());
+    }
+
+    let cmd = resolve_editor(editor)
+        .ok_or_else(|| "no editor found on PATH (tried agy-ide, code)".to_string())?;
+
+    Command::new(&cmd)
+        .arg(path)
+        .spawn()
+        .map_err(|e| format!("failed to launch {cmd}: {e}"))?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

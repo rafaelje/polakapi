@@ -2534,11 +2534,14 @@ dependencies = [
  "parking_lot",
  "portable-pty",
  "serde",
+ "serde_json",
  "tauri",
  "tauri-build",
  "tauri-plugin-dialog",
  "tauri-plugin-notification",
  "tauri-plugin-store",
+ "tempfile",
+ "tokio",
  "uuid",
 ]
 

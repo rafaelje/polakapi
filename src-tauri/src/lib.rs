@@ -3,6 +3,8 @@
 
 mod commands;
 mod fs;
+mod loop_cli;
+mod loop_prompts;
 mod open;
 mod pty;
 
@@ -10,7 +12,19 @@ use std::sync::Arc;
 use tauri::Manager;
 
 use crate::commands::{
-    fs_validate_path, open_in_editor, open_in_explorer, pty_kill, pty_resize, pty_spawn, pty_write,
+    fs_validate_path, open_file_in_editor, open_in_editor, open_in_explorer, pty_kill, pty_resize,
+    pty_spawn, pty_write,
+};
+use crate::loop_cli::run_loop_agent;
+use crate::loop_prompts::{
+    loop_archive_run, loop_create_phase_dir, loop_create_run, loop_delete_phase_dir,
+    loop_discard_partial_outputs, loop_ensure_prompts_dir, loop_git_diff_snapshot,
+    loop_list_interrupted_runs, loop_list_phase_dirs, loop_list_runs, loop_read_batch_file,
+    loop_reset_run_prompt_to_global,
+    loop_read_global_prompt, loop_read_output_file, loop_read_phase_file, loop_read_run_file,
+    loop_read_state_file, loop_validate_cli_model, loop_write_batch_file,
+    loop_write_global_prompt, loop_write_output_file, loop_write_phase_file, loop_write_run_file,
+    loop_write_state_file,
 };
 use crate::pty::PtyStore;
 
@@ -78,7 +92,33 @@ pub fn run() {
             pty_kill,
             fs_validate_path,
             open_in_explorer,
-            open_in_editor
+            open_in_editor,
+            open_file_in_editor,
+            run_loop_agent,
+            loop_ensure_prompts_dir,
+            loop_read_global_prompt,
+            loop_write_global_prompt,
+            loop_create_run,
+            loop_validate_cli_model,
+            loop_read_run_file,
+            loop_write_run_file,
+            loop_create_phase_dir,
+            loop_delete_phase_dir,
+            loop_read_phase_file,
+            loop_write_phase_file,
+            loop_list_phase_dirs,
+            loop_read_output_file,
+            loop_write_output_file,
+            loop_read_state_file,
+            loop_write_state_file,
+            loop_git_diff_snapshot,
+            loop_read_batch_file,
+            loop_write_batch_file,
+            loop_list_interrupted_runs,
+            loop_list_runs,
+            loop_reset_run_prompt_to_global,
+            loop_archive_run,
+            loop_discard_partial_outputs
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

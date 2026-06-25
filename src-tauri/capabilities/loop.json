@@ -1,7 +1,12 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "loop",
-  "description": "Capability for the floating /loop popup window",
+  "description": "Capability for the floating /loop popup window. Includes plugin permissions for store/dialog/notification and the custom run_loop_agent command (custom commands don't need explicit allow entries in Tauri 2 capabilities — they're gated by the invoke_handler registration).",
   "windows": ["loop"],
-  "permissions": ["core:default"]
+  "permissions": [
+    "core:default",
+    "store:default",
+    "dialog:default",
+    "notification:default"
+  ]
 }

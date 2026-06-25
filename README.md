@@ -17,6 +17,27 @@ Desktop app built with Tauri for working with multiple local terminal panes in o
 - Rust stable with `rustfmt` and `clippy`.
 - Linux builds also need the Tauri/WebKit system packages installed in `.github/workflows/ci.yml`.
 
+### `/loop` window — optional LLM CLIs
+
+The `/loop` agentic flow shells out to one or more local LLM CLIs in one-shot
+mode. To use it, at least one of the following must be installed and reachable
+on the user's `PATH`:
+
+- [`claude`](https://docs.claude.com/en/docs/claude-code/quickstart) — Anthropic's Claude Code CLI.
+- [`codex`](https://github.com/openai/codex) — OpenAI's Codex CLI.
+- [`opencode`](https://opencode.ai) — open-source multi-model CLI.
+
+You can mix and match CLIs per agent in the Paso 3 setup (e.g. analysis with
+`claude`, implementation with `opencode`, review with `codex`). The app
+validates each slot at profile load and disables `▶ ejecutar run` while any
+slot is in red. Logs of every CLI invocation are appended to
+`<system-temp>/polakapi-loop-cli.log` (timestamp, cli, cwd, elapsed ms, exit
+code, byte counts) for post-mortem debugging.
+
+If none of these CLIs are installed, the rest of the app (workspaces,
+terminals, notes) still works — `/loop` is the only feature that depends on
+them.
+
 ## Development
 
 ```sh

@@ -90,3 +90,10 @@ pub fn open_in_explorer(path: String) -> Result<(), String> {
 pub fn open_in_editor(path: String, editor: Option<String>) -> Result<(), String> {
     crate::open::open_in_editor(&path, editor.as_deref())
 }
+
+/// Opens a single file `path` in an editor. Same resolver as
+/// [`open_in_editor`], but accepts files (not directories).
+#[tauri::command]
+pub fn open_file_in_editor(path: String, editor: Option<String>) -> Result<(), String> {
+    crate::open::open_file_in_editor(&path, editor.as_deref())
+}
