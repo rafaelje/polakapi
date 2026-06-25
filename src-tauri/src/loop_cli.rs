@@ -9,9 +9,11 @@
 //! `std::process::Command::output()`.
 //!
 //! Key technical design:
-//! - `tokio::time::timeout` wraps the blocking execution via
-//!   `tokio::task::spawn_blocking`. The default is 300s (aligned with the
-//!   design doc, "Risks" section, hung subprocess row).
+//! - The CLI is launched via `tokio::process::Command` with
+//!   `kill_on_drop(true)` so that when `tokio::time::timeout` fires, dropping
+//!   the wait future drops the `Child`, which sends `SIGKILL` to the
+//!   subprocess. Without this the spawned CLI keeps running past the
+//!   advertised timeout (see design doc, "Risks" section, hung subprocess row).
 //! - Output parsing is CLI-specific (each CLI has a different format) and
 //!   lives in separate `parse_*` functions so they can be tested in isolation
 //!   in the future.
@@ -24,10 +26,11 @@
 
 use std::io::Write;
 use std::path::PathBuf;
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
+use tokio::process::Command;
 use tokio::time::timeout;
 
 /// Default timeout in seconds for an agent invocation. Aligned with the
@@ -98,22 +101,20 @@ pub async fn run_loop_agent(
         .unwrap_or(DEFAULT_TIMEOUT_SECS);
 
     let cli_lower = cli.to_ascii_lowercase();
+    let sid = session_id.as_deref();
+    let timeout_dur = Duration::from_secs(secs);
 
-    let join = tokio::task::spawn_blocking(move || -> Result<AgentResult, String> {
-        let sid = session_id.as_deref();
-        match cli_lower.as_str() {
-            "claude" => invoke_claude(&model, &cwd, system_prompt_path.as_deref(), &user_input, sid),
-            "codex" => invoke_codex(&model, &cwd, system_prompt_path.as_deref(), &user_input, sid),
-            "opencode" => invoke_opencode(&model, &cwd, system_prompt_path.as_deref(), &user_input, sid),
-            other => Err(format!("unsupported CLI: {other}")),
-        }
-    });
-
-    match timeout(Duration::from_secs(secs), join).await {
-        Ok(Ok(Ok(result))) => Ok(result),
-        Ok(Ok(Err(err))) => Ok(AgentResult::empty_with_error(err)),
-        Ok(Err(join_err)) => Err(format!("loop_agent join error: {join_err}")),
-        Err(_) => Err(format!("timeout after {secs}s invoking {cli}")),
+    // The per-CLI wrappers do their own spawn via `run_command`, which applies
+    // `kill_on_drop(true)` and uses the same timeout. We forward the timeout
+    // here instead of wrapping the future in another `tokio::time::timeout`:
+    // doing that would mean we'd have to drop the inner future to actually
+    // kill the child, and the cancellation point is already inside
+    // `run_command` where the `Child` lives.
+    match cli_lower.as_str() {
+        "claude" => invoke_claude(&model, &cwd, system_prompt_path.as_deref(), &user_input, sid, timeout_dur).await,
+        "codex" => invoke_codex(&model, &cwd, system_prompt_path.as_deref(), &user_input, sid, timeout_dur).await,
+        "opencode" => invoke_opencode(&model, &cwd, system_prompt_path.as_deref(), &user_input, sid, timeout_dur).await,
+        other => Err(format!("unsupported CLI: {other}")),
     }
 }
 
@@ -127,12 +128,13 @@ pub async fn run_loop_agent(
 /// shape (among other fields): `{ "result": "...", "session_id": "...",
 /// "total_cost_usd": 0.0, "usage": { "input_tokens": 0, "output_tokens": 0 },
 /// "is_error": false }`.
-fn invoke_claude(
+async fn invoke_claude(
     model: &str,
     cwd: &str,
     system_prompt_path: Option<&str>,
     user_input: &str,
     session_id: Option<&str>,
+    timeout_dur: Duration,
 ) -> Result<AgentResult, String> {
     let mut cmd = Command::new("claude");
     cmd.arg("-p")
@@ -155,7 +157,7 @@ fn invoke_claude(
         cmd.arg("--append-system-prompt").arg(content);
     }
 
-    let output = run_command(cmd, cwd, "claude")?;
+    let output = run_command(cmd, cwd, "claude", timeout_dur).await?;
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     // claude returns the structured JSON error (404 model, throttling, etc.)
@@ -256,12 +258,13 @@ fn parse_claude_json(raw: &str) -> Result<AgentResult, String> {
 /// to the given file (plain text). With `--json` it additionally emits JSONL
 /// events to stdout where we can look for usage/cost. We combine both: text
 /// from the file, tokens/cost from the JSONL.
-fn invoke_codex(
+async fn invoke_codex(
     model: &str,
     cwd: &str,
     system_prompt_path: Option<&str>,
     user_input: &str,
     session_id: Option<&str>,
+    timeout_dur: Duration,
 ) -> Result<AgentResult, String> {
     // Temp file for the last message. We open it within the run scope so it
     // is removed on exit (RAII from tempfile::NamedTempFile).
@@ -310,7 +313,7 @@ fn invoke_codex(
             .arg(&full_input);
     }
 
-    let output = run_command(cmd, cwd, "codex")?;
+    let output = run_command(cmd, cwd, "codex", timeout_dur).await?;
 
     if !output.status.success() {
         return Ok(AgentResult::empty_with_error(format!(
@@ -397,12 +400,13 @@ fn parse_codex_jsonl(stdout: &str, last_message: &str) -> Result<AgentResult, St
 /// final event. If the event shape changes, the tolerance: the extractor only
 /// assumes there is an event with `role == "assistant"` or `type == "message"`
 /// carrying the final text.
-fn invoke_opencode(
+async fn invoke_opencode(
     model: &str,
     cwd: &str,
     system_prompt_path: Option<&str>,
     user_input: &str,
     session_id: Option<&str>,
+    timeout_dur: Duration,
 ) -> Result<AgentResult, String> {
     // In resume mode the session already has the system prompt from the first turn.
     let full_input = if session_id.is_some() {
@@ -430,7 +434,7 @@ fn invoke_opencode(
     }
     cmd.arg(&full_input);
 
-    let output = run_command(cmd, cwd, "opencode")?;
+    let output = run_command(cmd, cwd, "opencode", timeout_dur).await?;
 
     if !output.status.success() {
         return Ok(AgentResult::empty_with_error(format!(
@@ -557,41 +561,82 @@ fn extract_opencode_text(value: &serde_json::Value) -> Option<String> {
 // helpers
 // ---------------------------------------------------------------------------
 
-/// Runs `cmd` in `cwd` capturing stdout/stderr. Maps "binary not found"
-/// (`ErrorKind::NotFound`) to a human-readable error that the frontend uses
-/// to suggest the user install the CLI.
-fn run_command(
+/// Runs `cmd` in `cwd` capturing stdout/stderr, with a hard timeout that
+/// actually kills the subprocess on expiry.
+///
+/// Implementation note: `tokio::time::timeout(.., child.wait_with_output())`
+/// drops the wait future when the timeout fires. We set `kill_on_drop(true)`
+/// on the `Command` so dropping the `Child` (which the wait future owns)
+/// sends `SIGKILL` synchronously to the subprocess. Without this the
+/// advertised timeout would be a lie — the future returns `Err` but the CLI
+/// keeps running in the background.
+///
+/// Maps "binary not found" (`ErrorKind::NotFound`) to a human-readable error
+/// that the frontend uses to suggest the user install the CLI.
+async fn run_command(
     mut cmd: Command,
     cwd: &str,
     cli_name: &str,
+    timeout_dur: Duration,
 ) -> Result<std::process::Output, String> {
     cmd.current_dir(cwd)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
+        .stderr(Stdio::piped())
+        .kill_on_drop(true);
 
     let started_at = std::time::Instant::now();
-    let result = cmd.output();
-    let elapsed_ms = started_at.elapsed().as_millis();
+
+    let child = match cmd.spawn() {
+        Ok(c) => c,
+        Err(e) => {
+            let elapsed_ms = started_at.elapsed().as_millis();
+            let io_result: std::io::Result<std::process::Output> = Err(std::io::Error::new(e.kind(), e.to_string()));
+            log_cli_invocation(cli_name, cwd, elapsed_ms, &io_result);
+            return Err(match e.kind() {
+                std::io::ErrorKind::NotFound => format!(
+                    "CLI '{cli_name}' not found in PATH. Install it and reopen the app."
+                ),
+                _ => format!("error invoking {cli_name}: {e}"),
+            });
+        }
+    };
 
     // Section 10.5 — optional invocation log. We append to a file in the
-    // system temp dir for post-mortem debugging (we do not risk touching the
-    // config dir from a spawn_blocking, so we use `std::env::temp_dir`).
-    // Failing here must not break the CLI execution — all logger IO errors
-    // are ignored.
-    log_cli_invocation(cli_name, cwd, elapsed_ms, &result);
-
-    result.map_err(|e| match e.kind() {
-        std::io::ErrorKind::NotFound => format!(
-            "CLI '{cli_name}' not found in PATH. Install it and reopen the app."
-        ),
-        _ => format!("error invoking {cli_name}: {e}"),
-    })
+    // system temp dir for post-mortem debugging. Failing here must not break
+    // the CLI execution — all logger IO errors are ignored.
+    match timeout(timeout_dur, child.wait_with_output()).await {
+        Ok(Ok(output)) => {
+            let elapsed_ms = started_at.elapsed().as_millis();
+            let io_result: std::io::Result<std::process::Output> = Ok(output);
+            log_cli_invocation(cli_name, cwd, elapsed_ms, &io_result);
+            // io_result is Ok, so unwrap is safe.
+            io_result.map_err(|e| format!("error waiting on {cli_name}: {e}"))
+        }
+        Ok(Err(e)) => {
+            let elapsed_ms = started_at.elapsed().as_millis();
+            let io_result: std::io::Result<std::process::Output> = Err(std::io::Error::new(e.kind(), e.to_string()));
+            log_cli_invocation(cli_name, cwd, elapsed_ms, &io_result);
+            Err(format!("error waiting on {cli_name}: {e}"))
+        }
+        Err(_elapsed) => {
+            // The wait future is dropped here; `kill_on_drop(true)` sends
+            // SIGKILL synchronously and tokio reaps the child on a background
+            // task. The subprocess is gone before we return.
+            let elapsed_ms = started_at.elapsed().as_millis();
+            let io_result: std::io::Result<std::process::Output> = Err(std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                format!("timeout after {}s", timeout_dur.as_secs()),
+            ));
+            log_cli_invocation(cli_name, cwd, elapsed_ms, &io_result);
+            Err(format!("timeout after {}s invoking {cli_name}", timeout_dur.as_secs()))
+        }
+    }
 }
 
 /// Path to the CLI invocation log. Lives at `<temp>/polakapi-loop-cli.log` to
 /// keep it predictable and without requiring the AppHandle of the Tauri
-/// command (which would complicate passing the handle to `spawn_blocking`).
+/// command.
 fn cli_log_path() -> PathBuf {
     std::env::temp_dir().join("polakapi-loop-cli.log")
 }

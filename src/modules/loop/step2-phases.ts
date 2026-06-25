@@ -368,6 +368,16 @@ export function mountStep2Phases(slot: HTMLElement, ctx: Step2Context): Step2Han
         dependsOn: d.dependsOn,
         hasVisual: d.hasVisual,
       }));
+      // The LLM occasionally proposes a cyclic graph (especially when it
+      // mixes "X depends on Y" with "Y references X"). Refuse early — we
+      // don't want a manifest with a cycle on disk or its accompanying
+      // phase directories, since downstream the scheduler bails anyway.
+      const cycle = detectCycle(phases);
+      if (cycle) {
+        throw new Error(
+          `the agent returned a cyclic dependency graph: ${cycle.join(" → ")}`,
+        );
+      }
       await persistManifest(phases);
       for (const d of drafts) {
         const slug = phaseSlug(d);
@@ -562,6 +572,15 @@ export function mountStep2Phases(slot: HTMLElement, ctx: Step2Context): Step2Han
     if (missing.length > 0) {
       const names = missing.map((p) => phaseSlug(p)).join(", ");
       state.status = `phases missing logic.md: ${names}`;
+      refs.refresh();
+      return;
+    }
+    // The hybrid-mode scheduler computes batches via topological sort and
+    // refuses to run a cyclic graph; the sequential view ignores deps but
+    // we still gate here so users can't ship a broken graph either way.
+    const cycle = detectCycle(state.phases);
+    if (cycle) {
+      state.status = `cycle detected in dependencies: ${cycle.join(" → ")}`;
       refs.refresh();
       return;
     }

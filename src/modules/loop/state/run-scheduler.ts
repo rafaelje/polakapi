@@ -418,6 +418,22 @@ export class RunScheduler {
    */
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private heartbeatIntervalMs = 5000;
+  /**
+   * Reference count for the heartbeat. In hybrid mode several phases run in
+   * parallel and each one starts/stops the heartbeat around its own invoke.
+   * Without the refcount, the first phase to finish its stage would kill
+   * the heartbeat that the other phases still depend on — `lastHeartbeat`
+   * would go stale and the interrupted-runs detector would flag the run
+   * as crashed even though it is still alive.
+   */
+  private heartbeatRefs = 0;
+  /**
+   * Tail of the persistence chain. Every `persistState()` call enqueues its
+   * disk write onto this promise so that two parallel phases never end up
+   * writing `state.json` concurrently (the Tauri backend uses a tmp+rename
+   * pattern that can otherwise clobber the tmp file).
+   */
+  private persistInFlight: Promise<void> = Promise.resolve();
 
   constructor(invokers: SchedulerInvokers = defaultInvokers) {
     this.invokers = invokers;
@@ -693,7 +709,10 @@ export class RunScheduler {
    * run's final status based on pending flags.
    */
   private finalizeCycle(): void {
-    this.stopHeartbeat();
+    // Hard reset: every paired start/stop should have balanced out by now,
+    // but `finalizeCycle()` is also reached on abort/error mid-stage with
+    // pending refs.
+    this.resetHeartbeat();
     if (this.abortRequested) {
       this.commit({ ...this.state, status: "aborted", currentStage: null });
     } else if (this.pauseRequested) {
@@ -776,6 +795,14 @@ export class RunScheduler {
       if (attempt < settings.maxRetries) {
         if (this.shouldStop()) return;
         await this.runStage(phaseIndex, "implementation", { reviewNotes: verdict.notes });
+        // If the retry implementation failed (CLI error / timeout), bail out
+        // of the loop — running review against a broken or stale output
+        // would be pointless. `runPhase` will see the `error` status set by
+        // `runStage` and surface it as a fatal error for the phase.
+        const implStage = this.state.phases[phaseIndex]?.stages.implementation;
+        if (implStage?.status === "error") {
+          return;
+        }
       }
     }
     // Cap reached without approval.
@@ -929,8 +956,28 @@ export class RunScheduler {
         content: diffCombined,
       });
     } catch (err) {
-      // Not fatal — the md output is already there. Log and move on.
-      console.error("loop scheduler: could not persist diff", err);
+      // The resume-detector treats "md without .diff companion" as a partial
+      // output and would discard the valid .md on next launch. Retry once
+      // with an empty marker so the invariant ("md + diff = committed") is
+      // preserved. If that also fails, the stage stays valid in memory but
+      // we surface a warning so the user knows the audit trail is broken.
+      console.error("loop scheduler: could not persist diff (1st attempt)", err);
+      try {
+        await this.invokers.writeOutput({
+          projectPath: settings.projectPath,
+          runId: settings.runId,
+          phaseSlug: phase.slug,
+          agent,
+          ext: "diff",
+          content: "",
+        });
+      } catch (err2) {
+        console.error("loop scheduler: could not persist diff (fallback)", err2);
+        this.patchStage(phaseIndex, agent, {
+          message: `output saved but diff snapshot failed: ${stringifyError(err2)}`,
+        });
+      }
+      // Continue — execution proceeds with whatever marker we managed to leave.
     }
 
     // 7. If the stage is not reviewer, mark done and persist state.
@@ -1463,18 +1510,28 @@ export class RunScheduler {
    */
   private async persistState(): Promise<void> {
     if (!this.state.settings) return;
+    // Commit the new heartbeat synchronously so any concurrent reader sees
+    // a fresh in-memory value, then chain the disk write onto the persist
+    // queue. We await our own link in the chain so callers that already
+    // sequenced their work behind persistState still observe write-then-
+    // continue semantics.
     const heartbeat = Date.now();
     this.commit({ ...this.state, lastHeartbeat: heartbeat });
     const payload: PersistedRunState = buildPersistedRunState(this.state);
-    try {
-      await this.invokers.writeState({
-        projectPath: this.state.settings.projectPath,
-        runId: this.state.settings.runId,
-        content: JSON.stringify(payload),
-      });
-    } catch (err) {
-      console.error("loop scheduler: could not persist state.json", err);
-    }
+    const settings = this.state.settings;
+    const write = this.persistInFlight.then(async () => {
+      try {
+        await this.invokers.writeState({
+          projectPath: settings.projectPath,
+          runId: settings.runId,
+          content: JSON.stringify(payload),
+        });
+      } catch (err) {
+        console.error("loop scheduler: could not persist state.json", err);
+      }
+    });
+    this.persistInFlight = write;
+    await write;
   }
 
   /**
@@ -1488,15 +1545,34 @@ export class RunScheduler {
    * We call `persistState()` so the change goes to disk. It's one write
    * per interval (default 5s) — cheap compared to the cost of an LLM
    * invocation.
+   *
+   * Reference-counted: in hybrid mode several phases can have an in-flight
+   * invocation at the same time. Every `startHeartbeat()` is paired with
+   * exactly one `stopHeartbeat()`; the actual `setInterval` is created on
+   * the first start and cleared on the last stop. `resetHeartbeat()` is the
+   * hard-stop used by `finalizeCycle()` and `hydrateFromPersisted()`.
    */
   private startHeartbeat(): void {
-    this.stopHeartbeat();
-    this.heartbeatTimer = setInterval(() => {
-      void this.persistState();
-    }, this.heartbeatIntervalMs);
+    this.heartbeatRefs += 1;
+    if (this.heartbeatTimer === null) {
+      this.heartbeatTimer = setInterval(() => {
+        void this.persistState();
+      }, this.heartbeatIntervalMs);
+    }
   }
 
   private stopHeartbeat(): void {
+    if (this.heartbeatRefs > 0) {
+      this.heartbeatRefs -= 1;
+    }
+    if (this.heartbeatRefs === 0 && this.heartbeatTimer !== null) {
+      clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = null;
+    }
+  }
+
+  private resetHeartbeat(): void {
+    this.heartbeatRefs = 0;
     if (this.heartbeatTimer !== null) {
       clearInterval(this.heartbeatTimer);
       this.heartbeatTimer = null;
@@ -1514,7 +1590,7 @@ export class RunScheduler {
    * scheduler does not inspect the FS — it only restores the state machine.
    */
   hydrateFromPersisted(persisted: PersistedRunState): void {
-    this.stopHeartbeat();
+    this.resetHeartbeat();
     this.pauseRequested = false;
     this.abortRequested = false;
     this.conflictResolver = null;
