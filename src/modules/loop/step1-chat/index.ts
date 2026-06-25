@@ -60,6 +60,7 @@ export function mountStep1Chat(slot: HTMLElement, ctx: Step1Context): Step1Handl
   // the step without input doesn't dirty the FS. The flag also prevents a
   // second loop_create_run, which rejects if the dir already exists.
   let runDirReady = false;
+  let disposed = false;
 
   const refs: ViewRefs = renderView(slot, state, ctx, async (action) => {
     await handleAction(action);
@@ -75,6 +76,7 @@ export function mountStep1Chat(slot: HTMLElement, ctx: Step1Context): Step1Handl
         runId: ctx.runId,
         file: "01-problem-draft.md",
       });
+      if (disposed) return;
       if (draft.trim().length > 0) {
         const parsed = parseDraftMarkdown(draft);
         if (parsed.length > 0) {
@@ -86,12 +88,14 @@ export function mountStep1Chat(slot: HTMLElement, ctx: Step1Context): Step1Handl
     } catch {
       // Run dir doesn't exist yet or the read failed; no draft.
     }
+    if (disposed) return;
     try {
       const consolidated = await invoke<string>("loop_read_run_file", {
         projectPath: ctx.projectPath,
         runId: ctx.runId,
         file: "01-problem.md",
       });
+      if (disposed) return;
       if (consolidated.trim().length > 0) {
         state.consolidatedExists = true;
         runDirReady = true;
@@ -100,6 +104,7 @@ export function mountStep1Chat(slot: HTMLElement, ctx: Step1Context): Step1Handl
     } catch {
       // No file or run_dir doesn't exist — not an error.
     }
+    if (disposed) return;
     if (touched) refs.refresh();
   }
 
@@ -320,6 +325,7 @@ export function mountStep1Chat(slot: HTMLElement, ctx: Step1Context): Step1Handl
 
   return {
     dispose: () => {
+      disposed = true;
       refs.cleanup();
     },
     getTurnCount: () => state.turns.length,

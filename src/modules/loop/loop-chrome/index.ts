@@ -236,8 +236,24 @@ function mountStepForState(
       onExecuteRun,
     });
   }
-  // step === 4: the run view is mounted by switchToRunView / resume.
+  // step === 4: switchToRunView / resumeInterruptedRun replace the slot
+  // immediately. Recovery gate is the fallback if neither takes over.
+  slot.replaceChildren(renderStep4RecoveryGate(() => router.setStep(3)));
   return null;
+}
+
+function renderStep4RecoveryGate(onBack: () => void): HTMLElement {
+  const wrap = document.createElement("div");
+  wrap.className = "loop-step4-recovery";
+  const msg = document.createElement("p");
+  msg.textContent = "Starting run…";
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "loop-btn loop-btn-ghost";
+  btn.textContent = "back to step 3";
+  btn.addEventListener("click", () => onBack());
+  wrap.append(msg, btn);
+  return wrap;
 }
 
 async function switchToRunView(

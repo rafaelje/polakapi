@@ -229,8 +229,11 @@ export class PhaseRunner {
       } catch (err2) {
         console.error("loop scheduler: could not persist diff (fallback)", err2);
         store.patchStage(phaseIndex, agent, {
+          status: "error",
           message: `output saved but diff snapshot failed: ${stringifyError(err2)}`,
         });
+        await persistState();
+        return null;
       }
     }
 

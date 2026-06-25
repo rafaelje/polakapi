@@ -59,6 +59,8 @@ export function mountStep2Phases(slot: HTMLElement, ctx: Step2Context): Step2Han
     cycleError: null,
   };
 
+  let disposed = false;
+
   const refs: ViewRefs = renderView(slot, state, ctx, (action) => {
     void handleAction(action);
   });
@@ -72,6 +74,7 @@ export function mountStep2Phases(slot: HTMLElement, ctx: Step2Context): Step2Han
         runId: ctx.runId,
         file: "02-phases.md",
       });
+      if (disposed) return;
       if (manifest.trim()) {
         const phases = parsePhasesManifest(manifest);
         if (phases.length > 0) {
@@ -82,7 +85,9 @@ export function mountStep2Phases(slot: HTMLElement, ctx: Step2Context): Step2Han
     } catch {
       // No manifest yet.
     }
+    if (disposed) return;
     await refreshDiskStatus();
+    if (disposed) return;
     refs.refresh();
   }
 
@@ -508,6 +513,7 @@ export function mountStep2Phases(slot: HTMLElement, ctx: Step2Context): Step2Han
 
   return {
     dispose: () => {
+      disposed = true;
       refs.cleanup();
     },
   };

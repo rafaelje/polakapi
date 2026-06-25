@@ -60,6 +60,8 @@ export function mountStep3Setup(slot: HTMLElement, ctx: Step3Context): Step3Hand
     phases: [],
   };
 
+  let disposed = false;
+
   const refs = renderView(slot, state, ctx, (action) => {
     void handleAction(action);
   });
@@ -72,8 +74,10 @@ export function mountStep3Setup(slot: HTMLElement, ctx: Step3Context): Step3Hand
     refs.refresh();
     try {
       await invoke<string[]>("loop_ensure_prompts_dir").catch(() => []);
+      if (disposed) return;
 
       const profilesState = await loadLoopProfiles();
+      if (disposed) return;
       state.profiles = profilesState.profiles;
 
       const globalsEntries = await Promise.all(
@@ -86,6 +90,7 @@ export function mountStep3Setup(slot: HTMLElement, ctx: Step3Context): Step3Hand
           }
         }),
       );
+      if (disposed) return;
       state.globals = new Map(globalsEntries);
 
       try {
@@ -94,15 +99,19 @@ export function mountStep3Setup(slot: HTMLElement, ctx: Step3Context): Step3Hand
           runId: ctx.runId,
           file: "02-phases.md",
         });
+        if (disposed) return;
         state.phases = manifest.trim() ? parsePhasesManifest(manifest) : [];
       } catch {
+        if (disposed) return;
         state.phases = [];
       }
 
       state.status = null;
     } catch (err) {
+      if (disposed) return;
       state.status = `error loading: ${stringifyError(err)}`;
     } finally {
+      if (disposed) return;
       state.busy = false;
       refs.refresh();
       void validateAllSlots();
@@ -269,6 +278,7 @@ export function mountStep3Setup(slot: HTMLElement, ctx: Step3Context): Step3Hand
 
   async function validateSlot(role: LoopAgentRole): Promise<void> {
     const slot = state.matrix[role];
+    if (disposed) return;
     state.validations.set(role, { ok: null, reason: "pending" });
     refs.refreshValidationsOnly();
     try {
@@ -276,10 +286,13 @@ export function mountStep3Setup(slot: HTMLElement, ctx: Step3Context): Step3Hand
         cli: slot.cli,
         model: slot.model,
       });
+      if (disposed) return;
       state.validations.set(role, v);
     } catch (err) {
+      if (disposed) return;
       state.validations.set(role, { ok: false, reason: stringifyError(err) });
     }
+    if (disposed) return;
     refs.refreshValidationsOnly();
   }
 
@@ -338,6 +351,7 @@ export function mountStep3Setup(slot: HTMLElement, ctx: Step3Context): Step3Hand
 
   return {
     dispose: () => {
+      disposed = true;
       refs.cleanup();
     },
   };
