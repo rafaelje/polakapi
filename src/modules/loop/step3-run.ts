@@ -28,6 +28,7 @@ import {
   type RunSchedulerState,
   type SequentialAgent,
 } from "./state/run-scheduler";
+import { createListenerBag } from "./shared/listener-bag";
 import type { LoopAgentRole } from "./state/types";
 import { confirmModal } from "../../shared/ui/modal";
 
@@ -47,17 +48,8 @@ export function mountStep3Run(slot: HTMLElement, ctx: Step3RunContext): Step3Run
   root.className = "loop-step3-run-root";
   slot.replaceChildren(root);
 
-  const handlers: Array<{
-    el: EventTarget;
-    type: string;
-    handler: EventListenerOrEventListenerObject;
-  }> = [];
-
-  function on<T extends Event>(el: EventTarget, type: string, handler: (e: T) => void): void {
-    const wrapped = handler as EventListenerOrEventListenerObject;
-    el.addEventListener(type, wrapped);
-    handlers.push({ el, type, handler: wrapped });
-  }
+  const listeners = createListenerBag();
+  const { on } = listeners;
 
   function refresh(state: RunSchedulerState): void {
     const children: HTMLElement[] = [renderHeader(state)];
@@ -603,10 +595,7 @@ export function mountStep3Run(slot: HTMLElement, ctx: Step3RunContext): Step3Run
   return {
     dispose: () => {
       unsubscribe();
-      for (const { el, type, handler } of handlers) {
-        el.removeEventListener(type, handler);
-      }
-      handlers.length = 0;
+      listeners.dispose();
       slot.classList.remove("loop-step3-run");
     },
   };

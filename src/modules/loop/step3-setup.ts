@@ -33,8 +33,20 @@ import {
 } from "../../shared/persistence/loop-profiles-store";
 import { promptModal } from "../../shared/ui/modal";
 
+import { stringifyError } from "../../shared/errors";
+
+import { createListenerBag } from "./shared/listener-bag";
 import { topologicalBatches, parsePhasesManifest, type Phase } from "./step2-phases";
-import { DEFAULT_AGENT_SLOT, LOOP_PROMPT_NAMES, createDefaultMatrix } from "./state/types";
+import {
+  ALL_AGENT_ROLES,
+  DEFAULT_AGENT_SLOT,
+  LOOP_CLIS,
+  LOOP_PROMPT_NAMES,
+  createDefaultMatrix,
+  defaultModelFor,
+  promptBlurb,
+  promptToRole,
+} from "./state/types";
 import type {
   AgentSlot,
   CliValidation,
@@ -137,93 +149,6 @@ interface Step3State {
   busy: boolean;
   /** Run phases, read from 02-phases.md, to detect "all linear". */
   phases: Phase[];
-}
-
-// ---------------------------------------------------------------------------
-// Defaults and catalogs
-// ---------------------------------------------------------------------------
-
-const ALL_AGENT_ROLES: readonly LoopAgentRole[] = [
-  "analysis",
-  "implementation",
-  "review",
-  "knowledge",
-  "integration",
-] as const;
-
-/**
- * Mapping prompt-name → agent role. The 2 pre-phase prompts don't have
- * an agent role — returns null for those.
- */
-function promptToRole(name: LoopPromptName): LoopAgentRole | null {
-  switch (name) {
-    case "problem-intake.md":
-    case "phase-decomposition.md":
-      return null;
-    case "analysis.md":
-      return "analysis";
-    case "implementation.md":
-      return "implementation";
-    case "review.md":
-      return "review";
-    case "knowledge.md":
-      return "knowledge";
-    case "integration.md":
-      return "integration";
-  }
-}
-
-/** Readable description (input → output) per prompt. */
-function promptBlurb(name: LoopPromptName): { title: string; io: string } {
-  switch (name) {
-    case "problem-intake.md":
-      return {
-        title: "Problem intake (pre-phase 1)",
-        io: "input: chat with the user → output: consolidated 01-problem.md",
-      };
-    case "phase-decomposition.md":
-      return {
-        title: "Phase decomposition (pre-phase 2)",
-        io: "input: 01-problem.md → output: JSON list of phases with dependsOn",
-      };
-    case "analysis.md":
-      return {
-        title: "Analysis (agent 1)",
-        io: "input: phase logic.md + previous knowledge → output: analysis.md",
-      };
-    case "implementation.md":
-      return {
-        title: "Implementation (agent 2)",
-        io: "input: analysis.md → output: repo changes + impl.md (diff snapshot)",
-      };
-    case "review.md":
-      return {
-        title: "Reviewer (agent 3, cap 3 retries)",
-        io: "input: analysis.md + impl.md + diff → output: review.md (approved | needs-changes)",
-      };
-    case "knowledge.md":
-      return {
-        title: "Knowledge (agent 4)",
-        io: "input: phase outputs → output: knowledge.md (≤ 2k tokens)",
-      };
-    case "integration.md":
-      return {
-        title: "Integrator (agent 5, hybrid mode only)",
-        io: "input: knowledge.md from each phase in the batch + diffs → output: consolidated batch knowledge",
-      };
-  }
-}
-
-/** Default per CLI when there is no profile. Matches step1-chat / step2-phases. */
-function defaultModelFor(cli: LoopCli): string {
-  switch (cli) {
-    case "claude":
-      return "claude-opus-4-7";
-    case "codex":
-      return "gpt-5";
-    case "opencode":
-      return "anthropic/claude-sonnet-4-5";
-  }
 }
 
 // ---------------------------------------------------------------------------
@@ -549,17 +474,8 @@ function render(
   root.className = "loop-step3-root";
   slot.replaceChildren(root);
 
-  const handlers: Array<{
-    el: EventTarget;
-    type: string;
-    handler: EventListenerOrEventListenerObject;
-  }> = [];
-
-  function on<T extends Event>(el: EventTarget, type: string, handler: (e: T) => void): void {
-    const wrapped = handler as EventListenerOrEventListenerObject;
-    el.addEventListener(type, wrapped);
-    handlers.push({ el, type, handler: wrapped });
-  }
+  const listeners = createListenerBag();
+  const { on } = listeners;
 
   function refresh(): void {
     root.replaceChildren();
@@ -581,10 +497,7 @@ function render(
   }
 
   function cleanup(): void {
-    for (const { el, type, handler } of handlers) {
-      el.removeEventListener(type, handler);
-    }
-    handlers.length = 0;
+    listeners.dispose();
     slot.classList.remove("loop-step3");
   }
 
@@ -925,7 +838,7 @@ function render(
     cliSel.className = "loop-step3-main-field-select";
     if (failed) cliSel.classList.add("loop-step3-main-field-select-error");
     cliSel.disabled = state.busy;
-    for (const c of ["claude", "codex", "opencode"] as const) {
+    for (const c of LOOP_CLIS) {
       const o = document.createElement("option");
       o.value = c;
       o.textContent = c;
@@ -1166,14 +1079,4 @@ export function canExecute(state: Step3State): boolean {
 
 function clone<T>(v: T): T {
   return JSON.parse(JSON.stringify(v)) as T;
-}
-
-function stringifyError(err: unknown): string {
-  if (err instanceof Error) return err.message;
-  if (typeof err === "string") return err;
-  try {
-    return JSON.stringify(err);
-  } catch {
-    return String(err);
-  }
 }

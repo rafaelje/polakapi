@@ -120,3 +120,130 @@ export interface CliValidation {
   ok: boolean;
   reason?: string | null;
 }
+
+// ---------------------------------------------------------------------------
+// Catalogs and constants
+//
+// Single source of truth for "which CLIs / agent roles / prompts the system
+// knows about". Adding a new CLI, agent role, or pre-phase prompt means
+// touching this file alone — every consumer iterates these constants
+// instead of hardcoding their own copy.
+// ---------------------------------------------------------------------------
+
+/**
+ * The 3 supported CLIs in iteration order — used by selectors, validators,
+ * and the default-model lookup. Kept aligned with the `LoopCli` union above.
+ */
+export const LOOP_CLIS: readonly LoopCli[] = ["claude", "codex", "opencode"] as const;
+
+/**
+ * The 5 agent roles of Step 3 in execution order (analysis → impl → review
+ * → knowledge, plus the cross-batch integrator). Iterated by the scheduler,
+ * the setup sidebar, the timeline renderer, and validation.
+ */
+export const ALL_AGENT_ROLES: readonly LoopAgentRole[] = [
+  "analysis",
+  "implementation",
+  "review",
+  "knowledge",
+  "integration",
+] as const;
+
+/**
+ * Default model per CLI when no profile is loaded. Aligned with the design
+ * doc's "default without profile loaded = all claude/opus-4-7" decision and
+ * with the per-CLI defaults the spike validated.
+ */
+export function defaultModelFor(cli: LoopCli): string {
+  switch (cli) {
+    case "claude":
+      return "claude-opus-4-7";
+    case "codex":
+      return "gpt-5";
+    case "opencode":
+      return "anthropic/claude-sonnet-4-5";
+  }
+}
+
+/**
+ * Mapping prompt-name → agent role. The 2 pre-phase prompts (`problem-intake`
+ * and `phase-decomposition`) don't have an agent role — they return `null`.
+ */
+export function promptToRole(name: LoopPromptName): LoopAgentRole | null {
+  switch (name) {
+    case "problem-intake.md":
+    case "phase-decomposition.md":
+      return null;
+    case "analysis.md":
+      return "analysis";
+    case "implementation.md":
+      return "implementation";
+    case "review.md":
+      return "review";
+    case "knowledge.md":
+      return "knowledge";
+    case "integration.md":
+      return "integration";
+  }
+}
+
+/**
+ * Readable description (title + input → output) per prompt. Drives the
+ * blurb shown in the Step 3 setup sidebar.
+ */
+export function promptBlurb(name: LoopPromptName): { title: string; io: string } {
+  switch (name) {
+    case "problem-intake.md":
+      return {
+        title: "Problem intake (pre-phase 1)",
+        io: "input: chat with the user → output: consolidated 01-problem.md",
+      };
+    case "phase-decomposition.md":
+      return {
+        title: "Phase decomposition (pre-phase 2)",
+        io: "input: 01-problem.md → output: JSON list of phases with dependsOn",
+      };
+    case "analysis.md":
+      return {
+        title: "Analysis (agent 1)",
+        io: "input: phase logic.md + previous knowledge → output: analysis.md",
+      };
+    case "implementation.md":
+      return {
+        title: "Implementation (agent 2)",
+        io: "input: analysis.md → output: repo changes + impl.md (diff snapshot)",
+      };
+    case "review.md":
+      return {
+        title: "Reviewer (agent 3, cap 3 retries)",
+        io: "input: analysis.md + impl.md + diff → output: review.md (approved | needs-changes)",
+      };
+    case "knowledge.md":
+      return {
+        title: "Knowledge (agent 4)",
+        io: "input: phase outputs → output: knowledge.md (≤ 2k tokens)",
+      };
+    case "integration.md":
+      return {
+        title: "Integrator (agent 5, hybrid mode only)",
+        io: "input: knowledge.md from each phase in the batch + diffs → output: consolidated batch knowledge",
+      };
+  }
+}
+
+/**
+ * Builds the path to a prompt file inside the run tree:
+ *   `<projectPath>/.loop/runs/<runId>/prompts/<name>`
+ *
+ * The separator is inferred from `projectPath` so Windows-native paths stay
+ * Windows-native. The backend resolves this path verbatim (see
+ * `loop_prompts.rs::resolve_run_prompt`).
+ */
+export function buildRunPromptPath(
+  projectPath: string,
+  runId: string,
+  name: LoopPromptName,
+): string {
+  const sep = projectPath.includes("\\") ? "\\" : "/";
+  return [projectPath, ".loop", "runs", runId, "prompts", name].join(sep);
+}

@@ -32,6 +32,7 @@ import type {
   SchedulerMode,
   SequentialAgent,
 } from "./run-scheduler";
+import { LOOP_CLIS as LOOP_CLIS_LIST } from "./types";
 import type { AgentSlot, LoopAgentRole, LoopCli, LoopPromptName, ProfileMatrix } from "./types";
 
 /** Current version of the schema persisted in `state.json`. */
@@ -132,7 +133,7 @@ const ALL_AGENT_NAMES: ReadonlyArray<LoopAgentRole> = [
   "integration",
 ];
 
-const LOOP_CLIS: ReadonlySet<LoopCli> = new Set(["claude", "codex", "opencode"] as const);
+const LOOP_CLIS: ReadonlySet<LoopCli> = new Set(LOOP_CLIS_LIST);
 
 function isObj(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);

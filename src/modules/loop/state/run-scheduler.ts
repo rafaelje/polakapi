@@ -46,8 +46,11 @@
 
 import { invoke } from "@tauri-apps/api/core";
 
+import { stringifyError } from "../../../shared/errors";
+
 import { topologicalBatches, type Phase } from "../step2-phases";
 import { buildPersistedRunState, type PersistedRunState } from "./state-schema";
+import { ALL_AGENT_ROLES, buildRunPromptPath } from "./types";
 import type { AgentSlot, LoopAgentRole, LoopPromptName, ProfileMatrix } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -226,14 +229,6 @@ const SEQUENTIAL_AGENTS: readonly SequentialAgent[] = [
   "implementation",
   "review",
   "knowledge",
-] as const;
-
-const ALL_AGENT_ROLES: readonly LoopAgentRole[] = [
-  "analysis",
-  "implementation",
-  "review",
-  "knowledge",
-  "integration",
 ] as const;
 
 function createEmptyStage(): AgentStageState {
@@ -1613,14 +1608,8 @@ export class RunScheduler {
 }
 
 // ---------------------------------------------------------------------------
-// Parsing and path helpers
+// Parsing helpers
 // ---------------------------------------------------------------------------
-
-/** Same separator heuristic as step1-chat / step2-phases. */
-function buildRunPromptPath(projectPath: string, runId: string, name: LoopPromptName): string {
-  const sep = projectPath.includes("\\") ? "\\" : "/";
-  return [projectPath, ".loop", "runs", runId, "prompts", name].join(sep);
-}
 
 /**
  * Parser for the reviewer verdict. The system prompt (`review.md`) asks the
@@ -1769,16 +1758,6 @@ function truncateForIntegrator(text: string, maxLines = 200): string {
     `... (truncated · ${lines.length - maxLines} line(s) omitted) ...`,
     ...tail,
   ].join("\n");
-}
-
-function stringifyError(err: unknown): string {
-  if (err instanceof Error) return err.message;
-  if (typeof err === "string") return err;
-  try {
-    return JSON.stringify(err);
-  } catch {
-    return String(err);
-  }
 }
 
 // ---------------------------------------------------------------------------

@@ -11,6 +11,8 @@
 // creates. For now we place descriptive placeholders so the chrome is
 // inspectable end-to-end.
 
+import { stringifyError } from "../../shared/errors";
+
 import { mountStep1Chat, type Step1Handle } from "./step1-chat";
 import { mountStep2Phases, type Step2Handle, parsePhasesManifest } from "./step2-phases";
 import { mountStep3Run, type Step3RunHandle } from "./step3-run";
@@ -631,16 +633,6 @@ async function resumeInterruptedRun(
   // `start()` will overwrite it to "running" and start from the first
   // pending stage of the first non-done phase.
   void scheduler.start();
-}
-
-function stringifyError(err: unknown): string {
-  if (err instanceof Error) return err.message;
-  if (typeof err === "string") return err;
-  try {
-    return JSON.stringify(err);
-  } catch {
-    return String(err);
-  }
 }
 
 function renderLoading(): HTMLElement {

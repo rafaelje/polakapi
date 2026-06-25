@@ -28,7 +28,34 @@
 
 import { invoke } from "@tauri-apps/api/core";
 
-import type { LoopCli } from "./state/types";
+import { stringifyError } from "../../shared/errors";
+import { createListenerBag } from "./shared/listener-bag";
+import { buildRunPromptPath, defaultModelFor, LOOP_CLIS, type LoopCli } from "./state/types";
+import {
+  detectCycle,
+  phaseSlug,
+  slugToId,
+  topologicalBatches,
+} from "./step2-phases/graph";
+import {
+  parseAgentPhasesJson,
+  parsePhasesManifest,
+  serializePhasesManifest,
+  stripCodeFence,
+  type PhaseDraft,
+} from "./step2-phases/manifest";
+
+// Re-export the helpers and PhaseDraft so existing consumers (loop-chrome,
+// step3-setup, run-scheduler) keep importing from `./step2-phases`.
+export {
+  detectCycle,
+  parseAgentPhasesJson,
+  parsePhasesManifest,
+  phaseSlug,
+  serializePhasesManifest,
+  topologicalBatches,
+};
+export type { PhaseDraft };
 
 // ---------------------------------------------------------------------------
 // Types
@@ -635,19 +662,10 @@ function render(
   root.className = "loop-step2-root";
   slot.replaceChildren(root);
 
-  const handlers: Array<{
-    el: EventTarget;
-    type: string;
-    handler: EventListenerOrEventListenerObject;
-  }> = [];
+  const listeners = createListenerBag();
+  const { on } = listeners;
 
   let editorTextareaRef: HTMLTextAreaElement | null = null;
-
-  function on<T extends Event>(el: EventTarget, type: string, handler: (e: T) => void): void {
-    const wrapped = handler as EventListenerOrEventListenerObject;
-    el.addEventListener(type, wrapped);
-    handlers.push({ el, type, handler: wrapped });
-  }
 
   function refresh(): void {
     root.replaceChildren();
@@ -666,10 +684,7 @@ function render(
   }
 
   function cleanup(): void {
-    for (const { el, type, handler } of handlers) {
-      el.removeEventListener(type, handler);
-    }
-    handlers.length = 0;
+    listeners.dispose();
     slot.classList.remove("loop-step2");
   }
 
@@ -696,7 +711,7 @@ function render(
     const cliSel = document.createElement("select");
     cliSel.className = "loop-step2-cli-select";
     cliSel.disabled = state.busy;
-    for (const opt of ["claude", "codex", "opencode"] as const) {
+    for (const opt of LOOP_CLIS) {
       const o = document.createElement("option");
       o.value = opt;
       o.textContent = opt;
@@ -1187,232 +1202,11 @@ function render(
 }
 
 // ---------------------------------------------------------------------------
-// Phase helpers (parsing, serialization, topology)
-// ---------------------------------------------------------------------------
-
-/**
- * Slug of a phase's directory: `<id>-<name>`. Matches the backend sanitizer
- * (`safe_run_id`): only [A-Za-z0-9_-]. The kebab-case name in the agent's
- * JSON already complies; we enforce it just in case.
- */
-export function phaseSlug(phase: Phase): string {
-  const safeName = phase.name.replace(/[^A-Za-z0-9_-]/g, "-");
-  return `${phase.id}-${safeName}`;
-}
-
-function slugToId(slug: string): string {
-  const m = slug.match(/^(\d+)/);
-  return m ? m[1] : slug;
-}
-
-/** Serializes the manifest as pretty-printed JSON inside a ```json fence. */
-export function serializePhasesManifest(phases: Phase[]): string {
-  const body = JSON.stringify({ phases }, null, 2);
-  return `# Run phases\n\n\`\`\`json\n${body}\n\`\`\`\n`;
-}
-
-/**
- * Inverse parser of the manifest. Tolerant: extracts the first ```json fence
- * from the document, or parses the whole content if it looks like pure JSON.
- */
-export function parsePhasesManifest(content: string): Phase[] {
-  const trimmed = content.trim();
-  if (!trimmed) return [];
-  const fenceMatch = trimmed.match(/```json\s*([\s\S]*?)```/);
-  const body = fenceMatch ? fenceMatch[1] : trimmed;
-  try {
-    const obj: unknown = JSON.parse(body);
-    let list: unknown[] | null = null;
-    if (Array.isArray(obj)) {
-      list = obj;
-    } else if (obj && typeof obj === "object") {
-      const maybe = (obj as { phases?: unknown }).phases;
-      if (Array.isArray(maybe)) list = maybe;
-    }
-    if (!list) return [];
-    return list.map((entry) => normalizePhase(entry)).filter((p): p is Phase => p !== null);
-  } catch {
-    return [];
-  }
-}
-
-/**
- * Phase draft just returned by the agent — extends Phase with the initial
- * content of logic.md and, optionally, visual.html. We separate it from the
- * canonical Phase because the manifest (02-phases.md) does NOT persist the
- * content — that lives in logic.md / visual.html on disk.
- */
-export interface PhaseDraft extends Phase {
-  logic?: string;
-  visual?: string;
-}
-
-/**
- * Parses the step 2 agent's output. The prompt asks for strict JSON, but
- * some CLIs wrap it in fences or add preambles — we are tolerant. Returns
- * `PhaseDraft[]` with the extra `logic`/`visual` fields the agent produces.
- */
-export function parseAgentPhasesJson(text: string): PhaseDraft[] {
-  const cleaned = stripCodeFence(text.trim());
-  try {
-    const obj = JSON.parse(cleaned);
-    let list: unknown[] | null = null;
-    if (Array.isArray(obj)) {
-      list = obj;
-    } else if (obj && typeof obj === "object") {
-      const maybe = (obj as { phases?: unknown }).phases;
-      if (Array.isArray(maybe)) list = maybe;
-    }
-    if (!list) return [];
-    return list.map((entry) => normalizePhaseDraft(entry)).filter((p): p is PhaseDraft => p !== null);
-  } catch {
-    return [];
-  }
-}
-
-function normalizePhase(raw: unknown): Phase | null {
-  const draft = normalizePhaseDraft(raw);
-  if (!draft) return null;
-  return {
-    id: draft.id,
-    name: draft.name,
-    summary: draft.summary,
-    dependsOn: draft.dependsOn,
-    hasVisual: draft.hasVisual,
-  };
-}
-
-function normalizePhaseDraft(raw: unknown): PhaseDraft | null {
-  if (!raw || typeof raw !== "object") return null;
-  const r = raw as Record<string, unknown>;
-  const id = typeof r.id === "string" ? r.id : null;
-  const name = typeof r.name === "string" ? r.name : null;
-  if (!id || !name) return null;
-  const summary = typeof r.summary === "string" ? r.summary : "";
-  const dependsOn = Array.isArray(r.dependsOn)
-    ? r.dependsOn.filter((d): d is string => typeof d === "string")
-    : [];
-  const hasVisual = r.hasVisual === true;
-  const logic = typeof r.logic === "string" ? r.logic : undefined;
-  const visual = typeof r.visual === "string" ? r.visual : undefined;
-  return { id, name, summary, dependsOn, hasVisual, logic, visual };
-}
-
-/**
- * Detects a cycle in the dependency graph. Returns the cycle path (list of
- * ids) or null if there is none. Standard three-color DFS.
- */
-export function detectCycle(phases: Phase[]): string[] | null {
-  const byId = new Map(phases.map((p) => [p.id, p]));
-  const WHITE = 0;
-  const GRAY = 1;
-  const BLACK = 2;
-  const color = new Map<string, number>(phases.map((p) => [p.id, WHITE]));
-  const parent = new Map<string, string | null>();
-  let cycleStart: string | null = null;
-  let cycleEnd: string | null = null;
-
-  function dfs(u: string): boolean {
-    color.set(u, GRAY);
-    const phase = byId.get(u);
-    if (!phase) {
-      color.set(u, BLACK);
-      return false;
-    }
-    for (const v of phase.dependsOn) {
-      if (!byId.has(v)) continue; // dead reference — ignore it
-      const c = color.get(v) ?? WHITE;
-      if (c === WHITE) {
-        parent.set(v, u);
-        if (dfs(v)) return true;
-      } else if (c === GRAY) {
-        cycleStart = v;
-        cycleEnd = u;
-        return true;
-      }
-    }
-    color.set(u, BLACK);
-    return false;
-  }
-
-  for (const p of phases) {
-    if ((color.get(p.id) ?? WHITE) === WHITE) {
-      parent.set(p.id, null);
-      if (dfs(p.id)) break;
-    }
-  }
-
-  if (cycleStart === null || cycleEnd === null) return null;
-  // Path reconstruction: from cycleEnd walking up via parent to cycleStart.
-  const path: string[] = [cycleStart];
-  let cur: string | null = cycleEnd;
-  while (cur && cur !== cycleStart) {
-    path.push(cur);
-    cur = parent.get(cur) ?? null;
-  }
-  path.push(cycleStart);
-  return path.reverse();
-}
-
-/**
- * Topological sort by levels (Kahn). Returns `Phase[][]` (each sub-array is
- * a batch of the hybrid mode). Returns null if there is a cycle.
- */
-export function topologicalBatches(phases: Phase[]): Phase[][] | null {
-  if (detectCycle(phases)) return null;
-  const inDeg = new Map<string, number>();
-  const byId = new Map(phases.map((p) => [p.id, p]));
-  for (const p of phases) {
-    // Only count deps that exist in the set (ignore dead references).
-    const real = p.dependsOn.filter((d) => byId.has(d));
-    inDeg.set(p.id, real.length);
-  }
-  const remaining = new Set(phases.map((p) => p.id));
-  const batches: Phase[][] = [];
-  while (remaining.size > 0) {
-    const ready = [...remaining].filter((id) => (inDeg.get(id) ?? 0) === 0);
-    if (ready.length === 0) return null; // escaped cycle (defensive)
-    const batch: Phase[] = [];
-    for (const id of ready) {
-      const p = byId.get(id);
-      if (p) batch.push(p);
-      remaining.delete(id);
-    }
-    // Subtract 1 from deps that pointed to the consumed nodes.
-    for (const id of remaining) {
-      const p = byId.get(id);
-      if (!p) continue;
-      const stillBlocking = p.dependsOn.filter((d) => remaining.has(d) && byId.has(d)).length;
-      inDeg.set(id, stillBlocking);
-    }
-    batches.push(batch);
-  }
-  return batches;
-}
-
-// ---------------------------------------------------------------------------
 // Misc helpers
 // ---------------------------------------------------------------------------
 
 function bufferKey(slug: string, tab: FileTab): string {
   return `${slug}:${tab}`;
-}
-
-function buildRunPromptPath(projectPath: string, runId: string, name: string): string {
-  // Same join as step1-chat.ts — the convention is OS-native.
-  const sep = projectPath.includes("\\") ? "\\" : "/";
-  return [projectPath, ".loop", "runs", runId, "prompts", name].join(sep);
-}
-
-function defaultModelFor(cli: LoopCli): string {
-  switch (cli) {
-    case "claude":
-      return "claude-opus-4-7";
-    case "codex":
-      return "gpt-5";
-    case "opencode":
-      return "anthropic/claude-sonnet-4-5";
-  }
 }
 
 /**
@@ -1466,18 +1260,3 @@ function buildAiEditPrompt(
   ].join("\n");
 }
 
-/** Strips a wrapping ```...``` fence if present; useful for LLM outputs. */
-function stripCodeFence(s: string): string {
-  const m = s.match(/^```(?:[a-zA-Z]*)\n([\s\S]*?)\n```$/);
-  return m ? m[1] : s;
-}
-
-function stringifyError(err: unknown): string {
-  if (err instanceof Error) return err.message;
-  if (typeof err === "string") return err;
-  try {
-    return JSON.stringify(err);
-  } catch {
-    return String(err);
-  }
-}

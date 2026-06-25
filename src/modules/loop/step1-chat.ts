@@ -20,8 +20,18 @@
 
 import { invoke } from "@tauri-apps/api/core";
 
-import { LOOP_PROMPT_NAMES } from "./state/types";
+import { stringifyError } from "../../shared/errors";
+import { buildRunPromptPath, defaultModelFor, LOOP_CLIS } from "./state/types";
 import type { LoopCli, LoopPromptName } from "./state/types";
+import { createListenerBag } from "./shared/listener-bag";
+import {
+  buildConsolidateInstruction,
+  buildConsolidatePrompt,
+  buildHistoryPrompt,
+  looksLikeSessionError,
+  parseDraftMarkdown,
+  serializeDraftMarkdown,
+} from "./step1-chat/prompts";
 
 /** Normalized result from `run_loop_agent`. Mirror of the Rust struct. */
 interface AgentResult {
@@ -459,21 +469,8 @@ function render(
   root.className = "loop-step1-root";
   slot.replaceChildren(root);
 
-  const handlers: Array<{
-    el: EventTarget;
-    type: string;
-    handler: EventListenerOrEventListenerObject;
-  }> = [];
-
-  function on<T extends Event>(
-    el: EventTarget,
-    type: string,
-    handler: (e: T) => void,
-  ): void {
-    const wrapped = handler as EventListenerOrEventListenerObject;
-    el.addEventListener(type, wrapped);
-    handlers.push({ el, type, handler: wrapped });
-  }
+  const listeners = createListenerBag();
+  const on = listeners.on;
 
   function refresh(): void {
     root.replaceChildren();
@@ -598,10 +595,7 @@ function render(
   }
 
   function cleanup(): void {
-    for (const { el, type, handler } of handlers) {
-      el.removeEventListener(type, handler);
-    }
-    handlers.length = 0;
+    listeners.dispose();
     slot.classList.remove("loop-step1");
   }
 
@@ -741,7 +735,7 @@ function render(
     cliLbl.textContent = "CLI";
     const cliSelect = document.createElement("select");
     cliSelect.className = "loop-step1-cli-select";
-    for (const opt of ["claude", "codex", "opencode"] as const) {
+    for (const opt of LOOP_CLIS) {
       const o = document.createElement("option");
       o.value = opt;
       o.textContent = opt;
@@ -846,174 +840,3 @@ function render(
   return { refresh, cleanup };
 }
 
-// ---------------------------------------------------------------------------
-// History serialization and prompts
-// ---------------------------------------------------------------------------
-
-/**
- * Builds the one-shot prompt sent to the CLI on each turn. Includes prior
- * turns as textual history, in order, with the current user message at the
- * end. The system prompt (with the "intake" mode instructions) is passed by
- * `run_loop_agent` via `--append-system-prompt`.
- *
- * Format is designed to be easy to read as a single string — the CLIs don't
- * need ChatML structure; they treat everything as a user prompt and generate
- * the agent's response. The explicit headers help the model understand the
- * role of each block.
- */
-function buildHistoryPrompt(history: ChatTurn[], currentUser: string): string {
-  const parts: string[] = [];
-  if (history.length > 0) {
-    parts.push("# Prior conversation\n");
-    for (const turn of history) {
-      parts.push(`## User\n${turn.user.trim()}\n`);
-      const assistant = turn.assistant.trim();
-      if (assistant) parts.push(`## Agent\n${assistant}\n`);
-    }
-  }
-  parts.push("# Current user message\n");
-  parts.push(currentUser.trim());
-  parts.push(
-    "\n\nReply to the user, continuing the conversation. Don't repeat the history; reply only to the current message.",
-  );
-  return parts.join("\n");
-}
-
-/**
- * Final prompt to consolidate the problem into a structured `01-problem.md`.
- * Explicitly asks for the expected format so the output is directly
- * persistable without further parsing.
- */
-function buildConsolidatePrompt(history: ChatTurn[]): string {
-  const parts: string[] = [];
-  parts.push("# Full conversation\n");
-  for (const turn of history) {
-    parts.push(`## User\n${turn.user.trim()}\n`);
-    const assistant = turn.assistant.trim();
-    if (assistant) parts.push(`## Agent\n${assistant}\n`);
-  }
-  parts.push("# Task\n");
-  parts.push(buildConsolidateInstruction());
-  return parts.join("\n");
-}
-
-/**
- * Pure consolidation instruction without the history. Used when the CLI
- * already has the conversation loaded in session (`--resume` / `exec resume`
- * / `--session`).
- */
-function buildConsolidateInstruction(): string {
-  return (
-    "Based on the prior conversation, produce a single Markdown document with a structured summary of the problem. Expected structure:\n\n" +
-    "```\n" +
-    "# Problem\n\n" +
-    "## Context\n\n## Goal\n\n## Constraints\n\n## Success criteria\n\n## Known risks\n" +
-    "```\n\n" +
-    "Return only the final Markdown content (no code fences, no preamble). Concise, technical English, no emojis."
-  );
-}
-
-/**
- * Heuristic to detect error messages that indicate an invalid or expired
- * session. In that case we clear the local session id to force a fresh
- * bootstrap (with serialized history) on the next turn.
- */
-function looksLikeSessionError(message: string): boolean {
-  const lower = message.toLowerCase();
-  return (
-    lower.includes("session") &&
-    (lower.includes("not found") ||
-      lower.includes("expired") ||
-      lower.includes("invalid") ||
-      lower.includes("no encontrad") ||
-      lower.includes("no existe"))
-  );
-}
-
-/** Serializes the turns to a readable Markdown for `01-problem-draft.md`. */
-function serializeDraftMarkdown(turns: ChatTurn[]): string {
-  const parts: string[] = ["# Problem draft (auto-save)\n"];
-  for (let i = 0; i < turns.length; i++) {
-    const turn = turns[i];
-    parts.push(`## Turn ${i + 1}\n`);
-    parts.push(`### User\n${turn.user.trim()}\n`);
-    if (turn.assistant.trim()) {
-      parts.push(`### Agent\n${turn.assistant.trim()}\n`);
-    }
-    if (turn.error) {
-      parts.push(`> error: ${turn.error}\n`);
-    }
-  }
-  return parts.join("\n");
-}
-
-/**
- * Inverse draft parser. Lenient: if the format doesn't match exactly (e.g.
- * the user edited it by hand), we return whatever we could extract. If
- * nothing is parseable, we return an empty list.
- *
- * Section 9 (resume) may replace this with a stricter schema based on
- * `state.json`; for now the simple round-trip is enough.
- */
-function parseDraftMarkdown(content: string): ChatTurn[] {
-  const turns: ChatTurn[] = [];
-  const turnBlocks = content.split(/^## Turn \d+$/m).slice(1);
-  for (const block of turnBlocks) {
-    const userMatch = block.match(/### User\n([\s\S]*?)(?=\n### Agent|$)/);
-    const agentMatch = block.match(/### Agent\n([\s\S]*?)(?=\n> error:|$)/);
-    if (!userMatch) continue;
-    const user = userMatch[1].trim();
-    if (!user) continue;
-    turns.push({
-      user,
-      assistant: agentMatch ? agentMatch[1].trim() : "",
-      pending: false,
-    });
-  }
-  return turns;
-}
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-function buildRunPromptPath(
-  projectPath: string,
-  runId: string,
-  name: LoopPromptName,
-): string {
-  // The backend (`loop_create_run`) uses `<project>/.loop/runs/<runId>/prompts/`.
-  // We reproduce the join here to pass the absolute path to `run_loop_agent`.
-  // We validate against LOOP_PROMPT_NAMES by type, not at runtime — the caller
-  // always passes a constant from the set.
-  void LOOP_PROMPT_NAMES;
-  // Normalize separators so it works on macOS/Linux. Tauri on Windows
-  // tolerates "/" in most APIs, but just in case we use the OS-native join
-  // if available.
-  const sep = projectPath.includes("\\") ? "\\" : "/";
-  return [projectPath, ".loop", "runs", runId, "prompts", name].join(sep);
-}
-
-function defaultModelFor(cli: LoopCli): string {
-  // Reasonable defaults per CLI. Section 6 (Step 3 setup) allows per-agent
-  // overrides; the intake chat uses the fixed default for the selected CLI —
-  // we don't expose a model selector in step 1 to keep the surface small.
-  switch (cli) {
-    case "claude":
-      return "claude-opus-4-7";
-    case "codex":
-      return "gpt-5";
-    case "opencode":
-      return "anthropic/claude-sonnet-4-5";
-  }
-}
-
-function stringifyError(err: unknown): string {
-  if (err instanceof Error) return err.message;
-  if (typeof err === "string") return err;
-  try {
-    return JSON.stringify(err);
-  } catch {
-    return String(err);
-  }
-}
