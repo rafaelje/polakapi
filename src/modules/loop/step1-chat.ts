@@ -246,15 +246,9 @@ export function mountStep1Chat(slot: HTMLElement, ctx: Step1Context): Step1Handl
     // the CLI already remembers the prior turns. Otherwise, serialize the full
     // history into the prompt (legacy one-shot mode, used for bootstrap).
     const sessionId = state.sessionByCli[state.cli];
-    const prompt = sessionId
-      ? userMsg
-      : buildHistoryPrompt(state.turns.slice(0, -1), userMsg);
+    const prompt = sessionId ? userMsg : buildHistoryPrompt(state.turns.slice(0, -1), userMsg);
 
-    const systemPromptPath = buildRunPromptPath(
-      ctx.projectPath,
-      ctx.runId,
-      "problem-intake.md",
-    );
+    const systemPromptPath = buildRunPromptPath(ctx.projectPath, ctx.runId, "problem-intake.md");
 
     try {
       const result = await invoke<AgentResult>("run_loop_agent", {
@@ -330,11 +324,7 @@ export function mountStep1Chat(slot: HTMLElement, ctx: Step1Context): Step1Handl
       const prompt = sessionId
         ? buildConsolidateInstruction()
         : buildConsolidatePrompt(state.turns);
-      const systemPromptPath = buildRunPromptPath(
-        ctx.projectPath,
-        ctx.runId,
-        "problem-intake.md",
-      );
+      const systemPromptPath = buildRunPromptPath(ctx.projectPath, ctx.runId, "problem-intake.md");
 
       const result = await invoke<AgentResult>("run_loop_agent", {
         cli: state.cli,
@@ -550,9 +540,7 @@ function render(
     const meta = document.createElement("div");
     meta.className = "loop-step1-picker-item-meta";
     const date = new Date(run.lastModifiedMs);
-    const dateText = isFinite(date.getTime())
-      ? date.toLocaleString()
-      : "(unknown date)";
+    const dateText = isFinite(date.getTime()) ? date.toLocaleString() : "(unknown date)";
     const flags: string[] = [];
     if (run.hasDraft) flags.push("draft");
     if (run.hasConsolidated) flags.push("consolidated");
@@ -754,9 +742,7 @@ function render(
     const consolidate = document.createElement("button");
     consolidate.type = "button";
     consolidate.className = "loop-btn loop-btn-primary loop-step1-consolidate";
-    consolidate.textContent = state.consolidating
-      ? "consolidating…"
-      : "✓ consolidate problem.md →";
+    consolidate.textContent = state.consolidating ? "consolidating…" : "✓ consolidate problem.md →";
     const hasTurn = state.turns.length > 0;
     const anyPending = state.turns.some((t) => t.pending);
     consolidate.disabled = !hasTurn || anyPending || state.consolidating;
@@ -786,8 +772,7 @@ function render(
 
     const textarea = document.createElement("textarea");
     textarea.className = "loop-step1-input";
-    textarea.placeholder =
-      "describe the problem or reply to the agent… (Cmd+Enter to send)";
+    textarea.placeholder = "describe the problem or reply to the agent… (Cmd+Enter to send)";
     textarea.rows = 4;
     textarea.value = state.inputDraft;
     const inFlight = anyPending || state.consolidating;
@@ -839,4 +824,3 @@ function render(
 
   return { refresh, cleanup };
 }
-

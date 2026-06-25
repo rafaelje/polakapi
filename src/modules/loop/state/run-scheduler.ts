@@ -726,9 +726,18 @@ export class RunScheduler {
     if (!phase) return;
 
     // Run the 4 stages in order. Each stage may set `warning` or `error`
-    // and the scheduler reacts at the end.
+    // and the scheduler reacts at the end. On resume we skip stages that
+    // already reached a terminal state (done / warning) — re-running them
+    // would burn tokens and could overwrite valid outputs with worse ones.
+    // Section 9.6: only stages left `running` at crash time are downgraded
+    // to `pending` by `rewindRunningStages`, so anything `done`/`warning`
+    // here is a real completed substage from the previous attempt.
     for (const agent of SEQUENTIAL_AGENTS) {
       if (this.shouldStop()) return;
+      const current = this.state.phases[index]?.stages[agent];
+      if (current && (current.status === "done" || current.status === "warning")) {
+        continue;
+      }
       if (agent === "review") {
         await this.runReviewLoop(index);
       } else {
@@ -887,32 +896,21 @@ export class RunScheduler {
       return null;
     }
 
-    // 4. Accumulate tokens/cost in the stage and in the run totals.
+    // 4. Accumulate tokens/cost in the stage and in the run totals. In hybrid
+    //    mode multiple phases share `this.state.totals` / `byAgent`; using a
+    //    plain `commit({...this.state, totals: this.state.totals + delta})`
+    //    read-modify-writes the same snapshot, so the last commit drops every
+    //    other phase's delta. We accumulate via a functional patch that reads
+    //    the freshest `this.state` at apply time.
     const tokensIn = result.tokensIn ?? 0;
     const tokensOut = result.tokensOut ?? 0;
     const costUsd = result.costUsd ?? 0;
-    this.patchStage(phaseIndex, agent, {
-      tokensIn: phase.stages[agent].tokensIn + tokensIn,
-      tokensOut: phase.stages[agent].tokensOut + tokensOut,
-      costUsd: phase.stages[agent].costUsd + costUsd,
-    });
-    const role: LoopAgentRole = agent;
-    this.commit({
-      ...this.state,
-      totals: {
-        tokensIn: this.state.totals.tokensIn + tokensIn,
-        tokensOut: this.state.totals.tokensOut + tokensOut,
-        costUsd: this.state.totals.costUsd + costUsd,
-      },
-      byAgent: {
-        ...this.state.byAgent,
-        [role]: {
-          tokensIn: this.state.byAgent[role].tokensIn + tokensIn,
-          tokensOut: this.state.byAgent[role].tokensOut + tokensOut,
-          costUsd: this.state.byAgent[role].costUsd + costUsd,
-        },
-      },
-    });
+    this.patchStageWith(phaseIndex, agent, (s) => ({
+      tokensIn: s.tokensIn + tokensIn,
+      tokensOut: s.tokensOut + tokensOut,
+      costUsd: s.costUsd + costUsd,
+    }));
+    this.addToTotals(agent, tokensIn, tokensOut, costUsd);
 
     // 5. Persist md output.
     try {
@@ -1307,7 +1305,10 @@ export class RunScheduler {
       return "error";
     }
 
-    // 5. Accumulate integrator tokens/cost.
+    // 5. Accumulate integrator tokens/cost. Single-writer at this point
+    //    (integrator runs sequentially after `Promise.all` of the batch
+    //    phases), so a plain commit is safe — we still use the shared
+    //    accumulator helpers for consistency.
     const tokensIn = result.tokensIn ?? 0;
     const tokensOut = result.tokensOut ?? 0;
     const costUsd = result.costUsd ?? 0;
@@ -1316,22 +1317,7 @@ export class RunScheduler {
       tokensOut: this.state.integrators[batchIndex].tokensOut + tokensOut,
       costUsd: this.state.integrators[batchIndex].costUsd + costUsd,
     });
-    this.commit({
-      ...this.state,
-      totals: {
-        tokensIn: this.state.totals.tokensIn + tokensIn,
-        tokensOut: this.state.totals.tokensOut + tokensOut,
-        costUsd: this.state.totals.costUsd + costUsd,
-      },
-      byAgent: {
-        ...this.state.byAgent,
-        integration: {
-          tokensIn: this.state.byAgent.integration.tokensIn + tokensIn,
-          tokensOut: this.state.byAgent.integration.tokensOut + tokensOut,
-          costUsd: this.state.byAgent.integration.costUsd + costUsd,
-        },
-      },
-    });
+    this.addToTotals("integration", tokensIn, tokensOut, costUsd);
 
     // 6. Persist output.
     try {
@@ -1482,6 +1468,64 @@ export class RunScheduler {
     };
     phases[phaseIndex] = next;
     this.commit({ ...this.state, phases });
+  }
+
+  /**
+   * Functional variant of `patchStage`: the patch is derived from the
+   * **current** stage value at commit time. Use this whenever the patch
+   * depends on the existing value (accumulators like tokens/cost) and the
+   * scheduler can have concurrent writers — hybrid mode runs `Promise.all`
+   * over batch phases, and a plain `patchStage({tokensIn: s.tokensIn + d})`
+   * captures `s` from a stale snapshot.
+   */
+  private patchStageWith(
+    phaseIndex: number,
+    agent: SequentialAgent,
+    deriver: (current: AgentStageState) => Partial<AgentStageState>,
+  ): void {
+    const phases = this.state.phases.slice();
+    const phase = phases[phaseIndex];
+    if (!phase) return;
+    const current = phase.stages[agent];
+    const next: PhaseState = {
+      ...phase,
+      stages: {
+        ...phase.stages,
+        [agent]: { ...current, ...deriver(current) },
+      },
+    };
+    phases[phaseIndex] = next;
+    this.commit({ ...this.state, phases });
+  }
+
+  /**
+   * Atomically adds a delta to `state.totals` and `state.byAgent[role]`.
+   * Reads `this.state` at apply time (NOT from a captured snapshot), so two
+   * parallel phases of the same batch both have their deltas survive. Without
+   * this the second commit overwrites the first phase's contribution and the
+   * budget under-counts.
+   */
+  private addToTotals(
+    role: LoopAgentRole,
+    tokensIn: number,
+    tokensOut: number,
+    costUsd: number,
+  ): void {
+    const totals = {
+      tokensIn: this.state.totals.tokensIn + tokensIn,
+      tokensOut: this.state.totals.tokensOut + tokensOut,
+      costUsd: this.state.totals.costUsd + costUsd,
+    };
+    const prev = this.state.byAgent[role];
+    const byAgent = {
+      ...this.state.byAgent,
+      [role]: {
+        tokensIn: prev.tokensIn + tokensIn,
+        tokensOut: prev.tokensOut + tokensOut,
+        costUsd: prev.costUsd + costUsd,
+      },
+    };
+    this.commit({ ...this.state, totals, byAgent });
   }
 
   private patchPhase(phaseIndex: number, patch: Partial<PhaseState>): void {

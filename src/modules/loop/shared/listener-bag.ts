@@ -13,13 +13,9 @@
  */
 export interface ListenerBag {
   /** Register an event listener that will be removed on `dispose()`. */
-  on<T extends Event>(
-    el: EventTarget,
-    type: string,
-    handler: (event: T) => void,
-  ): void;
+  on<T extends Event>(this: void, el: EventTarget, type: string, handler: (event: T) => void): void;
   /** Remove every listener registered via `on()` and clear the internal list. */
-  dispose(): void;
+  dispose(this: void): void;
 }
 
 interface Tracked {

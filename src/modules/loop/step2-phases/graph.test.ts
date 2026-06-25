@@ -36,11 +36,7 @@ describe("detectCycle", () => {
   });
 
   it("returns null for a DAG", () => {
-    const phases = [
-      p("01", "a"),
-      p("02", "b", ["01"]),
-      p("03", "c", ["01", "02"]),
-    ];
+    const phases = [p("01", "a"), p("02", "b", ["01"]), p("03", "c", ["01", "02"])];
     expect(detectCycle(phases)).toBeNull();
   });
 
@@ -59,11 +55,7 @@ describe("detectCycle", () => {
   });
 
   it("detects a multi-hop cycle", () => {
-    const phases = [
-      p("01", "a", ["03"]),
-      p("02", "b", ["01"]),
-      p("03", "c", ["02"]),
-    ];
+    const phases = [p("01", "a", ["03"]), p("02", "b", ["01"]), p("03", "c", ["02"])];
     expect(detectCycle(phases)).not.toBeNull();
   });
 
@@ -88,11 +80,7 @@ describe("topologicalBatches", () => {
   });
 
   it("produces sequential batches when dependencies form a chain", () => {
-    const phases = [
-      p("01", "a"),
-      p("02", "b", ["01"]),
-      p("03", "c", ["02"]),
-    ];
+    const phases = [p("01", "a"), p("02", "b", ["01"]), p("03", "c", ["02"])];
     const batches = topologicalBatches(phases);
     expect(batches).not.toBeNull();
     expect(batches!.map((b) => b.map((p) => p.id))).toEqual([["01"], ["02"], ["03"]]);

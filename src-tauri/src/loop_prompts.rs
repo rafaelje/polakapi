@@ -23,6 +23,7 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use tauri::Manager;
+use tokio::process::Command as TokioCommand;
 
 /// The 7 canonical prompt names. Any other name is rejected by
 /// `loop_read_global_prompt` / `loop_write_global_prompt`. We keep this
@@ -55,7 +56,7 @@ fn bundled_content(name: &str) -> Option<&'static str> {
 }
 
 fn is_known_prompt(name: &str) -> bool {
-    PROMPT_NAMES.iter().any(|p| *p == name)
+    PROMPT_NAMES.contains(&name)
 }
 
 /// Returns `<app-config>/prompts/` resolving the config dir from the app handle.
@@ -90,8 +91,8 @@ fn ensure_dir_sync(dir: &Path) -> Result<Vec<String>, String> {
         if target.exists() {
             continue;
         }
-        let seed = bundled_content(name)
-            .ok_or_else(|| format!("missing bundled seed for {name}"))?;
+        let seed =
+            bundled_content(name).ok_or_else(|| format!("missing bundled seed for {name}"))?;
         write_atomic(&target, seed)?;
         restored.push((*name).to_string());
     }
@@ -150,8 +151,8 @@ pub async fn loop_reset_run_prompt_to_global(
             .map_err(|e| format!("could not create {global_dir:?}: {e}"))?;
         let global_target = global_dir.join(&name);
         if !global_target.exists() {
-            let seed = bundled_content(&name)
-                .ok_or_else(|| format!("missing bundled seed for {name}"))?;
+            let seed =
+                bundled_content(&name).ok_or_else(|| format!("missing bundled seed for {name}"))?;
             write_atomic(&global_target, seed)?;
         }
         let content = std::fs::read_to_string(&global_target)
@@ -161,7 +162,86 @@ pub async fn loop_reset_run_prompt_to_global(
         if !project.is_dir() {
             return Err(format!("project not found: {project:?}"));
         }
-        let run_prompts_dir = project.join(".loop").join("runs").join(&run_id).join("prompts");
+        let run_prompts_dir = project
+            .join(".loop")
+            .join("runs")
+            .join(&run_id)
+            .join("prompts");
+        if !run_prompts_dir.is_dir() {
+            return Err(format!(
+                "run dir not initialized: {run_prompts_dir:?} (run loop_create_run first)"
+            ));
+        }
+        let target = run_prompts_dir.join(&name);
+        write_atomic(&target, &content)
+    })
+    .await
+    .map_err(|e| format!("join error: {e}"))?
+}
+
+/// Reads the run-local prompt at `<project>/.loop/runs/<run_id>/prompts/<name>`.
+/// Returns the empty string if the file does not exist yet so the caller can
+/// fall back to the global without an exception path.
+#[tauri::command]
+pub async fn loop_read_run_prompt(
+    project_path: String,
+    run_id: String,
+    name: String,
+) -> Result<String, String> {
+    if !is_known_prompt(&name) {
+        return Err(format!("unknown prompt: {name}"));
+    }
+    if !is_safe_run_id(&run_id) {
+        return Err(format!("invalid run_id: {run_id}"));
+    }
+    tokio::task::spawn_blocking(move || -> Result<String, String> {
+        let project = PathBuf::from(&project_path);
+        if !project.is_dir() {
+            return Err(format!("project_path is not a directory: {project_path}"));
+        }
+        let target = project
+            .join(".loop")
+            .join("runs")
+            .join(&run_id)
+            .join("prompts")
+            .join(&name);
+        match std::fs::read_to_string(&target) {
+            Ok(s) => Ok(s),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(String::new()),
+            Err(e) => Err(format!("could not read {target:?}: {e}")),
+        }
+    })
+    .await
+    .map_err(|e| format!("join error: {e}"))?
+}
+
+/// Overwrites the run-local prompt atomically. Used by Step 3 to materialize
+/// inline edits before the scheduler starts — the scheduler reads the prompt
+/// from the run dir on every agent invocation, so the override only takes
+/// effect once this command has flushed the buffer to disk.
+#[tauri::command]
+pub async fn loop_write_run_prompt(
+    project_path: String,
+    run_id: String,
+    name: String,
+    content: String,
+) -> Result<(), String> {
+    if !is_known_prompt(&name) {
+        return Err(format!("unknown prompt: {name}"));
+    }
+    if !is_safe_run_id(&run_id) {
+        return Err(format!("invalid run_id: {run_id}"));
+    }
+    tokio::task::spawn_blocking(move || -> Result<(), String> {
+        let project = PathBuf::from(&project_path);
+        if !project.is_dir() {
+            return Err(format!("project_path is not a directory: {project_path}"));
+        }
+        let run_prompts_dir = project
+            .join(".loop")
+            .join("runs")
+            .join(&run_id)
+            .join("prompts");
         if !run_prompts_dir.is_dir() {
             return Err(format!(
                 "run dir not initialized: {run_prompts_dir:?} (run loop_create_run first)"
@@ -218,9 +298,7 @@ pub async fn loop_create_run(
     run_id: String,
 ) -> Result<CreatedRunPaths, String> {
     if !is_safe_run_id(&run_id) {
-        return Err(format!(
-            "invalid run_id: {run_id} (only [A-Za-z0-9_-])"
-        ));
+        return Err(format!("invalid run_id: {run_id} (only [A-Za-z0-9_-])"));
     }
     let globals_dir = prompts_dir(&app)?;
 
@@ -286,7 +364,7 @@ fn is_safe_run_id(id: &str) -> bool {
 const ALLOWED_RUN_FILES: &[&str] = &["01-problem-draft.md", "01-problem.md", "02-phases.md"];
 
 fn is_allowed_run_file(name: &str) -> bool {
-    ALLOWED_RUN_FILES.iter().any(|n| *n == name)
+    ALLOWED_RUN_FILES.contains(&name)
 }
 
 /// Resolves `<projectPath>/.loop/runs/<runId>/<file>` applying the same
@@ -294,11 +372,7 @@ fn is_allowed_run_file(name: &str) -> bool {
 /// result is an absolute path the caller can read/write; the run_dir must
 /// exist (otherwise we return an error — we do not auto-create it to avoid
 /// masking ordering bugs).
-fn resolve_run_file(
-    project_path: &str,
-    run_id: &str,
-    file: &str,
-) -> Result<PathBuf, String> {
+fn resolve_run_file(project_path: &str, run_id: &str, file: &str) -> Result<PathBuf, String> {
     if !is_safe_run_id(run_id) {
         return Err(format!("invalid run_id: {run_id}"));
     }
@@ -374,7 +448,7 @@ pub async fn loop_write_run_file(
 const ALLOWED_PHASE_FILES: &[&str] = &["logic.md", "visual.html"];
 
 fn is_allowed_phase_file(name: &str) -> bool {
-    ALLOWED_PHASE_FILES.iter().any(|n| *n == name)
+    ALLOWED_PHASE_FILES.contains(&name)
 }
 
 fn is_safe_phase_slug(slug: &str) -> bool {
@@ -503,8 +577,7 @@ pub async fn loop_write_phase_file(
     }
     let phase = resolve_phase_dir(&project_path, &run_id, &phase_slug)?;
     tokio::task::spawn_blocking(move || -> Result<(), String> {
-        std::fs::create_dir_all(&phase)
-            .map_err(|e| format!("could not create {phase:?}: {e}"))?;
+        std::fs::create_dir_all(&phase).map_err(|e| format!("could not create {phase:?}: {e}"))?;
         let target = phase.join(&file);
         write_atomic(&target, &content)
     })
@@ -704,10 +777,7 @@ fn resolve_state_file(project_path: &str, run_id: &str) -> Result<PathBuf, Strin
 /// Reads `<run>/state.json`. If it does not exist, returns an empty string —
 /// the scheduler uses that as "first run startup, write an initial state".
 #[tauri::command]
-pub async fn loop_read_state_file(
-    project_path: String,
-    run_id: String,
-) -> Result<String, String> {
+pub async fn loop_read_state_file(project_path: String, run_id: String) -> Result<String, String> {
     let target = resolve_state_file(&project_path, &run_id)?;
     tokio::task::spawn_blocking(move || -> Result<String, String> {
         match std::fs::read_to_string(&target) {
@@ -836,7 +906,7 @@ fn git_diff_sync(project_path: &str) -> Result<String, String> {
 const ALLOWED_BATCH_FILES: &[&str] = &["knowledge.md"];
 
 fn is_allowed_batch_file(name: &str) -> bool {
-    ALLOWED_BATCH_FILES.iter().any(|n| *n == name)
+    ALLOWED_BATCH_FILES.contains(&name)
 }
 
 /// Resolves `<run>/outputs/batches/<batch_id>/<file>`. Applies the same
@@ -995,10 +1065,7 @@ pub async fn loop_list_interrupted_runs(
                 Ok(v) => v,
                 Err(_) => continue,
             };
-            let status = parsed
-                .get("status")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
+            let status = parsed.get("status").and_then(|v| v.as_str()).unwrap_or("");
             let is_active = matches!(status, "running" | "paused");
             if !is_active {
                 continue;
@@ -1185,10 +1252,7 @@ fn truncate_preview(s: &str) -> String {
 /// id, which should not happen with UUID runIds but defensive) we add a
 /// timestamp suffix.
 #[tauri::command]
-pub async fn loop_archive_run(
-    project_path: String,
-    run_id: String,
-) -> Result<String, String> {
+pub async fn loop_archive_run(project_path: String, run_id: String) -> Result<String, String> {
     if !is_safe_run_id(&run_id) {
         return Err(format!("invalid run_id: {run_id}"));
     }
@@ -1239,7 +1303,11 @@ pub async fn loop_discard_partial_outputs(
         if !project.is_dir() {
             return Err(format!("project_path is not a directory: {project_path}"));
         }
-        let outputs = project.join(".loop").join("runs").join(&run_id).join("outputs");
+        let outputs = project
+            .join(".loop")
+            .join("runs")
+            .join(&run_id)
+            .join("outputs");
         let phase_entries = match std::fs::read_dir(&outputs) {
             Ok(e) => e,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
@@ -1260,7 +1328,8 @@ pub async fn loop_discard_partial_outputs(
                 Err(_) => continue,
             };
             // Map of available stems: agent name -> { has_md, has_diff }.
-            let mut state: std::collections::HashMap<String, (bool, bool)> = std::collections::HashMap::new();
+            let mut state: std::collections::HashMap<String, (bool, bool)> =
+                std::collections::HashMap::new();
             for f in files.flatten() {
                 let name = f.file_name().to_string_lossy().to_string();
                 if let Some(stem) = name.strip_suffix(".md") {
@@ -1317,86 +1386,61 @@ impl CliValidation {
     }
 }
 
-/// Checks: (1) the CLI binary is in PATH, (2) a minimal ping to the model
-/// does not fail. The ping uses a trivial prompt (`"ok"`) with a short
-/// timeout. It is not bulletproof (the network can fail for other reasons),
-/// but it is enough to detect model typos / uninstalled CLIs / unconfigured
-/// keys. The decision is to align with design.md decision #8 ("no
-/// auto-fallback") and let the user fix it manually.
+/// Checks that the CLI binary is reachable in PATH by invoking `<cli> --version`.
+///
+/// We deliberately do NOT ping the model with a real prompt: that used to fire
+/// a billable round-trip per slot validation (and per Step 3 re-render), and
+/// the subprocess could not be cancelled because the previous implementation
+/// wrapped a synchronous `std::process::Command::output` inside
+/// `spawn_blocking` with `tokio::time::timeout` on the join handle — which
+/// only abandons the thread and leaves the CLI process running. Model name
+/// typos surface naturally on the first agent invocation; the trade-off is
+/// that a slot stays "ok" in the UI until the run actually starts, but no
+/// money is spent and no subprocess can be orphaned.
+///
+/// We use `tokio::process::Command` with `kill_on_drop(true)` so a hung
+/// `--version` (rare but possible on a broken shim) is actually killed when
+/// the 10s timeout elapses, rather than orphaned.
 #[tauri::command]
-pub async fn loop_validate_cli_model(cli: String, model: String) -> Result<CliValidation, String> {
+pub async fn loop_validate_cli_model(cli: String, _model: String) -> Result<CliValidation, String> {
     let cli_lower = cli.to_ascii_lowercase();
     if !matches!(cli_lower.as_str(), "claude" | "codex" | "opencode") {
         return Ok(CliValidation::err(format!("unsupported CLI: {cli}")));
     }
 
-    let cli_for_task = cli_lower.clone();
-    let model_for_task = model.clone();
-    let join = tokio::task::spawn_blocking(move || -> CliValidation {
-        validate_sync(&cli_for_task, &model_for_task)
-    });
-
-    // 15s is generous for a ping; the default of `run_loop_agent` is 300s,
-    // but here it is only validation. If it takes longer, we assume
-    // something is wrong.
-    match tokio::time::timeout(Duration::from_secs(15), join).await {
-        Ok(Ok(v)) => Ok(v),
-        Ok(Err(e)) => Ok(CliValidation::err(format!("join error: {e}"))),
-        Err(_) => Ok(CliValidation::err("validation timeout")),
-    }
-}
-
-fn validate_sync(cli: &str, model: &str) -> CliValidation {
-    // (1) Binary in PATH. `which` is not portable; we use `<cli> --version`
-    // which exists in all 3 CLIs and returns quickly.
-    let version_check = Command::new(cli)
-        .arg("--version")
+    let mut cmd = TokioCommand::new(&cli_lower);
+    cmd.arg("--version")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status();
-    match version_check {
-        Ok(s) if s.success() => {}
-        Ok(s) => return CliValidation::err(format!("{cli} --version exit {s}")),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            return CliValidation::err(format!("{cli} not found in PATH"));
-        }
-        Err(e) => return CliValidation::err(format!("error invoking {cli}: {e}")),
-    }
+        .stderr(Stdio::piped())
+        .kill_on_drop(true);
 
-    // (2) Ping to the model. Each CLI has its own form; we use the same
-    // structure as in `loop_cli::invoke_*` but with the minimum prompt and
-    // ignored output.
-    let result = match cli {
-        "claude" => Command::new("claude")
-            .args(["-p", "ok", "--output-format", "json", "--model", model])
-            .stdin(Stdio::null())
-            .output(),
-        "codex" => Command::new("codex")
-            .args(["exec", "--model", model, "ok"])
-            .stdin(Stdio::null())
-            .output(),
-        "opencode" => Command::new("opencode")
-            .args(["run", "--format", "json", "--model", model, "ok"])
-            .stdin(Stdio::null())
-            .output(),
-        _ => return CliValidation::err("unsupported CLI"),
+    let child = match cmd.spawn() {
+        Ok(c) => c,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(CliValidation::err(format!("{cli_lower} not found in PATH")));
+        }
+        Err(e) => {
+            return Ok(CliValidation::err(format!(
+                "error invoking {cli_lower}: {e}"
+            )));
+        }
     };
 
-    match result {
-        Ok(out) if out.status.success() => CliValidation::ok(),
-        Ok(out) => {
+    match tokio::time::timeout(Duration::from_secs(10), child.wait_with_output()).await {
+        Ok(Ok(out)) if out.status.success() => Ok(CliValidation::ok()),
+        Ok(Ok(out)) => {
             let stderr = String::from_utf8_lossy(&out.stderr);
-            // Heuristic: if stderr mentions "model" we label it as a model
-            // problem. Otherwise, we pass the first line of stderr.
             let snippet = stderr.lines().next().unwrap_or("").trim();
-            if stderr.to_lowercase().contains("model") {
-                CliValidation::err(format!("model not available: {snippet}"))
-            } else {
-                CliValidation::err(format!("ping failed: {snippet}"))
-            }
+            Ok(CliValidation::err(format!(
+                "{cli_lower} --version exit {}: {snippet}",
+                out.status
+            )))
         }
-        Err(e) => CliValidation::err(format!("error pinging {cli}: {e}")),
+        Ok(Err(e)) => Ok(CliValidation::err(format!(
+            "error waiting on {cli_lower}: {e}"
+        ))),
+        Err(_) => Ok(CliValidation::err("validation timeout")),
     }
 }
 
@@ -1407,11 +1451,10 @@ fn validate_sync(cli: &str, model: &str) -> CliValidation {
 /// not atomic across filesystems — this version keeps everything in the
 /// destination dir.
 fn write_atomic(target: &Path, content: &str) -> Result<(), String> {
-    let parent = target.parent().ok_or_else(|| {
-        format!("path without parent dir: {target:?}")
-    })?;
-    std::fs::create_dir_all(parent)
-        .map_err(|e| format!("could not create {parent:?}: {e}"))?;
+    let parent = target
+        .parent()
+        .ok_or_else(|| format!("path without parent dir: {target:?}"))?;
+    std::fs::create_dir_all(parent).map_err(|e| format!("could not create {parent:?}: {e}"))?;
 
     let tmp = parent.join(format!(
         ".{}.tmp",
@@ -1507,11 +1550,7 @@ mod tests {
         let leftovers = std::fs::read_dir(tmp.path())
             .unwrap()
             .filter_map(|e| e.ok())
-            .filter(|e| {
-                e.file_name()
-                    .to_string_lossy()
-                    .starts_with('.')
-            })
+            .filter(|e| e.file_name().to_string_lossy().starts_with('.'))
             .count();
         assert_eq!(leftovers, 0);
     }

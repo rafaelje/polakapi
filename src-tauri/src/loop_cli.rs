@@ -111,9 +111,39 @@ pub async fn run_loop_agent(
     // kill the child, and the cancellation point is already inside
     // `run_command` where the `Child` lives.
     match cli_lower.as_str() {
-        "claude" => invoke_claude(&model, &cwd, system_prompt_path.as_deref(), &user_input, sid, timeout_dur).await,
-        "codex" => invoke_codex(&model, &cwd, system_prompt_path.as_deref(), &user_input, sid, timeout_dur).await,
-        "opencode" => invoke_opencode(&model, &cwd, system_prompt_path.as_deref(), &user_input, sid, timeout_dur).await,
+        "claude" => {
+            invoke_claude(
+                &model,
+                &cwd,
+                system_prompt_path.as_deref(),
+                &user_input,
+                sid,
+                timeout_dur,
+            )
+            .await
+        }
+        "codex" => {
+            invoke_codex(
+                &model,
+                &cwd,
+                system_prompt_path.as_deref(),
+                &user_input,
+                sid,
+                timeout_dur,
+            )
+            .await
+        }
+        "opencode" => {
+            invoke_opencode(
+                &model,
+                &cwd,
+                system_prompt_path.as_deref(),
+                &user_input,
+                sid,
+                timeout_dur,
+            )
+            .await
+        }
         other => Err(format!("unsupported CLI: {other}")),
     }
 }
@@ -152,8 +182,8 @@ async fn invoke_claude(
     } else if let Some(path) = system_prompt_path {
         // First turn with this session: we include the system prompt; future
         // resumes inherit it.
-        let content =
-            std::fs::read_to_string(path).map_err(|e| format!("could not read system prompt: {e}"))?;
+        let content = std::fs::read_to_string(path)
+            .map_err(|e| format!("could not read system prompt: {e}"))?;
         cmd.arg("--append-system-prompt").arg(content);
     }
 
@@ -591,12 +621,13 @@ async fn run_command(
         Ok(c) => c,
         Err(e) => {
             let elapsed_ms = started_at.elapsed().as_millis();
-            let io_result: std::io::Result<std::process::Output> = Err(std::io::Error::new(e.kind(), e.to_string()));
+            let io_result: std::io::Result<std::process::Output> =
+                Err(std::io::Error::new(e.kind(), e.to_string()));
             log_cli_invocation(cli_name, cwd, elapsed_ms, &io_result);
             return Err(match e.kind() {
-                std::io::ErrorKind::NotFound => format!(
-                    "CLI '{cli_name}' not found in PATH. Install it and reopen the app."
-                ),
+                std::io::ErrorKind::NotFound => {
+                    format!("CLI '{cli_name}' not found in PATH. Install it and reopen the app.")
+                }
                 _ => format!("error invoking {cli_name}: {e}"),
             });
         }
@@ -615,7 +646,8 @@ async fn run_command(
         }
         Ok(Err(e)) => {
             let elapsed_ms = started_at.elapsed().as_millis();
-            let io_result: std::io::Result<std::process::Output> = Err(std::io::Error::new(e.kind(), e.to_string()));
+            let io_result: std::io::Result<std::process::Output> =
+                Err(std::io::Error::new(e.kind(), e.to_string()));
             log_cli_invocation(cli_name, cwd, elapsed_ms, &io_result);
             Err(format!("error waiting on {cli_name}: {e}"))
         }
@@ -629,7 +661,10 @@ async fn run_command(
                 format!("timeout after {}s", timeout_dur.as_secs()),
             ));
             log_cli_invocation(cli_name, cwd, elapsed_ms, &io_result);
-            Err(format!("timeout after {}s invoking {cli_name}", timeout_dur.as_secs()))
+            Err(format!(
+                "timeout after {}s invoking {cli_name}",
+                timeout_dur.as_secs()
+            ))
         }
     }
 }

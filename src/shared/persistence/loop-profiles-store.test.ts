@@ -1,10 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type {
-  LoopProfile,
-  LoopProfileId,
-  LoopProfilesState,
-} from "../../modules/loop/state/types";
+import type { LoopProfile, LoopProfileId, LoopProfilesState } from "../../modules/loop/state/types";
 import { createDefaultMatrix } from "../../modules/loop/state/types";
 
 // Reusing the mock shape from the workspaces store — vi.hoisted doesn't play
@@ -114,8 +110,12 @@ describe("loop profiles store", () => {
   });
 
   it("round-trips create / rename / delete snapshots", async () => {
-    const { queueSaveLoopProfiles, flushSaveLoopProfiles, loadLoopProfiles, createEmptyLoopProfilesState } =
-      await freshModule();
+    const {
+      queueSaveLoopProfiles,
+      flushSaveLoopProfiles,
+      loadLoopProfiles,
+      createEmptyLoopProfilesState,
+    } = await freshModule();
 
     // create
     let state: LoopProfilesState = {

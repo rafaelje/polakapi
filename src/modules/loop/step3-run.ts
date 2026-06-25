@@ -137,8 +137,7 @@ export function mountStep3Run(slot: HTMLElement, ctx: Step3RunContext): Step3Run
       void (async () => {
         const ok = await confirmModal({
           title: "Abort the run?",
-          message:
-            "Generated outputs stay on disk for auditing, but the cycle stops.",
+          message: "Generated outputs stay on disk for auditing, but the cycle stops.",
           confirmLabel: "abort",
           cancelLabel: "cancel",
           danger: true,
@@ -159,8 +158,7 @@ export function mountStep3Run(slot: HTMLElement, ctx: Step3RunContext): Step3Run
     if (state.phases.length === 0) {
       const empty = document.createElement("p");
       empty.className = "loop-step3-run-empty";
-      empty.textContent =
-        "No phases to run — go back to Step 2 to decompose the problem.";
+      empty.textContent = "No phases to run — go back to Step 2 to decompose the problem.";
       wrap.appendChild(empty);
       return wrap;
     }
@@ -199,8 +197,7 @@ export function mountStep3Run(slot: HTMLElement, ctx: Step3RunContext): Step3Run
     if (state.phases.length === 0) {
       const empty = document.createElement("p");
       empty.className = "loop-step3-run-empty";
-      empty.textContent =
-        "No phases to run — go back to Step 2 to decompose the problem.";
+      empty.textContent = "No phases to run — go back to Step 2 to decompose the problem.";
       wrap.appendChild(empty);
       return wrap;
     }

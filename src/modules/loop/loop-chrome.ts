@@ -361,10 +361,7 @@ async function switchToRunView(
     // Without phases we cannot execute — we go back to setup and show a toast.
     // The validation in step3-setup already covers the happy-path case
     // (canExecute requires phases.length > 0), so this is a safeguard.
-    showToast(
-      "No phases to execute — go back to Step 2 to decompose the problem.",
-      "error",
-    );
+    showToast("No phases to execute — go back to Step 2 to decompose the problem.", "error");
     // Move the user out of step 4 (empty slot) back to setup.
     router.setStep(3);
     return;

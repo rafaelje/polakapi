@@ -31,12 +31,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { stringifyError } from "../../shared/errors";
 import { createListenerBag } from "./shared/listener-bag";
 import { buildRunPromptPath, defaultModelFor, LOOP_CLIS, type LoopCli } from "./state/types";
-import {
-  detectCycle,
-  phaseSlug,
-  slugToId,
-  topologicalBatches,
-} from "./step2-phases/graph";
+import { detectCycle, phaseSlug, slugToId, topologicalBatches } from "./step2-phases/graph";
 import {
   parseAgentPhasesJson,
   parsePhasesManifest,
@@ -401,9 +396,7 @@ export function mountStep2Phases(slot: HTMLElement, ctx: Step2Context): Step2Han
       // phase directories, since downstream the scheduler bails anyway.
       const cycle = detectCycle(phases);
       if (cycle) {
-        throw new Error(
-          `the agent returned a cyclic dependency graph: ${cycle.join(" → ")}`,
-        );
+        throw new Error(`the agent returned a cyclic dependency graph: ${cycle.join(" → ")}`);
       }
       await persistManifest(phases);
       for (const d of drafts) {
@@ -1177,9 +1170,7 @@ function render(
     advance.textContent = "→ Step 3";
     const canAdvance = total > 0 && ready === total && !state.busy;
     advance.disabled = !canAdvance;
-    advance.title = canAdvance
-      ? "Advance to the run setup"
-      : "All phases must have logic.md saved";
+    advance.title = canAdvance ? "Advance to the run setup" : "All phases must have logic.md saved";
     on(advance, "click", () => dispatch({ kind: "advance" }));
 
     f.append(info, advance);
@@ -1259,4 +1250,3 @@ function buildAiEditPrompt(
     `Return ONLY the complete content of the rewritten file. No code fences, no preamble.`,
   ].join("\n");
 }
-

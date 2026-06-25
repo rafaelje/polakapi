@@ -253,7 +253,7 @@ export function mountStep3Setup(slot: HTMLElement, ctx: Step3Context): Step3Hand
       }
       case "select-prompt":
         state.selectedPrompt = action.name;
-        loadPromptBufferIfNeeded(action.name);
+        void loadPromptBufferIfNeeded(action.name);
         refs.refresh();
         return;
       case "set-prompt-buffer":
@@ -271,7 +271,7 @@ export function mountStep3Setup(slot: HTMLElement, ctx: Step3Context): Step3Hand
         await promoteToGlobal(action.name);
         return;
       case "execute":
-        executeRun();
+        await executeRun();
         return;
     }
   }
@@ -352,15 +352,30 @@ export function mountStep3Setup(slot: HTMLElement, ctx: Step3Context): Step3Hand
     await flushSaveLoopProfiles();
   }
 
-  function loadPromptBufferIfNeeded(name: LoopPromptName): void {
+  async function loadPromptBufferIfNeeded(name: LoopPromptName): Promise<void> {
     if (state.promptBuffers.has(name)) return;
-    // Try to read the run override; if it doesn't exist, fall back to global.
-    // The run override for prompts lives at `<run>/prompts/<name>` —
-    // but `loop_read_run_file` doesn't expose the prompt files (restricted
-    // allowlist). Instead, we read directly from the global —
-    // run buffers aren't yet edited in step3 (Section 7 extends this if
-    // needed). In the meantime, the buffer starts equal to the global.
-    state.promptBuffers.set(name, state.globals.get(name) ?? "");
+    // Reserve the slot synchronously so concurrent calls don't all fire the
+    // tauri invoke. We'll overwrite with the disk content once it lands.
+    const fallback = state.globals.get(name) ?? "";
+    state.promptBuffers.set(name, fallback);
+    try {
+      const content = await invoke<string>("loop_read_run_prompt", {
+        projectPath: ctx.projectPath,
+        runId: ctx.runId,
+        name,
+      });
+      // Empty string means the file does not exist yet — keep the global as
+      // the buffer so first-time editors don't start from a blank slate.
+      if (content !== "") {
+        state.promptBuffers.set(name, content);
+        refs.refresh();
+      }
+    } catch (err) {
+      // The run dir should always be there at this point (loop_create_run runs
+      // before Step 3 mounts), so this is unexpected — surface it.
+      state.status = `could not read run prompt ${name}: ${stringifyError(err)}`;
+      refs.refresh();
+    }
   }
 
   async function promoteToGlobal(name: LoopPromptName): Promise<void> {
@@ -400,20 +415,43 @@ export function mountStep3Setup(slot: HTMLElement, ctx: Step3Context): Step3Hand
     await Promise.all(ALL_AGENT_ROLES.map((r) => validateSlot(r)));
   }
 
-  function executeRun(): void {
+  async function executeRun(): Promise<void> {
     if (!canExecute(state)) {
       state.status = "there are invalid slots — fix them before running";
       refs.refresh();
       return;
     }
+    // The scheduler reads `<run>/prompts/<name>` from disk for every agent
+    // invocation. Flush all inline edits to the run dir BEFORE handing off,
+    // otherwise the in-memory buffer is silently dropped (the old behavior
+    // built a `promptOverrides` map that nothing downstream consumed).
+    state.busy = true;
+    state.status = "persisting prompts…";
+    refs.refresh();
     const overrides: Partial<Record<LoopPromptName, string>> = {};
-    for (const name of LOOP_PROMPT_NAMES) {
-      const buf = state.promptBuffers.get(name);
-      const global = state.globals.get(name) ?? "";
-      if (buf !== undefined && buf !== global) {
-        overrides[name] = buf;
+    try {
+      for (const name of LOOP_PROMPT_NAMES) {
+        const buf = state.promptBuffers.get(name);
+        if (buf === undefined) continue;
+        await invoke<void>("loop_write_run_prompt", {
+          projectPath: ctx.projectPath,
+          runId: ctx.runId,
+          name,
+          content: buf,
+        });
+        const global = state.globals.get(name) ?? "";
+        if (buf !== global) overrides[name] = buf;
       }
+    } catch (err) {
+      state.busy = false;
+      state.status = `could not persist prompts: ${stringifyError(err)}`;
+      refs.refresh();
+      return;
     }
+    state.busy = false;
+    state.status = "";
+    refs.refresh();
+
     const config: RunConfig = {
       mode: effectiveMode(state),
       matrix: clone(state.matrix),

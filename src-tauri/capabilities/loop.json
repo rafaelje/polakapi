@@ -3,10 +3,5 @@
   "identifier": "loop",
   "description": "Capability for the floating /loop popup window. Lists plugin permissions for store/dialog/notification; custom commands such as run_loop_agent and the loop_* helpers reach this window via the global invoke_handler registration in lib.rs (matching the pattern used by the main window's default capability).",
   "windows": ["loop"],
-  "permissions": [
-    "core:default",
-    "store:default",
-    "dialog:default",
-    "notification:default"
-  ]
+  "permissions": ["core:default", "store:default", "dialog:default", "notification:default"]
 }

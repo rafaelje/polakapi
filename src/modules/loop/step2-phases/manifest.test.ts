@@ -25,7 +25,7 @@ describe("serializePhasesManifest / parsePhasesManifest", () => {
     const md = serializePhasesManifest(sample);
     expect(md).toMatch(/^# Run phases/);
     expect(md).toContain("```json\n");
-    expect(md).toContain("\"phases\":");
+    expect(md).toContain('"phases":');
   });
 
   it("parses an empty document as an empty list", () => {
@@ -134,7 +134,7 @@ describe("normalizePhase / normalizePhaseDraft", () => {
 
 describe("stripCodeFence", () => {
   it("strips a wrapping fence with a language tag", () => {
-    expect(stripCodeFence("```json\n{\"a\":1}\n```")).toBe("{\"a\":1}");
+    expect(stripCodeFence('```json\n{"a":1}\n```')).toBe('{"a":1}');
     expect(stripCodeFence("```js\nconst x = 1;\n```")).toBe("const x = 1;");
   });
 

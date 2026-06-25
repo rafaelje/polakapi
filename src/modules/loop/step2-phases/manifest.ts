@@ -53,7 +53,7 @@ export function parsePhasesManifest(content: string): Phase[] {
 export function parseAgentPhasesJson(text: string): PhaseDraft[] {
   const cleaned = stripCodeFence(text.trim());
   try {
-    const obj = JSON.parse(cleaned);
+    const obj: unknown = JSON.parse(cleaned);
     let list: unknown[] | null = null;
     if (Array.isArray(obj)) {
       list = obj;
@@ -62,7 +62,9 @@ export function parseAgentPhasesJson(text: string): PhaseDraft[] {
       if (Array.isArray(maybe)) list = maybe;
     }
     if (!list) return [];
-    return list.map((entry) => normalizePhaseDraft(entry)).filter((p): p is PhaseDraft => p !== null);
+    return list
+      .map((entry) => normalizePhaseDraft(entry))
+      .filter((p): p is PhaseDraft => p !== null);
   } catch {
     return [];
   }

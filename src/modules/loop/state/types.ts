@@ -26,12 +26,7 @@ export type LoopCli = "claude" | "codex" | "opencode";
  * and the names used in the setup sidebar. `integration` only runs in hybrid
  * mode (between batches).
  */
-export type LoopAgentRole =
-  | "analysis"
-  | "implementation"
-  | "review"
-  | "knowledge"
-  | "integration";
+export type LoopAgentRole = "analysis" | "implementation" | "review" | "knowledge" | "integration";
 
 /**
  * Individual slot for an agent in a profile: CLI + model. The backend
