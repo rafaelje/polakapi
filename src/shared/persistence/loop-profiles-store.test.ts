@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { LoopProfile, LoopProfileId, LoopProfilesState } from "../../modules/loop/state/types";
-import { createDefaultMatrix } from "../../modules/loop/state/types";
+import type { LoopProfile, LoopProfileId, LoopProfilesState } from "../../modules/loop/types";
+import { createDefaultMatrix } from "../../modules/loop/types";
 
 // Reusing the mock shape from the workspaces store — vi.hoisted doesn't play
 // well with vi.mock here; we replicate the pattern letter by letter. See

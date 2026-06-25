@@ -8,7 +8,7 @@ import {
   serializePhasesManifest,
   stripCodeFence,
 } from "./manifest";
-import type { Phase } from "../step2-phases";
+import type { Phase } from "./state";
 
 const sample: Phase[] = [
   { id: "01", name: "init", summary: "boot", dependsOn: [], hasVisual: false },

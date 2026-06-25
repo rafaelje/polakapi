@@ -1,6 +1,6 @@
 import { load, type Store } from "@tauri-apps/plugin-store";
 
-import type { LoopProfilesState } from "../../modules/loop/state/types";
+import type { LoopProfilesState } from "../../modules/loop/types";
 
 // Pattern replicated from `workspaces-store.ts`. Equivalent decisions:
 // - The store is a single JSON file (`profiles.json`), one `state` key,

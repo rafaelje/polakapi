@@ -8,7 +8,7 @@ import {
   parseDraftMarkdown,
   serializeDraftMarkdown,
 } from "./prompts";
-import type { ChatTurn } from "../step1-chat";
+import type { ChatTurn } from "./state";
 
 function turn(user: string, assistant = "", extra: Partial<ChatTurn> = {}): ChatTurn {
   return { user, assistant, pending: false, ...extra };

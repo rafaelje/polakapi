@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { detectCycle, phaseSlug, slugToId, topologicalBatches } from "./graph";
-import type { Phase } from "../step2-phases";
+import type { Phase } from "./state";
 
 function p(id: string, name: string, deps: string[] = [], hasVisual = false): Phase {
   return { id, name, summary: "", dependsOn: deps, hasVisual };

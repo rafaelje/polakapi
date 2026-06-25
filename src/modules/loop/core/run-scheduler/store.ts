@@ -1,15 +1,4 @@
-// Encapsulates the scheduler's live state: the canonical
-// `RunSchedulerState`, the listener set, and every primitive used to mutate
-// it. Mutations always go through `commit()` so subscribers see a consistent
-// snapshot, and the functional `*With` variants read the freshest `state`
-// at apply time — important under `Promise.all` in hybrid mode, where
-// multiple phases concurrently bump shared accumulators like `totals`
-// and `byAgent`.
-//
-// Lives in its own module so the scheduler class, the phase runner, and
-// the integrator runner can share it without circular imports.
-
-import type { LoopAgentRole } from "../types";
+import type { LoopAgentRole } from "../../types";
 
 import { createInitialState } from "./factories";
 import type {
@@ -35,15 +24,10 @@ export class StateStore {
     return () => this.listeners.delete(listener);
   }
 
-  /** Replaces the canonical state and fans the new snapshot out to listeners. */
   commit(next: RunSchedulerState): void {
     this.state = next;
     for (const l of this.listeners) l(next);
   }
-
-  // -------------------------------------------------------------------------
-  // Stage / phase / integrator patches
-  // -------------------------------------------------------------------------
 
   patchStage(phaseIndex: number, agent: SequentialAgent, patch: Partial<AgentStageState>): void {
     const phases = this.state.phases.slice();
@@ -61,12 +45,10 @@ export class StateStore {
   }
 
   /**
-   * Functional variant of `patchStage`: the patch is derived from the
-   * **current** stage value at commit time. Use this whenever the patch
-   * depends on the existing value (accumulators like tokens/cost) and the
-   * scheduler can have concurrent writers — hybrid mode runs `Promise.all`
-   * over batch phases, and a plain `patchStage({tokensIn: s.tokensIn + d})`
-   * captures `s` from a stale snapshot.
+   * Functional variant of `patchStage`: derives the patch from the current
+   * stage value at commit time. Required for accumulators (tokens/cost)
+   * under hybrid mode's `Promise.all` — a plain `patchStage` would capture
+   * a stale snapshot and lose concurrent deltas.
    */
   patchStageWith(
     phaseIndex: number,
@@ -105,8 +87,7 @@ export class StateStore {
   }
 
   /**
-   * Atomically adds a delta to `state.totals` and `state.byAgent[role]`.
-   * Reads `this.state` at apply time (NOT from a captured snapshot), so two
+   * Reads `this.state` at apply time (NOT from a captured snapshot) so two
    * parallel phases of the same batch both have their deltas survive.
    */
   addToTotals(role: LoopAgentRole, tokensIn: number, tokensOut: number, costUsd: number): void {

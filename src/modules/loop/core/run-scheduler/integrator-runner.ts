@@ -1,10 +1,5 @@
-// Runs the per-batch integrator (5th agent, hybrid-only) plus the
-// helpers it needs around conflict detection and re-running. Construction
-// mirrors `PhaseRunner`: every dependency comes in explicit so the runner
-// is straightforward to test.
-
 import { stringifyError } from "../../../../shared/errors";
-import { buildRunPromptPath, type AgentSlot, type LoopAgentRole } from "../types";
+import { buildRunPromptPath, type AgentSlot, type LoopAgentRole } from "../../types";
 
 import { batchIdFor, createEmptyStage } from "./factories";
 import { detectBatchConflicts, parseIntegrationVerdict, truncateForIntegrator } from "./helpers";
@@ -26,22 +21,6 @@ export type IntegratorOutcome = "done" | "conflict" | "error";
 export class IntegratorRunner {
   constructor(private readonly deps: IntegratorRunnerDeps) {}
 
-  /**
-   * Runs the integrator for the given batch. Steps:
-   *
-   *   1. Read all the `knowledge.md` + `implementation.diff` of the batch
-   *      phases. They are concatenated into the integrator's user input
-   *      (system prompt: `integration.md`).
-   *   2. Detect structural conflicts: paths touched by more than one
-   *      phase of the batch (we parse the diffs by their `diff --git`
-   *      headers).
-   *   3. Invoke `run_loop_agent` with the slot of the `integration` role.
-   *   4. Persist the output to `<run>/outputs/batches/batch-N/knowledge.md`.
-   *   5. Parse the integrator's final verdict
-   *      (`INTEGRATION: ok|blocker`). If it is `blocker` or there are
-   *      structural conflicts the agent did not explicitly waive, the
-   *      outcome is `conflict`. Otherwise, `done`.
-   */
   async runIntegrator(batchIndex: number, phaseIndices: number[]): Promise<IntegratorOutcome> {
     const { store, invokers, heartbeat, slotFor, persistState } = this.deps;
     const settings = store.getState().settings;
@@ -50,7 +29,6 @@ export class IntegratorRunner {
     store.patchIntegrator(batchIndex, { status: "running", message: undefined });
     store.commit({ ...store.getState(), currentStage: null });
 
-    // 1. Read outputs/diffs of the batch.
     const phasesOfBatch = phaseIndices
       .map((i) => store.getState().phases[i])
       .filter((p): p is PhaseState => Boolean(p));
@@ -89,7 +67,6 @@ export class IntegratorRunner {
       }),
     );
 
-    // 2. Structural conflict detection: paths touched by multiple phases.
     const conflictsByPath = detectBatchConflicts(
       reads.map(({ phase, implDiff }) => ({
         phaseSlug: phase.slug,
@@ -98,7 +75,6 @@ export class IntegratorRunner {
       })),
     );
 
-    // 3. Build user input for the integrator.
     const userInput = buildIntegratorPrompt(batchIndex, reads, conflictsByPath);
 
     const slot = slotFor("integration");
@@ -108,7 +84,6 @@ export class IntegratorRunner {
       "integration.md",
     );
 
-    // 4. Invoke the integrator. Heartbeat pulses during the run.
     let result: AgentResult;
     heartbeat.start();
     try {
@@ -139,10 +114,6 @@ export class IntegratorRunner {
       return "error";
     }
 
-    // 5. Accumulate integrator tokens/cost. Single-writer here
-    //    (integrator runs sequentially after `Promise.all` of the batch
-    //    phases), so a plain commit is safe — we use the shared
-    //    accumulator helpers for consistency.
     const tokensIn = result.tokensIn ?? 0;
     const tokensOut = result.tokensOut ?? 0;
     const costUsd = result.costUsd ?? 0;
@@ -154,7 +125,6 @@ export class IntegratorRunner {
     });
     store.addToTotals("integration", tokensIn, tokensOut, costUsd);
 
-    // 6. Persist output.
     try {
       await invokers.writeBatchFile({
         projectPath: settings.projectPath,
@@ -172,10 +142,9 @@ export class IntegratorRunner {
       return "error";
     }
 
-    // 7. Parse the verdict. If the agent marks blocker, conflict. If the
-    //    structural detector found conflicting paths and the agent did
-    //    not explicitly waive them with `INTEGRATION: ok`, treat as
-    //    conflict (conservative side).
+    // If the structural detector found conflicting paths and the agent
+    // did not explicitly waive them with `INTEGRATION: ok`, treat as
+    // conflict (conservative side).
     const verdict = parseIntegrationVerdict(result.text);
     const conflictPaths = conflictsByPath.map((c) => c.path);
     const isBlocker =
@@ -196,17 +165,13 @@ export class IntegratorRunner {
 
     store.patchIntegrator(batchIndex, {
       status: "done",
-      conflicts: conflictPaths, // info for the user even if it doesn't break
+      conflicts: conflictPaths,
       message: undefined,
     });
     await persistState();
     return "done";
   }
 
-  /**
-   * Resets the state of the batch phases to `pending` and clears their
-   * stages. Used when re-running after a conflict decision.
-   */
   resetBatchPhases(phaseIndices: number[]): void {
     const phases = this.deps.store.getState().phases.slice();
     for (const idx of phaseIndices) {

@@ -1,8 +1,3 @@
-// Tauri-backed implementation of `SchedulerInvokers`. Lives in its own
-// module so tests can avoid pulling `@tauri-apps/api/core` (which would
-// require a webview at import time) — they swap in their own invokers
-// instead.
-
 import { invoke } from "@tauri-apps/api/core";
 
 import type { AgentResult, SchedulerInvokers } from "./types";

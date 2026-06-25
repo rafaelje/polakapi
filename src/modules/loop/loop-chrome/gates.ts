@@ -1,8 +1,3 @@
-// Empty-state / error gates rendered by the chrome before any step mounts.
-// These three views — loading, "pick a project first", and "invalid path" —
-// are pure: they take a snapshot and return DOM. The chrome calls them when
-// the router emits a non-`active` state.
-
 export function renderLoading(): HTMLElement {
   const wrap = document.createElement("section");
   wrap.className = "loop-gate";
@@ -27,9 +22,6 @@ export function renderNoProjectGate(): HTMLElement {
   cta.type = "button";
   cta.className = "loop-btn loop-btn-primary";
   cta.textContent = "Open workspace";
-  // Focus the main window: the label "main" matches Tauri's root window by
-  // convention (the one opened by the app at startup). If it doesn't exist,
-  // there isn't much more we can do from here.
   cta.addEventListener("click", () => {
     void focusMainWindow();
   });

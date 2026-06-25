@@ -1,8 +1,3 @@
-// Step 3 setup view: pure renderer that turns `Step3State` into DOM and
-// dispatches `Step3Action`s back to the mount layer. No mount-state
-// closure — everything it needs travels through (slot, state, ctx,
-// dispatch).
-
 import { promptModal } from "../../../shared/ui/modal";
 
 import { createListenerBag } from "../shared/listener-bag";
@@ -14,8 +9,8 @@ import {
   defaultModelFor,
   promptBlurb,
   promptToRole,
-} from "../state/types";
-import type { LoopCli, LoopProfileId, LoopPromptName } from "../state/types";
+} from "../types";
+import type { LoopCli, LoopProfileId, LoopPromptName } from "../types";
 
 import { canExecute, countInvalidSlots, isPromptModified } from "./helpers";
 import type { Step3Action, Step3Context, Step3State, ViewRefs } from "./state";
@@ -41,15 +36,11 @@ export function renderView(
   }
 
   function refreshValidationsOnly(): void {
-    // Re-renders the sidebar (where validation badges are shown) and the
-    // footer row (where the ▶ button depends on validation). We avoid
-    // re-rendering the textarea to not lose the caret.
+    // Avoid re-rendering the textarea to preserve the caret.
     const sidebar = root.querySelector(".loop-step3-sidebar");
     if (sidebar) sidebar.replaceWith(renderSidebar());
     const footer = root.querySelector(".loop-step3-footer");
     if (footer) footer.replaceWith(renderFooter());
-    // The agent main panel also shows the CLI/model dropdowns with a red
-    // border when validation fails.
     const mainSlot = root.querySelector(".loop-step3-main-validation");
     if (mainSlot) mainSlot.replaceWith(renderMainValidationRow(state.selectedPrompt));
   }
@@ -58,10 +49,6 @@ export function renderView(
     listeners.dispose();
     slot.classList.remove("loop-step3");
   }
-
-  // -------------------------------------------------------------------------
-  // Top bar
-  // -------------------------------------------------------------------------
 
   function renderTopBar(): HTMLElement {
     const bar = document.createElement("div");
@@ -123,9 +110,6 @@ export function renderView(
     }
     wrap.append(lbl, group);
 
-    // "Parallel mode equivalent to sequential" detection — when all
-    // phases are in lanes of 1, hybrid degrades to sequential. We show it
-    // as a hint when the user chose hybrid.
     if (state.mode === "hybrid" && state.phases.length > 0) {
       const batches = topologicalBatches(state.phases);
       if (batches && batches.every((b) => b.length === 1)) {
@@ -205,10 +189,6 @@ export function renderView(
     return wrap;
   }
 
-  // -------------------------------------------------------------------------
-  // Body (sidebar + main)
-  // -------------------------------------------------------------------------
-
   function renderBody(): HTMLElement {
     const body = document.createElement("div");
     body.className = "loop-step3-body";
@@ -228,7 +208,6 @@ export function renderView(
     const list = document.createElement("ul");
     list.className = "loop-step3-prompt-list";
 
-    // Group: pre-phases (2)
     const preHeading = document.createElement("li");
     preHeading.className = "loop-step3-prompt-section";
     preHeading.textContent = "Pre-phases";
@@ -237,7 +216,6 @@ export function renderView(
       list.appendChild(renderPromptItem(name));
     }
 
-    // Group: agents (5)
     const agentHeading = document.createElement("li");
     agentHeading.className = "loop-step3-prompt-section";
     agentHeading.textContent = "Step 3 agents";
@@ -282,7 +260,6 @@ export function renderView(
 
     btn.appendChild(titleRow);
 
-    // Bottom line: CLI/model (only for agents) + validation tick.
     const role = promptToRole(name);
     if (role) {
       const meta = document.createElement("div");
@@ -325,10 +302,6 @@ export function renderView(
     return item;
   }
 
-  // -------------------------------------------------------------------------
-  // Main panel
-  // -------------------------------------------------------------------------
-
   function renderMain(): HTMLElement {
     const main = document.createElement("section");
     main.className = "loop-step3-main";
@@ -358,10 +331,6 @@ export function renderView(
     return wrap;
   }
 
-  /**
-   * CLI/model dropdowns + red mark if validation failed. For pre-phase
-   * prompts (which don't have an agent role) we show an explanatory note.
-   */
   function renderMainValidationRow(name: LoopPromptName): HTMLElement {
     const row = document.createElement("div");
     row.className = "loop-step3-main-validation";
@@ -400,9 +369,7 @@ export function renderView(
     }
     on(cliSel, "change", () => {
       const nextCli = cliSel.value as LoopCli;
-      // When the CLI changes, we reset the model to the default of the
-      // new CLI to avoid leaving `opus-4-7` pointing at codex (which
-      // doesn't know it).
+      // Reset the model to the new CLI's default to avoid pointing at a model the CLI doesn't know.
       const nextModel = slot.cli === nextCli ? slot.model : defaultModelFor(nextCli);
       dispatch({
         kind: "set-slot",
@@ -470,10 +437,6 @@ export function renderView(
     on(ta, "input", () => {
       dispatch({ kind: "set-prompt-buffer", name, value: ta.value });
     });
-    // Section 10.3 — Cmd+S promotes the current buffer to global. If
-    // there are no changes vs. global, the dispatch is a no-op
-    // (promote-to-global detects the case). We keep the event scoped to
-    // the textarea so it doesn't clash with other editors in the module.
     on(ta, "keydown", (e: KeyboardEvent) => {
       if (e.key === "s" && (e.metaKey || e.ctrlKey)) {
         e.preventDefault();
@@ -509,10 +472,6 @@ export function renderView(
     return bar;
   }
 
-  // -------------------------------------------------------------------------
-  // Footer
-  // -------------------------------------------------------------------------
-
   function renderFooter(): HTMLElement {
     const f = document.createElement("div");
     f.className = "loop-step3-footer";
@@ -520,7 +479,6 @@ export function renderView(
     const config = document.createElement("div");
     config.className = "loop-step3-config-row";
 
-    // max retries (read-only)
     const retriesWrap = document.createElement("label");
     retriesWrap.className = "loop-step3-config-field";
     const retriesLbl = document.createElement("span");
@@ -532,10 +490,9 @@ export function renderView(
     retriesInput.readOnly = true;
     retriesInput.disabled = true;
     retriesInput.className = "loop-step3-config-input loop-step3-config-input-readonly";
-    retriesInput.title = "design.md decision #4: fixed cap of 3 with propagated warning";
+    retriesInput.title = "fixed cap of 3 with propagated warning";
     retriesWrap.append(retriesLbl, retriesInput);
 
-    // on-fail (read-only)
     const onFailWrap = document.createElement("label");
     onFailWrap.className = "loop-step3-config-field";
     const onFailLbl = document.createElement("span");
@@ -547,7 +504,7 @@ export function renderView(
     onFailInput.readOnly = true;
     onFailInput.disabled = true;
     onFailInput.className = "loop-step3-config-input loop-step3-config-input-readonly";
-    onFailInput.title = "design.md decision #4: propagate warning to knowledge";
+    onFailInput.title = "propagate warning to knowledge";
     onFailWrap.append(onFailLbl, onFailInput);
 
     config.append(retriesWrap, onFailWrap);
@@ -571,10 +528,6 @@ export function renderView(
     f.append(config, exec);
     return f;
   }
-
-  // -------------------------------------------------------------------------
-  // Init
-  // -------------------------------------------------------------------------
 
   refresh();
 

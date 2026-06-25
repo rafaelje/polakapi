@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 
-import type { Phase } from "../step2-phases";
+import type { Phase } from "../../step2-phases";
 import {
   RunScheduler,
   buildAgentDiff,
@@ -9,8 +9,8 @@ import {
   parseIntegrationVerdict,
   type RunSettings,
   type SchedulerInvokers,
-} from "./run-scheduler";
-import { createDefaultMatrix, type LoopAgentRole } from "./types";
+} from ".";
+import { createDefaultMatrix, type LoopAgentRole } from "../../types";
 
 const baseSettings = (): RunSettings => ({
   projectPath: "/tmp/proj",

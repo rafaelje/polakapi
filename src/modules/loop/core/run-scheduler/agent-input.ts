@@ -1,11 +1,3 @@
-// Builds the user-input blob fed to each agent invocation.
-//
-// Pure function of `(state, settings, invokers, phaseIndex, agent, extras)`
-// — it reads files on disk via the invoker interface but does not mutate
-// scheduler state. Extracted from `RunScheduler` because the body is ~175
-// lines, every input it needs is already explicit, and isolating it makes
-// the test surface for the agent prompts much smaller.
-
 import { batchIdFor } from "./factories";
 import type { RunSchedulerState, RunSettings, SchedulerInvokers, SequentialAgent } from "./types";
 
@@ -13,15 +5,12 @@ export interface AgentInputContext {
   state: RunSchedulerState;
   settings: RunSettings;
   invokers: SchedulerInvokers;
-  /** Same impl as `RunScheduler.batchIndexForPhase`. */
   batchIndexForPhase: (slug: string) => number;
 }
 
 /**
- * Builds the user input passed to the agent. Each agent receives different
- * files as context. Reads are tolerant to "does not exist yet" (empty
- * read) — design decision #1 makes the contract file-based on disk, not
- * temporal-order based.
+ * Reads are tolerant to "does not exist yet" (empty read) — the contract
+ * between agents is file-based on disk, not temporal-order based.
  */
 export async function buildAgentInput(
   ctx: AgentInputContext,
@@ -33,16 +22,12 @@ export async function buildAgentInput(
   const phase = state.phases[phaseIndex];
   if (!phase) return "";
 
-  // In sequential mode, "previous phase" is phaseIndex - 1 (flattened
-  // topological order). In hybrid mode the same-batch phases run in
-  // parallel: we cannot read knowledge between phases of the same batch
-  // because it probably does not exist yet; instead we inject the
-  // consolidated knowledge of the previous batch (Section 8.6) below.
+  // Hybrid mode runs same-batch phases in parallel, so we cannot read
+  // knowledge between them — we inject the consolidated knowledge of the
+  // previous batch instead.
   const prevPhase =
     state.mode === "sequential" && phaseIndex > 0 ? state.phases[phaseIndex - 1] : null;
 
-  // Common inputs: phase logic.md + previous-phase knowledge.md
-  // (sequential) or previous-batch knowledge (hybrid).
   const batchIndex = batchIndexForPhase(phase.slug);
   const prevBatchKnowledgePromise =
     state.mode === "hybrid" && batchIndex > 0

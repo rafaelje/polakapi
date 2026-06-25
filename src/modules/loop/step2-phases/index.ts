@@ -1,47 +1,16 @@
-// Step 2 of the agentic flow: phase decomposition with inline editor.
-//
-// Overall design (aligned with design.md, decision #2 "parallel mode with
-// topological sort"):
-// - Step 2 takes `<run>/01-problem.md` and, via the agent with
-//   `phase-decomposition.md` as system prompt, receives a JSON with the list
-//   of phases. The JSON is validated and persisted as `02-phases.md` (a fence
-//   with the JSON; we use .md for consistency with the rest of the run, but
-//   the parseable content is the JSON inside the fence or the whole document
-//   if it is clean).
-// - Each phase has a subdir at `<run>/phases/<NN>-<slug>/` with `logic.md`
-//   (always) and optionally `visual.html` (when `hasVisual=true`).
-// - The UI: phase sidebar with badges and dependencies + main panel with
-//   tabs (logic.md / visual.html) + editable textarea + toolbar (save,
-//   "✨ edit with AI"). dependsOn editor as multi-select. Read-only topology
-//   view below the sidebar.
-//
-// Editor choice: styled textarea (NOT Monaco). Reasons:
-// 1. Monaco is not in deps (`package.json:25-44`); adding it would
-//    significantly increase the /loop bundle.
-// 2. Editing here is light markdown / simple HTML; a textarea with
-//    monospace + generous line height is enough for the step 2 scope.
-// 3. The AI editor (selection + instruction → applied diff) uses the
-//    standard DOM selection API — works in a textarea without extras.
-//
-// Follows the "imperative view with re-render via replaceChildren()"
-// pattern from step1-chat. Exposes `mountStep2Phases(slot, ctx)` with
-// `dispose()`. The renderer lives in `./step2-phases/view.ts`; this file
-// owns the state machine and the side effects (persistence, agent
-// invocation, FS operations).
-
 import { invoke } from "@tauri-apps/api/core";
 
-import { stringifyError } from "../../shared/errors";
+import { stringifyError } from "../../../shared/errors";
 
-import { buildRunPromptPath, defaultModelFor } from "./state/types";
-import { detectCycle, phaseSlug, slugToId, topologicalBatches } from "./step2-phases/graph";
+import { buildRunPromptPath, defaultModelFor } from "../types";
+import { detectCycle, phaseSlug, slugToId, topologicalBatches } from "./graph";
 import {
   parseAgentPhasesJson,
   parsePhasesManifest,
   serializePhasesManifest,
   stripCodeFence,
   type PhaseDraft,
-} from "./step2-phases/manifest";
+} from "./manifest";
 import type {
   FileTab,
   Phase,
@@ -50,12 +19,9 @@ import type {
   Step2Context,
   Step2State,
   ViewRefs,
-} from "./step2-phases/state";
-import { bufferKey, buildAiEditPrompt, renderView } from "./step2-phases/view";
+} from "./state";
+import { bufferKey, buildAiEditPrompt, renderView } from "./view";
 
-// Re-export the helpers, PhaseDraft, and the public types so existing
-// consumers (loop-chrome, step3-setup, run-scheduler) keep importing from
-// `./step2-phases`.
 export {
   detectCycle,
   parseAgentPhasesJson,
@@ -70,7 +36,6 @@ export interface Step2Handle {
   dispose(): void;
 }
 
-/** Normalized result from `run_loop_agent` (same shape as step1-chat). */
 interface AgentResult {
   text: string;
   tokensIn?: number | null;
@@ -79,10 +44,6 @@ interface AgentResult {
   sessionId?: string | null;
   error?: string | null;
 }
-
-// ---------------------------------------------------------------------------
-// Mount
-// ---------------------------------------------------------------------------
 
 export function mountStep2Phases(slot: HTMLElement, ctx: Step2Context): Step2Handle {
   const state: Step2State = {
@@ -102,8 +63,6 @@ export function mountStep2Phases(slot: HTMLElement, ctx: Step2Context): Step2Han
     void handleAction(action);
   });
 
-  // Bootstrap: read manifest from disk if it exists; otherwise stays empty
-  // until the user clicks "regenerate from 01-problem.md".
   void hydrate();
 
   async function hydrate(): Promise<void> {
@@ -121,7 +80,7 @@ export function mountStep2Phases(slot: HTMLElement, ctx: Step2Context): Step2Han
         }
       }
     } catch {
-      // No manifest yet — empty initial state.
+      // No manifest yet.
     }
     await refreshDiskStatus();
     refs.refresh();
@@ -135,7 +94,6 @@ export function mountStep2Phases(slot: HTMLElement, ctx: Step2Context): Step2Han
       });
       state.diskStatus = new Map(list.map((s) => [s.slug, s]));
     } catch {
-      // If phases/ does not exist, we treat it as empty.
       state.diskStatus = new Map();
     }
   }
@@ -163,8 +121,7 @@ export function mountStep2Phases(slot: HTMLElement, ctx: Step2Context): Step2Han
         const key = bufferKey(action.slug, action.tab);
         state.editorBuffers.set(key, action.value);
         state.dirty.add(key);
-        // No re-render — the textarea is DOM-controlled. We only update
-        // the "save" indicator via the manual refresh below.
+        // Textarea is DOM-controlled; avoid full re-render to keep caret.
         refs.refreshToolbarOnly();
         return;
       }
@@ -278,7 +235,6 @@ export function mountStep2Phases(slot: HTMLElement, ctx: Step2Context): Step2Han
       if (selection.length > 0 && selStart !== selEnd) {
         next = fullContent.slice(0, selStart) + replacement + fullContent.slice(selEnd);
       } else {
-        // No selection: replace the entire buffer.
         next = replacement;
       }
       state.editorBuffers.set(key, next);
@@ -342,8 +298,6 @@ export function mountStep2Phases(slot: HTMLElement, ctx: Step2Context): Step2Han
       if (drafts.length === 0) {
         throw new Error("the agent did not return parseable phases");
       }
-      // The manifest only persists the Phase shape (without the
-      // logic/visual content).
       const phases: Phase[] = drafts.map((d) => ({
         id: d.id,
         name: d.name,
@@ -351,10 +305,7 @@ export function mountStep2Phases(slot: HTMLElement, ctx: Step2Context): Step2Han
         dependsOn: d.dependsOn,
         hasVisual: d.hasVisual,
       }));
-      // The LLM occasionally proposes a cyclic graph (especially when it
-      // mixes "X depends on Y" with "Y references X"). Refuse early — we
-      // don't want a manifest with a cycle on disk or its accompanying
-      // phase directories, since downstream the scheduler bails anyway.
+      // Refuse cyclic graphs early — scheduler bails on them downstream.
       const cycle = detectCycle(phases);
       if (cycle) {
         throw new Error(`the agent returned a cyclic dependency graph: ${cycle.join(" → ")}`);
@@ -368,9 +319,6 @@ export function mountStep2Phases(slot: HTMLElement, ctx: Step2Context): Step2Han
           phaseSlug: slug,
           withVisual: d.hasVisual,
         });
-        // Write the content returned by the agent. If it came back empty,
-        // we leave the file blank (create_phase_dir already created it
-        // empty).
         if (d.logic && d.logic.trim()) {
           await invoke<void>("loop_write_phase_file", {
             projectPath: ctx.projectPath,
@@ -393,7 +341,6 @@ export function mountStep2Phases(slot: HTMLElement, ctx: Step2Context): Step2Han
       state.phases = phases;
       state.selectedSlug = phaseSlug(phases[0]);
       state.activeTab = "logic.md";
-      // Clear buffers; we reload them on demand.
       state.editorBuffers.clear();
       state.dirty.clear();
       await refreshDiskStatus();
@@ -463,7 +410,6 @@ export function mountStep2Phases(slot: HTMLElement, ctx: Step2Context): Step2Han
       state.status = `phase ${name} added`;
     } catch (err) {
       state.status = `error adding phase: ${stringifyError(err)}`;
-      // Roll back the phase from state if we could not persist
       state.phases = state.phases.slice(0, -1);
     } finally {
       state.busy = false;
@@ -472,7 +418,6 @@ export function mountStep2Phases(slot: HTMLElement, ctx: Step2Context): Step2Han
   }
 
   async function deletePhase(slug: string): Promise<void> {
-    // Look for dependents — if any, ask for confirmation.
     const dependents = state.phases.filter((p) => p.dependsOn.includes(slugToId(slug)));
     let warning = `Delete phase ${slug}?`;
     if (dependents.length > 0) {
@@ -490,8 +435,6 @@ export function mountStep2Phases(slot: HTMLElement, ctx: Step2Context): Step2Han
         phaseSlug: slug,
       });
       state.phases = state.phases.filter((p) => phaseSlug(p) !== slug);
-      // Delete buffers for that phase and clear selection if it was that
-      // one.
       for (const key of [...state.editorBuffers.keys()]) {
         if (key.startsWith(`${slug}:`)) {
           state.editorBuffers.delete(key);
@@ -516,8 +459,6 @@ export function mountStep2Phases(slot: HTMLElement, ctx: Step2Context): Step2Han
   function setDepends(slug: string, deps: string[]): void {
     const phase = state.phases.find((p) => phaseSlug(p) === slug);
     if (!phase) return;
-    // Validate cycles: if after applying the dep there is a cycle, show an
-    // error and do not persist. Validation runs against a copy.
     const proposed = state.phases.map((p) =>
       phaseSlug(p) === slug ? { ...p, dependsOn: deps } : p,
     );
@@ -529,7 +470,6 @@ export function mountStep2Phases(slot: HTMLElement, ctx: Step2Context): Step2Han
     }
     state.cycleError = null;
     state.phases = proposed;
-    // Persist manifest in the background — we do not block the UI.
     void invoke<void>("loop_write_run_file", {
       projectPath: ctx.projectPath,
       runId: ctx.runId,
@@ -542,7 +482,6 @@ export function mountStep2Phases(slot: HTMLElement, ctx: Step2Context): Step2Han
   }
 
   function advanceToStep3(): void {
-    // Validate: every phase has logic.md with content.
     const missing = state.phases.filter((p) => {
       const s = state.diskStatus.get(phaseSlug(p));
       return !s || !s.hasLogic;
@@ -558,9 +497,6 @@ export function mountStep2Phases(slot: HTMLElement, ctx: Step2Context): Step2Han
       refs.refresh();
       return;
     }
-    // The hybrid-mode scheduler computes batches via topological sort and
-    // refuses to run a cyclic graph; the sequential view ignores deps but
-    // we still gate here so users can't ship a broken graph either way.
     const cycle = detectCycle(state.phases);
     if (cycle) {
       state.status = `cycle detected in dependencies: ${cycle.join(" → ")}`;

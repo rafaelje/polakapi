@@ -1,24 +1,6 @@
-// Formal schema for `state.json` for persistence and resume (Section 9).
-//
-// The scheduler (`run-scheduler.ts`) serializes its state via `persistState()`
-// after every significant change (stage change, phase end, integrator end,
-// pause, abort, resolveConflict, etc). That file is the only source of truth
-// for resuming an interrupted run — when opening `/loop` on a project we scan
-// `<project>/.loop/runs/<id>/state.json` looking for those left in
-// `status: "running"` with a stale `lastHeartbeat`.
-//
-// Design:
-// - The shape matches 1:1 with `RunSchedulerState` exported by
-//   `run-scheduler.ts` to avoid mapping. The extra `schemaVersion` field goes
-//   in the top-level wrapper. If the internal shape changes in the future, we
-//   bump `schemaVersion` and add a migrator (same pattern as the workspaces
-//   store).
-// - `validateRunState(value)` is a runtime guard that returns a
-//   `PersistedRunState` or `null`. It does NOT throw — call sites treat
-//   `null` as "invalid data or old schema, discard".
-// - The validator is tolerant with optional fields (e.g. `message: string |
-//   null | undefined` is normalized to `null`), but strict with the structural
-//   shape (missing any of the 5 stages → null).
+// Persisted shape of `state.json`. Mirrors `RunSchedulerState` 1:1 to avoid a
+// mapping layer; future-incompatible changes bump `schemaVersion`. Validators
+// never throw — call sites treat `null` as "discard, start fresh".
 
 import type {
   AgentStageState,
@@ -32,19 +14,13 @@ import type {
   SchedulerMode,
   SequentialAgent,
 } from "./run-scheduler";
-import { LOOP_CLIS as LOOP_CLIS_LIST } from "./types";
-import type { AgentSlot, LoopAgentRole, LoopCli, LoopPromptName, ProfileMatrix } from "./types";
+import { LOOP_CLIS as LOOP_CLIS_LIST } from "../types";
+import type { AgentSlot, LoopAgentRole, LoopCli, LoopPromptName, ProfileMatrix } from "../types";
 
-/** Current version of the schema persisted in `state.json`. */
 export const STATE_SCHEMA_VERSION = 1 as const;
 
-/**
- * Top-level wrapper that persists the scheduler. Includes `schemaVersion` to
- * enable future migrations without breaking existing resumes.
- */
 export interface PersistedRunState {
   schemaVersion: typeof STATE_SCHEMA_VERSION;
-  /** Full snapshot of the scheduler — same keys as `RunSchedulerState`. */
   status: RunStatus;
   mode: SchedulerMode;
   phases: PhaseState[];
@@ -60,14 +36,6 @@ export interface PersistedRunState {
   settings: RunSettings | null;
 }
 
-// ---------------------------------------------------------------------------
-// Serialization
-// ---------------------------------------------------------------------------
-
-/**
- * Builds the persistable payload from the scheduler state. Only adds
- * `schemaVersion`; everything else passes through as-is (the shapes match).
- */
 export function buildPersistedRunState(state: RunSchedulerState): PersistedRunState {
   return {
     schemaVersion: STATE_SCHEMA_VERSION,
@@ -86,10 +54,6 @@ export function buildPersistedRunState(state: RunSchedulerState): PersistedRunSt
     settings: state.settings,
   };
 }
-
-// ---------------------------------------------------------------------------
-// Validator (runtime guard)
-// ---------------------------------------------------------------------------
 
 const RUN_STATUSES: ReadonlySet<RunStatus> = new Set([
   "idle",
@@ -308,15 +272,8 @@ function validateByAgent(
   return out as Record<LoopAgentRole, { tokensIn: number; tokensOut: number; costUsd: number }>;
 }
 
-/**
- * Validates and parses a `state.json` payload. Returns `null` if:
- *  - the JSON is invalid,
- *  - the `schemaVersion` does not match,
- *  - any critical section of the shape breaks the contract (e.g. missing stages).
- *
- * The frontend treats this as "unrecoverable state, discard and let the user
- * start a fresh run".
- */
+// Returns `null` on invalid JSON, schemaVersion mismatch, or any structural
+// contract violation (e.g. missing stages).
 export function validateRunState(value: unknown): PersistedRunState | null {
   if (!isObj(value)) return null;
   if (value.schemaVersion !== STATE_SCHEMA_VERSION) return null;
@@ -385,10 +342,6 @@ export function validateRunState(value: unknown): PersistedRunState | null {
   };
 }
 
-/**
- * Parses a raw JSON string from disk and applies `validateRunState`. Returns
- * `null` if the JSON is invalid OR if the structure does not match.
- */
 export function parsePersistedRunState(raw: string): PersistedRunState | null {
   if (!raw || !raw.trim()) return null;
   let parsed: unknown;

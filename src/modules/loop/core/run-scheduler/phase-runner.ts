@@ -1,16 +1,10 @@
-// Runs the per-phase pipeline (analysis → implementation → review →
-// knowledge) against a `StateStore`. Owns no state of its own — every
-// invocation goes through the store, the heartbeat controller, and the
-// persistence queue passed at construction. The scheduler tells it when
-// to stop via the `shouldStop` callback.
-
 import { stringifyError } from "../../../../shared/errors";
 import {
   buildRunPromptPath,
   type AgentSlot,
   type LoopAgentRole,
   type LoopPromptName,
-} from "../types";
+} from "../../types";
 
 import { buildAgentInput, type AgentInputContext } from "./agent-input";
 import { SEQUENTIAL_AGENTS } from "./factories";
@@ -24,11 +18,8 @@ export interface PhaseRunnerDeps {
   invokers: SchedulerInvokers;
   heartbeat: HeartbeatController;
   shouldStop: () => boolean;
-  /** Slot lookup for the given agent role (from the run matrix). */
   slotFor: (agent: LoopAgentRole) => AgentSlot;
-  /** Returns the batch index a phase belongs to (-1 in sequential mode). */
   batchIndexForPhase: (slug: string) => number;
-  /** Schedules a `state.json` persistence write through the shared queue. */
   persistState: () => Promise<void>;
 }
 
@@ -36,12 +27,10 @@ export class PhaseRunner {
   constructor(private readonly deps: PhaseRunnerDeps) {}
 
   /**
-   * Runs the 4 stages for a phase in order. On resume we skip stages that
-   * already reached a terminal state (`done` / `warning`) — re-running
-   * them would burn tokens and could overwrite valid outputs with worse
-   * ones. `rewindRunningStages` downgrades `running → pending`, so
-   * everything `done`/`warning` here is a real completed substage from a
-   * prior attempt.
+   * On resume we skip stages that already reached `done`/`warning` —
+   * re-running them would burn tokens and could overwrite valid outputs
+   * with worse ones. `rewindRunningStages` downgrades `running → pending`
+   * before hydration, so everything terminal here is from a real prior run.
    */
   async runPhase(index: number): Promise<void> {
     const { store, shouldStop } = this.deps;
@@ -61,8 +50,6 @@ export class PhaseRunner {
       } else {
         await this.runStage(index, agent);
       }
-      // If the stage ended in fatal error, stop the cycle and leave the
-      // run in `error`. The user can inspect and eventually resume.
       const stage = store.getState().phases[index].stages[agent];
       if (stage.status === "error") {
         store.commit({
@@ -74,8 +61,6 @@ export class PhaseRunner {
       }
     }
 
-    // Aggregate the global phase status. If any stage ended in warning,
-    // the phase is warning.
     const stages = store.getState().phases[index].stages;
     const anyWarning =
       stages.analysis.status === "warning" ||
@@ -89,10 +74,9 @@ export class PhaseRunner {
   }
 
   /**
-   * Reviewer loop with retry cap. Each retry redoes implementation +
-   * review until the reviewer approves or we hit the cap. At the cap, we
-   * mark the phase as `warning` (reviewerExhausted=true) and move on to
-   * knowledge — design decision #4.
+   * Each retry redoes implementation + review until the reviewer approves
+   * or we hit the cap. At the cap, we mark the phase as `warning`
+   * (reviewerExhausted=true) and continue to knowledge.
    */
   private async runReviewLoop(phaseIndex: number): Promise<void> {
     const { store, shouldStop } = this.deps;
@@ -104,32 +88,24 @@ export class PhaseRunner {
       attempt += 1;
       store.patchStage(phaseIndex, "review", { retries: attempt });
       const verdict = await this.runStage(phaseIndex, "review");
-      // For `review`, runStage returns { approved, notes } or null (error).
-      // The `undefined` only applies to non-review stages — defensive.
       if (!verdict) {
-        // Fatal reviewer error (we did not get to parse the verdict).
         return;
       }
       if (verdict.approved) {
         store.patchStage(phaseIndex, "review", { status: "done" });
         return;
       }
-      // Verdict = retry. If attempts remain, re-run implementation with
-      // the reviewer notes as additional input.
       if (attempt < settings.maxRetries) {
         if (shouldStop()) return;
         await this.runStage(phaseIndex, "implementation", { reviewNotes: verdict.notes });
-        // If the retry implementation failed (CLI error / timeout), bail
-        // out of the loop — running review against a broken or stale
-        // output would be pointless. `runPhase` will see the `error`
-        // status and surface it as a fatal error for the phase.
+        // Bail if the retry implementation failed — running review against
+        // a broken or stale output would be pointless.
         const implStage = store.getState().phases[phaseIndex]?.stages.implementation;
         if (implStage?.status === "error") {
           return;
         }
       }
     }
-    // Cap reached without approval.
     store.patchPhase(phaseIndex, { reviewerExhausted: true });
     store.patchStage(phaseIndex, "review", {
       status: "warning",
@@ -138,19 +114,9 @@ export class PhaseRunner {
   }
 
   /**
-   * Executes an individual pipeline stage. Encapsulates:
-   *   1. diff snapshot before
-   *   2. build the agent's user input
-   *   3. invoke `run_loop_agent` (with the heartbeat pulsing)
-   *   4. accumulate tokens/cost atomically
-   *   5. persist `<phase>/<agent>.md`
-   *   6. persist `<phase>/<agent>.diff` (with one retry on failure)
-   *   7. mark `done` (non-reviewer) or return the parsed verdict
-   *
-   * Returns for `review` an object `{ approved, notes }` extracted from
-   * the CLI verdict; for the others it returns undefined. `null` is
-   * reserved for fatal errors that already set the stage's status to
-   * `error`.
+   * For `review`, returns `{ approved, notes }`; for other stages, returns
+   * `undefined`. `null` signals a fatal error that has already set the
+   * stage's status to `error`.
    */
   private async runStage(
     phaseIndex: number,
@@ -166,15 +132,10 @@ export class PhaseRunner {
     store.updateCurrentStage(agent);
     store.patchStage(phaseIndex, agent, { status: "running", message: undefined });
 
-    // 1. Diff snapshot before the agent. If it fails, not fatal — we
-    //    store an empty string and move on.
     const diffBefore = await invokers
       .gitDiffSnapshot({ projectPath: settings.projectPath })
       .catch(() => "");
 
-    // 2. Build the agent's user input. System prompt goes by path;
-    //    specific inputs (logic.md, knowledge from the previous phase,
-    //    etc.) travel in the body.
     const inputCtx: AgentInputContext = {
       state: store.getState(),
       settings,
@@ -190,7 +151,6 @@ export class PhaseRunner {
       `${agent}.md` as LoopPromptName,
     );
 
-    // 3. Invoke with heartbeat pulsing.
     const result = await this.invokeAgent({
       cli: slot.cli,
       model: slot.model,
@@ -210,7 +170,6 @@ export class PhaseRunner {
     }
     const text = result.text;
 
-    // 4. Accumulate tokens/cost via functional patches — see store.ts.
     const tokensIn = result.tokensIn ?? 0;
     const tokensOut = result.tokensOut ?? 0;
     const costUsd = result.costUsd ?? 0;
@@ -221,7 +180,6 @@ export class PhaseRunner {
     }));
     store.addToTotals(agent, tokensIn, tokensOut, costUsd);
 
-    // 5. Persist md output.
     try {
       await invokers.writeOutput({
         projectPath: settings.projectPath,
@@ -240,7 +198,6 @@ export class PhaseRunner {
       return null;
     }
 
-    // 6. Snapshot the diff afterwards.
     const diffAfter = await invokers
       .gitDiffSnapshot({ projectPath: settings.projectPath })
       .catch(() => "");
@@ -277,26 +234,19 @@ export class PhaseRunner {
       }
     }
 
-    // 7. If not reviewer, mark done and persist state.
     if (agent !== "review") {
       store.patchStage(phaseIndex, agent, { status: "done" });
       await persistState();
       return undefined;
     }
 
-    // Reviewer: parse the verdict and return it to the loop. `done` is
-    // set by `runReviewLoop` to reflect the cap correctly.
+    // Reviewer: parse and return. `done` is set by `runReviewLoop` so the
+    // retry cap can be reflected correctly.
     const parsed = parseReviewVerdict(text);
     await persistState();
     return parsed;
   }
 
-  /**
-   * Wraps the `runAgent` invocation with the heartbeat ref-count and a
-   * uniform error envelope. The phase runner uses this; the integrator
-   * runner re-implements the same shape (with its own state field) to
-   * keep their persistence semantics independent.
-   */
   private async invokeAgent(args: {
     cli: string;
     model: string;

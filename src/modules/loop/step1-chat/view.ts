@@ -1,8 +1,5 @@
-// Step 1 chat view: pure renderer that turns `Step1State` into DOM and
-// dispatches `ChatAction`s back to the mount layer.
-
 import { createListenerBag } from "../shared/listener-bag";
-import { LOOP_CLIS, type LoopCli } from "../state/types";
+import { LOOP_CLIS, type LoopCli } from "../types";
 
 import type { ChatAction, ChatTurn, RunSummary, Step1Context, Step1State, ViewRefs } from "./state";
 
@@ -12,8 +9,8 @@ export function renderView(
   ctx: Step1Context,
   dispatch: (action: ChatAction) => void | Promise<void>,
 ): ViewRefs {
-  // The chrome's slot comes with `display: flex; align-items: center` for
-  // the placeholders. Switch to a vertical full-height layout for the chat.
+  // The chrome's slot uses `display: flex; align-items: center` for
+  // placeholders; override to a vertical full-height layout for the chat.
   slot.classList.add("loop-step1");
 
   const root = document.createElement("div");
@@ -71,8 +68,6 @@ export function renderView(
     const ul = document.createElement("ul");
     ul.className = "loop-step1-picker-list";
     for (const run of list) {
-      // Skip the current run — no sense in "adopting" the one you're
-      // already using.
       if (run.runId === ctx.runId) continue;
       ul.append(renderPickerItem(run));
     }
@@ -111,9 +106,7 @@ export function renderView(
 
     main.append(preview, meta);
     on(main, "click", () => {
-      // Pick the destination step based on which files exist in the run:
-      // if phases are already generated → straight to step 3 (setup), if
-      // there is a consolidated file → step 2, if there's only a draft → step 1.
+      // Jump to the furthest step whose inputs are already on disk.
       const step: 1 | 2 | 3 = run.hasPhases ? 3 : run.hasConsolidated ? 2 : 1;
       void dispatch({ kind: "adopt-run", runId: run.runId, step });
     });
@@ -202,8 +195,7 @@ export function renderView(
     for (const turn of state.turns) {
       list.append(renderTurn(turn));
     }
-    // Autoscroll to the bottom when turns are added. Deferred to the next
-    // frame so the DOM is laid out before measuring.
+    // Defer to next frame so layout has settled before measuring scrollHeight.
     requestAnimationFrame(() => {
       list.scrollTop = list.scrollHeight;
     });
@@ -235,8 +227,7 @@ export function renderView(
       agentText.classList.add("loop-step1-msg-pending");
       agentText.textContent = "thinking…";
     } else if (turn.error) {
-      // If there was an error, show whatever we have (if anything) plus
-      // an error note below. This lets the user see partial responses.
+      // Show partial output (if any) above the error note.
       if (turn.assistant) {
         agentText.textContent = turn.assistant;
       } else {
@@ -274,7 +265,6 @@ export function renderView(
     const composer = document.createElement("div");
     composer.className = "loop-step1-composer";
 
-    // Top row: CLI selector, info, consolidate button
     const toolbar = document.createElement("div");
     toolbar.className = "loop-step1-toolbar";
 
@@ -319,7 +309,6 @@ export function renderView(
 
     toolbar.append(cliWrap, spacer, consolidate);
 
-    // Consolidation error message, if any
     let errEl: HTMLElement | null = null;
     if (state.consolidateError) {
       errEl = document.createElement("p");
@@ -327,7 +316,6 @@ export function renderView(
       errEl.textContent = `error consolidating: ${state.consolidateError}`;
     }
 
-    // Bottom row: textarea + "send" button
     const inputRow = document.createElement("form");
     inputRow.className = "loop-step1-input-row";
     inputRow.setAttribute("aria-label", "send message");
@@ -344,11 +332,10 @@ export function renderView(
       void dispatch({ kind: "set-input", value: textarea.value });
     });
     on(textarea, "keydown", (e: KeyboardEvent) => {
-      // Cmd+Enter / Ctrl+Enter sends. Section 10.3 may unify shortcuts.
       if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
         e.preventDefault();
-        // Persist the latest textarea value before submit (in case the
-        // "input" event didn't fire due to an IME race).
+        // Capture the latest textarea value in case the "input" event
+        // didn't fire (IME race).
         state.inputDraft = textarea.value;
         void dispatch({ kind: "send" });
       }
@@ -365,8 +352,7 @@ export function renderView(
       state.inputDraft = textarea.value;
       void dispatch({ kind: "send" });
     });
-    // Enable/disable the button while typing without re-rendering the
-    // root.
+    // Toggle the button while typing without re-rendering the root.
     on(textarea, "input", () => {
       send.disabled = inFlight || textarea.value.trim().length === 0;
     });
@@ -380,9 +366,7 @@ export function renderView(
     return composer;
   }
 
-  // Initial render
   refresh();
-  // Suppress unused-variable warnings: `ctx` is closed over via dispatch.
   void ctx;
 
   return { refresh, cleanup };

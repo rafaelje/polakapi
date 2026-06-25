@@ -1,28 +1,13 @@
-// Section 9.5 — "interrupted run detected · resume?" banner.
-//
-// Responsibilities:
-// - Probing the FS for interrupted runs (`probeForInterruptedRun`).
-// - Rendering the banner DOM (`renderResumeBanner`).
-// - Idempotently inserting/updating/removing it across re-renders
-//   (`reconcileResumeBanner`).
-// - Wiring its buttons to the action handler the chrome registers via
-//   `setResumeActionHandler`.
-
 import {
   listInterruptedRuns,
   loadInterruptedRunDetails,
   type InterruptedRunDetails,
-} from "../state/resume-detector";
+} from "../core/resume-detector";
 
 import { shortRunId } from "./header";
 import type { ResumeAction, ResumeProbe } from "./types";
 
-/**
- * Module-scoped handler for the banner buttons. Set in `mountLoopChrome`
- * via `setResumeActionHandler` and referenced from `bindResumeBannerHandlers`.
- * We keep a single global handler because there is only one chrome instance
- * per window.
- */
+// Single module-scoped handler — there is only one chrome instance per window.
 let resumeActionHandler: ((action: ResumeAction) => Promise<void>) | null = null;
 
 export function setResumeActionHandler(
@@ -31,17 +16,8 @@ export function setResumeActionHandler(
   resumeActionHandler = handler;
 }
 
-/**
- * Section 9.4 — scans the project looking for an interrupted run and, if it
- * finds one, loads its state.json to validate it. Returns the first
- * resumable run (typically there is only one; if there are more, the banner
- * shows the most recent — the backend list already comes sorted by
- * heartbeat desc).
- *
- * If state.json is corrupt, we try the next one. If none passes validation,
- * we return null and the banner doesn't appear — the user sees the normal
- * flow of step 1.
- */
+// Returns the first resumable run; the backend list comes sorted by heartbeat
+// desc, so this is the most recent. If state.json is corrupt we try the next.
 export async function probeForInterruptedRun(
   projectPath: string,
 ): Promise<InterruptedRunDetails | null> {
@@ -61,7 +37,6 @@ function renderResumeBanner(details: InterruptedRunDetails): HTMLElement {
   const banner = document.createElement("section");
   banner.className = "loop-resume-banner";
   banner.dataset.runId = details.summary.runId;
-  // Section 10.6 — a11y. The banner is a passive notification (live region).
   banner.setAttribute("role", "region");
   banner.setAttribute("aria-label", "interrupted run detected");
   banner.setAttribute("aria-live", "polite");
@@ -115,19 +90,13 @@ function renderResumeBanner(details: InterruptedRunDetails): HTMLElement {
   dismiss.setAttribute("aria-label", "hide resume banner");
   dismiss.dataset.resumeAction = "dismiss";
 
-  // The handlers are set in `reconcileResumeBanner` after inserting the
-  // banner into the DOM — this way we avoid capturing stale refs of
-  // MountedStep if the chrome re-renders.
+  // Handlers wired in `reconcileResumeBanner` after insertion to avoid
+  // capturing stale MountedStep refs across re-renders.
   actions.append(resume, archive, dismiss);
   banner.append(icon, body, actions);
   return banner;
 }
 
-/**
- * Inserts/updates/removes the resume banner at the start of the shell
- * (after the header). Centralizes the decision so that both the fast-path
- * (sameSlot) and the full-render apply it the same way.
- */
 export function reconcileResumeBanner(shell: Element, resumeProbe: ResumeProbe | null): void {
   const existing = shell.querySelector<HTMLElement>(".loop-resume-banner");
   if (!resumeProbe?.pending) {
@@ -136,15 +105,13 @@ export function reconcileResumeBanner(shell: Element, resumeProbe: ResumeProbe |
   }
   const details = resumeProbe.pending;
   if (existing && existing.dataset.runId === details.summary.runId) {
-    // Banner is already up to date; we reconnect handlers in case the
-    // previous render cleared the closure.
+    // Reconnect handlers in case the previous render cleared the closure.
     bindResumeBannerHandlers(existing);
     return;
   }
   const banner = renderResumeBanner(details);
   if (existing) existing.replaceWith(banner);
   else {
-    // Insert after the header (first child).
     const header = shell.querySelector(".loop-header");
     if (header && header.nextSibling) {
       shell.insertBefore(banner, header.nextSibling);
@@ -164,7 +131,7 @@ function bindResumeBannerHandlers(banner: HTMLElement): void {
     if (!action) continue;
     btn.onclick = () => {
       if (!resumeActionHandler) return;
-      // Block the button while the action runs to avoid double clicks.
+      // Disable all buttons while the action runs to prevent double clicks.
       const all = banner.querySelectorAll<HTMLButtonElement>("button");
       for (const b of all) b.disabled = true;
       void resumeActionHandler(action).finally(() => {

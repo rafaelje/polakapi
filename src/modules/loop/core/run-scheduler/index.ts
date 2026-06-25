@@ -1,36 +1,9 @@
-// Step 3 engine: scheduler that orchestrates the per-phase pipeline.
-//
-// Overall design (aligned with design.md decision #1 "contract via files on
-// disk" and #4 "reviewer cap at 3"):
-//
-// - The run consists of N phases (from `02-phases.md`).
-//   - In `sequential` mode we process them in the topological order
-//     returned by `topologicalBatches` — flattened to a linear list
-//     because each phase has its deps satisfied by the time its turn
-//     comes.
-//   - In `hybrid` mode we process them in batches: each batch runs its
-//     phases in parallel (`Promise.all`), and between batches the
-//     integrator agent (5th agent) runs, consolidating knowledge and
-//     detecting FS conflicts. If the integrator marks a blocker or the
-//     scheduler detects paths touched by multiple phases, the run pauses
-//     waiting for a user decision (continue / re-run / abort).
-//
-// - Per-phase pipeline: analysis → implementation → review (≤ 3 tries)
-//   → knowledge. Each step's mechanics live in `phase-runner.ts`.
-//
-// - The class below is a thin orchestrator: it owns lifecycle (start /
-//   pause / abort / resolveConflict / hydrate), the main cycle dispatch
-//   (sequential vs hybrid), and the shared components (`StateStore`,
-//   `HeartbeatController`, `PersistenceQueue`, `PhaseRunner`,
-//   `IntegratorRunner`). All bulky mechanics (state mutation, agent
-//   invocation, integrator) live in the sibling modules.
+import { stringifyError } from "../../../../shared/errors";
 
-import { stringifyError } from "../../../shared/errors";
-
-import { topologicalBatches, type Phase } from "../step2-phases";
-import { buildPersistedRunState, type PersistedRunState } from "./state-schema";
-import { ALL_AGENT_ROLES } from "./types";
-import type { AgentSlot, LoopAgentRole } from "./types";
+import { topologicalBatches, type Phase } from "../../step2-phases";
+import { buildPersistedRunState, type PersistedRunState } from "../state-schema";
+import { ALL_AGENT_ROLES } from "../../types";
+import type { AgentSlot, LoopAgentRole } from "../../types";
 
 import {
   SEQUENTIAL_AGENTS,
@@ -40,19 +13,19 @@ import {
   createPhaseState,
   phaseToSlug,
   sequentialPhaseOrder,
-} from "./run-scheduler/factories";
+} from "./factories";
 import {
   buildAgentDiff,
   detectBatchConflicts,
   parseIntegrationVerdict,
   parseReviewVerdict,
-} from "./run-scheduler/helpers";
-import { HeartbeatController } from "./run-scheduler/heartbeat";
-import { IntegratorRunner } from "./run-scheduler/integrator-runner";
-import { PersistenceQueue } from "./run-scheduler/persistence";
-import { PhaseRunner } from "./run-scheduler/phase-runner";
-import { StateStore } from "./run-scheduler/store";
-import { defaultInvokers } from "./run-scheduler/invokers";
+} from "./helpers";
+import { HeartbeatController } from "./heartbeat";
+import { IntegratorRunner } from "./integrator-runner";
+import { PersistenceQueue } from "./persistence";
+import { PhaseRunner } from "./phase-runner";
+import { StateStore } from "./store";
+import { defaultInvokers } from "./invokers";
 import type {
   AgentResult,
   AgentStageState,
@@ -69,11 +42,8 @@ import type {
   SchedulerInvokers,
   SchedulerMode,
   SequentialAgent,
-} from "./run-scheduler/types";
+} from "./types";
 
-// Public re-exports kept stable for the rest of the app and the tests —
-// consumers import from "./run-scheduler" without caring about the
-// internal modules under `./run-scheduler/*`.
 export {
   ALL_AGENT_ROLES,
   SEQUENTIAL_AGENTS,
@@ -116,20 +86,9 @@ export class RunScheduler {
   private readonly phaseRunner: PhaseRunner;
   private readonly integratorRunner: IntegratorRunner;
 
-  /**
-   * Internal flags that the main cycle checks between stages. They don't
-   * kill subprocesses already in progress — the current agent finishes
-   * before we yield.
-   */
   private pauseRequested = false;
   private abortRequested = false;
-  /** Promise of the main cycle — for external await. */
   private cycle: Promise<void> | null = null;
-  /**
-   * The user resolves a conflict reported by the integrator via
-   * `resolveConflict()`. While there is no active conflict this stays
-   * null; `awaitConflictDecision` sets it.
-   */
   private conflictResolver: ((decision: ConflictDecision) => void) | null = null;
 
   constructor(invokers: SchedulerInvokers = defaultInvokers) {
@@ -149,10 +108,6 @@ export class RunScheduler {
     this.integratorRunner = new IntegratorRunner(sharedDeps);
   }
 
-  // -------------------------------------------------------------------------
-  // Public API
-  // -------------------------------------------------------------------------
-
   getState(): RunSchedulerState {
     return this.store.getState();
   }
@@ -161,17 +116,6 @@ export class RunScheduler {
     return this.store.on(listener);
   }
 
-  /**
-   * Initializes the scheduler with an ordered set of phases + settings,
-   * without starting execution. Useful for showing the initial view with
-   * everything `pending`.
-   *
-   * In `"hybrid"` mode:
-   * - We compute batches with `topologicalBatches` (Kahn).
-   * - Each batch generates its entry in `state.integrators`.
-   * - Phases are ordered by batch (preserving the internal Kahn order) so
-   *   that `currentPhaseIndex` still makes sense in the flat view.
-   */
   initialize(phases: Phase[], settings: RunSettings, mode: SchedulerMode = "sequential"): void {
     const batchesByPhase = topologicalBatches(phases);
     if (!batchesByPhase) {
@@ -206,10 +150,6 @@ export class RunScheduler {
     });
   }
 
-  /**
-   * Starts the main scheduler cycle. Resolves when the run ends
-   * (completed/aborted/error/paused).
-   */
   async start(): Promise<void> {
     const state = this.store.getState();
     if (state.status === "running") return;
@@ -234,10 +174,6 @@ export class RunScheduler {
     await this.cycle;
   }
 
-  /**
-   * Requests a cooperative pause. The current agent finishes; before the
-   * next one the scheduler checks the flag and stops.
-   */
   pause(): void {
     if (this.store.getState().status !== "running") return;
     this.pauseRequested = true;
@@ -247,11 +183,6 @@ export class RunScheduler {
     });
   }
 
-  /**
-   * Aborts the run. Same behavior as pause regarding the current agent,
-   * but upon stopping the status remains `aborted` and it cannot be
-   * resumed without a new `start()`.
-   */
   abort(): void {
     const status = this.store.getState().status;
     if (status !== "running" && status !== "paused") return;
@@ -261,8 +192,6 @@ export class RunScheduler {
       ...this.store.getState(),
       message: "abort requested — current agent will finish",
     });
-    // If we are waiting on a conflict decision, unblock the await with
-    // "abort" so the main cycle can exit.
     if (this.conflictResolver) {
       const resolver = this.conflictResolver;
       this.conflictResolver = null;
@@ -270,10 +199,6 @@ export class RunScheduler {
     }
   }
 
-  /**
-   * The user resolves a conflict reported by the integrator. No-op if
-   * there is no active conflict (status !== "paused" by integrator).
-   */
   resolveConflict(decision: ConflictDecision): void {
     if (!this.conflictResolver) return;
     const resolver = this.conflictResolver;
@@ -282,15 +207,9 @@ export class RunScheduler {
   }
 
   /**
-   * Hydrates the scheduler from a previously validated
-   * `PersistedRunState` (see `state-schema.ts::validateRunState`). It
-   * does NOT start the cycle; the caller decides whether to resume it
-   * with `start()` or leave it for the user to review first.
-   *
-   * Restriction: the caller must have discarded partial outputs before
-   * calling (Section 9.6 discards `.md`s without `.diff` companion).
-   * The scheduler does not inspect the FS — it only restores the state
-   * machine.
+   * Restores the scheduler state machine. Does NOT start the cycle. The
+   * caller must have discarded partial outputs (`.md` without `.diff`
+   * companion) before hydrating — this method does not inspect the FS.
    */
   hydrateFromPersisted(persisted: PersistedRunState): void {
     this.heartbeat.reset();
@@ -314,10 +233,6 @@ export class RunScheduler {
     });
   }
 
-  // -------------------------------------------------------------------------
-  // Main cycle
-  // -------------------------------------------------------------------------
-
   private async runCycle(): Promise<void> {
     if (this.store.getState().mode === "hybrid") {
       await this.runHybridCycle();
@@ -337,17 +252,6 @@ export class RunScheduler {
     await this.persistState();
   }
 
-  /**
-   * Hybrid-mode cycle. For each batch:
-   *   1. Launch all phases of the batch in parallel.
-   *   2. Wait for them to finish (ok, warning, or error).
-   *   3. Detect FS conflicts via diff overlap.
-   *   4. Run the integrator over the batch outputs.
-   *   5. If conflict, pause until the user decides.
-   *
-   * The consolidated knowledge of batch N becomes available to the
-   * phases of batch N+1 via `buildAgentInput` reading it from disk.
-   */
   private async runHybridCycle(): Promise<void> {
     let batchIndex = Math.max(0, this.store.getState().currentBatchIndex);
     while (batchIndex < this.store.getState().batches.length) {
@@ -366,8 +270,6 @@ export class RunScheduler {
       await Promise.all(phaseIndices.map((idx) => this.phaseRunner.runPhase(idx)));
 
       if (this.shouldStop()) break;
-      // If any batch phase ended in fatal `error`, don't run the
-      // integrator and leave the run in error.
       const anyError = phaseIndices.some((i) => this.store.getState().phases[i].status === "error");
       if (anyError || this.store.getState().status === "error") {
         break;
@@ -400,7 +302,6 @@ export class RunScheduler {
           this.store.commit({ ...this.store.getState(), status: "running", message: null });
           continue;
         }
-        // decision === "continue": treat the integrator as done and advance.
         this.store.patchIntegrator(batchIndex, {
           status: "done",
           message: "conflicts accepted by the user — the flow continues",
@@ -414,14 +315,9 @@ export class RunScheduler {
     await this.persistState();
   }
 
-  /**
-   * Closing of the main cycle (common to sequential/hybrid). Decides the
-   * run's final status based on pending flags.
-   */
   private finalizeCycle(): void {
-    // Hard reset: every paired start/stop should have balanced out by
-    // now, but `finalizeCycle()` is also reached on abort/error mid-stage
-    // with pending refs.
+    // Hard reset: `finalizeCycle()` can be reached on abort/error mid-stage
+    // with pending heartbeat refs that the paired stops never balanced.
     this.heartbeat.reset();
     if (this.abortRequested) {
       this.store.commit({ ...this.store.getState(), status: "aborted", currentStage: null });
@@ -434,11 +330,6 @@ export class RunScheduler {
     }
   }
 
-  /**
-   * Pauses the cycle until the user decides via `resolveConflict`. In
-   * the meantime the global status is "paused" and listeners can refresh
-   * the view with the integrator card in "conflict" state.
-   */
   private awaitConflictDecision(batchIndex: number): Promise<ConflictDecision> {
     this.store.commit({
       ...this.store.getState(),
@@ -450,13 +341,8 @@ export class RunScheduler {
     });
   }
 
-  // -------------------------------------------------------------------------
-  // Persistence + cooperative-stop check
-  // -------------------------------------------------------------------------
-
   /**
-   * Persists `state.json` through the shared queue. We update
-   * `lastHeartbeat` synchronously so any concurrent reader sees a fresh
+   * Updates `lastHeartbeat` synchronously so concurrent readers see a fresh
    * in-memory value before the disk write enqueues.
    */
   private async persistState(): Promise<void> {
@@ -475,11 +361,8 @@ export class RunScheduler {
   }
 
   private shouldStop(): boolean {
-    // A fatal `error` ends the cycle the same way pause/abort do —
-    // without it, `runSequentialCycle` would keep iterating to the next
-    // phase even after `runPhase` flagged a fatal stage. `finalizeCycle`
-    // preserves the `error` status as long as no abort/pause was
-    // requested in between.
+    // A fatal `error` ends the cycle the same way pause/abort do — without
+    // it, `runSequentialCycle` would keep iterating past a fatal stage.
     return this.pauseRequested || this.abortRequested || this.store.getState().status === "error";
   }
 
@@ -489,10 +372,6 @@ export class RunScheduler {
     return matrix[agent];
   }
 
-  /**
-   * Returns the batch index a phase belongs to. -1 if the phase is not
-   * in any batch (sequential mode or slug not listed).
-   */
   private batchIndexForPhase(slug: string): number {
     const state = this.store.getState();
     if (state.mode !== "hybrid") return -1;

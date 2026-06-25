@@ -1,29 +1,20 @@
-// Pure manifest helpers extracted from step2-phases.ts: parse / serialize the
-// `02-phases.md` manifest and normalize raw agent JSON into Phase / PhaseDraft.
-
-import type { Phase } from "../step2-phases";
+import type { Phase } from "./state";
 
 /**
- * Phase draft just returned by the agent — extends Phase with the initial
- * content of logic.md and, optionally, visual.html. We separate it from the
- * canonical Phase because the manifest (02-phases.md) does NOT persist the
- * content — that lives in logic.md / visual.html on disk.
+ * Agent's initial output — extends Phase with the initial content of
+ * logic.md / visual.html. The manifest does not persist this content; it
+ * lives on disk in the phase files.
  */
 export interface PhaseDraft extends Phase {
   logic?: string;
   visual?: string;
 }
 
-/** Serializes the manifest as pretty-printed JSON inside a ```json fence. */
 export function serializePhasesManifest(phases: Phase[]): string {
   const body = JSON.stringify({ phases }, null, 2);
   return `# Run phases\n\n\`\`\`json\n${body}\n\`\`\`\n`;
 }
 
-/**
- * Inverse parser of the manifest. Tolerant: extracts the first ```json fence
- * from the document, or parses the whole content if it looks like pure JSON.
- */
 export function parsePhasesManifest(content: string): Phase[] {
   const trimmed = content.trim();
   if (!trimmed) return [];
@@ -45,11 +36,6 @@ export function parsePhasesManifest(content: string): Phase[] {
   }
 }
 
-/**
- * Parses the step 2 agent's output. The prompt asks for strict JSON, but
- * some CLIs wrap it in fences or add preambles — we are tolerant. Returns
- * `PhaseDraft[]` with the extra `logic`/`visual` fields the agent produces.
- */
 export function parseAgentPhasesJson(text: string): PhaseDraft[] {
   const cleaned = stripCodeFence(text.trim());
   try {
@@ -98,7 +84,6 @@ export function normalizePhaseDraft(raw: unknown): PhaseDraft | null {
   return { id, name, summary, dependsOn, hasVisual, logic, visual };
 }
 
-/** Strips a wrapping ```...``` fence if present; useful for LLM outputs. */
 export function stripCodeFence(s: string): string {
   const m = s.match(/^```(?:[a-zA-Z]*)\n([\s\S]*?)\n```$/);
   return m ? m[1] : s;

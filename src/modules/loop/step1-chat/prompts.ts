@@ -1,20 +1,11 @@
-// Pure helpers for step 1 (problem intake): history serialization, prompt
-// builders for the one-shot and consolidate calls, the draft markdown
-// round-trip, and the session-error heuristic. Extracted from step1-chat.ts
-// so they can be reasoned about and tested independently of the DOM/IO shell.
-
-import type { ChatTurn } from "../step1-chat";
+import type { ChatTurn } from "./state";
 
 /**
- * Builds the one-shot prompt sent to the CLI on each turn. Includes prior
- * turns as textual history, in order, with the current user message at the
- * end. The system prompt (with the "intake" mode instructions) is passed by
- * `run_loop_agent` via `--append-system-prompt`.
- *
- * Format is designed to be easy to read as a single string — the CLIs don't
- * need ChatML structure; they treat everything as a user prompt and generate
- * the agent's response. The explicit headers help the model understand the
- * role of each block.
+ * One-shot prompt for the bootstrap call: serializes prior turns as text
+ * followed by the current user message. The CLIs treat the whole payload as
+ * a single user prompt; the explicit `## User` / `## Agent` headers cue the
+ * model on roles. The system prompt is delivered separately via
+ * `--append-system-prompt`.
  */
 export function buildHistoryPrompt(history: ChatTurn[], currentUser: string): string {
   const parts: string[] = [];
@@ -35,9 +26,9 @@ export function buildHistoryPrompt(history: ChatTurn[], currentUser: string): st
 }
 
 /**
- * Final prompt to consolidate the problem into a structured `01-problem.md`.
- * Explicitly asks for the expected format so the output is directly
- * persistable without further parsing.
+ * Final prompt that consolidates the conversation into a structured
+ * `01-problem.md`. The expected layout is inlined so the response can be
+ * persisted without further parsing.
  */
 export function buildConsolidatePrompt(history: ChatTurn[]): string {
   const parts: string[] = [];
@@ -53,9 +44,9 @@ export function buildConsolidatePrompt(history: ChatTurn[]): string {
 }
 
 /**
- * Pure consolidation instruction without the history. Used when the CLI
- * already has the conversation loaded in session (`--resume` / `exec resume`
- * / `--session`).
+ * Consolidation instruction without history. Used when the CLI already has
+ * the conversation loaded in session (`--resume` / `exec resume` /
+ * `--session`).
  */
 export function buildConsolidateInstruction(): string {
   return (
@@ -69,9 +60,9 @@ export function buildConsolidateInstruction(): string {
 }
 
 /**
- * Heuristic to detect error messages that indicate an invalid or expired
- * session. In that case we clear the local session id to force a fresh
- * bootstrap (with serialized history) on the next turn.
+ * Heuristic for "session invalid/expired" errors. On a match the caller
+ * drops the cached session id so the next turn bootstraps with full
+ * serialized history.
  */
 export function looksLikeSessionError(message: string): boolean {
   const lower = message.toLowerCase();
@@ -85,7 +76,6 @@ export function looksLikeSessionError(message: string): boolean {
   );
 }
 
-/** Serializes the turns to a readable Markdown for `01-problem-draft.md`. */
 export function serializeDraftMarkdown(turns: ChatTurn[]): string {
   const parts: string[] = ["# Problem draft (auto-save)\n"];
   for (let i = 0; i < turns.length; i++) {
@@ -103,12 +93,9 @@ export function serializeDraftMarkdown(turns: ChatTurn[]): string {
 }
 
 /**
- * Inverse draft parser. Lenient: if the format doesn't match exactly (e.g.
- * the user edited it by hand), we return whatever we could extract. If
- * nothing is parseable, we return an empty list.
- *
- * Section 9 (resume) may replace this with a stricter schema based on
- * `state.json`; for now the simple round-trip is enough.
+ * Lenient inverse of `serializeDraftMarkdown`: returns whatever it can
+ * extract if the user edited the file by hand; empty list when nothing is
+ * parseable.
  */
 export function parseDraftMarkdown(content: string): ChatTurn[] {
   const turns: ChatTurn[] = [];

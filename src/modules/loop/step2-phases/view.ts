@@ -1,13 +1,8 @@
-// Step 2 view: pure renderer that turns `Step2State` into DOM and dispatches
-// `Step2Action`s back to the mount layer. No closure-captured state from
-// the mount function — everything it needs travels through `(slot, state,
-// ctx, dispatch)`.
-
 import { invoke } from "@tauri-apps/api/core";
 
 import { stringifyError } from "../../../shared/errors";
 import { createListenerBag } from "../shared/listener-bag";
-import { LOOP_CLIS, type LoopCli } from "../state/types";
+import { LOOP_CLIS, type LoopCli } from "../types";
 
 import { phaseSlug, topologicalBatches } from "./graph";
 import { serializePhasesManifest } from "./manifest";
@@ -37,8 +32,7 @@ export function renderView(
   }
 
   function refreshToolbarOnly(): void {
-    // Only refresh the toolbar (save button) without losing the textarea
-    // caret. Find the toolbar and replace it.
+    // Avoid full re-render so the textarea caret isn't lost.
     const old = root.querySelector(".loop-step2-toolbar");
     if (old && old.parentElement) {
       const updated = renderEditorToolbar();
@@ -50,10 +44,6 @@ export function renderView(
     listeners.dispose();
     slot.classList.remove("loop-step2");
   }
-
-  // -------------------------------------------------------------------------
-  // Header
-  // -------------------------------------------------------------------------
 
   function renderHeader(): HTMLElement {
     const wrap = document.createElement("div");
@@ -122,10 +112,6 @@ export function renderView(
     wrap.append(title, right);
     return wrap;
   }
-
-  // -------------------------------------------------------------------------
-  // Body (sidebar + main + topology)
-  // -------------------------------------------------------------------------
 
   function renderBody(): HTMLElement {
     const body = document.createElement("div");
@@ -284,10 +270,6 @@ export function renderView(
     return panel;
   }
 
-  // -------------------------------------------------------------------------
-  // Main panel (tabs + editor + toolbar + deps editor)
-  // -------------------------------------------------------------------------
-
   function renderMain(): HTMLElement {
     const main = document.createElement("section");
     main.className = "loop-step2-main";
@@ -342,10 +324,7 @@ export function renderView(
       note.textContent = "+ visual.html";
       note.title = "Mark the phase as visual and add visual.html";
       on(note, "click", () => {
-        // Mark the phase as visual and create the file. Persist immediately.
-        // We mutate `state.phases` here intentionally — the action set
-        // doesn't model this transition and the view layer is the only
-        // place that knows the current visual flag must flip.
+        // View mutates state.phases directly: this transition isn't modeled in the action set.
         void (async (): Promise<void> => {
           const updated = state.phases.map((p) =>
             phaseSlug(p) === slug ? { ...p, hasVisual: true } : p,
@@ -515,10 +494,6 @@ export function renderView(
     return wrap;
   }
 
-  // -------------------------------------------------------------------------
-  // Footer: advance to step 3
-  // -------------------------------------------------------------------------
-
   function renderFooter(): HTMLElement {
     const f = document.createElement("div");
     f.className = "loop-step2-footer";
@@ -550,10 +525,6 @@ export function renderView(
     return f;
   }
 
-  // -------------------------------------------------------------------------
-  // Init
-  // -------------------------------------------------------------------------
-
   refresh();
   void ctx;
 
@@ -569,11 +540,6 @@ export function bufferKey(slug: string, tab: FileTab): string {
   return `${slug}:${tab}`;
 }
 
-/**
- * One-shot prompt for "edit with AI". If there is a selection, ask it to
- * return a replacement for that selection. Otherwise, ask for the full
- * document rewritten.
- */
 export function buildAiEditPrompt(
   full: string,
   selection: string,

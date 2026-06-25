@@ -1,15 +1,9 @@
-// Pure parsing / formatting helpers used by the scheduler. Extracted so
-// they can be unit-tested without spinning up the class and to keep the
-// state-machine file focused on control flow.
-
 import type { BatchConflict } from "./types";
 
 /**
- * Parser for the reviewer verdict. The system prompt (`review.md`) asks
- * the agent to return `VERDICT: approved | retry` on the first line. We
- * tolerate uppercase and dashes — and if we don't find the header, we
- * assume `retry` with the full text as notes (better a false retry than
- * a false approved).
+ * Parses the reviewer verdict header (`VERDICT: approved | retry`). Falls
+ * back to `retry` with the full text as notes when the header is missing —
+ * better a false retry than a false approval.
  */
 export function parseReviewVerdict(text: string): { approved: boolean; notes: string } {
   const lines = text.split(/\r?\n/);
@@ -18,7 +12,6 @@ export function parseReviewVerdict(text: string): { approved: boolean; notes: st
     if (m) {
       const v = m[1].toLowerCase();
       const approved = v === "approved" || v === "aprobado" || v === "ok";
-      // Notes: everything that comes after the header.
       const idx = text.indexOf(line);
       const notes = text.slice(idx + line.length).trim();
       return { approved, notes: approved ? "" : notes };
@@ -27,14 +20,6 @@ export function parseReviewVerdict(text: string): { approved: boolean; notes: st
   return { approved: false, notes: text.trim() };
 }
 
-/**
- * Combines the "before" and "after" snapshots into a single legible blob.
- * To keep the .diff file useful without making it unmanageable, we store
- * the "after" diff (which already includes the agent's changes relative
- * to HEAD) and a header with the date. The "before" is preserved as a
- * leading comment for auditing — if the user sees an agent overwriting
- * prior work, it will show up there.
- */
 export function buildAgentDiff(diffBefore: string, diffAfter: string): string {
   const stamp = new Date().toISOString();
   const parts: string[] = [];
@@ -55,16 +40,9 @@ export function buildAgentDiff(diffBefore: string, diffAfter: string): string {
 }
 
 /**
- * Section 8.4 · structural conflict detection between phases of the same
- * batch. Parses the `diff --git a/<path> b/<path>` headers (canonical git
- * diff format). If two or more phases touch the same path, we report it.
- *
- * Not bulletproof — an agent could have written a file via shell without
- * git registering it (new untracked), but our snapshot includes untracked
- * as `# - <path>` lines on the side (see `git_diff_sync` in Rust). We
- * consume those too.
- *
- * Returns an ordered list of `{ path, phases[] }` with conflicting paths.
+ * Detects paths touched by more than one phase of the same batch. Parses
+ * canonical `diff --git a/<path> b/<path>` headers plus our snapshot's
+ * `# - <path>` lines for untracked files (see `git_diff_sync` in Rust).
  */
 export function detectBatchConflicts(
   diffs: Array<{ phaseSlug: string; phaseName: string; diff: string }>,
@@ -79,9 +57,8 @@ export function detectBatchConflicts(
     let m: RegExpExecArray | null;
     headerRe.lastIndex = 0;
     while ((m = headerRe.exec(diff)) !== null) {
-      // a/b refer to the same path on in-place changes; renames use a!=b.
-      // We report both sides so a rename gets flagged against any phase
-      // that touches either the original or the new path.
+      // Renames use a!=b; report both sides so a rename gets flagged
+      // against any phase that touches either the original or the new path.
       const a = m[1].trim();
       const b = m[2].trim();
       if (a) seen.add(a);
@@ -113,11 +90,9 @@ export function detectBatchConflicts(
 }
 
 /**
- * Section 8.3 · parsing of the integrator verdict. The `integration.md`
- * prompt asks to close with `INTEGRATION: ok` or `INTEGRATION: blocker`.
- * We tolerate uppercase/whitespace. If the header is missing, we assume
- * `ok` to avoid false blocks (the structural detector will still stop us
- * if there's a real conflict).
+ * Parses the integrator verdict (`INTEGRATION: ok | blocker`). Falls back
+ * to `ok` when the header is missing — the structural detector will still
+ * catch a real conflict.
  */
 export function parseIntegrationVerdict(text: string): { status: "ok" | "blocker" } {
   const lines = text.split(/\r?\n/);
@@ -132,11 +107,6 @@ export function parseIntegrationVerdict(text: string): { status: "ok" | "blocker
   return { status: "ok" };
 }
 
-/**
- * Truncates a long blob for the integrator input. Keeps the first and
- * last N lines + a placeholder in the middle. Prevents a large diff or
- * implementation md from consuming the entire context window.
- */
 export function truncateForIntegrator(text: string, maxLines = 200): string {
   const lines = text.split(/\r?\n/);
   if (lines.length <= maxLines) return text;

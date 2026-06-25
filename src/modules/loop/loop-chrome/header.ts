@@ -1,10 +1,6 @@
-// Persistent chrome header: project + run-id on the left, chevron-shaped step
-// breadcrumb in the middle, "abandon run" on the right. The step pills are
-// click-to-navigate; if a scheduler is running we confirm before aborting it.
-
 import { confirmModal } from "../../../shared/ui/modal";
 
-import type { LoopRouter, LoopRouterState, LoopStep } from "../state/run-context";
+import type { LoopRouter, LoopRouterState, LoopStep } from "../core/run-context";
 import type { MountedStep } from "./types";
 
 export function renderHeader(
@@ -15,7 +11,6 @@ export function renderHeader(
   const header = document.createElement("header");
   header.className = "loop-header";
 
-  // Left block: project + run-id
   const left = document.createElement("div");
   left.className = "loop-header-left";
 
@@ -30,17 +25,12 @@ export function renderHeader(
 
   const runLabel = document.createElement("span");
   runLabel.className = "loop-header-run";
-  // Short run-id (8 chars of the UUID) in the chrome; the full id remains
-  // accessible via `title` for copy-paste when debugging a run.
+  // Full id stays in `title` for copy-paste when debugging.
   runLabel.textContent = `run ${shortRunId(state.runId)}`;
   runLabel.title = state.runId;
 
   left.append(projectName, sep1, runLabel);
 
-  // Middle block: step indicator (navigable). Each pill is a button that
-  // changes the current step via the router. If a scheduler is running and
-  // the user jumps to another step, we ask for confirmation because we
-  // abort it.
   const steps = document.createElement("nav");
   steps.className = "loop-header-steps";
   steps.setAttribute("aria-label", "run steps");
@@ -48,8 +38,8 @@ export function renderHeader(
     prev?.scheduler != null &&
     (prev.scheduler.getState().status === "running" ||
       prev.scheduler.getState().status === "paused");
-  // Pill 4 is only enabled if there is a live scheduler (the user only
-  // accesses step 4 via "▶ run" or by resuming an interrupted run).
+  // Step 4 is only reachable via "▶ run" or resume — pill stays disabled
+  // until a scheduler is live.
   const hasScheduler = prev?.scheduler != null;
   for (const step of [1, 2, 3, 4] as const) {
     const isCurrent = step === state.step;
@@ -74,7 +64,6 @@ export function renderHeader(
     );
   }
 
-  // Right block: abandon
   const right = document.createElement("div");
   right.className = "loop-header-right";
   const abandon = document.createElement("button");
@@ -82,9 +71,6 @@ export function renderHeader(
   abandon.className = "loop-btn loop-btn-ghost";
   abandon.textContent = "abandon run";
   abandon.setAttribute("aria-label", "abandon current run");
-  // Modal confirmation before discarding progress. The message adapts its
-  // tone depending on whether there is a run in progress (live scheduler)
-  // or only an empty run.
   abandon.addEventListener("click", () => {
     void (async () => {
       const live = schedulerLive;
@@ -98,9 +84,8 @@ export function renderHeader(
         danger: true,
       });
       if (!ok) return;
-      // The router will pick up the new runId on its next refresh, but
-      // first we abort the scheduler if any. The chrome's main file
-      // persists the last state.json with status="aborted".
+      // Abort first so the chrome can persist state.json with status="aborted"
+      // before the router refresh assigns a new runId.
       if (prev?.scheduler) prev.scheduler.abort();
       router.abandonRun();
     })();
@@ -177,14 +162,9 @@ export function renderStepSlot(step: LoopStep): HTMLElement {
   slot.className = "loop-step-slot";
   slot.id = "loop-step-slot";
   slot.dataset.step = `${step}`;
-  // Empty slot; steps 1–4 mount their content on top replacing the
-  // children. If for some reason nobody mounts anything (inconsistent
-  // state), the slot stays empty without confusing debug text.
   return slot;
 }
 
 export function shortRunId(id: string): string {
-  // UUID v4: `xxxxxxxx-xxxx-...` — the first 8 chars give virtually zero
-  // collision for the simultaneous runs the user will handle.
   return id.split("-")[0] ?? id.slice(0, 8);
 }

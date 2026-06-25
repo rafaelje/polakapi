@@ -1,42 +1,14 @@
-// Step 3 of the agentic flow: unified run setup.
-//
-// Step 3 gathers in a single view all the decisions prior to running:
-// mode (sequential/hybrid), loaded profile, the 7 editable prompts with
-// CLI/model per agent, slot validation, and the config row (retries,
-// budget, on-fail). It aims to give the user visibility of all
-// configuration before pressing "▶ run".
-//
-// Overall design (aligned with design.md, decision #10 "Inline UI in the
-// Step 3 setup, not a separate settings page"):
-// - Sidebar of the 7 prompts: 2 pre-phase (problem-intake /
-//   phase-decomposition) informational + 5 agents (analysis /
-//   implementation / review / knowledge / integration) with CLI/model
-//   dropdowns and validation.
-// - Main panel: textarea of the selected prompt, "↑ reset to global" /
-//   "↓ save as global default" buttons, CLI/model dropdowns (only for
-//   the 5 agents), input/output description.
-// - Live detection of `default` vs `modified` by comparing the textarea
-//   against the global content.
-// - Validation when loading a profile: invokes `loop_validate_cli_model`
-//   per slot; invalid slots turn red and disable "▶ run".
-//
-// Follows the "imperative view with re-render via replaceChildren()"
-// pattern of step1-chat / step2-phases. The renderer lives in
-// `./step3-setup/view.ts`; pure selectors in `./step3-setup/helpers.ts`;
-// this file owns the state machine and the side effects (profile
-// persistence, slot validation, prompt I/O).
-
 import { invoke } from "@tauri-apps/api/core";
 
 import {
   flushSaveLoopProfiles,
   loadLoopProfiles,
   queueSaveLoopProfiles,
-} from "../../shared/persistence/loop-profiles-store";
-import { stringifyError } from "../../shared/errors";
+} from "../../../shared/persistence/loop-profiles-store";
+import { stringifyError } from "../../../shared/errors";
 
-import { parsePhasesManifest } from "./step2-phases";
-import { ALL_AGENT_ROLES, LOOP_PROMPT_NAMES, createDefaultMatrix } from "./state/types";
+import { parsePhasesManifest } from "../step2-phases";
+import { ALL_AGENT_ROLES, LOOP_PROMPT_NAMES, createDefaultMatrix } from "../types";
 import type {
   AgentSlot,
   CliValidation,
@@ -45,17 +17,17 @@ import type {
   LoopProfileId,
   LoopProfilesState,
   LoopPromptName,
-} from "./state/types";
+} from "../types";
 
-import { canExecute, clone, effectiveMode } from "./step3-setup/helpers";
+import { canExecute, clone, effectiveMode } from "./helpers";
 import type {
   RunConfig,
   RunMode,
   Step3Action,
   Step3Context,
   Step3State,
-} from "./step3-setup/state";
-import { renderView } from "./step3-setup/view";
+} from "./state";
+import { renderView } from "./view";
 
 export type { RunConfig, RunMode, Step3Context };
 export {
@@ -63,15 +35,11 @@ export {
   countInvalidSlots,
   effectiveMode,
   isPromptModified,
-} from "./step3-setup/helpers";
+} from "./helpers";
 
 export interface Step3Handle {
   dispose(): void;
 }
-
-// ---------------------------------------------------------------------------
-// Mount
-// ---------------------------------------------------------------------------
 
 export function mountStep3Setup(slot: HTMLElement, ctx: Step3Context): Step3Handle {
   const state: Step3State = {
@@ -96,7 +64,6 @@ export function mountStep3Setup(slot: HTMLElement, ctx: Step3Context): Step3Hand
     void handleAction(action);
   });
 
-  // Initial hydration: profiles, globals, run phases.
   void hydrate();
 
   async function hydrate(): Promise<void> {
@@ -104,13 +71,11 @@ export function mountStep3Setup(slot: HTMLElement, ctx: Step3Context): Step3Hand
     state.status = "loading configuration…";
     refs.refresh();
     try {
-      // Ensure the global prompts dir exists (idempotent).
       await invoke<string[]>("loop_ensure_prompts_dir").catch(() => []);
 
       const profilesState = await loadLoopProfiles();
       state.profiles = profilesState.profiles;
 
-      // Load the 7 globals in parallel — they are small files.
       const globalsEntries = await Promise.all(
         LOOP_PROMPT_NAMES.map(async (name) => {
           try {
@@ -123,7 +88,6 @@ export function mountStep3Setup(slot: HTMLElement, ctx: Step3Context): Step3Hand
       );
       state.globals = new Map(globalsEntries);
 
-      // Run phases for the "hybrid ≡ sequential" detection.
       try {
         const manifest = await invoke<string>("loop_read_run_file", {
           projectPath: ctx.projectPath,
@@ -141,8 +105,6 @@ export function mountStep3Setup(slot: HTMLElement, ctx: Step3Context): Step3Hand
     } finally {
       state.busy = false;
       refs.refresh();
-      // Trigger default slot validation — they can be invalid CLI/model
-      // even if the user hasn't loaded a profile.
       void validateAllSlots();
     }
   }
@@ -176,7 +138,6 @@ export function mountStep3Setup(slot: HTMLElement, ctx: Step3Context): Step3Hand
         return;
       case "set-prompt-buffer":
         state.promptBuffers.set(action.name, action.value);
-        // Re-render to update the default/modified badge in the sidebar.
         refs.refresh();
         return;
       case "reset-to-global": {
@@ -264,18 +225,12 @@ export function mountStep3Setup(slot: HTMLElement, ctx: Step3Context): Step3Hand
       schemaVersion: 1,
     };
     queueSaveLoopProfiles(payload);
-    // Force flush before the toast says "saved" so the user doesn't get
-    // surprised by a profile that doesn't appear if they close quickly.
-    // The store's debounce already covers bursts; here we ask for
-    // confirmation.
     await flushSaveLoopProfiles();
   }
 
   async function loadPromptBufferIfNeeded(name: LoopPromptName): Promise<void> {
     if (state.promptBuffers.has(name)) return;
-    // Reserve the slot synchronously so concurrent calls don't all fire
-    // the tauri invoke. We'll overwrite with the disk content once it
-    // lands.
+    // Reserve the slot synchronously so concurrent calls don't all fire the tauri invoke.
     const fallback = state.globals.get(name) ?? "";
     state.promptBuffers.set(name, fallback);
     try {
@@ -284,16 +239,12 @@ export function mountStep3Setup(slot: HTMLElement, ctx: Step3Context): Step3Hand
         runId: ctx.runId,
         name,
       });
-      // Empty string means the file does not exist yet — keep the global
-      // as the buffer so first-time editors don't start from a blank
-      // slate.
+      // Empty string means the file does not exist yet — keep the global as the buffer.
       if (content !== "") {
         state.promptBuffers.set(name, content);
         refs.refresh();
       }
     } catch (err) {
-      // The run dir should always be there at this point (loop_create_run
-      // runs before Step 3 mounts), so this is unexpected — surface it.
       state.status = `could not read run prompt ${name}: ${stringifyError(err)}`;
       refs.refresh();
     }
@@ -342,11 +293,8 @@ export function mountStep3Setup(slot: HTMLElement, ctx: Step3Context): Step3Hand
       refs.refresh();
       return;
     }
-    // The scheduler reads `<run>/prompts/<name>` from disk for every
-    // agent invocation. Flush all inline edits to the run dir BEFORE
-    // handing off, otherwise the in-memory buffer is silently dropped
-    // (the old behavior built a `promptOverrides` map that nothing
-    // downstream consumed).
+    // The scheduler reads `<run>/prompts/<name>` from disk for every agent invocation,
+    // so inline edits must be flushed to the run dir before handing off.
     state.busy = true;
     state.status = "persisting prompts…";
     refs.refresh();
@@ -383,8 +331,6 @@ export function mountStep3Setup(slot: HTMLElement, ctx: Step3Context): Step3Hand
     if (ctx.onExecuteRun) {
       ctx.onExecuteRun(config);
     } else {
-      // Hook left for callers that want to inspect setup without
-      // launching the scheduler. The chrome always wires onExecuteRun.
       state.status = "engine pending — no onExecuteRun handler";
       refs.refresh();
     }
