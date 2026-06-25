@@ -1,29 +1,30 @@
-// Tipos del módulo `/loop`. Mantengo el patrón del store de workspaces
-// (workspaces/state/types.ts) — IDs branded como `string & { __brand }`, shapes
-// planos sin clases. La razón es que el store del workspace se serializa al
-// disco vía tauri-plugin-store y necesitamos que sea trivialmente clonable.
+// Types for the `/loop` module. We follow the workspaces store pattern
+// (workspaces/state/types.ts) — IDs branded as `string & { __brand }`, flat
+// shapes without classes. The reason is that the workspaces store is
+// serialized to disk via tauri-plugin-store and we need it to be trivially
+// cloneable.
 //
-// Sólo defino acá lo necesario para Section 2 (profiles + prompts globales). El
-// schema completo del `state.json` de un run vive en Section 9 (resume) y se
-// agrega después sin tocar este archivo.
+// Here we only define what is needed for Section 2 (profiles + global
+// prompts). The full `state.json` schema for a run lives in Section 9 (resume)
+// and is added later without touching this file.
 
 import type { ProjectId } from "../../workspaces/state/types";
 
 export type { ProjectId };
 
-/** IDs branded para que los IDs de perfil no se mezclen con otros strings. */
+/** Branded IDs so profile IDs don't get mixed up with other strings. */
 export type LoopProfileId = string & { readonly __brand: "LoopProfileId" };
 
 /**
- * Los 3 CLIs soportados, alineados con el spike de `loop_cli.rs`. Cualquier
- * valor fuera de este union es rechazado por el backend.
+ * The 3 supported CLIs, aligned with the `loop_cli.rs` spike. Any value
+ * outside this union is rejected by the backend.
  */
 export type LoopCli = "claude" | "codex" | "opencode";
 
 /**
- * Los 5 agentes del Paso 3. Coincide 1:1 con el set de `loop-profiles/spec.md`
- * y con los nombres usados en el sidebar del setup. `integration` sólo corre
- * en modo híbrido (entre batches).
+ * The 5 agents of Step 3. Matches 1:1 with the set in `loop-profiles/spec.md`
+ * and the names used in the setup sidebar. `integration` only runs in hybrid
+ * mode (between batches).
  */
 export type LoopAgentRole =
   | "analysis"
@@ -33,8 +34,8 @@ export type LoopAgentRole =
   | "integration";
 
 /**
- * Slot individual de un agente en un perfil: CLI + modelo. El backend valida
- * este par vía `loop_validate_cli_model` cuando se carga el perfil.
+ * Individual slot for an agent in a profile: CLI + model. The backend
+ * validates this pair via `loop_validate_cli_model` when the profile is loaded.
  */
 export interface AgentSlot {
   cli: LoopCli;
@@ -42,9 +43,9 @@ export interface AgentSlot {
 }
 
 /**
- * Matriz completa de un perfil. Mantengo cada agente como propiedad explícita
- * (en vez de `Record<LoopAgentRole, AgentSlot>`) para que TS catche al vuelo
- * cualquier rol faltante en un perfil cargado del disco.
+ * Full matrix of a profile. We keep each agent as an explicit property
+ * (instead of `Record<LoopAgentRole, AgentSlot>`) so TS catches on the fly
+ * any role missing from a profile loaded from disk.
  */
 export interface ProfileMatrix {
   analysis: AgentSlot;
@@ -55,9 +56,9 @@ export interface ProfileMatrix {
 }
 
 /**
- * Perfil persistido. Coincide con `profiles[]` en `profiles.json` (ver
- * `loop-profiles/spec.md`). `createdAt` se guarda como epoch millis (number)
- * para evitar parseo de Date en el reader.
+ * Persisted profile. Matches `profiles[]` in `profiles.json` (see
+ * `loop-profiles/spec.md`). `createdAt` is stored as epoch millis (number)
+ * to avoid Date parsing in the reader.
  */
 export interface LoopProfile {
   id: LoopProfileId;
@@ -67,8 +68,8 @@ export interface LoopProfile {
 }
 
 /**
- * Estado completo persistido en `profiles.json`. Mismo pattern que
- * `WorkspacesState`: `schemaVersion` numérico + arreglo de items.
+ * Full state persisted in `profiles.json`. Same pattern as `WorkspacesState`:
+ * numeric `schemaVersion` + array of items.
  */
 export interface LoopProfilesState {
   profiles: LoopProfile[];
@@ -76,9 +77,9 @@ export interface LoopProfilesState {
 }
 
 /**
- * Los 7 nombres canónicos de los prompts globales. Idéntico al set declarado
- * en `loop_prompts::PROMPT_NAMES` en Rust. Mantenemos las dos copias en sync
- * manualmente — si alguno cambia, hay que tocar ambos lados.
+ * The 7 canonical names of the global prompts. Identical to the set declared
+ * in `loop_prompts::PROMPT_NAMES` in Rust. We keep both copies in sync
+ * manually — if any changes, both sides must be touched.
  */
 export const LOOP_PROMPT_NAMES = [
   "problem-intake.md",
@@ -93,8 +94,8 @@ export const LOOP_PROMPT_NAMES = [
 export type LoopPromptName = (typeof LOOP_PROMPT_NAMES)[number];
 
 /**
- * Default que aplica cuando no hay perfil cargado en el setup. Alineado con
- * `loop-profiles/spec.md` ("default sin perfil cargado = todo claude/opus-4-7").
+ * Default that applies when no profile is loaded in setup. Aligned with
+ * `loop-profiles/spec.md` ("default without profile loaded = all claude/opus-4-7").
  */
 export const DEFAULT_AGENT_SLOT: AgentSlot = {
   cli: "claude",
@@ -112,8 +113,8 @@ export function createDefaultMatrix(): ProfileMatrix {
 }
 
 /**
- * Output del comando Tauri `loop_validate_cli_model`. `ok=true` => slot verde
- * en el UI; `ok=false` con `reason` legible para mostrar al usuario.
+ * Output of the Tauri command `loop_validate_cli_model`. `ok=true` => green
+ * slot in the UI; `ok=false` with a human-readable `reason` to show to the user.
  */
 export interface CliValidation {
   ok: boolean;

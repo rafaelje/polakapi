@@ -7,8 +7,8 @@ import type {
 } from "../../modules/loop/state/types";
 import { createDefaultMatrix } from "../../modules/loop/state/types";
 
-// Reuso del shape mock del store de workspaces — vi.hoisted no juega bien con
-// vi.mock acá; replicamos el patrón letra por letra. Ver
+// Reusing the mock shape from the workspaces store — vi.hoisted doesn't play
+// well with vi.mock here; we replicate the pattern letter by letter. See
 // `workspaces-store.test.ts:11`.
 
 interface MockStore {
@@ -67,8 +67,8 @@ describe("loop profiles store", () => {
   });
 
   it("returns empty state for incompatible schemaVersion (silent fallback)", async () => {
-    // Coincide con el requirement "Schema version incompatible" de loop-profiles/spec.md:
-    // "el sistema lo trata como vacío (silent fallback, igual que workspaces-store.ts)".
+    // Matches the "Schema version incompatible" requirement of loop-profiles/spec.md:
+    // "the system treats it as empty (silent fallback, same as workspaces-store.ts)".
     mockStore.store.set("state", { schemaVersion: 99, profiles: [] });
     const { loadLoopProfiles, createEmptyLoopProfilesState } = await freshModule();
     expect(await loadLoopProfiles()).toEqual(createEmptyLoopProfilesState());
@@ -83,7 +83,7 @@ describe("loop profiles store", () => {
   it("loads a valid persisted state untouched", async () => {
     const state: LoopProfilesState = {
       schemaVersion: 1,
-      profiles: [profile("p1", "mi-mixto")],
+      profiles: [profile("p1", "my-mixed")],
     };
     mockStore.store.set("state", state);
     const { loadLoopProfiles } = await freshModule();
@@ -95,11 +95,11 @@ describe("loop profiles store", () => {
       await freshModule();
     const s1: LoopProfilesState = {
       ...createEmptyLoopProfilesState(),
-      profiles: [profile("a", "uno")],
+      profiles: [profile("a", "one")],
     };
     const s2: LoopProfilesState = {
       ...createEmptyLoopProfilesState(),
-      profiles: [profile("a", "uno"), profile("b", "dos")],
+      profiles: [profile("a", "one"), profile("b", "two")],
     };
     queueSaveLoopProfiles(s1);
     queueSaveLoopProfiles(s2);
@@ -120,7 +120,7 @@ describe("loop profiles store", () => {
     // create
     let state: LoopProfilesState = {
       ...createEmptyLoopProfilesState(),
-      profiles: [profile("p1", "primer-perfil")],
+      profiles: [profile("p1", "first-profile")],
     };
     queueSaveLoopProfiles(state);
     await flushSaveLoopProfiles();
@@ -129,11 +129,11 @@ describe("loop profiles store", () => {
     // rename
     state = {
       ...state,
-      profiles: [{ ...state.profiles[0], name: "renombrado" }],
+      profiles: [{ ...state.profiles[0], name: "renamed" }],
     };
     queueSaveLoopProfiles(state);
     await flushSaveLoopProfiles();
-    expect((await loadLoopProfiles()).profiles[0].name).toBe("renombrado");
+    expect((await loadLoopProfiles()).profiles[0].name).toBe("renamed");
 
     // delete
     state = { ...state, profiles: [] };
@@ -160,7 +160,7 @@ describe("loop profiles store", () => {
 
   it("default matrix factory yields all 5 agents pointing to claude/opus-4-7", () => {
     const matrix = createDefaultMatrix();
-    // loop-profiles/spec.md: "default sin perfil cargado = todo claude/opus-4-7"
+    // loop-profiles/spec.md: "default without profile loaded = all claude/opus-4-7"
     for (const role of [
       "analysis",
       "implementation",

@@ -1,47 +1,48 @@
-// Engine del paso 3: scheduler que orquesta el pipeline por fase.
+// Step 3 engine: scheduler that orchestrates the per-phase pipeline.
 //
-// Diseño general (alineado con design.md decisión #1 "contrato vía archivos en
-// disco" y #4 "cap del revisor en 3"):
+// Overall design (aligned with design.md decision #1 "contract via files on
+// disk" and #4 "reviewer cap at 3"):
 //
-// - El run consta de N fases (de `02-phases.md`).
-//   - En modo `sequential` las procesamos en el orden topológico que devuelve
-//     `topologicalBatches` — flattenado a una lista lineal porque cada fase
-//     tiene sus deps satisfechas cuando le toca el turno.
-//   - En modo `hybrid` (Section 8) las procesamos por batches: cada batch
-//     ejecuta sus fases en paralelo (`Promise.all`), y entre batch y batch
-//     corre el agente integrador (5to agente) que consolida knowledge y
-//     detecta conflictos de FS. Si el integrador marca blocker o el scheduler
-//     detecta paths tocados por múltiples fases, el run se pausa esperando
-//     decisión del usuario (continuar / re-ejecutar / abortar).
+// - The run consists of N phases (from `02-phases.md`).
+//   - In `sequential` mode we process them in the topological order returned
+//     by `topologicalBatches` — flattened to a linear list because each phase
+//     has its deps satisfied by the time its turn comes.
+//   - In `hybrid` mode (Section 8) we process them in batches: each batch
+//     runs its phases in parallel (`Promise.all`), and between batches the
+//     integrator agent (5th agent) runs, consolidating knowledge and
+//     detecting FS conflicts. If the integrator marks a blocker or the
+//     scheduler detects paths touched by multiple phases, the run pauses
+//     waiting for a user decision (continue / re-run / abort).
 //
-// - Pipeline por fase: análisis → implementación → revisor (≤ 3 tries) →
-//   conocimiento. Cada paso:
-//     1. snapshot del diff actual del project ("antes" del agente);
-//     2. invoke run_loop_agent con el CLI/modelo del slot configurado y el
-//        prompt del agente (de `<run>/prompts/<agent>.md`);
-//     3. persiste `outputs/<phase>/<agent>.md` con result.text;
-//     4. snapshot del diff de nuevo ("después") y diff_post - diff_pre se
-//        guarda como `outputs/<phase>/<agent>.diff` (lo que el agente cambió
-//        en el FS).
-//     5. acumula tokens/cost en el budget del run y persiste `state.json`
-//        con `lastHeartbeat`.
+// - Per-phase pipeline: analysis → implementation → review (≤ 3 tries) →
+//   knowledge. Each step:
+//     1. snapshot the current project diff ("before" the agent);
+//     2. invoke run_loop_agent with the CLI/model of the configured slot and
+//        the agent prompt (from `<run>/prompts/<agent>.md`);
+//     3. persist `outputs/<phase>/<agent>.md` with result.text;
+//     4. snapshot the diff again ("after") and diff_post - diff_pre is saved
+//        as `outputs/<phase>/<agent>.diff` (what the agent changed in the FS).
+//     5. accumulate tokens/cost in the run budget and persist `state.json`
+//        with `lastHeartbeat`.
 //
-// - Cap del revisor: si después del 3er retry el revisor no aprueba, marcamos
-//   la fase como `warning` y le inyectamos a `knowledge` un input adicional
-//   con la deuda. El run sigue — design decisión #4.
+// - Reviewer cap: if after the 3rd retry the reviewer has not approved, we
+//   mark the phase as `warning` and inject an additional input into
+//   `knowledge` with the debt. The run continues — design decision #4.
 //
-// - El módulo expone `class RunScheduler` con un patrón consistente con
-//   `LoopRouter` (listeners + getState + comandos start/pause/abort). NO
-//   monta UI — el view layer (Section 7.7) consume `getState()` y se suscribe
-//   con `on()`. Mantiene paridad con `src/modules/workspaces/state/workspaces-controller.ts`.
+// - The module exposes `class RunScheduler` with a pattern consistent with
+//   `LoopRouter` (listeners + getState + start/pause/abort commands). It
+//   does NOT mount UI — the view layer (Section 7.7) consumes `getState()`
+//   and subscribes via `on()`. Keeps parity with
+//   `src/modules/workspaces/state/workspaces-controller.ts`.
 //
-// - Pause: no kill mid-agent — el subproceso del CLI sigue hasta terminar (no
-//   tenemos kill desde el wrapper actual; ver loop_cli.rs gotcha "kill del
-//   subproceso colgado"). Cuando termina el agente actual, el scheduler ve
-//   `pauseRequested=true` y se detiene antes del siguiente.
+// - Pause: no kill mid-agent — the CLI subprocess keeps running until it
+//   finishes (we have no kill from the current wrapper; see loop_cli.rs
+//   gotcha "kill of a hung subprocess"). When the current agent ends, the
+//   scheduler sees `pauseRequested=true` and stops before the next.
 //
-// - Abort: marca `aborted` y deja todo como está. El usuario puede retomar en
-//   Section 9 (resume). NO borra los outputs ya persistidos — son auditables.
+// - Abort: marks `aborted` and leaves everything as-is. The user can resume
+//   in Section 9 (resume). It does NOT delete already-persisted outputs —
+//   they are auditable.
 
 import { invoke } from "@tauri-apps/api/core";
 
@@ -50,163 +51,163 @@ import { buildPersistedRunState, type PersistedRunState } from "./state-schema";
 import type { AgentSlot, LoopAgentRole, LoopPromptName, ProfileMatrix } from "./types";
 
 // ---------------------------------------------------------------------------
-// Tipos públicos
+// Public types
 // ---------------------------------------------------------------------------
 
 /**
- * Estado de una etapa (= un agente) dentro de una fase. Misma semántica que
- * el patrón usado en el design doc ("pending/running/done/warning").
+ * Status of a stage (= one agent) within a phase. Same semantics as the
+ * pattern used in the design doc ("pending/running/done/warning").
  *
- * - `pending` : todavía no le tocó. Default al crear el state.
- * - `running` : el subproceso está en curso. Se setea antes de `invoke`
- *               y se quita al recibir la respuesta.
- * - `done`    : terminó OK y persistió su output.
- * - `warning` : completó pero con un caveat (ej. revisor no aprobó, knowledge
- *               recibió la deuda). El run sigue.
- * - `error`   : falló de manera no recuperable (ej. timeout, CLI no devolvió
- *               JSON parseable). El run se pone en pausa hasta que el usuario
- *               decida — design decisión #4 sólo cubre "revisor", no errores
- *               de infraestructura del CLI.
+ * - `pending` : its turn has not come yet. Default when state is created.
+ * - `running` : the subprocess is in progress. Set before `invoke` and
+ *               cleared upon receiving the response.
+ * - `done`    : finished OK and persisted its output.
+ * - `warning` : completed with a caveat (e.g. reviewer did not approve,
+ *               knowledge received the debt). The run continues.
+ * - `error`   : failed unrecoverably (e.g. timeout, CLI did not return
+ *               parseable JSON). The run is paused until the user decides —
+ *               design decision #4 only covers "reviewer", not CLI
+ *               infrastructure errors.
  */
 export type AgentStageStatus = "pending" | "running" | "done" | "warning" | "error";
 
-/** Las 4 etapas del pipeline secuencial — el integrador (5to agente) sólo en híbrido. */
+/** The 4 stages of the sequential pipeline — the integrator (5th agent) only in hybrid. */
 export type SequentialAgent = "analysis" | "implementation" | "review" | "knowledge";
 
-/** Estado de cada agente dentro de una fase. */
+/** State of each agent within a phase. */
 export interface AgentStageState {
   status: AgentStageStatus;
-  /** Tokens consumidos hasta acá (suma de retries del revisor incluida). */
+  /** Tokens consumed so far (includes the sum of reviewer retries). */
   tokensIn: number;
   tokensOut: number;
-  /** Costo USD reportado por el CLI, si lo expuso. */
+  /** USD cost reported by the CLI, if exposed. */
   costUsd: number;
-  /** Cantidad de retries del revisor consumidos en esta fase (sólo aplica al revisor). */
+  /** Number of reviewer retries consumed in this phase (only applies to the reviewer). */
   retries: number;
-  /** Mensaje legible si el status es `warning` o `error`. */
+  /** Human-readable message if the status is `warning` or `error`. */
   message?: string;
 }
 
-/** Estado de una fase del run. */
+/** State of a phase of the run. */
 export interface PhaseState {
   slug: string;
   id: string;
   name: string;
-  /** Status agregado: derivado de las 4 etapas pero precomputado para el view. */
+  /** Aggregate status: derived from the 4 stages but precomputed for the view. */
   status: AgentStageStatus;
-  /** Por-etapa: análisis, implementación, revisor, conocimiento. */
+  /** Per-stage: analysis, implementation, review, knowledge. */
   stages: Record<SequentialAgent, AgentStageState>;
-  /** Marcado cuando el revisor llegó al cap de 3 sin aprobar. Persistido en knowledge. */
+  /** Set when the reviewer hit the cap of 3 without approving. Persisted in knowledge. */
   reviewerExhausted: boolean;
 }
 
-/** Configuración inmutable del run, snapshotada al ejecutar. */
+/** Immutable run configuration, snapshotted at execution time. */
 export interface RunSettings {
   projectPath: string;
   runId: string;
   matrix: ProfileMatrix;
-  /** Override del prompt por nombre (lo que el usuario editó en el setup). */
+  /** Per-name prompt override (what the user edited in setup). */
   promptOverrides: Partial<Record<LoopPromptName, string>>;
-  /** Cap del revisor — design decision #4 fija 3 pero lo dejamos parametrizable para tests. */
+  /** Reviewer cap — design decision #4 fixes 3 but we leave it parametrizable for tests. */
   maxRetries: number;
-  /** Timeout por invocación de agente (segundos). 300s default; el setup no lo expone aún. */
+  /** Timeout per agent invocation (seconds). 300s default; setup does not expose it yet. */
   agentTimeoutSecs: number;
 }
 
-/** Modo de ejecución del scheduler. `hybrid` corre fases por batches + integrador. */
+/** Scheduler execution mode. `hybrid` runs phases in batches + integrator. */
 export type SchedulerMode = "sequential" | "hybrid";
 
-/** Status global del run. */
+/** Global run status. */
 export type RunStatus =
-  | "idle" // creado pero no arrancado
-  | "running" // procesando una fase
-  | "paused" // pausa solicitada y aplicada
-  | "completed" // todas las fases done/warning
-  | "aborted" // el usuario abortó
-  | "error"; // un error inesperado paró el run
+  | "idle" // created but not started
+  | "running" // processing a phase
+  | "paused" // pause requested and applied
+  | "completed" // all phases done/warning
+  | "aborted" // the user aborted
+  | "error"; // an unexpected error stopped the run
 
 /**
- * Estado del integrador (5to agente) entre batches en modo híbrido. Cada
- * batch tiene un integrador propio que corre después de que terminan TODAS
- * las fases del batch. Section 8.3/8.4 le da el rol de consolidar knowledge
- * + detectar conflictos.
+ * State of the integrator (5th agent) between batches in hybrid mode. Each
+ * batch has its own integrator that runs after ALL the phases of the batch
+ * finish. Sections 8.3/8.4 give it the role of consolidating knowledge +
+ * detecting conflicts.
  *
- * - `pending`: el batch aún no terminó.
- * - `running`: el integrador está corriendo.
- * - `done`: terminó OK, no hay conflictos. El knowledge consolidado está en
- *           `<run>/outputs/batches/<batchId>/knowledge.md` y se pasa al
- *           siguiente batch como input adicional (Section 8.6).
- * - `conflict`: el integrador detectó conflictos (`INTEGRATION: blocker` en
- *               su output, o detección estructural por diff overlap). El run
- *               se pausa y el usuario decide (continuar / abortar / re-run).
- * - `error`: error de invocación del integrador.
+ * - `pending`: the batch has not finished yet.
+ * - `running`: the integrator is running.
+ * - `done`: finished OK, no conflicts. The consolidated knowledge lives in
+ *           `<run>/outputs/batches/<batchId>/knowledge.md` and is passed to
+ *           the next batch as additional input (Section 8.6).
+ * - `conflict`: the integrator detected conflicts (`INTEGRATION: blocker` in
+ *               its output, or structural detection via diff overlap). The
+ *               run is paused and the user decides (continue / abort / re-run).
+ * - `error`: integrator invocation error.
  */
 export type IntegratorStatus = "pending" | "running" | "done" | "conflict" | "error";
 
-/** Estado del integrador para un batch específico. */
+/** Integrator state for a specific batch. */
 export interface IntegratorState {
-  /** ID del batch: `batch-0`, `batch-1`, ... — usado como path en outputs. */
+  /** Batch ID: `batch-0`, `batch-1`, ... — used as path in outputs. */
   batchId: string;
-  /** Índice ordinal del batch (0-based). */
+  /** Ordinal batch index (0-based). */
   batchIndex: number;
   status: IntegratorStatus;
   tokensIn: number;
   tokensOut: number;
   costUsd: number;
   /**
-   * Lista de paths con conflicto si `status === "conflict"`. Útil para que el
-   * UI muestre exactamente qué archivos rompen (Section 8.5).
+   * List of conflicting paths if `status === "conflict"`. Useful so the UI
+   * can show exactly which files break (Section 8.5).
    */
   conflicts: string[];
-  /** Mensaje legible si está en `conflict`/`error`. */
+  /** Human-readable message if `conflict`/`error`. */
   message?: string;
 }
 
-/** Snapshot completo del estado del scheduler. */
+/** Full snapshot of the scheduler state. */
 export interface RunSchedulerState {
   status: RunStatus;
   mode: SchedulerMode;
-  /** Fases en orden de ejecución (flatten en sec; ordenadas por batch en híbrido). */
+  /** Phases in execution order (flattened in sequential; ordered by batch in hybrid). */
   phases: PhaseState[];
   /**
-   * Batches del DAG cuando `mode === "hybrid"`. Cada entrada lista los `slug`
-   * de las fases que corren en paralelo en ese batch. En modo secuencial este
-   * array es vacío. Section 8.7 lo usa para la vista por batches.
+   * Batches of the DAG when `mode === "hybrid"`. Each entry lists the `slug`s
+   * of the phases that run in parallel in that batch. In sequential mode this
+   * array is empty. Section 8.7 uses it for the batch view.
    */
   batches: string[][];
-  /** Estado del integrador por batch. Vacío en modo secuencial. */
+  /** Per-batch integrator state. Empty in sequential mode. */
   integrators: IntegratorState[];
-  /** Índice de la fase que se está procesando (o que terminó última). */
+  /** Index of the phase being processed (or the last one that finished). */
   currentPhaseIndex: number;
-  /** Índice del batch actual en modo híbrido. -1 antes de arrancar. */
+  /** Index of the current batch in hybrid mode. -1 before starting. */
   currentBatchIndex: number;
-  /** Etapa que se está procesando dentro de la fase actual. null entre fases. */
+  /** Stage being processed within the current phase. null between phases. */
   currentStage: SequentialAgent | null;
-  /** Acumulado de tokens y USD para mostrar en el header del view. */
+  /** Accumulated tokens and USD to show in the view header. */
   totals: {
     tokensIn: number;
     tokensOut: number;
     costUsd: number;
   };
-  /** Acumulado por agente (rol completo, incluido integration). */
+  /** Per-agent accumulated (full role, including integration). */
   byAgent: Record<LoopAgentRole, { tokensIn: number; tokensOut: number; costUsd: number }>;
-  /** Mensaje global (último error, "pausa solicitada", etc.). */
+  /** Global message (last error, "pause requested", etc.). */
   message: string | null;
-  /** Heartbeat — ms epoch, se actualiza tras cada persist de state.json. */
+  /** Heartbeat — ms epoch, updated after each state.json persist. */
   lastHeartbeat: number;
-  /** Settings inmutables del run (snapshot del momento de arranque). */
+  /** Immutable run settings (snapshot at startup time). */
   settings: RunSettings | null;
 }
 
 export type RunSchedulerListener = (state: RunSchedulerState) => void;
 
 /**
- * Decisión del usuario al recibir el reporte de conflictos del integrador
- * (Section 8.5). El UI llama `scheduler.resolveConflict(decision)`.
+ * User decision on receiving the conflict report from the integrator
+ * (Section 8.5). The UI calls `scheduler.resolveConflict(decision)`.
  */
 export type ConflictDecision = "continue" | "abort" | "rerun";
 
-/** Resultado de `run_loop_agent` reflejado del backend (camelCase). */
+/** Result of `run_loop_agent` mirrored from the backend (camelCase). */
 interface AgentResult {
   text: string;
   tokensIn?: number | null;
@@ -297,16 +298,17 @@ function createIntegratorState(batchIndex: number): IntegratorState {
   };
 }
 
-/** ID determinístico del batch. Lo usamos como `batchId` para outputs. */
+/** Deterministic batch ID. We use it as `batchId` for outputs. */
 export function batchIdFor(index: number): string {
   return `batch-${index}`;
 }
 
 /**
- * Ordena fases linealmente respetando el DAG. Reusa `topologicalBatches` del
- * paso 2 — si todo el DAG es lineal cada batch tiene 1 fase y el flatten es
- * exacto. Si hay ramas paralelas, las procesamos en el orden del batch (no
- * importa el orden interno porque sus deps están en batches previos).
+ * Orders phases linearly respecting the DAG. Reuses `topologicalBatches`
+ * from step 2 — if the whole DAG is linear each batch has 1 phase and the
+ * flatten is exact. If there are parallel branches, we process them in batch
+ * order (the internal order doesn't matter because their deps are in
+ * previous batches).
  */
 export function sequentialPhaseOrder(phases: Phase[]): Phase[] | null {
   const batches = topologicalBatches(phases);
@@ -314,7 +316,7 @@ export function sequentialPhaseOrder(phases: Phase[]): Phase[] | null {
   return batches.flat();
 }
 
-/** Slug igual al del paso 2 — duplicado por dependencia inversa. */
+/** Slug matches step 2 — duplicated by inverse dependency. */
 export function phaseToSlug(phase: Phase): string {
   const safeName = phase.name.replace(/[^A-Za-z0-9_-]/g, "-");
   return `${phase.id}-${safeName}`;
@@ -325,9 +327,9 @@ export function phaseToSlug(phase: Phase): string {
 // ---------------------------------------------------------------------------
 
 /**
- * Hooks para tests / depuración. En producción, todas las invocaciones pasan
- * por `invoke()` de `@tauri-apps/api`. En tests futuros (Section 11) podemos
- * pasar un harness alternativo que devuelva resultados deterministas.
+ * Hooks for tests / debugging. In production, every invocation goes through
+ * `invoke()` from `@tauri-apps/api`. In future tests (Section 11) we can
+ * pass an alternative harness that returns deterministic results.
  */
 export interface SchedulerInvokers {
   runAgent(args: {
@@ -361,7 +363,7 @@ export interface SchedulerInvokers {
     phaseSlug: string;
     file: "logic.md" | "visual.html";
   }): Promise<string>;
-  /** Section 8: read/write del knowledge consolidado por batch. */
+  /** Section 8: read/write of the consolidated knowledge per batch. */
   readBatchFile(args: {
     projectPath: string;
     runId: string;
@@ -376,12 +378,12 @@ export interface SchedulerInvokers {
     content: string;
   }): Promise<void>;
   /**
-   * El path del prompt del run (`<run>/prompts/<name>`). Lo derivamos en el
-   * caller con `buildRunPromptPath` (más abajo).
+   * The run prompt path (`<run>/prompts/<name>`). We derive it at the caller
+   * with `buildRunPromptPath` (below).
    */
 }
 
-/** Implementación default vía Tauri. */
+/** Default implementation via Tauri. */
 const defaultInvokers: SchedulerInvokers = {
   runAgent: (args) => invoke<AgentResult>("run_loop_agent", args),
   readOutput: (args) => invoke<string>("loop_read_output_file", args),
@@ -398,21 +400,21 @@ export class RunScheduler {
   private readonly listeners = new Set<RunSchedulerListener>();
   private readonly invokers: SchedulerInvokers;
   /**
-   * Flag interno que el loop principal chequea entre etapas. Cuando es `true`
-   * detenemos el scheduler antes de lanzar el próximo agente. NO mata
-   * subprocesos en curso — para eso necesitaríamos hookear el child PID en el
-   * wrapper Rust, que hoy no está expuesto.
+   * Internal flag that the main loop checks between stages. When `true` we
+   * stop the scheduler before launching the next agent. It does NOT kill
+   * subprocesses in progress — for that we would need to hook the child PID
+   * in the Rust wrapper, which is not currently exposed.
    */
   private pauseRequested = false;
   private abortRequested = false;
-  /** Promesa del ciclo principal — para await externo. */
+  /** Promise of the main cycle — for external await. */
   private cycle: Promise<void> | null = null;
   /**
-   * Section 9.3 — timer del heartbeat. Lo arrancamos al entrar a un stage
-   * (running) y lo paramos cuando el stage termina (o cuando el scheduler se
-   * detiene). Actualiza `lastHeartbeat` cada `heartbeatIntervalMs` para que el
-   * detector de "runs interrumpidos" pueda distinguir un proceso vivo de un
-   * proceso muerto. Default 5s — design.md "Open Questions" deja ese valor.
+   * Section 9.3 — heartbeat timer. We start it on entering a stage (running)
+   * and stop it when the stage ends (or when the scheduler stops). Updates
+   * `lastHeartbeat` every `heartbeatIntervalMs` so the "interrupted runs"
+   * detector can distinguish a live process from a dead one. Default 5s —
+   * design.md "Open Questions" leaves that value.
    */
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private heartbeatIntervalMs = 5000;
@@ -432,16 +434,16 @@ export class RunScheduler {
   }
 
   /**
-   * Inicializa el scheduler con un set de fases ordenadas + settings, sin
-   * arrancar la ejecución. Útil para mostrar la vista inicial con todo
-   * `pending`. `mode` por defecto es `"sequential"` para compatibilidad con
-   * los call-sites previos a Section 8.
+   * Initializes the scheduler with an ordered set of phases + settings,
+   * without starting execution. Useful for showing the initial view with
+   * everything `pending`. `mode` defaults to `"sequential"` for compatibility
+   * with call-sites prior to Section 8.
    *
-   * En modo `"hybrid"`:
-   * - Calculamos batches con `topologicalBatches` (Kahn, Section 8.1).
-   * - Cada batch genera su entrada en `state.integrators`.
-   * - Las fases se ordenan por batch (preservando el orden interno de Kahn)
-   *   para que `currentPhaseIndex` siga teniendo sentido en la vista plana.
+   * In `"hybrid"` mode:
+   * - We compute batches with `topologicalBatches` (Kahn, Section 8.1).
+   * - Each batch generates its entry in `state.integrators`.
+   * - Phases are ordered by batch (preserving the internal Kahn order) so
+   *   that `currentPhaseIndex` still makes sense in the flat view.
    */
   initialize(phases: Phase[], settings: RunSettings, mode: SchedulerMode = "sequential"): void {
     const batchesByPhase = topologicalBatches(phases);
@@ -449,7 +451,7 @@ export class RunScheduler {
       this.commit({
         ...createInitialState(),
         status: "error",
-        message: "hay un ciclo en las dependencias — no se puede ejecutar",
+        message: "there is a cycle in the dependencies — cannot execute",
         settings,
       });
       return;
@@ -457,8 +459,8 @@ export class RunScheduler {
     const ordered = batchesByPhase.flat();
     const phaseStates = ordered.map((p) => createPhaseState(p, phaseToSlug(p)));
 
-    // Mapeo batch -> slugs (sólo poblado en modo hybrid; el view secuencial
-    // lo ignora).
+    // Batch -> slugs mapping (only populated in hybrid mode; the sequential
+    // view ignores it).
     const batches: string[][] =
       mode === "hybrid" ? batchesByPhase.map((batch) => batch.map((p) => phaseToSlug(p))) : [];
     const integrators: IntegratorState[] =
@@ -474,14 +476,14 @@ export class RunScheduler {
       batches,
       integrators,
       settings,
-      // En modo hybrid arrancamos en batchIndex 0; en sec se queda en -1.
+      // In hybrid mode we start at batchIndex 0; in sequential it stays at -1.
       currentBatchIndex: mode === "hybrid" ? 0 : -1,
       lastHeartbeat: Date.now(),
     });
   }
 
   /**
-   * Arranca el ciclo principal del scheduler. Resolves cuando el run termina
+   * Starts the main scheduler cycle. Resolves when the run ends
    * (completed/aborted/error/paused).
    */
   async start(): Promise<void> {
@@ -490,7 +492,7 @@ export class RunScheduler {
       this.commit({
         ...this.state,
         status: "error",
-        message: "scheduler sin settings — llamá a initialize() primero",
+        message: "scheduler without settings — call initialize() first",
       });
       return;
     }
@@ -501,59 +503,59 @@ export class RunScheduler {
       this.commit({
         ...this.state,
         status: "error",
-        message: `error inesperado: ${stringifyError(err)}`,
+        message: `unexpected error: ${stringifyError(err)}`,
       });
     });
     await this.cycle;
   }
 
   /**
-   * Solicita pausa cooperativa. El agente en curso termina; antes del próximo
-   * el scheduler verifica el flag y se detiene.
+   * Requests a cooperative pause. The current agent finishes; before the
+   * next one the scheduler checks the flag and stops.
    */
   pause(): void {
     if (this.state.status !== "running") return;
     this.pauseRequested = true;
-    this.commit({ ...this.state, message: "pausa solicitada — termina el agente actual" });
+    this.commit({ ...this.state, message: "pause requested — current agent will finish" });
   }
 
   /**
-   * Aborta el run. Mismo comportamiento que pause respecto al agente en curso,
-   * pero al detenerse el status queda en `aborted` y no se puede reanudar
-   * sin un nuevo `start()`.
+   * Aborts the run. Same behavior as pause regarding the current agent, but
+   * upon stopping the status remains `aborted` and it cannot be resumed
+   * without a new `start()`.
    */
   abort(): void {
     if (this.state.status !== "running" && this.state.status !== "paused") return;
     this.abortRequested = true;
     this.pauseRequested = true;
-    this.commit({ ...this.state, message: "abort solicitado — termina el agente actual" });
-    // Si estamos esperando una decisión de conflict (Section 8.5), destrabamos
-    // el await con "abort" para que el ciclo principal salga.
+    this.commit({ ...this.state, message: "abort requested — current agent will finish" });
+    // If we are waiting on a conflict decision (Section 8.5), we unblock the
+    // await with "abort" so the main cycle can exit.
     if (this.conflictResolver) {
       const resolver = this.conflictResolver;
       this.conflictResolver = null;
       resolver("abort");
     }
-    // El timer del heartbeat se detiene en `finalizeCycle()` cuando el agente
-    // actual termine; lo dejamos vivo hasta entonces para que el run siga
-    // reportando "vivo" al detector de runs interrumpidos.
+    // The heartbeat timer is stopped in `finalizeCycle()` when the current
+    // agent finishes; we leave it alive until then so the run keeps reporting
+    // as "alive" to the interrupted-runs detector.
   }
 
   /**
-   * Section 8.5: el integrador detectó conflicto y el run está pausado. El
-   * usuario debe decidir vía `resolveConflict()`. La promesa que el ciclo
-   * principal `await`-ea queda colgada hasta entonces.
+   * Section 8.5: the integrator detected a conflict and the run is paused.
+   * The user must decide via `resolveConflict()`. The promise the main cycle
+   * `await`s is left hanging until then.
    *
-   * - `continue`: aceptar el batch como está y seguir al próximo.
-   * - `abort`: cortar el run.
-   * - `rerun`: re-ejecutar el batch entero (todas las fases del batch vuelven a
-   *   `pending` y se relanzan).
+   * - `continue`: accept the batch as-is and move on to the next.
+   * - `abort`: cut the run short.
+   * - `rerun`: re-run the whole batch (all batch phases go back to `pending`
+   *   and are relaunched).
    */
   private conflictResolver: ((decision: ConflictDecision) => void) | null = null;
 
   /**
-   * El usuario resuelve un conflicto reportado por el integrador. No-op si no
-   * hay conflicto activo (status !== "paused" por integrador).
+   * The user resolves a conflict reported by the integrator. No-op if there
+   * is no active conflict (status !== "paused" by integrator).
    */
   resolveConflict(decision: ConflictDecision): void {
     if (!this.conflictResolver) return;
@@ -563,7 +565,7 @@ export class RunScheduler {
   }
 
   // -------------------------------------------------------------------------
-  // Ciclo principal — dispatch entre modo secuencial e híbrido
+  // Main cycle — dispatch between sequential and hybrid mode
   // -------------------------------------------------------------------------
 
   private async runCycle(): Promise<void> {
@@ -586,26 +588,26 @@ export class RunScheduler {
   }
 
   /**
-   * Section 8: ciclo del modo híbrido.
+   * Section 8: hybrid mode cycle.
    *
-   * Para cada batch:
-   *   1. Lanzar todas las fases del batch en paralelo (`Promise.all` sobre
-   *      `runPhase` — section 8.2). El pipeline interno de cada fase (análisis →
-   *      impl → revisor → conocimiento) se ejecuta de manera independiente.
-   *      Como el contrato entre agentes es por archivos en disco (design
-   *      decision #1) y cada fase escribe a su propio `phases/<slug>/`, no hay
-   *      acoplamiento intra-batch.
-   *   2. Esperar a que las fases del batch terminen (ok, warning o error).
-   *   3. Detectar conflictos de FS entre las fases del batch (section 8.4):
-   *      parsear los `*.diff` de implementación y ver si dos fases tocan el
-   *      mismo path.
-   *   4. Correr el integrador (5to agente) sobre los outputs del batch
-   *      (section 8.3). Output a `<run>/outputs/batches/batch-N/knowledge.md`.
-   *   5. Si el integrador o el detector estructural marcan conflict, pausar
-   *      hasta que el usuario decida (section 8.5).
+   * For each batch:
+   *   1. Launch all phases of the batch in parallel (`Promise.all` over
+   *      `runPhase` — section 8.2). The internal pipeline of each phase
+   *      (analysis → impl → review → knowledge) runs independently. Since
+   *      the contract between agents is via files on disk (design decision
+   *      #1) and each phase writes to its own `phases/<slug>/`, there is
+   *      no intra-batch coupling.
+   *   2. Wait for the batch phases to finish (ok, warning, or error).
+   *   3. Detect FS conflicts between the batch phases (section 8.4): parse
+   *      the implementation `*.diff`s and check whether two phases touch
+   *      the same path.
+   *   4. Run the integrator (5th agent) over the batch outputs (section
+   *      8.3). Output goes to `<run>/outputs/batches/batch-N/knowledge.md`.
+   *   5. If the integrator or the structural detector mark conflict, pause
+   *      until the user decides (section 8.5).
    *
-   * El knowledge consolidado del batch N queda disponible para las fases del
-   * batch N+1 vía `buildAgentInput` que lo lee desde disco (section 8.6).
+   * The consolidated knowledge of batch N becomes available to the phases
+   * of batch N+1 via `buildAgentInput`, which reads it from disk (section 8.6).
    */
   private async runHybridCycle(): Promise<void> {
     let batchIndex = Math.max(0, this.state.currentBatchIndex);
@@ -613,7 +615,7 @@ export class RunScheduler {
       if (this.shouldStop()) break;
       this.commit({ ...this.state, currentBatchIndex: batchIndex });
 
-      // 1. Lanzar las fases del batch en paralelo.
+      // 1. Launch the batch phases in parallel.
       const slugs = this.state.batches[batchIndex];
       const phaseIndices = slugs
         .map((slug) => this.state.phases.findIndex((p) => p.slug === slug))
@@ -623,38 +625,38 @@ export class RunScheduler {
         continue;
       }
 
-      // Reset de retries/status sólo cuando el batch arranca limpio (no resume).
-      // El resume formal (Section 9) puede preservar los stages done; acá si el
-      // batch arranca todas sus fases tienen que estar en pending (lo están al
-      // inicializar) o resetadas (al re-run vía `resolveConflict("rerun")`).
+      // Reset of retries/status only when the batch starts clean (not resume).
+      // The formal resume (Section 9) may preserve done stages; here if the
+      // batch starts, all its phases must be pending (they are on
+      // initialize) or reset (on re-run via `resolveConflict("rerun")`).
 
       await Promise.all(phaseIndices.map((idx) => this.runPhase(idx)));
 
       if (this.shouldStop()) break;
-      // Si alguna fase del batch terminó en `error` fatal, no corremos integrador
-      // y dejamos el run en error.
+      // If any batch phase ended in fatal `error`, we don't run the integrator
+      // and leave the run in error.
       const anyError = phaseIndices.some((i) => this.state.phases[i].status === "error");
       if (anyError || this.state.status === "error") {
-        // runPhase ya seteó el message en este caso.
+        // runPhase already set the message in that case.
         break;
       }
 
-      // 2. Correr integrador. Devuelve conflicts detectados (estructurales +
-      //    los que el agente marcó con `INTEGRATION: blocker`).
+      // 2. Run integrator. Returns detected conflicts (structural ones +
+      //    those the agent marked with `INTEGRATION: blocker`).
       const integratorOutcome = await this.runIntegrator(batchIndex, phaseIndices);
       if (this.shouldStop()) break;
       if (integratorOutcome === "error") {
-        // Marcamos el run en error y dejamos al usuario inspeccionar el state.
+        // We mark the run in error and let the user inspect the state.
         this.commit({
           ...this.state,
           status: "error",
-          message: `integrador batch-${batchIndex} falló — ver outputs/batches/${batchIdFor(batchIndex)}/`,
+          message: `integrator batch-${batchIndex} failed — see outputs/batches/${batchIdFor(batchIndex)}/`,
         });
         break;
       }
 
       if (integratorOutcome === "conflict") {
-        // 3. Conflict: pausamos y esperamos al usuario. La decisión llega vía
+        // 3. Conflict: pause and wait for the user. The decision arrives via
         //    `resolveConflict()` (Section 8.5).
         const decision = await this.awaitConflictDecision(batchIndex);
         if (decision === "abort") {
@@ -669,13 +671,13 @@ export class RunScheduler {
             message: undefined,
           });
           this.commit({ ...this.state, status: "running", message: null });
-          // Sigue el while loop con el mismo batchIndex.
+          // Continue the while loop with the same batchIndex.
           continue;
         }
-        // decision === "continue": tratamos el integrador como done y avanzamos.
+        // decision === "continue": treat the integrator as done and advance.
         this.patchIntegrator(batchIndex, {
           status: "done",
-          message: "conflictos aceptados por el usuario — el flow continúa",
+          message: "conflicts accepted by the user — the flow continues",
         });
         this.commit({ ...this.state, status: "running", message: null });
       }
@@ -687,8 +689,8 @@ export class RunScheduler {
   }
 
   /**
-   * Cierre del ciclo principal (común a sec/híbrido). Decide el status final
-   * del run según los flags pendientes.
+   * Closing of the main cycle (common to sequential/hybrid). Decides the
+   * run's final status based on pending flags.
    */
   private finalizeCycle(): void {
     this.stopHeartbeat();
@@ -697,7 +699,7 @@ export class RunScheduler {
     } else if (this.pauseRequested) {
       this.commit({ ...this.state, status: "paused", currentStage: null });
     } else if (this.state.status === "error") {
-      // El error ya seteó el message.
+      // The error already set the message.
     } else {
       this.commit({ ...this.state, status: "completed", currentStage: null });
     }
@@ -709,8 +711,8 @@ export class RunScheduler {
     const phase = this.state.phases[index];
     if (!phase) return;
 
-    // Ejecutamos las 4 etapas en orden. Cada etapa puede setear `warning` o
-    // `error` y el scheduler reacciona al final.
+    // Run the 4 stages in order. Each stage may set `warning` or `error`
+    // and the scheduler reacts at the end.
     for (const agent of SEQUENTIAL_AGENTS) {
       if (this.shouldStop()) return;
       if (agent === "review") {
@@ -718,21 +720,20 @@ export class RunScheduler {
       } else {
         await this.runStage(index, agent);
       }
-      // Si la etapa terminó en error fatal, detenemos el ciclo y dejamos el
-      // run en `error`. El usuario puede inspeccionar y eventualmente
-      // retomar (Section 9).
+      // If the stage ended in fatal error, stop the cycle and leave the run
+      // in `error`. The user can inspect and eventually resume (Section 9).
       const stage = this.state.phases[index].stages[agent];
       if (stage.status === "error") {
         this.commit({
           ...this.state,
           status: "error",
-          message: `fase ${phase.slug} / ${agent}: ${stage.message ?? "error desconocido"}`,
+          message: `phase ${phase.slug} / ${agent}: ${stage.message ?? "unknown error"}`,
         });
         return;
       }
     }
-    // Cuando todas las etapas terminaron, agregamos el status global de la
-    // fase. Si alguna quedó en warning, la fase es warning.
+    // When all stages finished, aggregate the global phase status. If any
+    // ended in warning, the phase is warning.
     const stages = this.state.phases[index].stages;
     const anyWarning =
       stages.analysis.status === "warning" ||
@@ -746,10 +747,10 @@ export class RunScheduler {
   }
 
   /**
-   * Loop del revisor con cap de retries. Cada retry rehace implementación +
-   * review hasta que el revisor apruebe o lleguemos al cap. Al cap, marcamos
-   * la fase como `warning` (reviewerExhausted=true) y seguimos al
-   * conocimiento — design decision #4.
+   * Reviewer loop with retry cap. Each retry redoes implementation +
+   * review until the reviewer approves or we hit the cap. At the cap, we
+   * mark the phase as `warning` (reviewerExhausted=true) and move on to
+   * knowledge — design decision #4.
    */
   private async runReviewLoop(phaseIndex: number): Promise<void> {
     const settings = this.state.settings;
@@ -760,43 +761,43 @@ export class RunScheduler {
       attempt += 1;
       this.patchStage(phaseIndex, "review", { retries: attempt });
       const verdict = await this.runStage(phaseIndex, "review");
-      // Para `review`, runStage devuelve { approved, notes } o null (error).
-      // El `undefined` sólo aplica a stages no-review — defensivo igualmente.
+      // For `review`, runStage returns { approved, notes } or null (error).
+      // The `undefined` only applies to non-review stages — defensive anyway.
       if (!verdict) {
-        // Error fatal del revisor (no llegamos a parsear veredicto).
+        // Fatal reviewer error (we did not get to parse the verdict).
         return;
       }
       if (verdict.approved) {
         this.patchStage(phaseIndex, "review", { status: "done" });
         return;
       }
-      // Veredicto = retry. Si quedan intentos, re-corremos implementación con
-      // las notas del revisor como input adicional.
+      // Verdict = retry. If attempts remain, re-run implementation with the
+      // reviewer notes as additional input.
       if (attempt < settings.maxRetries) {
         if (this.shouldStop()) return;
         await this.runStage(phaseIndex, "implementation", { reviewNotes: verdict.notes });
       }
     }
-    // Cap alcanzado sin aprobar.
+    // Cap reached without approval.
     this.patchPhase(phaseIndex, { reviewerExhausted: true });
     this.patchStage(phaseIndex, "review", {
       status: "warning",
-      message: "revisor no aprobó tras 3 intentos — deuda anotada en knowledge",
+      message: "reviewer did not approve after 3 attempts — debt recorded in knowledge",
     });
   }
 
   /**
-   * Ejecuta una etapa individual del pipeline. Encapsula:
-   *   - diff snapshot antes
+   * Executes an individual pipeline stage. Encapsulates:
+   *   - diff snapshot before
    *   - invoke run_loop_agent
-   *   - persistencia de outputs/<phase>/<agent>.md y .diff
-   *   - actualización de tokens/cost/status
+   *   - persistence of outputs/<phase>/<agent>.md and .diff
+   *   - update of tokens/cost/status
    *
-   * `extraInputs.reviewNotes` permite a `runReviewLoop` pasar las notas del
-   * revisor al implementador en el retry.
+   * `extras.reviewNotes` lets `runReviewLoop` pass the reviewer notes to the
+   * implementer on the retry.
    *
-   * Devuelve para `review` un objeto `{ approved, notes }` extraído del
-   * veredicto del CLI; para los demás devuelve undefined.
+   * Returns for `review` an object `{ approved, notes }` extracted from the
+   * CLI verdict; for the others it returns undefined.
    */
   private async runStage(
     phaseIndex: number,
@@ -811,15 +812,15 @@ export class RunScheduler {
     this.updateCurrentStage(agent);
     this.patchStage(phaseIndex, agent, { status: "running", message: undefined });
 
-    // 1. Snapshot del diff antes del agente. Si falla, no es fatal — guardamos
-    //    string vacío y seguimos.
+    // 1. Diff snapshot before the agent. If it fails, it is not fatal —
+    //    we store an empty string and move on.
     const diffBefore = await this.invokers
       .gitDiffSnapshot({ projectPath: settings.projectPath })
       .catch(() => "");
 
-    // 2. Armar el user input del agente. El system prompt va por path; los
-    //    inputs específicos (logic.md, knowledge de fase previa, etc.) viajan
-    //    en el body.
+    // 2. Build the agent's user input. The system prompt goes by path;
+    //    specific inputs (logic.md, knowledge from the previous phase, etc.)
+    //    travel in the body.
     const userInput = await this.buildAgentInput(phaseIndex, agent, extras);
 
     const slot = this.slotForAgent(agent);
@@ -829,10 +830,10 @@ export class RunScheduler {
       `${agent}.md` as LoopPromptName,
     );
 
-    // 3. Invoke. Tracker de tiempo + error normalization. El heartbeat timer
-    //    pulsa `lastHeartbeat` cada 5s mientras el CLI está corriendo (Section
-    //    9.3) — sin esto el detector de runs interrumpidos podría confundir un
-    //    agente lento con un crash.
+    // 3. Invoke. Time tracker + error normalization. The heartbeat timer
+    //    pulses `lastHeartbeat` every 5s while the CLI is running (Section
+    //    9.3) — without this the interrupted-runs detector could confuse a
+    //    slow agent with a crash.
     let result: AgentResult;
     this.startHeartbeat();
     try {
@@ -848,7 +849,7 @@ export class RunScheduler {
       this.stopHeartbeat();
       this.patchStage(phaseIndex, agent, {
         status: "error",
-        message: `error invocando agente: ${stringifyError(err)}`,
+        message: `error invoking agent: ${stringifyError(err)}`,
       });
       await this.persistState();
       return null;
@@ -864,7 +865,7 @@ export class RunScheduler {
       return null;
     }
 
-    // 4. Acumular tokens/cost en la etapa y en los totales del run.
+    // 4. Accumulate tokens/cost in the stage and in the run totals.
     const tokensIn = result.tokensIn ?? 0;
     const tokensOut = result.tokensOut ?? 0;
     const costUsd = result.costUsd ?? 0;
@@ -891,7 +892,7 @@ export class RunScheduler {
       },
     });
 
-    // 5. Persistir output md.
+    // 5. Persist md output.
     try {
       await this.invokers.writeOutput({
         projectPath: settings.projectPath,
@@ -904,16 +905,16 @@ export class RunScheduler {
     } catch (err) {
       this.patchStage(phaseIndex, agent, {
         status: "error",
-        message: `no pude persistir output: ${stringifyError(err)}`,
+        message: `could not persist output: ${stringifyError(err)}`,
       });
       await this.persistState();
       return null;
     }
 
-    // 6. Snapshot del diff después y persist diff = after (es snapshot
-    //    diferencial respecto a HEAD; el "antes" sirve sólo para auditoría si
-    //    el agente escribió encima de cambios pre-existentes — la diferencia
-    //    real está en el diff after, que captura todo desde HEAD).
+    // 6. Snapshot the diff afterwards and persist diff = after (it's a
+    //    differential snapshot against HEAD; the "before" only helps for
+    //    auditing if the agent wrote on top of pre-existing changes — the
+    //    real diff is the after one, which captures everything from HEAD).
     const diffAfter = await this.invokers
       .gitDiffSnapshot({ projectPath: settings.projectPath })
       .catch(() => "");
@@ -928,31 +929,31 @@ export class RunScheduler {
         content: diffCombined,
       });
     } catch (err) {
-      // No es fatal — el output md ya está. Logueamos y seguimos.
-      console.error("loop scheduler: no pude persistir diff", err);
+      // Not fatal — the md output is already there. Log and move on.
+      console.error("loop scheduler: could not persist diff", err);
     }
 
-    // 7. Si la etapa no es revisor, marcamos done y persistimos state.
+    // 7. If the stage is not reviewer, mark done and persist state.
     if (agent !== "review") {
       this.patchStage(phaseIndex, agent, { status: "done" });
       await this.persistState();
       return undefined;
     }
 
-    // Revisor: parsear veredicto y devolverlo al loop.
+    // Reviewer: parse the verdict and return it to the loop.
     const parsed = parseReviewVerdict(result.text);
     if (parsed.approved) {
-      // Done lo setea el caller (runReviewLoop) para reflejar el cap correctamente.
+      // Done is set by the caller (runReviewLoop) to reflect the cap correctly.
     }
     await this.persistState();
     return parsed;
   }
 
   /**
-   * Arma el user input que se le pasa al agente. Cada agente recibe distintos
-   * archivos como contexto. Los reads tolerantes a "no existe aún" (read
-   * vacío) — design decision #1 hace que el contrato sea por archivos en
-   * disco, no por orden temporal.
+   * Builds the user input passed to the agent. Each agent receives different
+   * files as context. Reads are tolerant to "does not exist yet" (empty
+   * read) — design decision #1 makes the contract file-based on disk, not
+   * temporal-order based.
    */
   private async buildAgentInput(
     phaseIndex: number,
@@ -962,16 +963,16 @@ export class RunScheduler {
     const settings = this.state.settings;
     if (!settings) return "";
     const phase = this.state.phases[phaseIndex];
-    // En modo secuencial, "fase previa" es phaseIndex - 1 (orden topológico
-    // flattenado). En modo híbrido las fases del mismo batch corren en
-    // paralelo: no podemos leer knowledge entre fases del mismo batch porque
-    // probablemente todavía no exista; en su lugar inyectamos el knowledge
-    // consolidado del batch previo (Section 8.6) más abajo.
+    // In sequential mode, "previous phase" is phaseIndex - 1 (flattened
+    // topological order). In hybrid mode the same-batch phases run in
+    // parallel: we cannot read knowledge between phases of the same batch
+    // because it probably does not exist yet; instead we inject the
+    // consolidated knowledge of the previous batch (Section 8.6) below.
     const prevPhase =
       this.state.mode === "sequential" && phaseIndex > 0 ? this.state.phases[phaseIndex - 1] : null;
 
-    // Inputs comunes: logic.md de la fase + knowledge.md de la fase previa
-    // (secuencial) o del batch previo (híbrido).
+    // Common inputs: phase logic.md + previous-phase knowledge.md
+    // (sequential) or previous-batch knowledge (hybrid).
     const batchIndex = this.batchIndexForPhase(phase.slug);
     const prevBatchKnowledgePromise =
       this.state.mode === "hybrid" && batchIndex > 0
@@ -1009,19 +1010,19 @@ export class RunScheduler {
     ]);
 
     const parts: string[] = [];
-    parts.push(`# Fase ${phase.id} · ${phase.name}\n`);
+    parts.push(`# Phase ${phase.id} · ${phase.name}\n`);
     parts.push("## logic.md\n");
-    parts.push(logic.trim() || "(vacío)");
+    parts.push(logic.trim() || "(empty)");
     parts.push("\n");
 
     if (prevKnowledge.trim()) {
-      parts.push(`## Knowledge de la fase previa (${prevPhase?.name ?? ""})\n`);
+      parts.push(`## Knowledge from the previous phase (${prevPhase?.name ?? ""})\n`);
       parts.push(prevKnowledge.trim());
       parts.push("\n");
     }
 
     if (prevBatchKnowledge.trim()) {
-      parts.push(`## Knowledge consolidado del batch previo (batch-${batchIndex - 1})\n`);
+      parts.push(`## Consolidated knowledge from the previous batch (batch-${batchIndex - 1})\n`);
       parts.push(prevBatchKnowledge.trim());
       parts.push("\n");
     }
@@ -1091,43 +1092,43 @@ export class RunScheduler {
         parts.push("\n");
       }
       if (phase.reviewerExhausted) {
-        parts.push("## DEUDA TÉCNICA\n");
+        parts.push("## TECHNICAL DEBT\n");
         parts.push(
-          "El revisor no aprobó tras 3 intentos. Esta fase queda con `warning` propagado.\n" +
-            "Anotá explícitamente en tu output `knowledge.md` qué quedó sin resolver y qué tendría que cubrir manualmente el usuario o una fase posterior.\n",
+          "The reviewer did not approve after 3 attempts. This phase carries a propagated `warning`.\n" +
+            "Explicitly record in your `knowledge.md` output what remained unresolved and what the user or a later phase would need to cover manually.\n",
         );
       }
     }
 
     if (extras?.reviewNotes && agent === "implementation") {
-      parts.push("## Notas del revisor del intento anterior\n");
+      parts.push("## Reviewer notes from the previous attempt\n");
       parts.push(extras.reviewNotes.trim());
-      parts.push("\n\nAtendé estas notas antes de devolver el output.\n");
+      parts.push("\n\nAddress these notes before returning the output.\n");
     }
 
     return parts.join("\n");
   }
 
   // -------------------------------------------------------------------------
-  // Section 8: integrador y conflictos
+  // Section 8: integrator and conflicts
   // -------------------------------------------------------------------------
 
   /**
-   * Corre el integrador para el batch dado. Pasos:
+   * Runs the integrator for the given batch. Steps:
    *
-   *   1. Leer todos los `knowledge.md` + `implementation.diff` de las fases del
-   *      batch. Se concatenan en el user input del integrador (prompt seed:
-   *      `integration.md`).
-   *   2. Detectar conflictos estructurales: paths tocados por más de una fase
-   *      del batch (parseamos los diffs por sus headers `diff --git`).
-   *   3. Invocar `run_loop_agent` con el slot del rol `integration`.
-   *   4. Persistir el output en `<run>/outputs/batches/batch-N/knowledge.md`.
-   *   5. Parsear el veredicto final del integrador (`INTEGRATION: ok|blocker`).
-   *      Si está en `blocker` o si hay conflictos estructurales, el outcome es
-   *      `conflict`. Si no, `done`.
+   *   1. Read all the `knowledge.md` + `implementation.diff` of the batch
+   *      phases. They are concatenated into the integrator's user input
+   *      (prompt seed: `integration.md`).
+   *   2. Detect structural conflicts: paths touched by more than one phase
+   *      of the batch (we parse the diffs by their `diff --git` headers).
+   *   3. Invoke `run_loop_agent` with the slot of the `integration` role.
+   *   4. Persist the output to `<run>/outputs/batches/batch-N/knowledge.md`.
+   *   5. Parse the integrator's final verdict (`INTEGRATION: ok|blocker`).
+   *      If it is `blocker` or if there are structural conflicts, the
+   *      outcome is `conflict`. Otherwise, `done`.
    *
-   * Retorna `"done" | "conflict" | "error"` para que `runHybridCycle` decida si
-   * sigue, pausa o aborta.
+   * Returns `"done" | "conflict" | "error"` so `runHybridCycle` decides
+   * whether to continue, pause, or abort.
    */
   private async runIntegrator(
     batchIndex: number,
@@ -1139,7 +1140,7 @@ export class RunScheduler {
     this.patchIntegrator(batchIndex, { status: "running", message: undefined });
     this.commit({ ...this.state, currentStage: null });
 
-    // 1. Leer outputs/diffs del batch.
+    // 1. Read outputs/diffs of the batch.
     const phasesOfBatch = phaseIndices
       .map((i) => this.state.phases[i])
       .filter((p): p is PhaseState => Boolean(p));
@@ -1178,8 +1179,8 @@ export class RunScheduler {
       }),
     );
 
-    // 2. Detección estructural de conflictos (Section 8.4): paths tocados por
-    //    múltiples fases del batch.
+    // 2. Structural conflict detection (Section 8.4): paths touched by
+    //    multiple phases of the batch.
     const conflictsByPath = detectBatchConflicts(
       reads.map(({ phase, implDiff }) => ({
         phaseSlug: phase.slug,
@@ -1188,23 +1189,23 @@ export class RunScheduler {
       })),
     );
 
-    // 3. Armar user input para el integrador.
+    // 3. Build user input for the integrator.
     const parts: string[] = [];
-    parts.push(`# Integrador del batch ${batchIdFor(batchIndex)}\n`);
+    parts.push(`# Integrator of batch ${batchIdFor(batchIndex)}\n`);
     parts.push(
-      `Hay ${phasesOfBatch.length} fase(s) en este batch. Tu trabajo: consolidar el knowledge y detectar conflictos.\n`,
+      `There are ${phasesOfBatch.length} phase(s) in this batch. Your job: consolidate the knowledge and detect conflicts.\n`,
     );
     for (const { phase, knowledge, implDiff, implMd } of reads) {
-      parts.push(`\n## Fase ${phase.id} · ${phase.name}\n`);
+      parts.push(`\n## Phase ${phase.id} · ${phase.name}\n`);
       if (knowledge.trim()) {
         parts.push("### knowledge.md\n");
         parts.push(knowledge.trim());
         parts.push("\n");
       } else {
-        parts.push("### knowledge.md\n(sin contenido — la fase no produjo conocimiento o falló)\n");
+        parts.push("### knowledge.md\n(no content — the phase produced no knowledge or failed)\n");
       }
       if (implMd.trim()) {
-        parts.push("### implementation.md (resumen)\n");
+        parts.push("### implementation.md (summary)\n");
         parts.push(truncateForIntegrator(implMd));
         parts.push("\n");
       }
@@ -1216,12 +1217,12 @@ export class RunScheduler {
       }
     }
     if (conflictsByPath.length > 0) {
-      parts.push("\n## Conflictos estructurales detectados por el scheduler\n");
+      parts.push("\n## Structural conflicts detected by the scheduler\n");
       parts.push(
-        "Los siguientes paths fueron modificados por más de una fase del batch — revisalos y marcá `BLOCKER` si rompen coherencia:\n",
+        "The following paths were modified by more than one phase of the batch — review them and mark `BLOCKER` if they break coherence:\n",
       );
       for (const c of conflictsByPath) {
-        parts.push(`- \`${c.path}\` — fases: ${c.phases.join(", ")}\n`);
+        parts.push(`- \`${c.path}\` — phases: ${c.phases.join(", ")}\n`);
       }
     }
 
@@ -1233,7 +1234,7 @@ export class RunScheduler {
       "integration.md",
     );
 
-    // 4. Invocar al integrador. Heartbeat pulsa durante la corrida (Section 9.3).
+    // 4. Invoke the integrator. Heartbeat pulses during the run (Section 9.3).
     let result: AgentResult;
     this.startHeartbeat();
     try {
@@ -1249,7 +1250,7 @@ export class RunScheduler {
       this.stopHeartbeat();
       this.patchIntegrator(batchIndex, {
         status: "error",
-        message: `error invocando integrador: ${stringifyError(err)}`,
+        message: `error invoking integrator: ${stringifyError(err)}`,
       });
       await this.persistState();
       return "error";
@@ -1264,7 +1265,7 @@ export class RunScheduler {
       return "error";
     }
 
-    // 5. Acumular tokens/cost del integrador.
+    // 5. Accumulate integrator tokens/cost.
     const tokensIn = result.tokensIn ?? 0;
     const tokensOut = result.tokensOut ?? 0;
     const costUsd = result.costUsd ?? 0;
@@ -1290,7 +1291,7 @@ export class RunScheduler {
       },
     });
 
-    // 6. Persistir output.
+    // 6. Persist output.
     try {
       await this.invokers.writeBatchFile({
         projectPath: settings.projectPath,
@@ -1302,17 +1303,17 @@ export class RunScheduler {
     } catch (err) {
       this.patchIntegrator(batchIndex, {
         status: "error",
-        message: `no pude persistir knowledge consolidado: ${stringifyError(err)}`,
+        message: `could not persist consolidated knowledge: ${stringifyError(err)}`,
       });
       await this.persistState();
       return "error";
     }
 
-    // 7. Parsear veredicto. Si el agente marca blocker, conflict. Si el
-    //    detector estructural encontró paths conflict y el agente no los
-    //    descartó explícitamente con `INTEGRATION: ok`, tratamos como conflict
-    //    (lado conservador — design risk "integrador del batch hace ... antes
-    //    de aprobar").
+    // 7. Parse the verdict. If the agent marks blocker, conflict. If the
+    //    structural detector found conflicting paths and the agent did not
+    //    explicitly waive them with `INTEGRATION: ok`, treat as conflict
+    //    (conservative side — design risk "integrator of the batch does ...
+    //    before approving").
     const verdict = parseIntegrationVerdict(result.text);
     const conflictPaths = conflictsByPath.map((c) => c.path);
     const isBlocker =
@@ -1324,8 +1325,8 @@ export class RunScheduler {
         conflicts: conflictPaths,
         message:
           verdict.status === "blocker"
-            ? "integrador marcó BLOCKER — revisá el knowledge consolidado"
-            : "el scheduler detectó paths tocados por múltiples fases — revisá el knowledge",
+            ? "integrator marked BLOCKER — review the consolidated knowledge"
+            : "the scheduler detected paths touched by multiple phases — review the knowledge",
       });
       await this.persistState();
       return "conflict";
@@ -1333,7 +1334,7 @@ export class RunScheduler {
 
     this.patchIntegrator(batchIndex, {
       status: "done",
-      conflicts: conflictPaths, // info para el usuario aunque no rompa
+      conflicts: conflictPaths, // info for the user even if it doesn't break
       message: undefined,
     });
     await this.persistState();
@@ -1341,15 +1342,15 @@ export class RunScheduler {
   }
 
   /**
-   * Pausa el ciclo hasta que el usuario decida vía `resolveConflict`. Mientras
-   * tanto el status global es "paused" y los listeners pueden refrescar el
-   * view con la card del integrador en estado "conflict".
+   * Pauses the cycle until the user decides via `resolveConflict`. In the
+   * meantime the global status is "paused" and listeners can refresh the
+   * view with the integrator card in "conflict" state.
    */
   private awaitConflictDecision(batchIndex: number): Promise<ConflictDecision> {
     this.commit({
       ...this.state,
       status: "paused",
-      message: `conflicto en batch-${batchIndex} — decidí continuar, abortar o re-ejecutar`,
+      message: `conflict in batch-${batchIndex} — decide whether to continue, abort, or re-run`,
     });
     return new Promise<ConflictDecision>((resolve) => {
       this.conflictResolver = resolve;
@@ -1357,8 +1358,8 @@ export class RunScheduler {
   }
 
   /**
-   * Resetea el estado de las fases del batch a `pending` y limpia sus stages.
-   * Usado al re-ejecutar tras una decisión de conflict.
+   * Resets the state of the batch phases to `pending` and clears their
+   * stages. Used when re-running after a conflict decision.
    */
   private resetBatchPhases(phaseIndices: number[]): void {
     const phases = this.state.phases.slice();
@@ -1389,7 +1390,7 @@ export class RunScheduler {
   }
 
   // -------------------------------------------------------------------------
-  // Helpers internos
+  // Internal helpers
   // -------------------------------------------------------------------------
 
   private shouldStop(): boolean {
@@ -1403,8 +1404,8 @@ export class RunScheduler {
   }
 
   /**
-   * Devuelve el índice del batch al que pertenece una fase. -1 si la fase no
-   * está en ningún batch (modo secuencial o slug no listado).
+   * Returns the batch index a phase belongs to. -1 if the phase is not in
+   * any batch (sequential mode or slug not listed).
    */
   private batchIndexForPhase(slug: string): number {
     if (this.state.mode !== "hybrid") return -1;
@@ -1455,10 +1456,10 @@ export class RunScheduler {
   }
 
   /**
-   * Serializa el state.json y lo persiste. Actualizamos `lastHeartbeat` cada
-   * vez (después de cada cambio significativo de estado — Section 9.2). El
-   * heartbeat granular vive en `pulseHeartbeat()` durante invocaciones de
-   * agente (Section 9.3).
+   * Serializes the state.json and persists it. We update `lastHeartbeat`
+   * every time (after each significant state change — Section 9.2). The
+   * granular heartbeat lives in `pulseHeartbeat()` during agent invocations
+   * (Section 9.3).
    */
   private async persistState(): Promise<void> {
     if (!this.state.settings) return;
@@ -1472,22 +1473,21 @@ export class RunScheduler {
         content: JSON.stringify(payload),
       });
     } catch (err) {
-      console.error("loop scheduler: no pude persistir state.json", err);
+      console.error("loop scheduler: could not persist state.json", err);
     }
   }
 
   /**
-   * Section 9.3 — pulso de heartbeat sin re-serializar nada del run. Se
-   * dispara mientras un stage está corriendo: el detector de runs
-   * interrumpidos usa `lastHeartbeat` para distinguir un proceso vivo de uno
-   * muerto. Si el agente tarda 4 minutos en responder pero el timer pulsa
-   * cada 5s, el run aparece "vivo" en el banner; si la app muere a mitad
-   * de invocación, el último heartbeat queda viejo y el banner aparece al
-   * reabrir.
+   * Section 9.3 — heartbeat pulse without re-serializing the whole run. It
+   * fires while a stage is running: the interrupted-runs detector uses
+   * `lastHeartbeat` to distinguish a live process from a dead one. If the
+   * agent takes 4 minutes to respond but the timer pulses every 5s, the
+   * run appears "alive" in the banner; if the app dies mid-invocation, the
+   * last heartbeat is stale and the banner appears on reopen.
    *
-   * Llamamos `persistState()` para que el cambio quede en disco. Es un write
-   * por intervalo (default 5s) — barato comparado con el costo de una
-   * invocación de LLM.
+   * We call `persistState()` so the change goes to disk. It's one write
+   * per interval (default 5s) — cheap compared to the cost of an LLM
+   * invocation.
    */
   private startHeartbeat(): void {
     this.stopHeartbeat();
@@ -1504,14 +1504,14 @@ export class RunScheduler {
   }
 
   /**
-   * Section 9.6 — hidrata el scheduler desde un `PersistedRunState` previamente
-   * validado (ver `state-schema.ts::validateRunState`). NO arranca el ciclo;
-   * el caller decide si lo retoma con `start()` o lo deja en `paused` para
-   * que el usuario lo revise primero.
+   * Section 9.6 — hydrates the scheduler from a previously validated
+   * `PersistedRunState` (see `state-schema.ts::validateRunState`). It does
+   * NOT start the cycle; the caller decides whether to resume it with
+   * `start()` or leave it in `paused` for the user to review first.
    *
-   * Restricción: el caller debe haber descartado outputs parciales antes de
-   * llamar (Section 9.6 descarta los `.md` sin `.diff` companion). El
-   * scheduler no inspecciona el FS — sólo restaura el state machine.
+   * Restriction: the caller must have discarded partial outputs before
+   * calling (Section 9.6 discards `.md`s without `.diff` companion). The
+   * scheduler does not inspect the FS — it only restores the state machine.
    */
   hydrateFromPersisted(persisted: PersistedRunState): void {
     this.stopHeartbeat();
@@ -1537,29 +1537,29 @@ export class RunScheduler {
 }
 
 // ---------------------------------------------------------------------------
-// Helpers de parsing y paths
+// Parsing and path helpers
 // ---------------------------------------------------------------------------
 
-/** Misma heurística de separador que step1-chat / step2-phases. */
+/** Same separator heuristic as step1-chat / step2-phases. */
 function buildRunPromptPath(projectPath: string, runId: string, name: LoopPromptName): string {
   const sep = projectPath.includes("\\") ? "\\" : "/";
   return [projectPath, ".loop", "runs", runId, "prompts", name].join(sep);
 }
 
 /**
- * Parser del veredicto del revisor. El system prompt (`review.md`) le pide al
- * agente devolver `VEREDICTO: aprobado | retry` en la primera línea. Toleramos
- * mayúsculas y guiones — y si no encontramos el header, asumimos `retry` con
- * el texto completo como notas (mejor falso retry que falso approved).
+ * Parser for the reviewer verdict. The system prompt (`review.md`) asks the
+ * agent to return `VERDICT: approved | retry` on the first line. We tolerate
+ * uppercase and dashes — and if we don't find the header, we assume `retry`
+ * with the full text as notes (better a false retry than a false approved).
  */
 export function parseReviewVerdict(text: string): { approved: boolean; notes: string } {
   const lines = text.split(/\r?\n/);
   for (const line of lines) {
-    const m = line.match(/^\s*VEREDICTO\s*[:=]\s*([\w-]+)/i);
+    const m = line.match(/^\s*(?:VERDICT|VEREDICTO)\s*[:=]\s*([\w-]+)/i);
     if (m) {
       const v = m[1].toLowerCase();
-      const approved = v === "aprobado" || v === "approved" || v === "ok";
-      // Notas: todo lo que viene después del header.
+      const approved = v === "approved" || v === "aprobado" || v === "ok";
+      // Notes: everything that comes after the header.
       const idx = text.indexOf(line);
       const notes = text.slice(idx + line.length).trim();
       return { approved, notes: approved ? "" : notes };
@@ -1569,43 +1569,43 @@ export function parseReviewVerdict(text: string): { approved: boolean; notes: st
 }
 
 /**
- * Combina los snapshots de "antes" y "después" en un solo blob legible. Para
- * mantener el archivo .diff útil sin volverlo intratable, guardamos el diff
- * "después" (que ya incluye los cambios del agente respecto a HEAD) y un
- * header con la fecha. El "antes" se conserva como comentario inicial para
- * auditoría — si el usuario ve un agente que sobrescribe trabajo previo, va
- * a aparecer ahí.
+ * Combines the "before" and "after" snapshots into a single legible blob. To
+ * keep the .diff file useful without making it unmanageable, we store the
+ * "after" diff (which already includes the agent's changes relative to HEAD)
+ * and a header with the date. The "before" is preserved as a leading comment
+ * for auditing — if the user sees an agent overwriting prior work, it will
+ * show up there.
  */
 export function buildAgentDiff(diffBefore: string, diffAfter: string): string {
   const stamp = new Date().toISOString();
   const parts: string[] = [];
-  parts.push(`# Snapshot diff generado por loop scheduler · ${stamp}`);
-  parts.push("# (refleja el delta respecto a HEAD después de la corrida del agente)");
+  parts.push(`# Snapshot diff generated by the loop scheduler · ${stamp}`);
+  parts.push("# (reflects the delta relative to HEAD after the agent run)");
   if (diffBefore.trim() && diffBefore.trim() !== diffAfter.trim()) {
     parts.push("#");
-    parts.push("# --- estado previo (resumen) ---");
+    parts.push("# --- prior state (summary) ---");
     for (const line of diffBefore.split(/\r?\n/).slice(0, 40)) {
       parts.push(`# ${line}`);
     }
-    parts.push("# --- estado post-agente ---");
+    parts.push("# --- post-agent state ---");
   }
   parts.push("");
-  parts.push(diffAfter.trim() || "(sin cambios respecto a HEAD)");
+  parts.push(diffAfter.trim() || "(no changes relative to HEAD)");
   parts.push("");
   return parts.join("\n");
 }
 
 /**
- * Section 8.4 · detección estructural de conflictos entre fases del mismo
- * batch. Parsea los headers `diff --git a/<path> b/<path>` (formato canónico de
- * git diff). Si dos o más fases tocan el mismo path, lo reportamos.
+ * Section 8.4 · structural conflict detection between phases of the same
+ * batch. Parses the `diff --git a/<path> b/<path>` headers (canonical git
+ * diff format). If two or more phases touch the same path, we report it.
  *
- * No es a prueba de balas — un agente podría haber escrito un archivo via
- * shell sin que git lo registre (untracked nuevo), pero nuestro snapshot
- * incluye untracked como líneas `# - <path>` aparte (ver `git_diff_sync` en
- * Rust). Las consumimos también.
+ * Not bulletproof — an agent could have written a file via shell without
+ * git registering it (new untracked), but our snapshot includes untracked
+ * as `# - <path>` lines on the side (see `git_diff_sync` in Rust). We
+ * consume those too.
  *
- * Devuelve una lista ordenada de `{ path, phases[] }` con paths conflictivos.
+ * Returns an ordered list of `{ path, phases[] }` with conflicting paths.
  */
 export interface BatchConflict {
   path: string;
@@ -1625,9 +1625,9 @@ export function detectBatchConflicts(
     let m: RegExpExecArray | null;
     headerRe.lastIndex = 0;
     while ((m = headerRe.exec(diff)) !== null) {
-      // a/b refieren al mismo path en cambios in-place; renames usan a!=b.
-      // Reportamos ambos lados para que un rename quede flaggeado contra
-      // cualquier fase que toque el path original o nuevo.
+      // a/b refer to the same path on in-place changes; renames use a!=b.
+      // We report both sides so a rename gets flagged against any phase that
+      // touches either the original or the new path.
       const a = m[1].trim();
       const b = m[2].trim();
       if (a) seen.add(a);
@@ -1659,10 +1659,11 @@ export function detectBatchConflicts(
 }
 
 /**
- * Section 8.3 · parseo del veredicto del integrador. El prompt `integration.md`
- * pide cerrar con `INTEGRATION: ok` o `INTEGRATION: blocker`. Toleramos
- * mayúsculas/espacios. Si no aparece el header, asumimos `ok` para no bloquear
- * en falso (el detector estructural va a frenar igual si hay conflicto real).
+ * Section 8.3 · parsing of the integrator verdict. The `integration.md`
+ * prompt asks to close with `INTEGRATION: ok` or `INTEGRATION: blocker`. We
+ * tolerate uppercase/whitespace. If the header is missing, we assume `ok`
+ * to avoid false blocks (the structural detector will still stop us if
+ * there's a real conflict).
  */
 export function parseIntegrationVerdict(text: string): { status: "ok" | "blocker" } {
   const lines = text.split(/\r?\n/);
@@ -1678,9 +1679,9 @@ export function parseIntegrationVerdict(text: string): { status: "ok" | "blocker
 }
 
 /**
- * Trunca un blob largo para el input del integrador. Mantenemos las primeras
- * y últimas N líneas + un placeholder en el medio. Evita que un diff o un md
- * de implementación grandes consuman todo el context window.
+ * Truncates a long blob for the integrator input. Keeps the first and last
+ * N lines + a placeholder in the middle. Prevents a large diff or
+ * implementation md from consuming the entire context window.
  */
 function truncateForIntegrator(text: string, maxLines = 200): string {
   const lines = text.split(/\r?\n/);
@@ -1689,7 +1690,7 @@ function truncateForIntegrator(text: string, maxLines = 200): string {
   const tail = lines.slice(-Math.floor(maxLines / 2));
   return [
     ...head,
-    `... (truncado · ${lines.length - maxLines} línea(s) omitidas) ...`,
+    `... (truncated · ${lines.length - maxLines} line(s) omitted) ...`,
     ...tail,
   ].join("\n");
 }
@@ -1705,7 +1706,7 @@ function stringifyError(err: unknown): string {
 }
 
 // ---------------------------------------------------------------------------
-// Re-exports para Section 7.7 (vista del run)
+// Re-exports for Section 7.7 (run view)
 // ---------------------------------------------------------------------------
 
 export { ALL_AGENT_ROLES, SEQUENTIAL_AGENTS };

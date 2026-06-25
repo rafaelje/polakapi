@@ -1,24 +1,26 @@
-//! Wrapper de subprocesos para los CLIs LLM usados por la ventana `/loop`.
+//! Subprocess wrapper for the LLM CLIs used by the `/loop` window.
 //!
-//! Expone un único comando Tauri `run_loop_agent` que normaliza la invocación
-//! one-shot de `claude`, `codex` y `opencode` a un [`AgentResult`] común. La
-//! decisión de mantener esto en un módulo aparte (en lugar de extender
-//! `commands.rs`) refleja la separación de capas que ya usa el repo: el módulo
-//! `pty.rs` aísla el wrapping de `portable_pty`, y este módulo hace lo análogo
-//! para el patrón one-shot con `std::process::Command::output()`.
+//! Exposes a single Tauri command `run_loop_agent` that normalizes the one-shot
+//! invocation of `claude`, `codex` and `opencode` into a common
+//! [`AgentResult`]. The decision to keep this in a separate module (instead of
+//! extending `commands.rs`) mirrors the layer separation the repo already
+//! uses: the `pty.rs` module isolates the `portable_pty` wrapping, and this
+//! module does the analogous thing for the one-shot pattern with
+//! `std::process::Command::output()`.
 //!
-//! Diseño técnico clave:
-//! - `tokio::time::timeout` envuelve la ejecución bloqueante vía
-//!   `tokio::task::spawn_blocking`. El default es 300s (alineado con el design
-//!   doc, sección "Risks", fila del subproceso colgado).
-//! - El parseo de outputs es CLI-específico (cada CLI tiene un formato distinto)
-//!   y vive en funciones `parse_*` separadas para poder testearlas de manera
-//!   aislada en el futuro.
-//! - Errores se devuelven como `AgentResult { error: Some(...) }` en vez de
-//!   `Err(...)` cuando se trata de fallos esperables del CLI (exit != 0, JSON
-//!   malformado). Reservamos `Err(...)` para fallos del wrapper (timeout, CLI
-//!   no encontrado, IO fatal). Esto le da al frontend un canal uniforme para
-//!   surfacear warnings sin tener que distinguir excepciones de status fields.
+//! Key technical design:
+//! - `tokio::time::timeout` wraps the blocking execution via
+//!   `tokio::task::spawn_blocking`. The default is 300s (aligned with the
+//!   design doc, "Risks" section, hung subprocess row).
+//! - Output parsing is CLI-specific (each CLI has a different format) and
+//!   lives in separate `parse_*` functions so they can be tested in isolation
+//!   in the future.
+//! - Errors are returned as `AgentResult { error: Some(...) }` instead of
+//!   `Err(...)` when dealing with expected CLI failures (exit != 0, malformed
+//!   JSON). We reserve `Err(...)` for wrapper failures (timeout, CLI not
+//!   found, fatal IO). This gives the frontend a uniform channel for
+//!   surfacing warnings without having to distinguish exceptions from status
+//!   fields.
 
 use std::io::Write;
 use std::path::PathBuf;
@@ -28,32 +30,33 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 use tokio::time::timeout;
 
-/// Default timeout en segundos para una invocación de agente. Alineado con el
-/// design doc (300s). Configurable por argumento del comando.
+/// Default timeout in seconds for an agent invocation. Aligned with the
+/// design doc (300s). Configurable via command argument.
 const DEFAULT_TIMEOUT_SECS: u64 = 300;
 
-/// Output normalizado de cualquier CLI LLM invocado por el módulo `/loop`.
+/// Normalized output of any LLM CLI invoked by the `/loop` module.
 ///
-/// Los campos `tokens_in`, `tokens_out`, `cost_usd` y `session_id` son
-/// opcionales porque no todos los CLIs los exponen en su modo one-shot (ej.
-/// `opencode` no reporta costo). `text` siempre se intenta poblar — si no hay
-/// nada, queda como string vacío y `error` debería estar seteado.
+/// The fields `tokens_in`, `tokens_out`, `cost_usd` and `session_id` are
+/// optional because not every CLI exposes them in one-shot mode (e.g.
+/// `opencode` does not report cost). `text` is always populated when possible
+/// — if there is nothing, it stays as an empty string and `error` should be
+/// set.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentResult {
-    /// El último mensaje del agente (el "result" del run one-shot).
+    /// The last message from the agent (the "result" of the one-shot run).
     pub text: String,
-    /// Tokens de entrada reportados por el CLI, si están disponibles.
+    /// Input tokens reported by the CLI, if available.
     pub tokens_in: Option<u64>,
-    /// Tokens de salida reportados por el CLI, si están disponibles.
+    /// Output tokens reported by the CLI, if available.
     pub tokens_out: Option<u64>,
-    /// Costo en USD reportado por el CLI, si está disponible.
+    /// Cost in USD reported by the CLI, if available.
     pub cost_usd: Option<f64>,
-    /// ID de sesión del CLI (útil sólo para debugging — no usamos sesiones
-    /// persistentes, ver design decision #3).
+    /// CLI session id (useful only for debugging — we do not use persistent
+    /// sessions, see design decision #3).
     pub session_id: Option<String>,
-    /// Mensaje de error legible si la invocación devolvió exit != 0 o el
-    /// output no pudo ser parseado. `None` indica éxito limpio.
+    /// Human-readable error message if the invocation returned exit != 0 or
+    /// the output could not be parsed. `None` indicates clean success.
     pub error: Option<String>,
 }
 
@@ -70,16 +73,16 @@ impl AgentResult {
     }
 }
 
-/// Comando Tauri que invoca el CLI configurado en modo one-shot y devuelve un
-/// [`AgentResult`] normalizado.
+/// Tauri command that invokes the configured CLI in one-shot mode and returns
+/// a normalized [`AgentResult`].
 ///
-/// `cli` es uno de `"claude" | "codex" | "opencode"`. Otros valores devuelven
-/// `Err(...)` inmediato.
+/// `cli` is one of `"claude" | "codex" | "opencode"`. Other values return
+/// `Err(...)` immediately.
 ///
-/// `system_prompt_path` y `user_input` se pasan al CLI como flags/stdin según
-/// la convención de cada uno (ver funciones `invoke_*`).
+/// `system_prompt_path` and `user_input` are passed to the CLI as flags/stdin
+/// according to the convention of each one (see `invoke_*` functions).
 ///
-/// `timeout_secs` por debajo de 1 se sustituye por [`DEFAULT_TIMEOUT_SECS`].
+/// `timeout_secs` below 1 is replaced with [`DEFAULT_TIMEOUT_SECS`].
 #[tauri::command]
 pub async fn run_loop_agent(
     cli: String,
@@ -102,7 +105,7 @@ pub async fn run_loop_agent(
             "claude" => invoke_claude(&model, &cwd, system_prompt_path.as_deref(), &user_input, sid),
             "codex" => invoke_codex(&model, &cwd, system_prompt_path.as_deref(), &user_input, sid),
             "opencode" => invoke_opencode(&model, &cwd, system_prompt_path.as_deref(), &user_input, sid),
-            other => Err(format!("CLI no soportado: {other}")),
+            other => Err(format!("unsupported CLI: {other}")),
         }
     });
 
@@ -110,7 +113,7 @@ pub async fn run_loop_agent(
         Ok(Ok(Ok(result))) => Ok(result),
         Ok(Ok(Err(err))) => Ok(AgentResult::empty_with_error(err)),
         Ok(Err(join_err)) => Err(format!("loop_agent join error: {join_err}")),
-        Err(_) => Err(format!("timeout despues de {secs}s invocando {cli}")),
+        Err(_) => Err(format!("timeout after {secs}s invoking {cli}")),
     }
 }
 
@@ -118,10 +121,10 @@ pub async fn run_loop_agent(
 // claude
 // ---------------------------------------------------------------------------
 
-/// Invoca `claude -p <input> --output-format json --model <model> [--append-system-prompt @file]`.
+/// Invokes `claude -p <input> --output-format json --model <model> [--append-system-prompt @file]`.
 ///
-/// `claude` con `--output-format json` devuelve un único objeto JSON con la
-/// shape (entre otros campos): `{ "result": "...", "session_id": "...",
+/// `claude` with `--output-format json` returns a single JSON object with the
+/// shape (among other fields): `{ "result": "...", "session_id": "...",
 /// "total_cost_usd": 0.0, "usage": { "input_tokens": 0, "output_tokens": 0 },
 /// "is_error": false }`.
 fn invoke_claude(
@@ -140,25 +143,26 @@ fn invoke_claude(
         .arg(model);
 
     if let Some(sid) = session_id {
-        // Resume: claude reusa la sesión previa (incluyendo el system prompt
-        // que ya tenía). No re-appendeamos system prompt: claude lo conserva.
+        // Resume: claude reuses the previous session (including the system
+        // prompt it already had). We do not re-append a system prompt: claude
+        // preserves it.
         cmd.arg("--resume").arg(sid);
     } else if let Some(path) = system_prompt_path {
-        // Primer turno con esta sesión: incluimos el system prompt; futuros
-        // resumes lo heredan.
+        // First turn with this session: we include the system prompt; future
+        // resumes inherit it.
         let content =
-            std::fs::read_to_string(path).map_err(|e| format!("no pude leer system prompt: {e}"))?;
+            std::fs::read_to_string(path).map_err(|e| format!("could not read system prompt: {e}"))?;
         cmd.arg("--append-system-prompt").arg(content);
     }
 
     let output = run_command(cmd, cwd, "claude")?;
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    // claude devuelve el JSON estructurado de error (404 modelo, throttling, etc.)
-    // por stdout aún con exit ≠ 0. Intentamos parsear primero — `parse_claude_json`
-    // ya distingue `is_error: true` y lo surfacea en `AgentResult.error` con el
-    // texto humano del campo `result`. Sólo caemos al stderr si el stdout no es
-    // JSON parseable.
+    // claude returns the structured JSON error (404 model, throttling, etc.)
+    // via stdout even with exit != 0. We try to parse first — `parse_claude_json`
+    // already detects `is_error: true` and surfaces it in `AgentResult.error`
+    // with the human text from the `result` field. We only fall back to stderr
+    // if the stdout is not parseable JSON.
     if !stdout.trim().is_empty() {
         let parsed = parse_claude_json(&stdout)?;
         if !parsed.text.is_empty() || parsed.error.is_some() {
@@ -182,7 +186,7 @@ fn parse_claude_json(raw: &str) -> Result<AgentResult, String> {
         Ok(v) => v,
         Err(e) => {
             return Ok(AgentResult::empty_with_error(format!(
-                "claude JSON malformado: {e}"
+                "malformed claude JSON: {e}"
             )));
         }
     };
@@ -216,16 +220,16 @@ fn parse_claude_json(raw: &str) -> Result<AgentResult, String> {
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
 
-    // claude usa `result` para el mensaje humano del error (ej. "There's an
-    // issue with the selected model (xxx)..."). Si está vacío, fallback a
-    // `api_error_status`. Si tampoco, mensaje genérico.
+    // claude uses `result` for the human-readable error message (e.g. "There's
+    // an issue with the selected model (xxx)..."). If empty, fall back to
+    // `api_error_status`. If that is also missing, a generic message.
     let error = if is_error {
         let detail = if !text.is_empty() {
             text.clone()
         } else if let Some(status) = value.get("api_error_status").and_then(|v| v.as_u64()) {
             format!("claude api error {status}")
         } else {
-            "claude marcó is_error=true".to_string()
+            "claude marked is_error=true".to_string()
         };
         Some(detail)
     } else {
@@ -246,12 +250,12 @@ fn parse_claude_json(raw: &str) -> Result<AgentResult, String> {
 // codex
 // ---------------------------------------------------------------------------
 
-/// Invoca `codex exec --model <model> --json --output-last-message <tmpfile> <input>`.
+/// Invokes `codex exec --model <model> --json --output-last-message <tmpfile> <input>`.
 ///
-/// `codex` con `--output-last-message` escribe el último mensaje del agente al
-/// archivo dado (text plano). Con `--json` además emite eventos JSONL a stdout
-/// donde podemos buscar usage/cost. Combinamos ambos: texto desde el archivo,
-/// tokens/costo desde el JSONL.
+/// `codex` with `--output-last-message` writes the last message from the agent
+/// to the given file (plain text). With `--json` it additionally emits JSONL
+/// events to stdout where we can look for usage/cost. We combine both: text
+/// from the file, tokens/cost from the JSONL.
 fn invoke_codex(
     model: &str,
     cwd: &str,
@@ -259,25 +263,25 @@ fn invoke_codex(
     user_input: &str,
     session_id: Option<&str>,
 ) -> Result<AgentResult, String> {
-    // Archivo temporal para el último mensaje. Lo abrimos en el scope del run
-    // así se borra solo al finalizar (RAII de tempfile::NamedTempFile).
+    // Temp file for the last message. We open it within the run scope so it
+    // is removed on exit (RAII from tempfile::NamedTempFile).
     let tmp = tempfile::Builder::new()
         .prefix("loop-codex-last-")
         .suffix(".txt")
         .tempfile()
-        .map_err(|e| format!("no pude crear tempfile para codex: {e}"))?;
+        .map_err(|e| format!("could not create tempfile for codex: {e}"))?;
     let tmp_path: PathBuf = tmp.path().to_path_buf();
 
-    // codex no tiene un flag dedicado para system prompt en modo exec one-shot;
-    // se concatena al input. En modo resume la sesión ya tiene el system prompt
-    // del primer turno, así que NO lo re-concatenamos.
+    // codex has no dedicated flag for a system prompt in one-shot exec mode;
+    // it is concatenated to the input. In resume mode the session already has
+    // the system prompt from the first turn, so we do NOT re-concatenate it.
     let full_input = if session_id.is_some() {
         user_input.to_string()
     } else {
         let mut s = String::new();
         if let Some(path) = system_prompt_path {
             let content = std::fs::read_to_string(path)
-                .map_err(|e| format!("no pude leer system prompt: {e}"))?;
+                .map_err(|e| format!("could not read system prompt: {e}"))?;
             s.push_str(&content);
             s.push_str("\n\n---\n\n");
         }
@@ -322,9 +326,9 @@ fn invoke_codex(
 }
 
 fn parse_codex_jsonl(stdout: &str, last_message: &str) -> Result<AgentResult, String> {
-    // codex --json emite una secuencia de objetos JSON (JSONL). Recorremos
-    // intentando capturar el último que tenga usage. Tolerantes a líneas
-    // vacías o no-JSON (logs misc).
+    // codex --json emits a sequence of JSON objects (JSONL). We walk through
+    // them trying to capture the last one that has usage. Tolerant to empty
+    // or non-JSON lines (misc logs).
     let mut tokens_in: Option<u64> = None;
     let mut tokens_out: Option<u64> = None;
     let mut cost_usd: Option<f64> = None;
@@ -347,8 +351,8 @@ fn parse_codex_jsonl(stdout: &str, last_message: &str) -> Result<AgentResult, St
             session_id = Some(sid.to_string());
         }
 
-        // codex reporta usage en objetos `token_count` o similar; cubrimos
-        // varias rutas razonables sin acoplarnos a una versión exacta.
+        // codex reports usage in `token_count` objects or similar; we cover
+        // several reasonable paths without coupling to an exact version.
         let usage = value
             .get("usage")
             .or_else(|| value.pointer("/msg/usage"))
@@ -386,13 +390,13 @@ fn parse_codex_jsonl(stdout: &str, last_message: &str) -> Result<AgentResult, St
 // opencode
 // ---------------------------------------------------------------------------
 
-/// Invoca `opencode run --format json --model <model> <input>`.
+/// Invokes `opencode run --format json --model <model> <input>`.
 ///
-/// `opencode run --format json` emite un stream JSONL de eventos. Extraemos el
-/// último mensaje del agente y, si está disponible, el usage/costo del evento
-/// final. Si la matriz de events cambia, lo tolerable: el extractor sólo
-/// asume que hay un evento con `role == "assistant"` o `type == "message"`
-/// llevando el texto final.
+/// `opencode run --format json` emits a JSONL event stream. We extract the
+/// last message from the agent and, if available, the usage/cost from the
+/// final event. If the event shape changes, the tolerance: the extractor only
+/// assumes there is an event with `role == "assistant"` or `type == "message"`
+/// carrying the final text.
 fn invoke_opencode(
     model: &str,
     cwd: &str,
@@ -400,14 +404,14 @@ fn invoke_opencode(
     user_input: &str,
     session_id: Option<&str>,
 ) -> Result<AgentResult, String> {
-    // En modo resume la sesión ya tiene el system prompt del primer turno.
+    // In resume mode the session already has the system prompt from the first turn.
     let full_input = if session_id.is_some() {
         user_input.to_string()
     } else {
         let mut s = String::new();
         if let Some(path) = system_prompt_path {
             let content = std::fs::read_to_string(path)
-                .map_err(|e| format!("no pude leer system prompt: {e}"))?;
+                .map_err(|e| format!("could not read system prompt: {e}"))?;
             s.push_str(&content);
             s.push_str("\n\n---\n\n");
         }
@@ -458,9 +462,9 @@ fn parse_opencode_stream(raw: &str) -> Result<AgentResult, String> {
         };
         saw_any = true;
 
-        // El último mensaje del assistant es el output del agente. La shape
-        // exacta varía por versión: intentamos `role=assistant` con `content`
-        // string o array de partes con `text`.
+        // The last assistant message is the agent output. The exact shape
+        // varies per version: we try `role=assistant` with `content` as
+        // string or as an array of parts with `text`.
         let role = value
             .get("role")
             .or_else(|| value.pointer("/message/role"))
@@ -501,8 +505,8 @@ fn parse_opencode_stream(raw: &str) -> Result<AgentResult, String> {
     }
 
     if !saw_any {
-        // No fue JSONL — opencode pudo haber emitido texto plano (fallback).
-        // Tratamos todo el stdout como el mensaje del agente.
+        // It was not JSONL — opencode may have emitted plain text (fallback).
+        // We treat the whole stdout as the agent message.
         return Ok(AgentResult {
             text: raw.trim().to_string(),
             tokens_in: None,
@@ -553,9 +557,9 @@ fn extract_opencode_text(value: &serde_json::Value) -> Option<String> {
 // helpers
 // ---------------------------------------------------------------------------
 
-/// Ejecuta `cmd` en `cwd` capturando stdout/stderr. Mapea "binario no
-/// encontrado" (`ErrorKind::NotFound`) a un error legible que el frontend usa
-/// para sugerirle al usuario instalar el CLI.
+/// Runs `cmd` in `cwd` capturing stdout/stderr. Maps "binary not found"
+/// (`ErrorKind::NotFound`) to a human-readable error that the frontend uses
+/// to suggest the user install the CLI.
 fn run_command(
     mut cmd: Command,
     cwd: &str,
@@ -570,30 +574,30 @@ fn run_command(
     let result = cmd.output();
     let elapsed_ms = started_at.elapsed().as_millis();
 
-    // Section 10.5 — log opcional de la invocación. Lo escribimos en append a
-    // un archivo en el sistema temp para debugging post-mortem (no nos
-    // arriesgamos a tocar el config dir desde un spawn_blocking, así que
-    // usamos `std::env::temp_dir`). Fallar acá no debe romper la ejecución
-    // del CLI — todos los errores de IO del logger se ignoran.
+    // Section 10.5 — optional invocation log. We append to a file in the
+    // system temp dir for post-mortem debugging (we do not risk touching the
+    // config dir from a spawn_blocking, so we use `std::env::temp_dir`).
+    // Failing here must not break the CLI execution — all logger IO errors
+    // are ignored.
     log_cli_invocation(cli_name, cwd, elapsed_ms, &result);
 
     result.map_err(|e| match e.kind() {
         std::io::ErrorKind::NotFound => format!(
-            "CLI '{cli_name}' no encontrado en PATH. Instalalo y reabrí la app."
+            "CLI '{cli_name}' not found in PATH. Install it and reopen the app."
         ),
-        _ => format!("error invocando {cli_name}: {e}"),
+        _ => format!("error invoking {cli_name}: {e}"),
     })
 }
 
-/// Path al log de invocaciones del CLI. Vive en `<temp>/polakapi-loop-cli.log`
-/// para mantenerlo predecible y sin requerir el AppHandle del comando Tauri
-/// (que complicaría pasar el handle a `spawn_blocking`).
+/// Path to the CLI invocation log. Lives at `<temp>/polakapi-loop-cli.log` to
+/// keep it predictable and without requiring the AppHandle of the Tauri
+/// command (which would complicate passing the handle to `spawn_blocking`).
 fn cli_log_path() -> PathBuf {
     std::env::temp_dir().join("polakapi-loop-cli.log")
 }
 
-/// Append de una línea al log de invocaciones. Soft-fail: cualquier error de
-/// IO se ignora — el logger es auxiliar y no debe romper el flow del run.
+/// Append a single line to the invocation log. Soft-fail: any IO error is
+/// ignored — the logger is auxiliary and must not break the run flow.
 fn log_cli_invocation(
     cli_name: &str,
     cwd: &str,
@@ -638,14 +642,14 @@ mod tests {
     #[test]
     fn parses_claude_full_payload() {
         let raw = r#"{
-            "result": "hola mundo",
+            "result": "hello world",
             "session_id": "abc-123",
             "total_cost_usd": 0.0042,
             "usage": { "input_tokens": 12, "output_tokens": 5 },
             "is_error": false
         }"#;
         let parsed = parse_claude_json(raw).unwrap();
-        assert_eq!(parsed.text, "hola mundo");
+        assert_eq!(parsed.text, "hello world");
         assert_eq!(parsed.session_id.as_deref(), Some("abc-123"));
         assert_eq!(parsed.tokens_in, Some(12));
         assert_eq!(parsed.tokens_out, Some(5));
@@ -655,9 +659,9 @@ mod tests {
 
     #[test]
     fn parses_claude_with_is_error_true() {
-        let raw = r#"{ "result": "fallo", "is_error": true }"#;
+        let raw = r#"{ "result": "failure", "is_error": true }"#;
         let parsed = parse_claude_json(raw).unwrap();
-        assert_eq!(parsed.text, "fallo");
+        assert_eq!(parsed.text, "failure");
         assert!(parsed.error.is_some());
     }
 
@@ -671,8 +675,8 @@ mod tests {
     #[test]
     fn parses_codex_jsonl_extracts_usage_and_last_message() {
         let jsonl = "{\"msg\":{\"session_id\":\"sx\"}}\n{\"usage\":{\"input_tokens\":7,\"output_tokens\":3}}\n";
-        let parsed = parse_codex_jsonl(jsonl, "respuesta final").unwrap();
-        assert_eq!(parsed.text, "respuesta final");
+        let parsed = parse_codex_jsonl(jsonl, "final answer").unwrap();
+        assert_eq!(parsed.text, "final answer");
         assert_eq!(parsed.tokens_in, Some(7));
         assert_eq!(parsed.tokens_out, Some(3));
         assert_eq!(parsed.session_id.as_deref(), Some("sx"));
@@ -681,25 +685,25 @@ mod tests {
     #[test]
     fn parses_opencode_stream_with_assistant_message() {
         let stream = r#"{"role":"user","content":"hi"}
-{"role":"assistant","content":"hola desde opencode","usage":{"input_tokens":4,"output_tokens":6}}
+{"role":"assistant","content":"hello from opencode","usage":{"input_tokens":4,"output_tokens":6}}
 "#;
         let parsed = parse_opencode_stream(stream).unwrap();
-        assert_eq!(parsed.text, "hola desde opencode");
+        assert_eq!(parsed.text, "hello from opencode");
         assert_eq!(parsed.tokens_in, Some(4));
         assert_eq!(parsed.tokens_out, Some(6));
     }
 
     #[test]
     fn opencode_assistant_with_content_parts() {
-        let stream = r#"{"role":"assistant","content":[{"text":"parte uno "},{"text":"parte dos"}]}
+        let stream = r#"{"role":"assistant","content":[{"text":"part one "},{"text":"part two"}]}
 "#;
         let parsed = parse_opencode_stream(stream).unwrap();
-        assert_eq!(parsed.text, "parte uno parte dos");
+        assert_eq!(parsed.text, "part one part two");
     }
 
     #[test]
     fn opencode_non_jsonl_fallbacks_to_plain_text() {
-        let parsed = parse_opencode_stream("solo texto plano\n").unwrap();
-        assert_eq!(parsed.text, "solo texto plano");
+        let parsed = parse_opencode_stream("just plain text\n").unwrap();
+        assert_eq!(parsed.text, "just plain text");
     }
 }

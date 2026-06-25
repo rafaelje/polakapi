@@ -1,39 +1,40 @@
-// Paso 2 del flow agéntico: descomposición en fases con editor inline.
+// Step 2 of the agentic flow: phase decomposition with inline editor.
 //
-// Diseño general (alineado con design.md, decisión #2 "modo paralelo con sort
-// topológico"):
-// - El paso 2 toma `<run>/01-problem.md` y, vía el agente con
-//   `phase-decomposition.md` como system prompt, recibe un JSON con la lista
-//   de fases. El JSON se valida y persiste como `02-phases.md` (un fence con
-//   el JSON; usamos .md por consistencia con el resto del run, pero el contenido
-//   parseable es el JSON dentro del fence o el documento entero si está limpio).
-// - Cada fase tiene un subdir en `<run>/phases/<NN>-<slug>/` con `logic.md`
-//   (siempre) y opcionalmente `visual.html` (cuando `hasVisual=true`).
-// - El UI: sidebar de fases con badges y dependencias + panel principal con
-//   tabs (logic.md / visual.html) + textarea editable + toolbar (guardar,
-//   "✨ editar con AI"). Editor de dependsOn como multi-select. Vista de
-//   topología read-only abajo del sidebar.
+// Overall design (aligned with design.md, decision #2 "parallel mode with
+// topological sort"):
+// - Step 2 takes `<run>/01-problem.md` and, via the agent with
+//   `phase-decomposition.md` as system prompt, receives a JSON with the list
+//   of phases. The JSON is validated and persisted as `02-phases.md` (a fence
+//   with the JSON; we use .md for consistency with the rest of the run, but
+//   the parseable content is the JSON inside the fence or the whole document
+//   if it is clean).
+// - Each phase has a subdir at `<run>/phases/<NN>-<slug>/` with `logic.md`
+//   (always) and optionally `visual.html` (when `hasVisual=true`).
+// - The UI: phase sidebar with badges and dependencies + main panel with
+//   tabs (logic.md / visual.html) + editable textarea + toolbar (save,
+//   "✨ edit with AI"). dependsOn editor as multi-select. Read-only topology
+//   view below the sidebar.
 //
-// Decisión de editor: textarea estilizado (NO Monaco). Razones:
-// 1. Monaco no está en deps (`package.json:25-44`); agregarlo subiría el
-//    bundle del /loop significativamente.
-// 2. El editing acá es markdown ligero / HTML simple; un textarea con
-//    monospace + line height generoso es suficiente para el scope del paso 2.
-// 3. El editor con AI (selección + instrucción → diff aplicado) usa la
-//    selection API estándar del DOM — funciona en textarea sin extras.
+// Editor choice: styled textarea (NOT Monaco). Reasons:
+// 1. Monaco is not in deps (`package.json:25-44`); adding it would
+//    significantly increase the /loop bundle.
+// 2. Editing here is light markdown / simple HTML; a textarea with
+//    monospace + generous line height is enough for the step 2 scope.
+// 3. The AI editor (selection + instruction → applied diff) uses the
+//    standard DOM selection API — works in a textarea without extras.
 //
-// Sigue el patrón "vista imperativa con re-render por replaceChildren()" del
-// step1-chat. Expone `mountStep2Phases(slot, ctx)` con `dispose()`.
+// Follows the "imperative view with re-render via replaceChildren()" pattern
+// from step1-chat. Exposes `mountStep2Phases(slot, ctx)` with `dispose()`.
 
 import { invoke } from "@tauri-apps/api/core";
 
 import type { LoopCli } from "./state/types";
 
 // ---------------------------------------------------------------------------
-// Tipos
+// Types
 // ---------------------------------------------------------------------------
 
-/** Una fase del paso 2 según el JSON del agente. */
+/** A step 2 phase according to the agent's JSON. */
 export interface Phase {
   id: string;
   name: string;
@@ -42,7 +43,7 @@ export interface Phase {
   hasVisual: boolean;
 }
 
-/** Resultado normalizado de `run_loop_agent` (mismo shape que step1-chat). */
+/** Normalized result from `run_loop_agent` (same shape as step1-chat). */
 interface AgentResult {
   text: string;
   tokensIn?: number | null;
@@ -52,7 +53,7 @@ interface AgentResult {
   error?: string | null;
 }
 
-/** Estado de disco de una fase devuelto por `loop_list_phase_dirs`. */
+/** Disk state of a phase returned by `loop_list_phase_dirs`. */
 interface PhaseDirStatus {
   slug: string;
   hasLogic: boolean;
@@ -60,11 +61,11 @@ interface PhaseDirStatus {
 }
 
 export interface Step2Context {
-  /** Path absoluto del project activo. */
+  /** Absolute path of the active project. */
   projectPath: string;
-  /** UUID del run actual. */
+  /** UUID of the current run. */
   runId: string;
-  /** Callback cuando el usuario pulsa "→ Paso 3". Validado: todas las fases tienen logic.md. */
+  /** Callback when the user clicks "→ Step 3". Validated: all phases have logic.md. */
   onAdvance: () => void;
 }
 
@@ -75,25 +76,25 @@ export interface Step2Handle {
 type FileTab = "logic.md" | "visual.html";
 
 interface Step2State {
-  /** Lista de fases ordenadas por id (1..N). */
+  /** List of phases ordered by id (1..N). */
   phases: Phase[];
-  /** Slug de la fase seleccionada en el sidebar, o null si no hay ninguna. */
+  /** Slug of the phase selected in the sidebar, or null if none. */
   selectedSlug: string | null;
-  /** Tab activa del panel principal. */
+  /** Active tab of the main panel. */
   activeTab: FileTab;
-  /** Estado de disco por slug — qué archivos hay materializados. */
+  /** Disk state per slug — which files are materialized. */
   diskStatus: Map<string, PhaseDirStatus>;
-  /** Contenido en buffer del editor (no guardado todavía) — keyed por `${slug}:${tab}`. */
+  /** Editor buffer content (not saved yet) — keyed by `${slug}:${tab}`. */
   editorBuffers: Map<string, string>;
-  /** Set de claves `${slug}:${tab}` con cambios sin guardar. */
+  /** Set of `${slug}:${tab}` keys with unsaved changes. */
   dirty: Set<string>;
-  /** CLI elegido para invocar al agente del paso 2 / edición con AI. */
+  /** CLI chosen to invoke the step 2 agent / AI editing. */
   cli: LoopCli;
-  /** Mensaje status mostrado en el header (ej. "guardado", "generando…", error). */
+  /** Status message shown in the header (e.g. "saved", "generating…", error). */
   status: string | null;
-  /** Si estamos generando fases o invocando AI, deshabilita controles. */
+  /** If we are generating phases or invoking AI, disables controls. */
   busy: boolean;
-  /** Error de validación del manifest (ciclos detectados, etc.). */
+  /** Manifest validation error (cycles detected, etc.). */
   cycleError: string | null;
 }
 
@@ -119,8 +120,8 @@ export function mountStep2Phases(slot: HTMLElement, ctx: Step2Context): Step2Han
     void handleAction(action);
   });
 
-  // Bootstrap: leer manifest desde disco si existe; si no, sigue vacío hasta
-  // que el usuario pulse "regenerar desde 01-problem.md".
+  // Bootstrap: read manifest from disk if it exists; otherwise stays empty
+  // until the user clicks "regenerate from 01-problem.md".
   void hydrate();
 
   async function hydrate(): Promise<void> {
@@ -138,7 +139,7 @@ export function mountStep2Phases(slot: HTMLElement, ctx: Step2Context): Step2Han
         }
       }
     } catch {
-      // No hay manifest aún — estado inicial vacío.
+      // No manifest yet — empty initial state.
     }
     await refreshDiskStatus();
     refs.refresh();
@@ -152,7 +153,7 @@ export function mountStep2Phases(slot: HTMLElement, ctx: Step2Context): Step2Han
       });
       state.diskStatus = new Map(list.map((s) => [s.slug, s]));
     } catch {
-      // Si phases/ no existe, lo seguimos como vacío.
+      // If phases/ does not exist, we treat it as empty.
       state.diskStatus = new Map();
     }
   }
@@ -180,8 +181,8 @@ export function mountStep2Phases(slot: HTMLElement, ctx: Step2Context): Step2Han
         const key = bufferKey(action.slug, action.tab);
         state.editorBuffers.set(key, action.value);
         state.dirty.add(key);
-        // No re-render — el textarea es controlado por el DOM. Sólo
-        // actualizamos el indicador "guardar" via refresh manual abajo.
+        // No re-render — the textarea is DOM-controlled. We only update the
+        // "save" indicator via the manual refresh below.
         refs.refreshToolbarOnly();
         return;
       }
@@ -234,7 +235,7 @@ export function mountStep2Phases(slot: HTMLElement, ctx: Step2Context): Step2Han
     const key = bufferKey(state.selectedSlug, tab);
     const content = state.editorBuffers.get(key) ?? "";
     state.busy = true;
-    state.status = "guardando…";
+    state.status = "saving…";
     refs.refresh();
     try {
       await invoke<void>("loop_write_phase_file", {
@@ -245,10 +246,10 @@ export function mountStep2Phases(slot: HTMLElement, ctx: Step2Context): Step2Han
         content,
       });
       state.dirty.delete(key);
-      state.status = "guardado";
+      state.status = "saved";
       await refreshDiskStatus();
     } catch (err) {
-      state.status = `error al guardar: ${stringifyError(err)}`;
+      state.status = `error saving: ${stringifyError(err)}`;
     } finally {
       state.busy = false;
       refs.refresh();
@@ -271,7 +272,7 @@ export function mountStep2Phases(slot: HTMLElement, ctx: Step2Context): Step2Han
     }
 
     state.busy = true;
-    state.status = "pidiéndole a la AI…";
+    state.status = "asking the AI…";
     refs.refresh();
 
     try {
@@ -289,20 +290,20 @@ export function mountStep2Phases(slot: HTMLElement, ctx: Step2Context): Step2Han
       }
       const replacement = stripCodeFence(result.text.trim());
       if (!replacement) {
-        throw new Error("respuesta vacía del agente");
+        throw new Error("empty response from agent");
       }
       let next: string;
       if (selection.length > 0 && selStart !== selEnd) {
         next = fullContent.slice(0, selStart) + replacement + fullContent.slice(selEnd);
       } else {
-        // Sin selección: reemplazamos el buffer completo.
+        // No selection: replace the entire buffer.
         next = replacement;
       }
       state.editorBuffers.set(key, next);
       state.dirty.add(key);
-      state.status = "AI aplicó cambios — revisá y guardá";
+      state.status = "AI applied changes — review and save";
     } catch (err) {
-      state.status = `error AI: ${stringifyError(err)}`;
+      state.status = `AI error: ${stringifyError(err)}`;
     } finally {
       state.busy = false;
       refs.refresh();
@@ -311,7 +312,7 @@ export function mountStep2Phases(slot: HTMLElement, ctx: Step2Context): Step2Han
 
   async function regeneratePhases(): Promise<void> {
     state.busy = true;
-    state.status = "leyendo 01-problem.md…";
+    state.status = "reading 01-problem.md…";
     refs.refresh();
 
     let problem: string;
@@ -323,18 +324,18 @@ export function mountStep2Phases(slot: HTMLElement, ctx: Step2Context): Step2Han
       });
     } catch (err) {
       state.busy = false;
-      state.status = `no pude leer 01-problem.md: ${stringifyError(err)}`;
+      state.status = `could not read 01-problem.md: ${stringifyError(err)}`;
       refs.refresh();
       return;
     }
     if (!problem.trim()) {
       state.busy = false;
-      state.status = "01-problem.md está vacío — completá el paso 1 primero";
+      state.status = "01-problem.md is empty — complete step 1 first";
       refs.refresh();
       return;
     }
 
-    state.status = "generando fases…";
+    state.status = "generating phases…";
     refs.refresh();
 
     const systemPromptPath = buildRunPromptPath(
@@ -357,9 +358,9 @@ export function mountStep2Phases(slot: HTMLElement, ctx: Step2Context): Step2Han
       }
       const drafts = parseAgentPhasesJson(result.text);
       if (drafts.length === 0) {
-        throw new Error("el agente no devolvió fases parseables");
+        throw new Error("the agent did not return parseable phases");
       }
-      // El manifest sólo persiste el shape de Phase (sin el contenido logic/visual).
+      // The manifest only persists the Phase shape (without the logic/visual content).
       const phases: Phase[] = drafts.map((d) => ({
         id: d.id,
         name: d.name,
@@ -376,8 +377,8 @@ export function mountStep2Phases(slot: HTMLElement, ctx: Step2Context): Step2Han
           phaseSlug: slug,
           withVisual: d.hasVisual,
         });
-        // Escribir el contenido devuelto por el agente. Si vino vacío, dejamos
-        // el archivo en blanco (el create_phase_dir ya lo creó vacío).
+        // Write the content returned by the agent. If it came back empty, we
+        // leave the file blank (create_phase_dir already created it empty).
         if (d.logic && d.logic.trim()) {
           await invoke<void>("loop_write_phase_file", {
             projectPath: ctx.projectPath,
@@ -400,13 +401,13 @@ export function mountStep2Phases(slot: HTMLElement, ctx: Step2Context): Step2Han
       state.phases = phases;
       state.selectedSlug = phaseSlug(phases[0]);
       state.activeTab = "logic.md";
-      // Limpio buffers; los re-cargamos a demanda.
+      // Clear buffers; we reload them on demand.
       state.editorBuffers.clear();
       state.dirty.clear();
       await refreshDiskStatus();
-      state.status = `${phases.length} fases generadas`;
+      state.status = `${phases.length} phases generated`;
     } catch (err) {
-      state.status = `error generando: ${stringifyError(err)}`;
+      state.status = `error generating: ${stringifyError(err)}`;
     } finally {
       state.busy = false;
       refs.refresh();
@@ -425,7 +426,7 @@ export function mountStep2Phases(slot: HTMLElement, ctx: Step2Context): Step2Han
 
   async function resetPromptToGlobal(): Promise<void> {
     state.busy = true;
-    state.status = "reseteando prompt…";
+    state.status = "resetting prompt…";
     refs.refresh();
     try {
       await invoke<void>("loop_reset_run_prompt_to_global", {
@@ -433,9 +434,9 @@ export function mountStep2Phases(slot: HTMLElement, ctx: Step2Context): Step2Han
         runId: ctx.runId,
         name: "phase-decomposition.md",
       });
-      state.status = "prompt del run actualizado al global";
+      state.status = "run prompt updated to global";
     } catch (err) {
-      state.status = `error reseteando prompt: ${stringifyError(err)}`;
+      state.status = `error resetting prompt: ${stringifyError(err)}`;
     } finally {
       state.busy = false;
       refs.refresh();
@@ -445,7 +446,7 @@ export function mountStep2Phases(slot: HTMLElement, ctx: Step2Context): Step2Han
   async function addPhase(): Promise<void> {
     const nextNum = state.phases.length + 1;
     const id = String(nextNum).padStart(2, "0");
-    const name = `fase-${id}`;
+    const name = `phase-${id}`;
     const newPhase: Phase = {
       id,
       name,
@@ -467,10 +468,10 @@ export function mountStep2Phases(slot: HTMLElement, ctx: Step2Context): Step2Han
       await refreshDiskStatus();
       state.selectedSlug = phaseSlug(newPhase);
       state.activeTab = "logic.md";
-      state.status = `fase ${name} agregada`;
+      state.status = `phase ${name} added`;
     } catch (err) {
-      state.status = `error agregando fase: ${stringifyError(err)}`;
-      // Rollback de la fase del estado si no se pudo persistir
+      state.status = `error adding phase: ${stringifyError(err)}`;
+      // Roll back the phase from state if we could not persist
       state.phases = state.phases.slice(0, -1);
     } finally {
       state.busy = false;
@@ -479,12 +480,12 @@ export function mountStep2Phases(slot: HTMLElement, ctx: Step2Context): Step2Han
   }
 
   async function deletePhase(slug: string): Promise<void> {
-    // Buscar dependientes — si los hay, pedir confirmación.
+    // Look for dependents — if any, ask for confirmation.
     const dependents = state.phases.filter((p) => p.dependsOn.includes(slugToId(slug)));
-    let warning = `¿Borrar fase ${slug}?`;
+    let warning = `Delete phase ${slug}?`;
     if (dependents.length > 0) {
       const names = dependents.map((d) => phaseSlug(d)).join(", ");
-      warning += `\n\nATENCIÓN: estas fases dependen de ella: ${names}.\nLa dependencia quedará rota hasta que la edites manualmente.`;
+      warning += `\n\nWARNING: these phases depend on it: ${names}.\nThe dependency will be broken until you edit it manually.`;
     }
     if (!window.confirm(warning)) return;
 
@@ -497,7 +498,7 @@ export function mountStep2Phases(slot: HTMLElement, ctx: Step2Context): Step2Han
         phaseSlug: slug,
       });
       state.phases = state.phases.filter((p) => phaseSlug(p) !== slug);
-      // Borrar buffers de esa fase y limpiar selección si era esa.
+      // Delete buffers for that phase and clear selection if it was that one.
       for (const key of [...state.editorBuffers.keys()]) {
         if (key.startsWith(`${slug}:`)) {
           state.editorBuffers.delete(key);
@@ -510,9 +511,9 @@ export function mountStep2Phases(slot: HTMLElement, ctx: Step2Context): Step2Han
       }
       await persistManifest(state.phases);
       await refreshDiskStatus();
-      state.status = `fase ${slug} borrada`;
+      state.status = `phase ${slug} deleted`;
     } catch (err) {
-      state.status = `error borrando: ${stringifyError(err)}`;
+      state.status = `error deleting: ${stringifyError(err)}`;
     } finally {
       state.busy = false;
       refs.refresh();
@@ -522,45 +523,45 @@ export function mountStep2Phases(slot: HTMLElement, ctx: Step2Context): Step2Han
   function setDepends(slug: string, deps: string[]): void {
     const phase = state.phases.find((p) => phaseSlug(p) === slug);
     if (!phase) return;
-    // Validar ciclos: si después de aplicar dep, hay ciclo, mostramos error
-    // y no persistimos. La validación se hace contra una copia.
+    // Validate cycles: if after applying the dep there is a cycle, show an
+    // error and do not persist. Validation runs against a copy.
     const proposed = state.phases.map((p) =>
       phaseSlug(p) === slug ? { ...p, dependsOn: deps } : p,
     );
     const cycle = detectCycle(proposed);
     if (cycle) {
-      state.cycleError = `ciclo detectado en dependencias: ${cycle.join(" → ")}`;
+      state.cycleError = `cycle detected in dependencies: ${cycle.join(" → ")}`;
       refs.refresh();
       return;
     }
     state.cycleError = null;
     state.phases = proposed;
-    // Persistir manifest en background — no bloqueamos el UI.
+    // Persist manifest in the background — we do not block the UI.
     void invoke<void>("loop_write_run_file", {
       projectPath: ctx.projectPath,
       runId: ctx.runId,
       file: "02-phases.md",
       content: serializePhasesManifest(state.phases),
     }).catch((err) => {
-      console.error("loop step2: no pude persistir manifest", err);
+      console.error("loop step2: could not persist manifest", err);
     });
     refs.refresh();
   }
 
   function advanceToStep3(): void {
-    // Validar: cada fase tiene logic.md con contenido.
+    // Validate: every phase has logic.md with content.
     const missing = state.phases.filter((p) => {
       const s = state.diskStatus.get(phaseSlug(p));
       return !s || !s.hasLogic;
     });
     if (state.phases.length === 0) {
-      state.status = "necesitás al menos una fase";
+      state.status = "you need at least one phase";
       refs.refresh();
       return;
     }
     if (missing.length > 0) {
       const names = missing.map((p) => phaseSlug(p)).join(", ");
-      state.status = `fases sin logic.md: ${names}`;
+      state.status = `phases missing logic.md: ${names}`;
       refs.refresh();
       return;
     }
@@ -575,7 +576,7 @@ export function mountStep2Phases(slot: HTMLElement, ctx: Step2Context): Step2Han
 }
 
 // ---------------------------------------------------------------------------
-// Acciones
+// Actions
 // ---------------------------------------------------------------------------
 
 type Step2Action =
@@ -593,7 +594,7 @@ type Step2Action =
   | { kind: "advance" };
 
 // ---------------------------------------------------------------------------
-// Vista
+// View
 // ---------------------------------------------------------------------------
 
 interface ViewRefs {
@@ -636,8 +637,8 @@ function render(
   }
 
   function refreshToolbarOnly(): void {
-    // Sólo refresca la toolbar (botón guardar) sin perder el caret del
-    // textarea. Buscamos la toolbar y la reemplazamos.
+    // Only refresh the toolbar (save button) without losing the textarea
+    // caret. Find the toolbar and replace it.
     const old = root.querySelector(".loop-step2-toolbar");
     if (old && old.parentElement) {
       const updated = renderEditorToolbar();
@@ -663,7 +664,7 @@ function render(
 
     const title = document.createElement("div");
     title.className = "loop-step2-title";
-    title.textContent = "Paso 2 · descomposición en fases";
+    title.textContent = "Step 2 · phase decomposition";
 
     const right = document.createElement("div");
     right.className = "loop-step2-header-right";
@@ -692,16 +693,16 @@ function render(
     regen.type = "button";
     regen.className = "loop-btn loop-btn-ghost";
     regen.textContent =
-      state.busy && (state.status ?? "").startsWith("generando")
-        ? "generando…"
-        : "↻ regenerar desde 01-problem.md";
+      state.busy && (state.status ?? "").startsWith("generating")
+        ? "generating…"
+        : "↻ regenerate from 01-problem.md";
     regen.disabled = state.busy;
-    regen.title = "Invoca al agente con phase-decomposition.md sobre el problema consolidado";
+    regen.title = "Invoke the agent with phase-decomposition.md on the consolidated problem";
     on(regen, "click", () => {
       const ok =
         state.phases.length === 0 ||
         window.confirm(
-          "¿Regenerar las fases? Se pierden los manifests actuales (los archivos en disco quedan, pero el listado se reemplaza).",
+          "Regenerate the phases? Current manifests will be lost (files on disk remain, but the listing is replaced).",
         );
       if (ok) dispatch({ kind: "regenerate" });
     });
@@ -709,13 +710,13 @@ function render(
     const resetPrompt = document.createElement("button");
     resetPrompt.type = "button";
     resetPrompt.className = "loop-btn loop-btn-ghost";
-    resetPrompt.textContent = "↑ resetear prompt a global";
+    resetPrompt.textContent = "↑ reset prompt to global";
     resetPrompt.disabled = state.busy;
     resetPrompt.title =
-      "Pisa la copia del run con el contenido actual de phase-decomposition.md global (útil cuando el global se actualizó después de crear el run)";
+      "Overwrites the run copy with the current contents of the global phase-decomposition.md (useful when the global was updated after the run was created)";
     on(resetPrompt, "click", () => {
       const ok = window.confirm(
-        "¿Pisar phase-decomposition.md del run con la versión global actual? Si editaste el prompt del run a mano, se pierde.",
+        "Overwrite the run's phase-decomposition.md with the current global version? If you edited the run's prompt by hand, it will be lost.",
       );
       if (ok) dispatch({ kind: "reset-prompt-to-global" });
     });
@@ -744,11 +745,11 @@ function render(
     head.className = "loop-step2-sidebar-head";
     const lbl = document.createElement("span");
     lbl.className = "loop-step2-sidebar-title";
-    lbl.textContent = `Fases (${state.phases.length})`;
+    lbl.textContent = `Phases (${state.phases.length})`;
     const add = document.createElement("button");
     add.type = "button";
     add.className = "loop-btn loop-btn-ghost loop-step2-add-phase";
-    add.textContent = "+ agregar fase";
+    add.textContent = "+ add phase";
     add.disabled = state.busy;
     on(add, "click", () => dispatch({ kind: "add-phase" }));
     head.append(lbl, add);
@@ -757,7 +758,7 @@ function render(
     if (state.phases.length === 0) {
       const empty = document.createElement("p");
       empty.className = "loop-step2-sidebar-empty";
-      empty.textContent = 'Sin fases. Pulsá "↻ regenerar" o "+ agregar fase" para empezar.';
+      empty.textContent = 'No phases. Click "↻ regenerate" or "+ add phase" to begin.';
       aside.appendChild(empty);
     } else {
       const list = document.createElement("ul");
@@ -799,14 +800,14 @@ function render(
       const b = document.createElement("span");
       b.className = "loop-step2-badge loop-step2-badge-md";
       b.textContent = "md";
-      b.title = "logic.md tiene contenido";
+      b.title = "logic.md has content";
       badges.appendChild(b);
     }
     if (status?.hasVisual) {
       const b = document.createElement("span");
       b.className = "loop-step2-badge loop-step2-badge-html";
       b.textContent = "html";
-      b.title = "visual.html tiene contenido";
+      b.title = "visual.html has content";
       badges.appendChild(b);
     }
     top.append(num, name, badges);
@@ -814,10 +815,10 @@ function render(
     const deps = document.createElement("div");
     deps.className = "loop-step2-phase-deps";
     if (phase.dependsOn.length === 0) {
-      deps.textContent = "sin dependencias";
+      deps.textContent = "no dependencies";
       deps.classList.add("loop-step2-phase-deps-empty");
     } else {
-      deps.textContent = `depende de: ${phase.dependsOn.join(", ")}`;
+      deps.textContent = `depends on: ${phase.dependsOn.join(", ")}`;
     }
 
     main.append(top, deps);
@@ -826,7 +827,7 @@ function render(
     del.type = "button";
     del.className = "loop-step2-phase-delete";
     del.textContent = "✕";
-    del.title = "borrar fase";
+    del.title = "delete phase";
     del.disabled = state.busy;
     on(del, "click", (e: Event) => {
       e.stopPropagation();
@@ -843,13 +844,13 @@ function render(
 
     const head = document.createElement("div");
     head.className = "loop-step2-topology-head";
-    head.textContent = "Topología de ejecución";
+    head.textContent = "Execution topology";
     panel.appendChild(head);
 
     if (state.phases.length === 0) {
       const p = document.createElement("p");
       p.className = "loop-step2-topology-empty";
-      p.textContent = "Sin fases para ordenar.";
+      p.textContent = "No phases to sort.";
       panel.appendChild(p);
       return panel;
     }
@@ -858,7 +859,7 @@ function render(
     if (!batches) {
       const p = document.createElement("p");
       p.className = "loop-step2-topology-error";
-      p.textContent = "Hay un ciclo en las dependencias — no se puede ordenar.";
+      p.textContent = "There is a cycle in the dependencies — cannot sort.";
       panel.appendChild(p);
       return panel;
     }
@@ -898,7 +899,7 @@ function render(
     if (!phase) {
       const empty = document.createElement("p");
       empty.className = "loop-step2-main-empty";
-      empty.textContent = "Elegí una fase del sidebar o agregá una nueva.";
+      empty.textContent = "Pick a phase from the sidebar or add a new one.";
       main.appendChild(empty);
       return main;
     }
@@ -942,9 +943,9 @@ function render(
       note.type = "button";
       note.className = "loop-step2-tab loop-step2-tab-add-visual";
       note.textContent = "+ visual.html";
-      note.title = "Marca la fase como visual y agrega visual.html";
+      note.title = "Mark the phase as visual and add visual.html";
       on(note, "click", () => {
-        // Marcar la fase como visual y crear el archivo. Lo persistimos al toque.
+        // Mark the phase as visual and create the file. Persist immediately.
         void (async (): Promise<void> => {
           const updated = state.phases.map((p) =>
             phaseSlug(p) === slug ? { ...p, hasVisual: true } : p,
@@ -965,7 +966,7 @@ function render(
             });
             state.activeTab = "visual.html";
           } catch (err) {
-            state.status = `error agregando visual: ${stringifyError(err)}`;
+            state.status = `error adding visual: ${stringifyError(err)}`;
           }
           refresh();
         })();
@@ -991,8 +992,8 @@ function render(
     ta.disabled = state.busy;
     ta.placeholder =
       state.activeTab === "logic.md"
-        ? "Contenido lógico de la fase (markdown). Cmd+S para guardar."
-        : "HTML del output visual de la fase.";
+        ? "Logic content of the phase (markdown). Cmd+S to save."
+        : "HTML of the phase's visual output.";
     on(ta, "input", () => {
       dispatch({
         kind: "set-buffer",
@@ -1024,20 +1025,20 @@ function render(
     const save = document.createElement("button");
     save.type = "button";
     save.className = "loop-btn loop-btn-primary loop-step2-save";
-    save.textContent = dirty ? "guardar •" : "guardar";
+    save.textContent = dirty ? "save •" : "save";
     save.disabled = state.busy || !dirty;
     on(save, "click", () => dispatch({ kind: "save" }));
 
     const aiInput = document.createElement("input");
     aiInput.type = "text";
     aiInput.className = "loop-step2-ai-input";
-    aiInput.placeholder = "instrucción para AI (sobre la selección, o todo)…";
+    aiInput.placeholder = "instruction for AI (about the selection, or all of it)…";
     aiInput.disabled = state.busy;
 
     const aiBtn = document.createElement("button");
     aiBtn.type = "button";
     aiBtn.className = "loop-btn loop-step2-ai-btn";
-    aiBtn.textContent = "✨ editar con AI";
+    aiBtn.textContent = "✨ edit with AI";
     aiBtn.disabled = state.busy;
     on(aiBtn, "click", () => {
       const instr = aiInput.value.trim();
@@ -1071,7 +1072,7 @@ function render(
 
     const lbl = document.createElement("div");
     lbl.className = "loop-step2-deps-label";
-    lbl.textContent = "Depende de:";
+    lbl.textContent = "Depends on:";
 
     const list = document.createElement("div");
     list.className = "loop-step2-deps-list";
@@ -1080,7 +1081,7 @@ function render(
     if (others.length === 0) {
       const note = document.createElement("p");
       note.className = "loop-step2-deps-empty";
-      note.textContent = "No hay otras fases — esta es la única.";
+      note.textContent = "There are no other phases — this is the only one.";
       list.appendChild(note);
     } else {
       for (const other of others) {
@@ -1131,20 +1132,20 @@ function render(
     }).length;
     info.textContent =
       total === 0
-        ? "sin fases"
+        ? "no phases"
         : ready === total
-          ? `${total}/${total} fases con logic.md`
-          : `${ready}/${total} fases con logic.md`;
+          ? `${total}/${total} phases with logic.md`
+          : `${ready}/${total} phases with logic.md`;
 
     const advance = document.createElement("button");
     advance.type = "button";
     advance.className = "loop-btn loop-btn-primary";
-    advance.textContent = "→ Paso 3";
+    advance.textContent = "→ Step 3";
     const canAdvance = total > 0 && ready === total && !state.busy;
     advance.disabled = !canAdvance;
     advance.title = canAdvance
-      ? "Avanzar al setup del run"
-      : "Necesitás que todas las fases tengan logic.md guardado";
+      ? "Advance to the run setup"
+      : "All phases must have logic.md saved";
     on(advance, "click", () => dispatch({ kind: "advance" }));
 
     f.append(info, advance);
@@ -1167,13 +1168,13 @@ function render(
 }
 
 // ---------------------------------------------------------------------------
-// Helpers de fases (parsing, serialización, topología)
+// Phase helpers (parsing, serialization, topology)
 // ---------------------------------------------------------------------------
 
 /**
- * Slug del directorio de una fase: `<id>-<name>`. Coincide con el saneador
- * del backend (`safe_run_id`): sólo [A-Za-z0-9_-]. El nombre kebab-case del
- * JSON del agente ya cumple; reforzamos por las dudas.
+ * Slug of a phase's directory: `<id>-<name>`. Matches the backend sanitizer
+ * (`safe_run_id`): only [A-Za-z0-9_-]. The kebab-case name in the agent's
+ * JSON already complies; we enforce it just in case.
  */
 export function phaseSlug(phase: Phase): string {
   const safeName = phase.name.replace(/[^A-Za-z0-9_-]/g, "-");
@@ -1185,15 +1186,15 @@ function slugToId(slug: string): string {
   return m ? m[1] : slug;
 }
 
-/** Serializa el manifest como JSON pretty-printed dentro de un fence ```json. */
+/** Serializes the manifest as pretty-printed JSON inside a ```json fence. */
 export function serializePhasesManifest(phases: Phase[]): string {
   const body = JSON.stringify({ phases }, null, 2);
-  return `# Fases del run\n\n\`\`\`json\n${body}\n\`\`\`\n`;
+  return `# Run phases\n\n\`\`\`json\n${body}\n\`\`\`\n`;
 }
 
 /**
- * Parser inverso del manifest. Tolerante: extrae el primer fence ```json del
- * documento, o parsea el contenido entero si parece JSON puro.
+ * Inverse parser of the manifest. Tolerant: extracts the first ```json fence
+ * from the document, or parses the whole content if it looks like pure JSON.
  */
 export function parsePhasesManifest(content: string): Phase[] {
   const trimmed = content.trim();
@@ -1217,10 +1218,10 @@ export function parsePhasesManifest(content: string): Phase[] {
 }
 
 /**
- * Draft de fase recién devuelta por el agente — extiende Phase con el contenido
- * inicial de logic.md y, opcionalmente, visual.html. Lo separamos del Phase
- * canónico porque el manifest (02-phases.md) NO persiste el contenido — ese
- * vive en logic.md / visual.html en disco.
+ * Phase draft just returned by the agent — extends Phase with the initial
+ * content of logic.md and, optionally, visual.html. We separate it from the
+ * canonical Phase because the manifest (02-phases.md) does NOT persist the
+ * content — that lives in logic.md / visual.html on disk.
  */
 export interface PhaseDraft extends Phase {
   logic?: string;
@@ -1228,9 +1229,9 @@ export interface PhaseDraft extends Phase {
 }
 
 /**
- * Parsea el output del agente del paso 2. El prompt pide JSON estricto, pero
- * algunos CLIs envuelven en fences o agregan preámbulos — tolerantes. Devuelve
- * `PhaseDraft[]` con los campos extra `logic`/`visual` que el agente arma.
+ * Parses the step 2 agent's output. The prompt asks for strict JSON, but
+ * some CLIs wrap it in fences or add preambles — we are tolerant. Returns
+ * `PhaseDraft[]` with the extra `logic`/`visual` fields the agent produces.
  */
 export function parseAgentPhasesJson(text: string): PhaseDraft[] {
   const cleaned = stripCodeFence(text.trim());
@@ -1279,8 +1280,8 @@ function normalizePhaseDraft(raw: unknown): PhaseDraft | null {
 }
 
 /**
- * Detecta un ciclo en el grafo de dependencias. Devuelve el camino del ciclo
- * (lista de ids) o null si no hay. DFS con tres colores estándar.
+ * Detects a cycle in the dependency graph. Returns the cycle path (list of
+ * ids) or null if there is none. Standard three-color DFS.
  */
 export function detectCycle(phases: Phase[]): string[] | null {
   const byId = new Map(phases.map((p) => [p.id, p]));
@@ -1300,7 +1301,7 @@ export function detectCycle(phases: Phase[]): string[] | null {
       return false;
     }
     for (const v of phase.dependsOn) {
-      if (!byId.has(v)) continue; // referencia muerta — la ignoramos
+      if (!byId.has(v)) continue; // dead reference — ignore it
       const c = color.get(v) ?? WHITE;
       if (c === WHITE) {
         parent.set(v, u);
@@ -1323,7 +1324,7 @@ export function detectCycle(phases: Phase[]): string[] | null {
   }
 
   if (cycleStart === null || cycleEnd === null) return null;
-  // Reconstrucción del camino: desde cycleEnd subiendo por parent hasta cycleStart.
+  // Path reconstruction: from cycleEnd walking up via parent to cycleStart.
   const path: string[] = [cycleStart];
   let cur: string | null = cycleEnd;
   while (cur && cur !== cycleStart) {
@@ -1335,15 +1336,15 @@ export function detectCycle(phases: Phase[]): string[] | null {
 }
 
 /**
- * Sort topológico por niveles (Kahn). Devuelve `Phase[][]` (cada subarreglo
- * es un batch del modo híbrido). Devuelve null si hay ciclo.
+ * Topological sort by levels (Kahn). Returns `Phase[][]` (each sub-array is
+ * a batch of the hybrid mode). Returns null if there is a cycle.
  */
 export function topologicalBatches(phases: Phase[]): Phase[][] | null {
   if (detectCycle(phases)) return null;
   const inDeg = new Map<string, number>();
   const byId = new Map(phases.map((p) => [p.id, p]));
   for (const p of phases) {
-    // Sólo contamos deps que existen en el set (ignoramos referencias muertas).
+    // Only count deps that exist in the set (ignore dead references).
     const real = p.dependsOn.filter((d) => byId.has(d));
     inDeg.set(p.id, real.length);
   }
@@ -1351,14 +1352,14 @@ export function topologicalBatches(phases: Phase[]): Phase[][] | null {
   const batches: Phase[][] = [];
   while (remaining.size > 0) {
     const ready = [...remaining].filter((id) => (inDeg.get(id) ?? 0) === 0);
-    if (ready.length === 0) return null; // ciclo escapado (defensa)
+    if (ready.length === 0) return null; // escaped cycle (defensive)
     const batch: Phase[] = [];
     for (const id of ready) {
       const p = byId.get(id);
       if (p) batch.push(p);
       remaining.delete(id);
     }
-    // Restar 1 a las deps que apuntaban a los nodos consumidos.
+    // Subtract 1 from deps that pointed to the consumed nodes.
     for (const id of remaining) {
       const p = byId.get(id);
       if (!p) continue;
@@ -1379,7 +1380,7 @@ function bufferKey(slug: string, tab: FileTab): string {
 }
 
 function buildRunPromptPath(projectPath: string, runId: string, name: string): string {
-  // Mismo join que step1-chat.ts — la convención es nativa según el SO.
+  // Same join as step1-chat.ts — the convention is OS-native.
   const sep = projectPath.includes("\\") ? "\\" : "/";
   return [projectPath, ".loop", "runs", runId, "prompts", name].join(sep);
 }
@@ -1396,9 +1397,9 @@ function defaultModelFor(cli: LoopCli): string {
 }
 
 /**
- * Prompt one-shot para "editar con AI". Si hay selección, le pedimos que
- * devuelva un reemplazo de esa selección. Si no, le pedimos el documento
- * completo reescrito.
+ * One-shot prompt for "edit with AI". If there is a selection, ask it to
+ * return a replacement for that selection. Otherwise, ask for the full
+ * document rewritten.
  */
 function buildAiEditPrompt(
   full: string,
@@ -1409,44 +1410,44 @@ function buildAiEditPrompt(
   const kind = tab === "logic.md" ? "Markdown" : "HTML";
   if (selection.trim()) {
     return [
-      `# Tarea`,
-      `Tenés el archivo \`${tab}\` (${kind}) abierto. El usuario seleccionó un fragmento y pidió un cambio.`,
+      `# Task`,
+      `You have the file \`${tab}\` (${kind}) open. The user selected a fragment and requested a change.`,
       ``,
-      `# Documento completo`,
+      `# Full document`,
       "```",
       full,
       "```",
       ``,
-      `# Fragmento seleccionado (lo que vas a reemplazar)`,
+      `# Selected fragment (what you will replace)`,
       "```",
       selection,
       "```",
       ``,
-      `# Instrucción del usuario`,
+      `# User instruction`,
       instruction,
       ``,
-      `# Respuesta`,
-      `Devolvé SOLO el nuevo contenido que reemplaza al fragmento seleccionado. Sin code fences, sin preámbulo. Conservá el estilo (${kind}, castellano rioplatense, sin emojis).`,
+      `# Response`,
+      `Return ONLY the new content that replaces the selected fragment. No code fences, no preamble. Preserve the style (${kind}, technical English, no emojis).`,
     ].join("\n");
   }
   return [
-    `# Tarea`,
-    `Reescribí el archivo \`${tab}\` (${kind}) siguiendo la instrucción del usuario.`,
+    `# Task`,
+    `Rewrite the file \`${tab}\` (${kind}) following the user's instruction.`,
     ``,
-    `# Documento actual`,
+    `# Current document`,
     "```",
     full,
     "```",
     ``,
-    `# Instrucción del usuario`,
+    `# User instruction`,
     instruction,
     ``,
-    `# Respuesta`,
-    `Devolvé SOLO el contenido completo del archivo reescrito. Sin code fences, sin preámbulo.`,
+    `# Response`,
+    `Return ONLY the complete content of the rewritten file. No code fences, no preamble.`,
   ].join("\n");
 }
 
-/** Quita un fence ```...``` envolvente si lo tiene; útil para outputs LLM. */
+/** Strips a wrapping ```...``` fence if present; useful for LLM outputs. */
 function stripCodeFence(s: string): string {
   const m = s.match(/^```(?:[a-zA-Z]*)\n([\s\S]*?)\n```$/);
   return m ? m[1] : s;

@@ -1,24 +1,24 @@
-// Schema formal de `state.json` para persistencia y resume (Section 9).
+// Formal schema for `state.json` for persistence and resume (Section 9).
 //
-// El scheduler (`run-scheduler.ts`) serializa su estado vía `persistState()`
-// después de cada cambio significativo (cambio de etapa, fin de fase, fin de
-// integrador, pausa, abort, resolveConflict, etc). Ese archivo es la única
-// fuente de verdad para retomar un run interrumpido — al abrir `/loop` sobre
-// un project escaneamos `<project>/.loop/runs/<id>/state.json` buscando los
-// que quedaron con `status: "running"` y `lastHeartbeat` viejo.
+// The scheduler (`run-scheduler.ts`) serializes its state via `persistState()`
+// after every significant change (stage change, phase end, integrator end,
+// pause, abort, resolveConflict, etc). That file is the only source of truth
+// for resuming an interrupted run — when opening `/loop` on a project we scan
+// `<project>/.loop/runs/<id>/state.json` looking for those left in
+// `status: "running"` with a stale `lastHeartbeat`.
 //
-// Diseño:
-// - El shape coincide 1:1 con `RunSchedulerState` exportado por
-//   `run-scheduler.ts` para evitar mapeos. El campo extra `schemaVersion` va
-//   en el wrapper top-level. Si en el futuro cambia el shape interno, subimos
-//   `schemaVersion` y agregamos un migrator (mismo patrón que el store de
-//   workspaces).
-// - `validateRunState(value)` es un guard runtime que devuelve un
-//   `PersistedRunState` o `null`. NO tira excepciones — los call-sites tratan
-//   `null` como "data inválida o esquema viejo, descartar".
-// - El validador es tolerante con campos opcionales (ej. `message: string |
-//   null | undefined` se normaliza a `null`), pero estricto con el shape
-//   estructural (faltan los 5 stages → null).
+// Design:
+// - The shape matches 1:1 with `RunSchedulerState` exported by
+//   `run-scheduler.ts` to avoid mapping. The extra `schemaVersion` field goes
+//   in the top-level wrapper. If the internal shape changes in the future, we
+//   bump `schemaVersion` and add a migrator (same pattern as the workspaces
+//   store).
+// - `validateRunState(value)` is a runtime guard that returns a
+//   `PersistedRunState` or `null`. It does NOT throw — call sites treat
+//   `null` as "invalid data or old schema, discard".
+// - The validator is tolerant with optional fields (e.g. `message: string |
+//   null | undefined` is normalized to `null`), but strict with the structural
+//   shape (missing any of the 5 stages → null).
 
 import type {
   AgentStageState,
@@ -34,16 +34,16 @@ import type {
 } from "./run-scheduler";
 import type { AgentSlot, LoopAgentRole, LoopCli, LoopPromptName, ProfileMatrix } from "./types";
 
-/** Version actual del schema persistido en `state.json`. */
+/** Current version of the schema persisted in `state.json`. */
 export const STATE_SCHEMA_VERSION = 1 as const;
 
 /**
- * Wrapper top-level que persiste el scheduler. Incluye `schemaVersion` para
- * habilitar migraciones futuras sin romper resumes existentes.
+ * Top-level wrapper that persists the scheduler. Includes `schemaVersion` to
+ * enable future migrations without breaking existing resumes.
  */
 export interface PersistedRunState {
   schemaVersion: typeof STATE_SCHEMA_VERSION;
-  /** Snapshot completo del scheduler — mismas keys que `RunSchedulerState`. */
+  /** Full snapshot of the scheduler — same keys as `RunSchedulerState`. */
   status: RunStatus;
   mode: SchedulerMode;
   phases: PhaseState[];
@@ -60,12 +60,12 @@ export interface PersistedRunState {
 }
 
 // ---------------------------------------------------------------------------
-// Serialización
+// Serialization
 // ---------------------------------------------------------------------------
 
 /**
- * Construye el payload persistible a partir del estado del scheduler.
- * Sólo agrega `schemaVersion`; el resto pasa tal cual (las shapes coinciden).
+ * Builds the persistable payload from the scheduler state. Only adds
+ * `schemaVersion`; everything else passes through as-is (the shapes match).
  */
 export function buildPersistedRunState(state: RunSchedulerState): PersistedRunState {
   return {
@@ -308,13 +308,13 @@ function validateByAgent(
 }
 
 /**
- * Valida y parsea un payload `state.json`. Devuelve `null` si:
- *  - el JSON es inválido,
- *  - el `schemaVersion` no matchea,
- *  - alguna sección crítica del shape rompe el contrato (ej. faltan stages).
+ * Validates and parses a `state.json` payload. Returns `null` if:
+ *  - the JSON is invalid,
+ *  - the `schemaVersion` does not match,
+ *  - any critical section of the shape breaks the contract (e.g. missing stages).
  *
- * El frontend lo trata como "estado no recuperable, descartar y dejar al
- * usuario armar un run nuevo".
+ * The frontend treats this as "unrecoverable state, discard and let the user
+ * start a fresh run".
  */
 export function validateRunState(value: unknown): PersistedRunState | null {
   if (!isObj(value)) return null;
@@ -385,8 +385,8 @@ export function validateRunState(value: unknown): PersistedRunState | null {
 }
 
 /**
- * Parsea un string JSON crudo del disco y aplica `validateRunState`. Devuelve
- * `null` si el JSON es inválido O si la estructura no matchea.
+ * Parses a raw JSON string from disk and applies `validateRunState`. Returns
+ * `null` if the JSON is invalid OR if the structure does not match.
  */
 export function parsePersistedRunState(raw: string): PersistedRunState | null {
   if (!raw || !raw.trim()) return null;

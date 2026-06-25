@@ -2,21 +2,21 @@ import { load, type Store } from "@tauri-apps/plugin-store";
 
 import type { LoopProfilesState } from "../../modules/loop/state/types";
 
-// Patrón replicado de `workspaces-store.ts`. Decisiones equivalentes:
-// - El store es un único archivo JSON (`profiles.json`), una key `state`,
-//   un único snapshot completo (no patches).
-// - `queueSaveLoopProfiles` debouncea writes en una ventana corta para que
-//   ráfagas de UI (ej. editar el dropdown de CLI/modelo varias veces) no
-//   gatillen 1 write por cambio.
-// - `schemaVersion` mismatch => silent fallback a estado vacío (no romper boot
-//   por data vieja). Misma semántica que workspaces — ver
+// Pattern replicated from `workspaces-store.ts`. Equivalent decisions:
+// - The store is a single JSON file (`profiles.json`), one `state` key,
+//   a single full snapshot (no patches).
+// - `queueSaveLoopProfiles` debounces writes in a short window so UI bursts
+//   (e.g. editing the CLI/model dropdown several times) don't trigger one
+//   write per change.
+// - `schemaVersion` mismatch => silent fallback to empty state (don't break
+//   boot on old data). Same semantics as workspaces — see
 //   `loop-profiles/spec.md` requirement "Schema version incompatible".
 
 const STORE_FILE = "profiles.json";
 const STATE_KEY = "state";
-// 250ms alineado con la versión original de F1 de workspaces. Profiles se
-// modifican manualmente, no hay ráfagas tan altas como en terminales (F2 lo
-// subió a 300ms por eso). 250 es suficiente.
+// 250ms aligned with the original F1 version of workspaces. Profiles are
+// modified manually, there are no bursts as high as in terminals (F2 bumped
+// it to 300ms for that). 250 is enough.
 const DEBOUNCE_MS = 250;
 const CURRENT_SCHEMA_VERSION = 1;
 
@@ -41,9 +41,9 @@ function isLoopProfilesState(value: unknown): value is LoopProfilesState {
 }
 
 /**
- * Carga el estado persistido. Devuelve estado vacío cuando no hay nada
- * guardado o cuando el `schemaVersion` no matchea — nunca tira. Mismo
- * contrato que `loadWorkspaces`.
+ * Loads the persisted state. Returns empty state when nothing is saved or
+ * when `schemaVersion` does not match — never throws. Same contract as
+ * `loadWorkspaces`.
  */
 export async function loadLoopProfiles(): Promise<LoopProfilesState> {
   const store = await getStore();
@@ -56,8 +56,8 @@ let pending: LoopProfilesState | null = null;
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
 
 /**
- * Encola un snapshot completo del estado de perfiles. Llamadas dentro de la
- * ventana de debounce colapsan al último snapshot.
+ * Queues a full snapshot of the profiles state. Calls within the debounce
+ * window collapse to the latest snapshot.
  */
 export function queueSaveLoopProfiles(state: LoopProfilesState): void {
   pending = state;
@@ -73,9 +73,9 @@ export async function flushSaveLoopProfiles(): Promise<void> {
     saveTimer = null;
   }
   if (pending === null) return;
-  // Snapshot antes de cualquier `await` para que una llamada concurrente a
-  // `queueSaveLoopProfiles` aterrize en un `pending` nuevo y no se pierda al
-  // ponerlo en null debajo. Mismo razonamiento que `workspaces-store.ts:73`.
+  // Snapshot before any `await` so that a concurrent call to
+  // `queueSaveLoopProfiles` lands in a fresh `pending` and isn't lost when
+  // we null it out below. Same reasoning as `workspaces-store.ts:73`.
   const snapshot = pending;
   pending = null;
   try {
@@ -83,9 +83,9 @@ export async function flushSaveLoopProfiles(): Promise<void> {
     await store.set(STATE_KEY, snapshot);
     await store.save();
   } catch (error) {
-    // Restauramos el snapshot si nadie escribió uno más nuevo, así el próximo
-    // flush reintenta. (Si ya hay uno nuevo, gana ese — es un snapshot
-    // completo, no un patch).
+    // Restore the snapshot if no one wrote a newer one, so the next flush
+    // retries. (If there's already a newer one, that one wins — it's a full
+    // snapshot, not a patch).
     if (pending === null) pending = snapshot;
     throw error;
   }

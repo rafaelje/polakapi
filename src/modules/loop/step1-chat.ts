@@ -1,29 +1,29 @@
-// Paso 1 del flow agéntico: chat de problem intake.
+// Step 1 of the agentic flow: problem intake chat.
 //
-// Diseño general (alineado con design.md, decisión #3 "one-shot CLI"):
-// - Cada turno es one-shot: serializamos toda la historia previa en el prompt
-//   y la pasamos como `userInput` a `run_loop_agent`. No usamos sessions
-//   persistentes del CLI; eso acoplaría formatos heterogéneos (claude JSON vs
-//   codex JSONL vs opencode events) e impediría la mezcla de CLIs.
-// - El sistema escribe el draft completo (`<run>/01-problem-draft.md`) tras
-//   cada turno como auto-save (para resume en Section 9). Cuando el usuario
-//   pulsa "consolidar", se invoca un último turno pidiendo el resumen
-//   estructurado y se persiste en `<run>/01-problem.md`.
-// - Mientras el `run_dir` no exista en disco (primer turno), se llama a
-//   `loop_create_run` para inicializarlo con los prompts copiados.
+// Overall design (aligned with design.md, decision #3 "one-shot CLI"):
+// - Each turn is one-shot: we serialize the entire prior history into the
+//   prompt and pass it as `userInput` to `run_loop_agent`. We don't use
+//   persistent CLI sessions; that would couple heterogeneous formats (claude
+//   JSON vs codex JSONL vs opencode events) and prevent mixing CLIs.
+// - The system writes the full draft (`<run>/01-problem-draft.md`) after
+//   each turn as auto-save (for resume in Section 9). When the user
+//   presses "consolidate", a final turn is invoked asking for the
+//   structured summary and persisted to `<run>/01-problem.md`.
+// - While the `run_dir` does not exist on disk (first turn), we call
+//   `loop_create_run` to initialize it with the prompts copied in.
 //
-// Sigue el patrón "vista imperativa con re-render por replaceChildren()" que
-// ya usa `loop-chrome.ts`. No introducimos framework. El módulo expone
-// `mountStep1Chat(slot, ctx)` que devuelve un handle con `dispose()` y
-// `getTurnCount()` (útil para el chrome si quiere mostrar contadores en el
-// futuro).
+// Follows the "imperative view with re-render via replaceChildren()" pattern
+// already used by `loop-chrome.ts`. We don't introduce a framework. The module
+// exposes `mountStep1Chat(slot, ctx)` which returns a handle with `dispose()`
+// and `getTurnCount()` (useful for the chrome if it wants to show counters in
+// the future).
 
 import { invoke } from "@tauri-apps/api/core";
 
 import { LOOP_PROMPT_NAMES } from "./state/types";
 import type { LoopCli, LoopPromptName } from "./state/types";
 
-/** Resultado normalizado de `run_loop_agent`. Mirror del struct en Rust. */
+/** Normalized result from `run_loop_agent`. Mirror of the Rust struct. */
 interface AgentResult {
   text: string;
   tokensIn?: number | null;
@@ -33,51 +33,51 @@ interface AgentResult {
   error?: string | null;
 }
 
-/** Paths devueltos por `loop_create_run`. */
+/** Paths returned by `loop_create_run`. */
 interface CreatedRunPaths {
   runDir: string;
   promptsDir: string;
 }
 
-/** Un turno de la conversación: el mensaje del usuario y la respuesta del agente. */
+/** A single turn of the conversation: the user's message and the agent's reply. */
 export interface ChatTurn {
   user: string;
-  /** Vacío mientras la respuesta está en curso. */
+  /** Empty while the response is in progress. */
   assistant: string;
-  /** `true` mientras el subproceso del CLI corre — se usa para deshabilitar el input. */
+  /** `true` while the CLI subprocess is running — used to disable the input. */
   pending: boolean;
-  /** Si la invocación falló, mensaje legible para mostrar in-line. */
+  /** If the invocation failed, a readable message to display inline. */
   error?: string;
-  /** Tokens reportados por el CLI, si los hubo. */
+  /** Tokens reported by the CLI, if any. */
   tokensIn?: number | null;
   tokensOut?: number | null;
 }
 
 export interface Step1Context {
-  /** Path absoluto del project activo. Heredado del workspace via router. */
+  /** Absolute path of the active project. Inherited from the workspace via router. */
   projectPath: string;
-  /** UUID del run actual. Heredado del router. */
+  /** UUID of the current run. Inherited from the router. */
   runId: string;
-  /** Callback al consolidar — el chrome avanza al paso 2 al recibir esto. */
+  /** Callback on consolidate — the chrome advances to step 2 when it fires. */
   onConsolidate: () => void;
   /**
-   * Adoptar un run existente: el chrome cambia el runId al pasado y opcionalmente
-   * salta a otro paso. El paso 1 lo invoca cuando el usuario elige un run del
-   * picker de "runs anteriores".
+   * Adopt an existing run: the chrome switches the runId to the given one and
+   * optionally jumps to another step. Step 1 invokes this when the user picks
+   * a run from the "previous runs" picker.
    */
   onAdoptRun?: (runId: string, step?: 1 | 2 | 3) => void;
 }
 
 export interface Step1Handle {
   dispose(): void;
-  /** Lectura del número de turnos completados (útil para tests/futuras vistas). */
+  /** Read the number of completed turns (useful for tests / future views). */
   getTurnCount(): number;
 }
 
 /**
- * Monta el chat dentro del slot dado (typically `#loop-step-slot`). Re-monta
- * desde cero: el chrome borra y recrea el slot cuando cambia el step, así que
- * el handle vive sólo mientras el usuario esté en el paso 1.
+ * Mounts the chat inside the given slot (typically `#loop-step-slot`).
+ * Re-mounts from scratch: the chrome clears and recreates the slot when the
+ * step changes, so the handle only lives while the user is on step 1.
  */
 export function mountStep1Chat(slot: HTMLElement, ctx: Step1Context): Step1Handle {
   const state: Step1State = {
@@ -92,19 +92,19 @@ export function mountStep1Chat(slot: HTMLElement, ctx: Step1Context): Step1Handl
     pickerLoading: false,
   };
 
-  // El run_dir se crea perezosamente al primer turno — si el usuario sólo
-  // abre el paso y cierra la ventana sin hablar, no ensuciamos el FS con un
-  // dir vacío. Una vez creado, mantenemos el flag para evitar la doble
-  // llamada (loop_create_run rechaza si el dir ya existe).
+  // The run_dir is created lazily on the first turn — if the user only opens
+  // the step and closes the window without saying anything, we don't dirty the
+  // FS with an empty dir. Once created, we keep the flag set to avoid the
+  // double call (loop_create_run rejects if the dir already exists).
   let runDirReady = false;
 
   const refs: ViewRefs = render(slot, state, ctx, async (action) => {
     await handleAction(action);
   });
 
-  // Hidratamos draft desde disco si existe (resume parcial — Section 9 hará
-  // el resume formal con state.json; por ahora si encontramos draft, mostramos
-  // un banner "se detectó un draft previo" no destructivo).
+  // Hydrate draft from disk if it exists (partial resume — Section 9 will do
+  // the formal resume with state.json; for now if we find a draft, we show a
+  // non-destructive "previous draft detected" banner).
   void hydrateDraft();
 
   async function hydrateDraft(): Promise<void> {
@@ -124,13 +124,13 @@ export function mountStep1Chat(slot: HTMLElement, ctx: Step1Context): Step1Handl
         }
       }
     } catch {
-      // Run dir aún no existe o lectura falló; sin draft, sin error visible.
+      // Run dir doesn't exist yet or the read failed; no draft, no visible error.
     }
-    // Detectamos si ya existe un `01-problem.md` consolidado. Cubre dos casos:
-    //   (a) el usuario consolidó, navegó al paso 2 y volvió al paso 1.
-    //   (b) el usuario abrió un run viejo (resume) que ya tenía consolidado.
-    // En ambos casos mostramos el atajo "saltar al paso 2 con el problem.md
-    // existente" para no obligar a rehacer el chat.
+    // Detect whether a consolidated `01-problem.md` already exists. Covers two cases:
+    //   (a) the user consolidated, navigated to step 2 and came back to step 1.
+    //   (b) the user opened an old run (resume) that already had a consolidated file.
+    // In both cases we show the "skip to step 2 using the existing problem.md"
+    // shortcut so they don't have to redo the chat.
     try {
       const consolidated = await invoke<string>("loop_read_run_file", {
         projectPath: ctx.projectPath,
@@ -143,7 +143,7 @@ export function mountStep1Chat(slot: HTMLElement, ctx: Step1Context): Step1Handl
         touched = true;
       }
     } catch {
-      // Mismo motivo que arriba: no hay archivo o run_dir no existe — no es error.
+      // Same reason as above: no file or run_dir doesn't exist — not an error.
     }
     if (touched) refs.refresh();
   }
@@ -156,8 +156,8 @@ export function mountStep1Chat(slot: HTMLElement, ctx: Step1Context): Step1Handl
         return;
       case "set-input":
         state.inputDraft = action.value;
-        // No re-render: el input es controlado por el DOM en sí, no quiero
-        // re-pintar mientras tipean. Sólo refrescamos en submit/send.
+        // No re-render: the input is controlled by the DOM itself; we don't
+        // want to repaint while the user is typing. We only refresh on submit/send.
         return;
       case "send":
         await sendTurn();
@@ -166,8 +166,8 @@ export function mountStep1Chat(slot: HTMLElement, ctx: Step1Context): Step1Handl
         await consolidate();
         return;
       case "skip-to-step-2":
-        // Atajo: el run ya tiene `01-problem.md`. Saltamos directo al paso 2
-        // sin volver a invocar al agente consolidador.
+        // Shortcut: the run already has `01-problem.md`. Skip directly to step 2
+        // without invoking the consolidator agent again.
         ctx.onConsolidate();
         return;
       case "toggle-picker":
@@ -180,7 +180,7 @@ export function mountStep1Chat(slot: HTMLElement, ctx: Step1Context): Step1Handl
               projectPath: ctx.projectPath,
             });
           } catch (err) {
-            console.error("loop step1: no pude listar runs", err);
+            console.error("loop step1: failed to list runs", err);
             state.runsList = [];
           } finally {
             state.pickerLoading = false;
@@ -213,7 +213,7 @@ export function mountStep1Chat(slot: HTMLElement, ctx: Step1Context): Step1Handl
     if (!userMsg) return;
     if (state.turns.some((t) => t.pending)) return;
 
-    // Optimistic UI: el turno aparece como pendiente.
+    // Optimistic UI: the turn appears as pending.
     const turn: ChatTurn = {
       user: userMsg,
       assistant: "",
@@ -227,14 +227,14 @@ export function mountStep1Chat(slot: HTMLElement, ctx: Step1Context): Step1Handl
       await ensureRunDir();
     } catch (err) {
       turn.pending = false;
-      turn.error = `no pude crear el run dir: ${stringifyError(err)}`;
+      turn.error = `failed to create run dir: ${stringifyError(err)}`;
       refs.refresh();
       return;
     }
 
-    // Si tenemos sesión activa con este CLI, mandamos sólo el mensaje nuevo —
-    // el CLI ya recuerda los turnos previos. Si no, serializamos toda la
-    // historia en el prompt (modo one-shot legacy, sirve de bootstrap).
+    // If we have an active session with this CLI, send only the new message —
+    // the CLI already remembers the prior turns. Otherwise, serialize the full
+    // history into the prompt (legacy one-shot mode, used for bootstrap).
     const sessionId = state.sessionByCli[state.cli];
     const prompt = sessionId
       ? userMsg
@@ -249,10 +249,10 @@ export function mountStep1Chat(slot: HTMLElement, ctx: Step1Context): Step1Handl
     try {
       const result = await invoke<AgentResult>("run_loop_agent", {
         cli: state.cli,
-        // Modelo por defecto del paso 1 — alineado con design.md ("default sin
-        // perfil cargado = todo claude/opus-4-7"). Los modelos por agente se
-        // configuran en Section 6 (setup del Paso 3); el chat de intake usa el
-        // default fijo del CLI elegido en el selector.
+        // Default model for step 1 — aligned with design.md ("default with no
+        // profile loaded = all claude/opus-4-7"). Per-agent models are
+        // configured in Section 6 (Step 3 setup); the intake chat uses the
+        // fixed default of the CLI selected in the picker.
         model: defaultModelFor(state.cli),
         cwd: ctx.projectPath,
         systemPromptPath,
@@ -267,8 +267,8 @@ export function mountStep1Chat(slot: HTMLElement, ctx: Step1Context): Step1Handl
       if (result.error) {
         turn.error = result.error;
         turn.assistant = result.text ?? "";
-        // Si la sesión expiró o no se encuentra, dejamos que el próximo turno
-        // bootstrap nuevamente con la historia completa.
+        // If the session expired or can't be found, let the next turn
+        // bootstrap again with the full history.
         if (looksLikeSessionError(result.error)) {
           delete state.sessionByCli[state.cli];
         }
@@ -297,8 +297,8 @@ export function mountStep1Chat(slot: HTMLElement, ctx: Step1Context): Step1Handl
         content: serializeDraftMarkdown(state.turns),
       });
     } catch (err) {
-      // El draft es auto-save; si falla no rompemos el chat — sólo logueamos.
-      console.error("loop step1: no pude guardar el draft", err);
+      // The draft is auto-save; if it fails we don't break the chat — just log.
+      console.error("loop step1: failed to save draft", err);
     }
   }
 
@@ -313,8 +313,9 @@ export function mountStep1Chat(slot: HTMLElement, ctx: Step1Context): Step1Handl
     try {
       await ensureRunDir();
 
-      // En modo sesión, el CLI ya conoce la conversación; basta la instrucción
-      // final. Sin sesión, mandamos la historia completa + la instrucción.
+      // In session mode, the CLI already knows the conversation; the final
+      // instruction is enough. Without a session, we send the full history
+      // plus the instruction.
       const sessionId = state.sessionByCli[state.cli];
       const prompt = sessionId
         ? buildConsolidateInstruction()
@@ -341,7 +342,7 @@ export function mountStep1Chat(slot: HTMLElement, ctx: Step1Context): Step1Handl
 
       const finalDoc = result.text.trim();
       if (!finalDoc) {
-        throw new Error("respuesta vacía del agente");
+        throw new Error("empty response from agent");
       }
 
       await invoke<void>("loop_write_run_file", {
@@ -362,20 +363,20 @@ export function mountStep1Chat(slot: HTMLElement, ctx: Step1Context): Step1Handl
   }
 
   async function editSystemPrompt(name: LoopPromptName): Promise<void> {
-    // El path del prompt en el run (la copia atómica del global). Si el
-    // run_dir no se creó aún, lo creamos primero para que haya un archivo
-    // que abrir.
+    // The prompt's path inside the run (the atomic copy of the global one).
+    // If the run_dir hasn't been created yet, create it first so there's a
+    // file to open.
     try {
       await ensureRunDir();
     } catch (err) {
-      console.error("loop step1: no pude crear run para editar prompt", err);
+      console.error("loop step1: failed to create run for editing prompt", err);
       return;
     }
     const path = buildRunPromptPath(ctx.projectPath, ctx.runId, name);
     try {
       await invoke<void>("open_file_in_editor", { path });
     } catch (err) {
-      console.error("loop step1: no pude abrir el editor", err);
+      console.error("loop step1: failed to open editor", err);
     }
   }
 
@@ -388,7 +389,7 @@ export function mountStep1Chat(slot: HTMLElement, ctx: Step1Context): Step1Handl
 }
 
 // ---------------------------------------------------------------------------
-// Estado interno y acciones
+// Internal state and actions
 // ---------------------------------------------------------------------------
 
 interface Step1State {
@@ -397,21 +398,21 @@ interface Step1State {
   inputDraft: string;
   consolidating: boolean;
   consolidateError?: string;
-  /** Detectado en hidratación: ya existe un `01-problem.md` con contenido en el run dir. */
+  /** Detected on hydration: a `01-problem.md` with content already exists in the run dir. */
   consolidatedExists: boolean;
-  /** Picker abierto / cerrado. */
+  /** Picker open / closed. */
   pickerOpen: boolean;
-  /** Lista de runs cargada del backend (null = aún no se pidió o falló). */
+  /** Runs list loaded from the backend (null = not yet requested or failed). */
   runsList: RunSummary[] | null;
-  /** Spinner del picker. */
+  /** Picker spinner. */
   pickerLoading: boolean;
   /**
-   * Session id de cada CLI usado. Se popula con `result.sessionId` después de
-   * cada turno exitoso y se reutiliza en el siguiente turno (claude `--resume`,
-   * codex `exec resume`, opencode `--session`). En modo session sólo enviamos
-   * el mensaje nuevo — el CLI recuerda la historia. Si cambia el CLI, usamos
-   * la sesión del nuevo CLI (o arrancamos una nueva mandando historia completa
-   * si nunca usamos ese CLI).
+   * Session id for each CLI used. Populated with `result.sessionId` after each
+   * successful turn and reused on the next turn (claude `--resume`, codex
+   * `exec resume`, opencode `--session`). In session mode we only send the new
+   * message — the CLI remembers the history. If the CLI changes, we use the
+   * new CLI's session (or start a fresh one by sending the full history if we
+   * never used that CLI).
    */
   sessionByCli: Partial<Record<LoopCli, string>>;
 }
@@ -436,7 +437,7 @@ interface RunSummary {
 }
 
 // ---------------------------------------------------------------------------
-// Vista
+// View
 // ---------------------------------------------------------------------------
 
 interface ViewRefs {
@@ -450,8 +451,8 @@ function render(
   ctx: Step1Context,
   dispatch: (action: ChatAction) => void | Promise<void>,
 ): ViewRefs {
-  // El slot del chrome viene con `display: flex; align-items: center` para los
-  // placeholders. Cambiamos a layout vertical full-height para el chat.
+  // The chrome's slot comes with `display: flex; align-items: center` for the
+  // placeholders. Switch to a vertical full-height layout for the chat.
   slot.classList.add("loop-step1");
 
   const root = document.createElement("div");
@@ -486,17 +487,17 @@ function render(
     const wrap = document.createElement("div");
     wrap.className = "loop-step1-picker";
     wrap.setAttribute("role", "dialog");
-    wrap.setAttribute("aria-label", "Runs anteriores del project");
+    wrap.setAttribute("aria-label", "Previous runs of the project");
 
     const header = document.createElement("div");
     header.className = "loop-step1-picker-header";
     const title = document.createElement("strong");
-    title.textContent = "Runs anteriores";
+    title.textContent = "Previous runs";
     const closeBtn = document.createElement("button");
     closeBtn.type = "button";
     closeBtn.className = "loop-btn loop-btn-ghost";
     closeBtn.textContent = "✕";
-    closeBtn.setAttribute("aria-label", "Cerrar picker");
+    closeBtn.setAttribute("aria-label", "Close picker");
     on(closeBtn, "click", () => {
       void dispatch({ kind: "toggle-picker" });
     });
@@ -506,7 +507,7 @@ function render(
     if (state.pickerLoading) {
       const p = document.createElement("p");
       p.className = "loop-step1-picker-empty";
-      p.textContent = "cargando runs…";
+      p.textContent = "loading runs…";
       wrap.append(p);
       return wrap;
     }
@@ -514,7 +515,7 @@ function render(
     if (list.length === 0) {
       const p = document.createElement("p");
       p.className = "loop-step1-picker-empty";
-      p.textContent = "no hay runs anteriores en este project.";
+      p.textContent = "no previous runs in this project.";
       wrap.append(p);
       return wrap;
     }
@@ -522,14 +523,14 @@ function render(
     const ul = document.createElement("ul");
     ul.className = "loop-step1-picker-list";
     for (const run of list) {
-      // Saltamos el run actual — no tiene sentido "adoptar" el que ya estás usando.
+      // Skip the current run — no sense in "adopting" the one you're already using.
       if (run.runId === ctx.runId) continue;
       ul.append(renderPickerItem(run));
     }
     if (ul.children.length === 0) {
       const p = document.createElement("p");
       p.className = "loop-step1-picker-empty";
-      p.textContent = "el único run que existe es el actual.";
+      p.textContent = "the only existing run is the current one.";
       wrap.append(p);
     } else {
       wrap.append(ul);
@@ -547,25 +548,25 @@ function render(
 
     const preview = document.createElement("div");
     preview.className = "loop-step1-picker-item-preview";
-    preview.textContent = run.preview ?? "(sin preview)";
+    preview.textContent = run.preview ?? "(no preview)";
 
     const meta = document.createElement("div");
     meta.className = "loop-step1-picker-item-meta";
     const date = new Date(run.lastModifiedMs);
     const dateText = isFinite(date.getTime())
       ? date.toLocaleString()
-      : "(fecha desconocida)";
+      : "(unknown date)";
     const flags: string[] = [];
     if (run.hasDraft) flags.push("draft");
-    if (run.hasConsolidated) flags.push("consolidado");
-    if (run.hasPhases) flags.push("fases");
-    meta.textContent = `${dateText} · ${flags.join(" · ") || "vacío"} · ${run.runId.slice(0, 8)}`;
+    if (run.hasConsolidated) flags.push("consolidated");
+    if (run.hasPhases) flags.push("phases");
+    meta.textContent = `${dateText} · ${flags.join(" · ") || "empty"} · ${run.runId.slice(0, 8)}`;
 
     main.append(preview, meta);
     on(main, "click", () => {
-      // Elegimos el paso de destino según qué archivos haya en el run:
-      // si ya hay fases generadas → paso 3 directo (setup), si hay consolidado
-      // → paso 2, si sólo hay draft → paso 1.
+      // Pick the destination step based on which files exist in the run:
+      // if phases are already generated → straight to step 3 (setup), if there
+      // is a consolidated file → step 2, if there's only a draft → step 1.
       const step: 1 | 2 | 3 = run.hasPhases ? 3 : run.hasConsolidated ? 2 : 1;
       void dispatch({ kind: "adopt-run", runId: run.runId, step });
     });
@@ -581,13 +582,13 @@ function render(
 
     const text = document.createElement("span");
     text.className = "loop-step1-resume-banner-text";
-    text.textContent = "Ya hay un 01-problem.md consolidado en este run.";
+    text.textContent = "There is already a consolidated 01-problem.md in this run.";
 
     const skip = document.createElement("button");
     skip.type = "button";
     skip.className = "loop-btn loop-btn-primary";
-    skip.textContent = "→ ir al paso 2";
-    skip.title = "Saltar al paso 2 usando el 01-problem.md existente";
+    skip.textContent = "→ go to step 2";
+    skip.title = "Skip to step 2 using the existing 01-problem.md";
     on(skip, "click", () => {
       void dispatch({ kind: "skip-to-step-2" });
     });
@@ -610,13 +611,13 @@ function render(
 
     const title = document.createElement("div");
     title.className = "loop-step1-title";
-    title.textContent = "Paso 1 · refinar el problema";
+    title.textContent = "Step 1 · refine the problem";
 
     const editPrompt = document.createElement("button");
     editPrompt.type = "button";
     editPrompt.className = "loop-btn loop-btn-ghost loop-step1-edit-prompt";
-    editPrompt.textContent = "✎ editar prompt de sistema";
-    editPrompt.title = "Abre problem-intake.md del run en el editor del sistema";
+    editPrompt.textContent = "✎ edit system prompt";
+    editPrompt.title = "Open the run's problem-intake.md in the system editor";
     on(editPrompt, "click", () => {
       void dispatch({ kind: "edit-system-prompt" });
     });
@@ -628,8 +629,8 @@ function render(
       const picker = document.createElement("button");
       picker.type = "button";
       picker.className = "loop-btn loop-btn-ghost";
-      picker.textContent = state.pickerOpen ? "↺ runs anteriores ✓" : "↺ runs anteriores";
-      picker.title = "Listar runs previos del project para retomar uno";
+      picker.textContent = state.pickerOpen ? "↺ previous runs ✓" : "↺ previous runs";
+      picker.title = "List previous runs of the project to resume one";
       on(picker, "click", () => {
         void dispatch({ kind: "toggle-picker" });
       });
@@ -649,7 +650,7 @@ function render(
       const empty = document.createElement("p");
       empty.className = "loop-step1-empty";
       empty.textContent =
-        "Contame el problema en el que estás trabajando. El agente hará preguntas hasta que esté listo para descomponerlo en fases.";
+        "Tell me about the problem you're working on. The agent will ask questions until it's ready to break it down into phases.";
       list.appendChild(empty);
       return list;
     }
@@ -657,8 +658,8 @@ function render(
     for (const turn of state.turns) {
       list.append(renderTurn(turn));
     }
-    // Autoscroll al final cuando se agregan turnos. Diferido al próximo frame
-    // para que el DOM esté layouteado antes de medir.
+    // Autoscroll to the bottom when turns are added. Deferred to the next
+    // frame so the DOM is laid out before measuring.
     requestAnimationFrame(() => {
       list.scrollTop = list.scrollHeight;
     });
@@ -673,7 +674,7 @@ function render(
     userRow.className = "loop-step1-row loop-step1-row-user";
     const userLabel = document.createElement("span");
     userLabel.className = "loop-step1-rolelabel";
-    userLabel.textContent = "vos";
+    userLabel.textContent = "you";
     const userText = document.createElement("div");
     userText.className = "loop-step1-msg";
     userText.textContent = turn.user;
@@ -688,15 +689,15 @@ function render(
     agentText.className = "loop-step1-msg";
     if (turn.pending) {
       agentText.classList.add("loop-step1-msg-pending");
-      agentText.textContent = "pensando…";
+      agentText.textContent = "thinking…";
     } else if (turn.error) {
-      // Si hubo error mostramos lo que tenemos (si algo) + nota de error
-      // debajo. Esto facilita que el usuario vea respuestas parciales.
+      // If there was an error, show whatever we have (if anything) plus an
+      // error note below. This lets the user see partial responses.
       if (turn.assistant) {
         agentText.textContent = turn.assistant;
       } else {
         agentText.classList.add("loop-step1-msg-empty");
-        agentText.textContent = "(sin respuesta)";
+        agentText.textContent = "(no response)";
       }
     } else {
       agentText.textContent = turn.assistant;
@@ -729,7 +730,7 @@ function render(
     const composer = document.createElement("div");
     composer.className = "loop-step1-composer";
 
-    // Fila superior: selector de CLI, info, botón consolidar
+    // Top row: CLI selector, info, consolidate button
     const toolbar = document.createElement("div");
     toolbar.className = "loop-step1-toolbar";
 
@@ -760,15 +761,15 @@ function render(
     consolidate.type = "button";
     consolidate.className = "loop-btn loop-btn-primary loop-step1-consolidate";
     consolidate.textContent = state.consolidating
-      ? "consolidando…"
-      : "✓ consolidar problema.md →";
+      ? "consolidating…"
+      : "✓ consolidate problem.md →";
     const hasTurn = state.turns.length > 0;
     const anyPending = state.turns.some((t) => t.pending);
     consolidate.disabled = !hasTurn || anyPending || state.consolidating;
     if (!hasTurn) {
-      consolidate.title = "Necesitás al menos un turno antes de consolidar.";
+      consolidate.title = "You need at least one turn before consolidating.";
     } else if (anyPending) {
-      consolidate.title = "Esperá a que el último turno termine.";
+      consolidate.title = "Wait for the last turn to finish.";
     }
     on(consolidate, "click", () => {
       void dispatch({ kind: "consolidate" });
@@ -776,23 +777,23 @@ function render(
 
     toolbar.append(cliWrap, spacer, consolidate);
 
-    // Mensaje de error de consolidación, si lo hay
+    // Consolidation error message, if any
     let errEl: HTMLElement | null = null;
     if (state.consolidateError) {
       errEl = document.createElement("p");
       errEl.className = "loop-step1-consolidate-error";
-      errEl.textContent = `error al consolidar: ${state.consolidateError}`;
+      errEl.textContent = `error consolidating: ${state.consolidateError}`;
     }
 
-    // Fila inferior: textarea + botón "enviar"
+    // Bottom row: textarea + "send" button
     const inputRow = document.createElement("form");
     inputRow.className = "loop-step1-input-row";
-    inputRow.setAttribute("aria-label", "enviar mensaje");
+    inputRow.setAttribute("aria-label", "send message");
 
     const textarea = document.createElement("textarea");
     textarea.className = "loop-step1-input";
     textarea.placeholder =
-      "describí el problema o respondé al agente… (Cmd+Enter para enviar)";
+      "describe the problem or reply to the agent… (Cmd+Enter to send)";
     textarea.rows = 4;
     textarea.value = state.inputDraft;
     const inFlight = anyPending || state.consolidating;
@@ -802,11 +803,11 @@ function render(
       void dispatch({ kind: "set-input", value: textarea.value });
     });
     on(textarea, "keydown", (e: KeyboardEvent) => {
-      // Cmd+Enter / Ctrl+Enter envía. Section 10.3 puede unificar atajos.
+      // Cmd+Enter / Ctrl+Enter sends. Section 10.3 may unify shortcuts.
       if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
         e.preventDefault();
-        // Persistimos lo último del textarea antes de submit (en caso de que
-        // el evento "input" no se haya disparado por race del IME).
+        // Persist the latest textarea value before submit (in case the
+        // "input" event didn't fire due to an IME race).
         state.inputDraft = textarea.value;
         void dispatch({ kind: "send" });
       }
@@ -815,7 +816,7 @@ function render(
     const send = document.createElement("button");
     send.type = "submit";
     send.className = "loop-btn loop-btn-primary loop-step1-send";
-    send.textContent = "enviar";
+    send.textContent = "send";
     send.disabled = inFlight || textarea.value.trim().length === 0;
 
     on(inputRow, "submit", (e: Event) => {
@@ -823,7 +824,7 @@ function render(
       state.inputDraft = textarea.value;
       void dispatch({ kind: "send" });
     });
-    // Habilitar/deshabilitar el botón mientras tipean sin re-render del root.
+    // Enable/disable the button while typing without re-rendering the root.
     on(textarea, "input", () => {
       send.disabled = inFlight || textarea.value.trim().length === 0;
     });
@@ -837,84 +838,85 @@ function render(
     return composer;
   }
 
-  // Render inicial
+  // Initial render
   refresh();
-  // Suprimimos warnings de variables no usadas: `ctx` se cierra sobre via dispatch.
+  // Suppress unused-variable warnings: `ctx` is closed over via dispatch.
   void ctx;
 
   return { refresh, cleanup };
 }
 
 // ---------------------------------------------------------------------------
-// Serialización de historia y prompts
+// History serialization and prompts
 // ---------------------------------------------------------------------------
 
 /**
- * Construye el prompt one-shot que se manda al CLI en cada turno. Incluye los
- * turnos previos como historia textual, en orden, y el mensaje actual del
- * usuario al final. El system prompt (con instrucciones del modo "intake") lo
- * pasa `run_loop_agent` via `--append-system-prompt`.
+ * Builds the one-shot prompt sent to the CLI on each turn. Includes prior
+ * turns as textual history, in order, with the current user message at the
+ * end. The system prompt (with the "intake" mode instructions) is passed by
+ * `run_loop_agent` via `--append-system-prompt`.
  *
- * Formato pensado para ser fácil de leer en un solo string — los CLIs no
- * necesitan estructura ChatML; tratan todo como un prompt de usuario y
- * generan la respuesta del agente. El header explícito ayuda al modelo a
- * entender el rol de cada bloque.
+ * Format is designed to be easy to read as a single string — the CLIs don't
+ * need ChatML structure; they treat everything as a user prompt and generate
+ * the agent's response. The explicit headers help the model understand the
+ * role of each block.
  */
 function buildHistoryPrompt(history: ChatTurn[], currentUser: string): string {
   const parts: string[] = [];
   if (history.length > 0) {
-    parts.push("# Conversación previa\n");
+    parts.push("# Prior conversation\n");
     for (const turn of history) {
-      parts.push(`## Usuario\n${turn.user.trim()}\n`);
+      parts.push(`## User\n${turn.user.trim()}\n`);
       const assistant = turn.assistant.trim();
-      if (assistant) parts.push(`## Agente\n${assistant}\n`);
+      if (assistant) parts.push(`## Agent\n${assistant}\n`);
     }
   }
-  parts.push("# Mensaje actual del usuario\n");
+  parts.push("# Current user message\n");
   parts.push(currentUser.trim());
   parts.push(
-    "\n\nRespondé al usuario continuando la conversación. No repitas la historia; respondé sólo al mensaje actual.",
+    "\n\nReply to the user, continuing the conversation. Don't repeat the history; reply only to the current message.",
   );
   return parts.join("\n");
 }
 
 /**
- * Prompt final para consolidar el problema en un `01-problem.md` estructurado.
- * Pide explícitamente el formato esperado para que el output sea
- * directamente persistible sin parseo posterior.
+ * Final prompt to consolidate the problem into a structured `01-problem.md`.
+ * Explicitly asks for the expected format so the output is directly
+ * persistable without further parsing.
  */
 function buildConsolidatePrompt(history: ChatTurn[]): string {
   const parts: string[] = [];
-  parts.push("# Conversación completa\n");
+  parts.push("# Full conversation\n");
   for (const turn of history) {
-    parts.push(`## Usuario\n${turn.user.trim()}\n`);
+    parts.push(`## User\n${turn.user.trim()}\n`);
     const assistant = turn.assistant.trim();
-    if (assistant) parts.push(`## Agente\n${assistant}\n`);
+    if (assistant) parts.push(`## Agent\n${assistant}\n`);
   }
-  parts.push("# Tarea\n");
+  parts.push("# Task\n");
   parts.push(buildConsolidateInstruction());
   return parts.join("\n");
 }
 
 /**
- * Instrucción pura de consolidación sin la historia. Se usa cuando el CLI ya
- * tiene la conversación cargada en sesión (`--resume`/`exec resume`/`--session`).
+ * Pure consolidation instruction without the history. Used when the CLI
+ * already has the conversation loaded in session (`--resume` / `exec resume`
+ * / `--session`).
  */
 function buildConsolidateInstruction(): string {
   return (
-    "Basándote en la conversación previa, generá un único documento Markdown con el resumen estructurado del problema. Estructura esperada:\n\n" +
+    "Based on the prior conversation, produce a single Markdown document with a structured summary of the problem. Expected structure:\n\n" +
     "```\n" +
-    "# Problema\n\n" +
-    "## Contexto\n\n## Objetivo\n\n## Restricciones\n\n## Criterios de éxito\n\n## Riesgos conocidos\n" +
+    "# Problem\n\n" +
+    "## Context\n\n## Goal\n\n## Constraints\n\n## Success criteria\n\n## Known risks\n" +
     "```\n\n" +
-    "Devolvé sólo el contenido Markdown final (sin code fences, sin preámbulo). Estilo conciso, castellano rioplatense, sin emojis."
+    "Return only the final Markdown content (no code fences, no preamble). Concise, technical English, no emojis."
   );
 }
 
 /**
- * Heurística para detectar mensajes de error que indican sesión inválida o
- * expirada. En ese caso limpiamos el session id local para forzar bootstrap
- * fresh (con historia serializada) en el próximo turno.
+ * Heuristic to detect error messages that indicate an invalid or expired
+ * session. In that case we clear the local session id to force a fresh
+ * bootstrap (with serialized history) on the next turn.
  */
 function looksLikeSessionError(message: string): boolean {
   const lower = message.toLowerCase();
@@ -928,15 +930,15 @@ function looksLikeSessionError(message: string): boolean {
   );
 }
 
-/** Serializa los turnos a un Markdown legible para `01-problem-draft.md`. */
+/** Serializes the turns to a readable Markdown for `01-problem-draft.md`. */
 function serializeDraftMarkdown(turns: ChatTurn[]): string {
-  const parts: string[] = ["# Draft del problema (auto-save)\n"];
+  const parts: string[] = ["# Problem draft (auto-save)\n"];
   for (let i = 0; i < turns.length; i++) {
     const turn = turns[i];
-    parts.push(`## Turno ${i + 1}\n`);
-    parts.push(`### Usuario\n${turn.user.trim()}\n`);
+    parts.push(`## Turn ${i + 1}\n`);
+    parts.push(`### User\n${turn.user.trim()}\n`);
     if (turn.assistant.trim()) {
-      parts.push(`### Agente\n${turn.assistant.trim()}\n`);
+      parts.push(`### Agent\n${turn.assistant.trim()}\n`);
     }
     if (turn.error) {
       parts.push(`> error: ${turn.error}\n`);
@@ -946,19 +948,19 @@ function serializeDraftMarkdown(turns: ChatTurn[]): string {
 }
 
 /**
- * Parser inverso del draft. Tolerante: si el formato no matchea exactamente
- * (ej. el usuario lo editó a mano), devolvemos lo que pudimos extraer. Si no
- * hay nada parseable, devolvemos lista vacía.
+ * Inverse draft parser. Lenient: if the format doesn't match exactly (e.g.
+ * the user edited it by hand), we return whatever we could extract. If
+ * nothing is parseable, we return an empty list.
  *
- * Section 9 (resume) puede reemplazar esto por un schema más estricto basado
- * en `state.json`; por ahora el round-trip simple alcanza.
+ * Section 9 (resume) may replace this with a stricter schema based on
+ * `state.json`; for now the simple round-trip is enough.
  */
 function parseDraftMarkdown(content: string): ChatTurn[] {
   const turns: ChatTurn[] = [];
-  const turnBlocks = content.split(/^## Turno \d+$/m).slice(1);
+  const turnBlocks = content.split(/^## Turn \d+$/m).slice(1);
   for (const block of turnBlocks) {
-    const userMatch = block.match(/### Usuario\n([\s\S]*?)(?=\n### Agente|$)/);
-    const agentMatch = block.match(/### Agente\n([\s\S]*?)(?=\n> error:|$)/);
+    const userMatch = block.match(/### User\n([\s\S]*?)(?=\n### Agent|$)/);
+    const agentMatch = block.match(/### Agent\n([\s\S]*?)(?=\n> error:|$)/);
     if (!userMatch) continue;
     const user = userMatch[1].trim();
     if (!user) continue;
@@ -980,23 +982,22 @@ function buildRunPromptPath(
   runId: string,
   name: LoopPromptName,
 ): string {
-  // El backend (`loop_create_run`) usa `<project>/.loop/runs/<runId>/prompts/`.
-  // Reproducimos el join acá para pasar el path absoluto a `run_loop_agent`.
-  // Validamos contra LOOP_PROMPT_NAMES por tipo, no runtime — el llamador
-  // siempre pasa una constante del set.
+  // The backend (`loop_create_run`) uses `<project>/.loop/runs/<runId>/prompts/`.
+  // We reproduce the join here to pass the absolute path to `run_loop_agent`.
+  // We validate against LOOP_PROMPT_NAMES by type, not at runtime — the caller
+  // always passes a constant from the set.
   void LOOP_PROMPT_NAMES;
-  // Normalizamos separadores para que funcione en macOS/Linux. Tauri en
-  // Windows tolera "/" en la mayoría de los APIs, pero por las dudas dejamos
-  // el join nativo del SO si está disponible.
+  // Normalize separators so it works on macOS/Linux. Tauri on Windows
+  // tolerates "/" in most APIs, but just in case we use the OS-native join
+  // if available.
   const sep = projectPath.includes("\\") ? "\\" : "/";
   return [projectPath, ".loop", "runs", runId, "prompts", name].join(sep);
 }
 
 function defaultModelFor(cli: LoopCli): string {
-  // Defaults razonables por CLI. Section 6 (setup del Paso 3) permite
-  // overrides per-agente; el chat de intake usa el default fijo del CLI
-  // elegido — no exponemos selector de modelo en el paso 1 para mantener
-  // la superficie chica.
+  // Reasonable defaults per CLI. Section 6 (Step 3 setup) allows per-agent
+  // overrides; the intake chat uses the fixed default for the selected CLI —
+  // we don't expose a model selector in step 1 to keep the surface small.
   switch (cli) {
     case "claude":
       return "claude-opus-4-7";

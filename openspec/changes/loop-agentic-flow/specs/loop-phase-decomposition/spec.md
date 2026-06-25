@@ -1,67 +1,67 @@
 ## ADDED Requirements
 
-### Requirement: Generación inicial de fases desde 01-problem.md
-El Paso 2 SHALL invocar al CLI configurado (con el system prompt `phase-decomposition.md`) pasando `01-problem.md` para producir una lista de fases. Cada fase MUST tener un identificador secuencial (`01`, `02`, ...), nombre, y al menos un archivo `logic.md`. El LLM SHALL decidir si la fase incluye además `visual.html`.
+### Requirement: Initial phase generation from 01-problem.md
+Step 2 SHALL invoke the configured CLI (with the system prompt `phase-decomposition.md`) passing `01-problem.md` to produce a list of phases. Each phase MUST have a sequential identifier (`01`, `02`, ...), a name, and at least a `logic.md` file. The LLM SHALL decide whether the phase additionally includes `visual.html`.
 
-#### Scenario: Generación exitosa
-- **WHEN** el usuario consolida el Paso 1 y entra al Paso 2 por primera vez
-- **THEN** el sistema invoca el CLI con `01-problem.md` como input
-- **AND** crea una carpeta por fase en `<run>/phases/<NN>-<slug>/`
-- **AND** cada carpeta contiene `logic.md` (siempre) y `visual.html` (cuando el LLM lo marcó como necesario)
+#### Scenario: Successful generation
+- **WHEN** the user consolidates Step 1 and enters Step 2 for the first time
+- **THEN** the system invokes the CLI with `01-problem.md` as input
+- **AND** creates one folder per phase in `<run>/phases/<NN>-<slug>/`
+- **AND** each folder contains `logic.md` (always) and `visual.html` (when the LLM marked it as needed)
 
-#### Scenario: Fase sin parte visual
-- **WHEN** el LLM determina que una fase no tiene componente visual (ej. tarea de backend pura)
-- **THEN** la carpeta de esa fase contiene sólo `logic.md`
-- **AND** la UI no muestra el tab `visual.html` para esa fase
+#### Scenario: Phase without visual part
+- **WHEN** the LLM determines that a phase has no visual component (e.g. pure backend task)
+- **THEN** that phase's folder only contains `logic.md`
+- **AND** the UI does not show the `visual.html` tab for that phase
 
-### Requirement: Declaración de dependencias entre fases
-Cada fase SHALL tener un campo `dependsOn: [phaseId]`. El LLM propone valores iniciales; el usuario SHALL poder editarlos. Una fase con `dependsOn: []` es una raíz. El sistema MUST detectar ciclos y rechazarlos.
+### Requirement: Dependency declaration between phases
+Each phase SHALL have a `dependsOn: [phaseId]` field. The LLM proposes initial values; the user SHALL be able to edit them. A phase with `dependsOn: []` is a root. The system MUST detect cycles and reject them.
 
-#### Scenario: LLM propone dependencias
-- **WHEN** el LLM genera las fases iniciales
-- **THEN** cada fase trae un `dependsOn[]` propuesto
-- **AND** el sidebar muestra "↳ raíz" o "↳ depende de <pill>NN</pill>" debajo del nombre
+#### Scenario: LLM proposes dependencies
+- **WHEN** the LLM generates the initial phases
+- **THEN** each phase comes with a proposed `dependsOn[]`
+- **AND** the sidebar shows "↳ root" or "↳ depends on <pill>NN</pill>" below the name
 
-#### Scenario: Usuario edita dependencias
-- **WHEN** el usuario abre el editor de una fase y modifica `dependsOn`
-- **THEN** la vista topología se recalcula al instante
-- **AND** los batches en el modo híbrido se reordenan según el nuevo DAG
+#### Scenario: User edits dependencies
+- **WHEN** the user opens a phase's editor and modifies `dependsOn`
+- **THEN** the topology view is recalculated instantly
+- **AND** the batches in hybrid mode are reordered according to the new DAG
 
-#### Scenario: Ciclo detectado
-- **WHEN** el usuario intenta agregar una dependencia que crearía un ciclo (ej. 02 depende de 04 y 04 depende de 02)
-- **THEN** el sistema rechaza el cambio y muestra "ciclo detectado entre 02 y 04"
+#### Scenario: Cycle detected
+- **WHEN** the user tries to add a dependency that would create a cycle (e.g. 02 depends on 04 and 04 depends on 02)
+- **THEN** the system rejects the change and shows "cycle detected between 02 and 04"
 
-### Requirement: Editor inline con sidebar de fases
-El Paso 2 SHALL exponer un editor con sidebar de fases a la izquierda y tabs `logic.md` / `visual.html` a la derecha. El usuario MUST poder agregar, eliminar, renombrar y reordenar fases manualmente.
+### Requirement: Inline editor with phase sidebar
+Step 2 SHALL expose an editor with a phase sidebar on the left and `logic.md` / `visual.html` tabs on the right. The user MUST be able to add, remove, rename, and reorder phases manually.
 
-#### Scenario: Agregar fase manual
-- **WHEN** el usuario presiona "+ agregar fase" en el sidebar
-- **THEN** se crea una fase nueva con un nombre placeholder y `logic.md` vacío
-- **AND** queda seleccionada para edición
+#### Scenario: Add phase manually
+- **WHEN** the user presses "+ add phase" in the sidebar
+- **THEN** a new phase is created with a placeholder name and empty `logic.md`
+- **AND** it is selected for editing
 
-#### Scenario: Eliminar fase con dependientes
-- **WHEN** el usuario elimina una fase X y existe alguna fase Y con `X` en su `dependsOn`
-- **THEN** el sistema pide confirmación
-- **AND** al confirmar, remueve `X` del `dependsOn` de todas las fases dependientes
+#### Scenario: Delete phase with dependents
+- **WHEN** the user deletes a phase X and there is a phase Y with `X` in its `dependsOn`
+- **THEN** the system asks for confirmation
+- **AND** on confirm, removes `X` from the `dependsOn` of all dependent phases
 
-### Requirement: Edición asistida por AI
-Cada archivo (`logic.md` o `visual.html`) SHALL exponer un botón "editar con AI" que abre un mini-chat sobre la selección actual y reemplaza esa sección por la edición propuesta cuando el usuario acepta.
+### Requirement: AI-assisted editing
+Each file (`logic.md` or `visual.html`) SHALL expose an "edit with AI" button that opens a mini-chat over the current selection and replaces that section with the proposed edit when the user accepts.
 
-#### Scenario: Edición con AI exitosa
-- **WHEN** el usuario selecciona texto en `logic.md` y presiona "✨ editar con AI" con una instrucción ("hacelo más conciso")
-- **THEN** el sistema invoca el CLI con la sección seleccionada y la instrucción
-- **AND** muestra el diff propuesto
-- **AND** al aceptar, reemplaza la sección por la edición
+#### Scenario: Successful edit with AI
+- **WHEN** the user selects text in `logic.md` and presses "✨ edit with AI" with an instruction ("make it more concise")
+- **THEN** the system invokes the CLI with the selected section and the instruction
+- **AND** shows the proposed diff
+- **AND** on accept, replaces the section with the edit
 
-### Requirement: Vista de topología derivada del DAG
-El Paso 2 SHALL incluir una vista "topología de ejecución" read-only que muestre los batches calculados a partir de los `dependsOn` de todas las fases. La vista MUST recalcularse al instante cuando cambian dependencias.
+### Requirement: Topology view derived from the DAG
+Step 2 SHALL include a read-only "execution topology" view that shows the batches computed from the `dependsOn` of all phases. The view MUST be recalculated instantly when dependencies change.
 
-#### Scenario: Topología con dos batches
-- **WHEN** las fases son 5 (01 raíz, 04 raíz, 02 depende de 01, 03 depende de 01, 05 depende de 04)
-- **THEN** la vista muestra batch 1 = [01, 04], batch 2 = [02, 03, 05]
-- **AND** el resumen indica "2 batches paralelos · modo paralelo posible"
+#### Scenario: Topology with two batches
+- **WHEN** the phases are 5 (01 root, 04 root, 02 depends on 01, 03 depends on 01, 05 depends on 04)
+- **THEN** the view shows batch 1 = [01, 04], batch 2 = [02, 03, 05]
+- **AND** the summary indicates "2 parallel batches · parallel mode possible"
 
-#### Scenario: Topología totalmente lineal
-- **WHEN** cada fase depende de la anterior
-- **THEN** la vista muestra N batches con una fase cada uno
-- **AND** el resumen indica "modo paralelo no aplica — equivalente a secuencial"
+#### Scenario: Fully linear topology
+- **WHEN** each phase depends on the previous one
+- **THEN** the view shows N batches with one phase each
+- **AND** the summary indicates "parallel mode does not apply — equivalent to sequential"

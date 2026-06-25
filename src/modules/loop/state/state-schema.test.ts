@@ -7,8 +7,8 @@ import {
   validateRunState,
 } from "./state-schema";
 
-// Construye un state válido completo para reusar en los tests. El shape es el
-// mismo que `RunSchedulerState` — coincide 1:1 con lo que el scheduler serializa.
+// Builds a valid, complete state to reuse across tests. The shape is the
+// same as `RunSchedulerState` — matches 1:1 what the scheduler serializes.
 function validSnapshot() {
   return {
     schemaVersion: STATE_SCHEMA_VERSION,
@@ -80,7 +80,7 @@ function validSnapshot() {
 }
 
 describe("validateRunState", () => {
-  it("acepta un snapshot completo válido", () => {
+  it("accepts a valid complete snapshot", () => {
     const v = validateRunState(validSnapshot());
     expect(v).not.toBeNull();
     expect(v?.status).toBe("running");
@@ -88,45 +88,45 @@ describe("validateRunState", () => {
     expect(v?.phases[0].stages.analysis.status).toBe("done");
   });
 
-  it("rechaza schemaVersion incorrecto", () => {
+  it("rejects incorrect schemaVersion", () => {
     const s = { ...validSnapshot(), schemaVersion: 999 };
     expect(validateRunState(s)).toBeNull();
   });
 
-  it("rechaza status inválido", () => {
+  it("rejects invalid status", () => {
     const s = { ...validSnapshot(), status: "ufo" };
     expect(validateRunState(s)).toBeNull();
   });
 
-  it("rechaza modo inválido", () => {
+  it("rejects invalid mode", () => {
     const s = { ...validSnapshot(), mode: "magic" };
     expect(validateRunState(s)).toBeNull();
   });
 
-  it("rechaza fase sin los 4 stages", () => {
+  it("rejects a phase without the 4 stages", () => {
     const s = validSnapshot();
-    // @ts-expect-error -- intencional, queremos que el validator atrape el shape roto
+    // @ts-expect-error -- intentional, we want the validator to catch the broken shape
     delete s.phases[0].stages.review;
     expect(validateRunState(s)).toBeNull();
   });
 
-  it("rechaza batches con elemento no-string", () => {
+  it("rejects batches with a non-string element", () => {
     const s = { ...validSnapshot(), batches: [[42]] };
     expect(validateRunState(s)).toBeNull();
   });
 
-  it("normaliza message: undefined → null", () => {
+  it("normalizes message: undefined → null", () => {
     const s = validSnapshot();
-    // @ts-expect-error -- el shape acepta string | null, undefined es tolerado
+    // @ts-expect-error -- the shape accepts string | null, undefined is tolerated
     delete s.message;
     const v = validateRunState(s);
     expect(v?.message).toBeNull();
   });
 
-  it("settings inválido (sin projectPath) → settings se normaliza a null", () => {
-    // Diseño: el validator preserva el resto del state (fases, totales) para
-    // que la UI pueda mostrar el progreso, pero marca settings=null. El
-    // caller del resume detecta settings=null y deshabilita retomar.
+  it("invalid settings (no projectPath) → settings normalizes to null", () => {
+    // Design: the validator preserves the rest of the state (phases, totals)
+    // so the UI can show the progress, but marks settings=null. The resume
+    // caller detects settings=null and disables resume.
     const s = validSnapshot();
     s.settings = { ...s.settings, projectPath: "" };
     const v = validateRunState(s);
@@ -134,25 +134,25 @@ describe("validateRunState", () => {
     expect(v?.settings).toBeNull();
   });
 
-  it("settings nulo es válido (run sin arrancar)", () => {
+  it("null settings are valid (run not started)", () => {
     const s = validSnapshot();
-    // @ts-expect-error -- intencional para el caso "scheduler sin initialize"
+    // @ts-expect-error -- intentional for the "scheduler without initialize" case
     s.settings = null;
     const v = validateRunState(s);
     expect(v).not.toBeNull();
     expect(v?.settings).toBeNull();
   });
 
-  it("matrix con CLI desconocido → settings se normaliza a null", () => {
+  it("matrix with unknown CLI → settings normalizes to null", () => {
     const s = validSnapshot();
-    // @ts-expect-error -- forzamos un CLI inválido
+    // @ts-expect-error -- we force an invalid CLI
     s.settings.matrix.analysis = { cli: "magic-cli", model: "x" };
     const v = validateRunState(s);
     expect(v).not.toBeNull();
     expect(v?.settings).toBeNull();
   });
 
-  it("currentStage inválido se normaliza a null", () => {
+  it("invalid currentStage normalizes to null", () => {
     const s = { ...validSnapshot(), currentStage: "wat" };
     const v = validateRunState(s);
     expect(v?.currentStage).toBeNull();
@@ -160,16 +160,16 @@ describe("validateRunState", () => {
 });
 
 describe("parsePersistedRunState", () => {
-  it("devuelve null para string vacío", () => {
+  it("returns null for empty string", () => {
     expect(parsePersistedRunState("")).toBeNull();
     expect(parsePersistedRunState("   ")).toBeNull();
   });
 
-  it("devuelve null para JSON inválido", () => {
+  it("returns null for invalid JSON", () => {
     expect(parsePersistedRunState("{ not json")).toBeNull();
   });
 
-  it("round-trip con buildPersistedRunState", () => {
+  it("round-trips with buildPersistedRunState", () => {
     const snapshot = validSnapshot();
     const payload = JSON.stringify(buildPersistedRunState(snapshot));
     const parsed = parsePersistedRunState(payload);

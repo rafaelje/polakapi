@@ -1,19 +1,19 @@
-// Paso 3 · vista de ejecución (modo secuencial).
+// Step 3 · execution view (sequential mode).
 //
-// Una vez que el usuario pulsa "▶ ejecutar run" en el setup (step3-setup.ts),
-// el chrome reemplaza el slot del step 3 por esta vista. Se ve un timeline
-// vertical de fases (una fila por fase, 4 columnas por agente) + un header
-// con budget en vivo + botones de pausa / aborto.
+// Once the user presses "▶ run" in the setup (step3-setup.ts),
+// the chrome replaces the step 3 slot with this view. It shows a vertical
+// timeline of phases (one row per phase, 4 columns per agent) + a header
+// with live budget + pause / abort buttons.
 //
-// Sigue el patrón de mount imperativo del resto del módulo (step1/2/3-setup):
-// `mountStep3Run(slot, ctx)` devuelve un handle con `dispose()`. La vista se
-// suscribe al `RunScheduler` y re-renderiza en cada cambio de estado —
-// `replaceChildren` para el timeline mantiene cosas simples.
+// Follows the imperative mount pattern of the rest of the module
+// (step1/2/3-setup): `mountStep3Run(slot, ctx)` returns a handle with
+// `dispose()`. The view subscribes to the `RunScheduler` and re-renders on
+// every state change — `replaceChildren` for the timeline keeps things simple.
 //
-// La vista NO arranca el scheduler — el wiring entre el botón ▶ del setup y
-// el `start()` del scheduler lo hace el chrome (loop-chrome.ts). Esta vista
-// asume que el scheduler ya tiene fases inicializadas y empezó (o está por
-// empezar).
+// The view does NOT start the scheduler — the wiring between the ▶ button in
+// the setup and the scheduler's `start()` is done by the chrome
+// (loop-chrome.ts). This view assumes the scheduler already has phases
+// initialized and has started (or is about to start).
 
 import {
   ALL_AGENT_ROLES,
@@ -69,10 +69,10 @@ export function mountStep3Run(slot: HTMLElement, ctx: Step3RunContext): Step3Run
   }
 
   /**
-   * Section 8.7 · banner global cuando alguna fase llegó al cap del revisor.
-   * Visible en cualquier modo de ejecución, pero más relevante en híbrido
-   * porque las fases corren en paralelo y el usuario podría perderse el
-   * warning de una fase puntual.
+   * Section 8.7 · global banner when a phase hit the reviewer cap.
+   * Visible in any execution mode, but more relevant in hybrid because
+   * phases run in parallel and the user could miss the warning of a
+   * specific phase.
    */
   function renderWarningBanner(state: RunSchedulerState): HTMLElement | null {
     const exhausted = state.phases.filter((p) => p.reviewerExhausted);
@@ -88,8 +88,8 @@ export function mountStep3Run(slot: HTMLElement, ctx: Step3RunContext): Step3Run
     const msg = document.createElement("span");
     msg.textContent =
       exhausted.length === 1
-        ? `1 fase llegó al cap del revisor (${exhausted[0].name}) — deuda anotada en knowledge`
-        : `${exhausted.length} fases llegaron al cap del revisor — deudas anotadas en sus knowledge.md`;
+        ? `1 phase hit the reviewer cap (${exhausted[0].name}) — debt noted in knowledge`
+        : `${exhausted.length} phases hit the reviewer cap — debts noted in their knowledge.md`;
     banner.append(icon, msg);
     return banner;
   }
@@ -102,7 +102,7 @@ export function mountStep3Run(slot: HTMLElement, ctx: Step3RunContext): Step3Run
     left.className = "loop-step3-run-header-left";
     const title = document.createElement("div");
     title.className = "loop-step3-run-title";
-    title.textContent = `Paso 3 · ejecutando run · ${ctx.projectName}`;
+    title.textContent = `Step 3 · running · ${ctx.projectName}`;
     const sub = document.createElement("div");
     sub.className = "loop-step3-run-subtitle";
     sub.textContent = describeRunStatus(state);
@@ -111,18 +111,18 @@ export function mountStep3Run(slot: HTMLElement, ctx: Step3RunContext): Step3Run
     const right = document.createElement("div");
     right.className = "loop-step3-run-header-right";
 
-    // Section 8.5: si la pausa fue por un conflict del integrador, deshabilitamos
-    // el botón pausar/reanudar — el usuario decide vía las acciones de la card
-    // del integrador (continuar / re-ejecutar / abortar). Permitir "reanudar"
-    // acá lanzaría un segundo ciclo en paralelo con el `awaitConflictDecision`.
+    // Section 8.5: if the pause was due to an integrator conflict, we disable
+    // the pause/resume button — the user decides via the integrator card
+    // actions (continue / re-run / abort). Allowing "resume" here would
+    // launch a second cycle in parallel with `awaitConflictDecision`.
     const conflictActive = state.integrators.some((i) => i.status === "conflict");
     const pause = document.createElement("button");
     pause.type = "button";
     pause.className = "loop-btn loop-btn-ghost";
-    pause.textContent = state.status === "paused" ? "reanudar" : "pausar run";
+    pause.textContent = state.status === "paused" ? "resume" : "pause run";
     pause.setAttribute(
       "aria-label",
-      state.status === "paused" ? "reanudar el run pausado" : "pausar el run en curso",
+      state.status === "paused" ? "resume the paused run" : "pause the run in progress",
     );
     pause.disabled = state.status === "completed" || state.status === "aborted" || conflictActive;
     on(pause, "click", () => {
@@ -136,19 +136,19 @@ export function mountStep3Run(slot: HTMLElement, ctx: Step3RunContext): Step3Run
     const abort = document.createElement("button");
     abort.type = "button";
     abort.className = "loop-btn loop-btn-ghost loop-step3-run-abort";
-    abort.textContent = "abortar run";
-    abort.setAttribute("aria-label", "abortar el run en curso");
+    abort.textContent = "abort run";
+    abort.setAttribute("aria-label", "abort the run in progress");
     abort.disabled =
       state.status === "completed" || state.status === "aborted" || state.status === "idle";
     on(abort, "click", () => {
-      // Section 10.2 — confirmación modal estilizada (reemplaza window.confirm).
+      // Section 10.2 — styled modal confirmation (replaces window.confirm).
       void (async () => {
         const ok = await confirmModal({
-          title: "¿Abortar el run?",
+          title: "Abort the run?",
           message:
-            "Los outputs generados quedan en disco para auditoría, pero el ciclo se detiene.",
-          confirmLabel: "abortar",
-          cancelLabel: "cancelar",
+            "Generated outputs stay on disk for auditing, but the cycle stops.",
+          confirmLabel: "abort",
+          cancelLabel: "cancel",
           danger: true,
         });
         if (ok) ctx.scheduler.abort();
@@ -168,7 +168,7 @@ export function mountStep3Run(slot: HTMLElement, ctx: Step3RunContext): Step3Run
       const empty = document.createElement("p");
       empty.className = "loop-step3-run-empty";
       empty.textContent =
-        "No hay fases para ejecutar — volvé al Paso 2 para descomponer el problema.";
+        "No phases to run — go back to Step 2 to decompose the problem.";
       wrap.appendChild(empty);
       return wrap;
     }
@@ -176,11 +176,11 @@ export function mountStep3Run(slot: HTMLElement, ctx: Step3RunContext): Step3Run
     const headerRow = document.createElement("div");
     headerRow.className = "loop-step3-run-grid loop-step3-run-grid-head";
     headerRow.append(
-      gridCell("fase", "head"),
-      gridCell("análisis", "head"),
-      gridCell("implementación", "head"),
-      gridCell("revisor", "head"),
-      gridCell("conocimiento", "head"),
+      gridCell("phase", "head"),
+      gridCell("analysis", "head"),
+      gridCell("implementation", "head"),
+      gridCell("reviewer", "head"),
+      gridCell("knowledge", "head"),
     );
     wrap.appendChild(headerRow);
 
@@ -191,14 +191,14 @@ export function mountStep3Run(slot: HTMLElement, ctx: Step3RunContext): Step3Run
   }
 
   /**
-   * Section 8.7 · vista del modo híbrido. Cada batch se renderiza como un
-   * panel separado con sus fases en mini-cards (4 barras de progreso por
-   * agente). Entre batches va una card del integrador con waiting / running /
+   * Section 8.7 · hybrid mode view. Each batch is rendered as a separate
+   * panel with its phases in mini-cards (4 progress bars per agent).
+   * Between batches goes an integrator card with waiting / running /
    * ✓ / conflict (Section 8.8).
    *
-   * El layout es vertical: batch-0 → integrador-0 → batch-1 → integrador-1 →
-   * ... Si una fase termina en `warning` o `error` lo reflejamos en el borde
-   * de la mini-card.
+   * The layout is vertical: batch-0 → integrator-0 → batch-1 → integrator-1 →
+   * ... If a phase ends in `warning` or `error` we reflect it in the border
+   * of the mini-card.
    */
   function renderHybridTimeline(state: RunSchedulerState): HTMLElement {
     const wrap = document.createElement("section");
@@ -208,16 +208,16 @@ export function mountStep3Run(slot: HTMLElement, ctx: Step3RunContext): Step3Run
       const empty = document.createElement("p");
       empty.className = "loop-step3-run-empty";
       empty.textContent =
-        "No hay fases para ejecutar — volvé al Paso 2 para descomponer el problema.";
+        "No phases to run — go back to Step 2 to decompose the problem.";
       wrap.appendChild(empty);
       return wrap;
     }
 
     for (let i = 0; i < state.batches.length; i++) {
       wrap.appendChild(renderBatchPanel(i, state));
-      // Integrador entre este batch y el próximo. Lo mostramos siempre que
-      // exista el slot — incluso si es el último batch, la card refleja que
-      // el integrador corrió o está corriendo.
+      // Integrator between this batch and the next. We show it whenever the
+      // slot exists — even on the last batch, the card reflects whether the
+      // integrator ran or is running.
       const integrator = state.integrators[i];
       if (integrator) {
         wrap.appendChild(renderIntegratorCard(integrator, i, state));
@@ -241,7 +241,7 @@ export function mountStep3Run(slot: HTMLElement, ctx: Step3RunContext): Step3Run
     const counter = document.createElement("span");
     counter.className = "loop-step3-run-batch-counter";
     const slugs = state.batches[batchIndex] ?? [];
-    counter.textContent = `${slugs.length} fase${slugs.length === 1 ? "" : "s"} en paralelo`;
+    counter.textContent = `${slugs.length} phase${slugs.length === 1 ? "" : "s"} in parallel`;
     head.append(label, counter);
     panel.appendChild(head);
 
@@ -340,10 +340,10 @@ export function mountStep3Run(slot: HTMLElement, ctx: Step3RunContext): Step3Run
       retries.textContent = `${stage.retries}/${state.settings?.maxRetries ?? 3}`;
       bar.appendChild(retries);
     }
-    // Si el stage está corriendo, agregamos un pulso. En hybrid varias fases
-    // pueden estar running simultáneamente, así que basta el status local del
-    // stage (no comparamos con state.currentStage / currentPhaseIndex porque
-    // esos sólo reflejan la última escritura del scheduler).
+    // If the stage is running, we add a pulse. In hybrid mode several phases
+    // can be running simultaneously, so the local stage status is enough
+    // (we don't compare with state.currentStage / currentPhaseIndex because
+    // those only reflect the last write from the scheduler).
     if (stage.status === "running") {
       bar.classList.add("loop-step3-run-bar-active");
     }
@@ -351,8 +351,8 @@ export function mountStep3Run(slot: HTMLElement, ctx: Step3RunContext): Step3Run
   }
 
   /**
-   * Section 8.8 · card del integrador. Estados: pending (esperando que el batch
-   * termine), running, done (✓), conflict (⚠) o error.
+   * Section 8.8 · integrator card. States: pending (waiting for the batch to
+   * finish), running, done (✓), conflict (⚠) or error.
    */
   function renderIntegratorCard(
     integrator: IntegratorState,
@@ -374,7 +374,7 @@ export function mountStep3Run(slot: HTMLElement, ctx: Step3RunContext): Step3Run
     const text = document.createElement("div");
     text.className = "loop-step3-run-integrator-text";
     const title = document.createElement("strong");
-    title.textContent = `integrador · batch ${batchIndex + 1}`;
+    title.textContent = `integrator · batch ${batchIndex + 1}`;
     const sub = document.createElement("div");
     sub.className = "loop-step3-run-integrator-sub";
     sub.textContent = integratorStatusLabel(integrator.status);
@@ -398,13 +398,13 @@ export function mountStep3Run(slot: HTMLElement, ctx: Step3RunContext): Step3Run
     }
 
     if (integrator.status === "conflict") {
-      // Section 8.5: reporte + acciones (continuar / abortar / re-ejecutar).
+      // Section 8.5: report + actions (continue / abort / re-run).
       const conflictsBlock = document.createElement("div");
       conflictsBlock.className = "loop-step3-run-integrator-conflicts";
       if (integrator.conflicts.length > 0) {
         const title = document.createElement("div");
         title.className = "loop-step3-run-integrator-conflicts-title";
-        title.textContent = "paths con cambios solapados:";
+        title.textContent = "paths with overlapping changes:";
         conflictsBlock.appendChild(title);
         const list = document.createElement("ul");
         list.className = "loop-step3-run-integrator-conflicts-list";
@@ -417,9 +417,9 @@ export function mountStep3Run(slot: HTMLElement, ctx: Step3RunContext): Step3Run
       }
       const actions = document.createElement("div");
       actions.className = "loop-step3-run-integrator-actions";
-      actions.appendChild(conflictBtn("continuar", "continue", state));
-      actions.appendChild(conflictBtn("re-ejecutar batch", "rerun", state));
-      actions.appendChild(conflictBtn("abortar run", "abort", state));
+      actions.appendChild(conflictBtn("continue", "continue", state));
+      actions.appendChild(conflictBtn("re-run batch", "rerun", state));
+      actions.appendChild(conflictBtn("abort run", "abort", state));
       conflictsBlock.appendChild(actions);
       card.appendChild(conflictsBlock);
     }
@@ -437,8 +437,8 @@ export function mountStep3Run(slot: HTMLElement, ctx: Step3RunContext): Step3Run
     btn.className = "loop-btn loop-btn-ghost loop-step3-run-conflict-btn";
     if (decision === "abort") btn.classList.add("loop-step3-run-conflict-btn-danger");
     btn.textContent = label;
-    // Sólo está clickable mientras el scheduler está en pausa por conflict;
-    // si el usuario reanudó vía otro camino, no queremos doble disparo.
+    // Only clickable while the scheduler is paused due to a conflict;
+    // if the user resumed by another path, we don't want a double trigger.
     btn.disabled = state.status !== "paused";
     on(btn, "click", () => {
       ctx.scheduler.resolveConflict(decision);
@@ -513,7 +513,7 @@ export function mountStep3Run(slot: HTMLElement, ctx: Step3RunContext): Step3Run
       const retries = document.createElement("span");
       retries.className = "loop-step3-run-retries";
       retries.textContent = `try ${stage.retries}/${state.settings?.maxRetries ?? 3}`;
-      retries.title = "intentos del revisor consumidos";
+      retries.title = "reviewer attempts consumed";
       top.appendChild(retries);
     }
 
@@ -546,7 +546,7 @@ export function mountStep3Run(slot: HTMLElement, ctx: Step3RunContext): Step3Run
 
     const head = document.createElement("div");
     head.className = "loop-step3-run-budget-head";
-    head.textContent = "Consumo en vivo";
+    head.textContent = "Live consumption";
     panel.appendChild(head);
 
     const total = document.createElement("div");
@@ -594,8 +594,8 @@ export function mountStep3Run(slot: HTMLElement, ctx: Step3RunContext): Step3Run
     return panel;
   }
 
-  // Suscripción reactiva al scheduler. El listener emite estado inicial al
-  // suscribirse, así que no hace falta llamar `refresh` aparte.
+  // Reactive subscription to the scheduler. The listener emits the initial
+  // state on subscribe, so no need to call `refresh` separately.
   const unsubscribe = ctx.scheduler.on((state) => {
     refresh(state);
   });
@@ -613,25 +613,25 @@ export function mountStep3Run(slot: HTMLElement, ctx: Step3RunContext): Step3Run
 }
 
 // ---------------------------------------------------------------------------
-// Helpers de presentación
+// Presentation helpers
 // ---------------------------------------------------------------------------
 
 function describeRunStatus(state: RunSchedulerState): string {
   switch (state.status) {
     case "idle":
-      return "preparado — listo para arrancar";
+      return "prepared — ready to start";
     case "running": {
       const phase = state.phases[state.currentPhaseIndex];
-      if (!phase) return "corriendo…";
+      if (!phase) return "running…";
       const stage = state.currentStage ?? "—";
-      return `fase ${phase.id} · ${phase.name} → ${stage}`;
+      return `phase ${phase.id} · ${phase.name} → ${stage}`;
     }
     case "paused":
-      return "pausado";
+      return "paused";
     case "completed":
-      return "completado";
+      return "completed";
     case "aborted":
-      return "abortado";
+      return "aborted";
     case "error":
       return state.message ? `error: ${state.message}` : "error";
   }
@@ -640,9 +640,9 @@ function describeRunStatus(state: RunSchedulerState): string {
 function statusLabel(status: AgentStageStatus): string {
   switch (status) {
     case "pending":
-      return "pendiente";
+      return "pending";
     case "running":
-      return "corriendo…";
+      return "running…";
     case "done":
       return "ok";
     case "warning":
@@ -655,15 +655,15 @@ function statusLabel(status: AgentStageStatus): string {
 function roleLabel(role: LoopAgentRole): string {
   switch (role) {
     case "analysis":
-      return "análisis";
+      return "analysis";
     case "implementation":
-      return "implementación";
+      return "implementation";
     case "review":
-      return "revisor";
+      return "reviewer";
     case "knowledge":
-      return "conocimiento";
+      return "knowledge";
     case "integration":
-      return "integrador";
+      return "integrator";
   }
 }
 
@@ -685,20 +685,20 @@ function formatNumber(n: number): string {
 function agentShortLabel(agent: SequentialAgent): string {
   switch (agent) {
     case "analysis":
-      return "anál";
+      return "anal";
     case "implementation":
       return "impl";
     case "review":
       return "rev";
     case "knowledge":
-      return "conoc";
+      return "know";
   }
 }
 
 /**
- * Section 8.7 · progreso de la barra por etapa. Como cada agente es one-shot
- * (no streaming), traducimos a porcentaje según el status: pendiente=0,
- * corriendo=50 (indeterminado visual), done/warning=100, error=100 (rojo).
+ * Section 8.7 · per-stage bar progress. Since each agent is one-shot
+ * (no streaming), we translate to percentage based on status: pending=0,
+ * running=50 (indeterminate visual), done/warning=100, error=100 (red).
  */
 function stageProgressPct(stage: AgentStageState): number {
   switch (stage.status) {
@@ -731,13 +731,13 @@ function integratorIcon(status: IntegratorStatus): string {
 function integratorStatusLabel(status: IntegratorStatus): string {
   switch (status) {
     case "pending":
-      return "esperando";
+      return "waiting";
     case "running":
-      return "corriendo…";
+      return "running…";
     case "done":
-      return "consolidado";
+      return "consolidated";
     case "conflict":
-      return "conflicto — decidí cómo seguir";
+      return "conflict — decide how to proceed";
     case "error":
       return "error";
   }

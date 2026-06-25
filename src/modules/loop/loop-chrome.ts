@@ -1,15 +1,15 @@
-// Vista chrome de la ventana /loop: header persistente + slot para los pasos.
+// Chrome view of the /loop window: persistent header + slot for the steps.
 //
-// Sigue el patrón de los paneles de workspaces (ver
-// `src/modules/workspaces/panel/workspaces-panel.ts`): el módulo expone
-// `mountLoopChrome(root, router)` que se suscribe al router y re-renderiza
-// imperativamente con `replaceChildren`. No introducimos framework; mantenemos
-// coherencia con el resto del app.
+// Follows the pattern of the workspaces panels (see
+// `src/modules/workspaces/panel/workspaces-panel.ts`): the module exposes
+// `mountLoopChrome(root, router)` which subscribes to the router and re-renders
+// imperatively with `replaceChildren`. We don't introduce a framework; we keep
+// consistency with the rest of the app.
 //
-// Los componentes de cada paso (1=chat, 2=phases, 3=setup+engine) los montan
-// secciones posteriores dentro del slot `#loop-step-slot` que esta función
-// crea. Por ahora colocamos placeholders descriptivos para que el chrome sea
-// inspeccionable end-to-end.
+// The components for each step (1=chat, 2=phases, 3=setup+engine) are mounted by
+// later sections within the `#loop-step-slot` slot that this function
+// creates. For now we place descriptive placeholders so the chrome is
+// inspectable end-to-end.
 
 import { mountStep1Chat, type Step1Handle } from "./step1-chat";
 import { mountStep2Phases, type Step2Handle, parsePhasesManifest } from "./step2-phases";
@@ -35,56 +35,56 @@ export interface LoopChromeHandle {
 }
 
 /**
- * Identidad del slot del paso para evitar re-montajes innecesarios. El chat
- * del paso 1 (Section 4) mantiene historia in-memory; si el chrome se
- * re-renderiza por un focus refresh del router, no queremos perder los
- * turnos. Sólo re-montamos el slot cuando cambia (runId, step, view) — la
- * transición entre projects ya regenera el runId vía `LoopRouter.refresh`.
+ * Identity of the step slot to avoid unnecessary re-mounts. The chat
+ * of step 1 (Section 4) keeps history in-memory; if the chrome
+ * re-renders due to a router focus refresh, we don't want to lose the
+ * turns. We only re-mount the slot when (runId, step, view) changes — the
+ * transition between projects already regenerates the runId via `LoopRouter.refresh`.
  *
- * `view` distingue las 2 sub-vistas del paso 3:
- * Step 3 monta `step3-setup.ts` (configuración pre-ejecución) y step 4 monta
- * `step3-run.ts` (timeline del run en ejecución). El scheduler vive sólo
- * mientras estamos en step 4; pasos 1/2/3 lo descartan al re-montar.
+ * `view` distinguishes the 2 sub-views of step 3:
+ * Step 3 mounts `step3-setup.ts` (pre-execution configuration) and step 4 mounts
+ * `step3-run.ts` (timeline of the running run). The scheduler only lives
+ * while we are in step 4; steps 1/2/3 discard it when re-mounting.
  */
 interface MountedStep {
   runId: string;
   step: LoopStep;
   handle: Step1Handle | Step2Handle | Step3Handle | Step3RunHandle | null;
-  /** Scheduler vivo cuando estamos en step 4. null en cualquier otro paso. */
+  /** Live scheduler when we are in step 4. null in any other step. */
   scheduler: RunScheduler | null;
   /**
-   * Section 10.1 — handle del notifier que escucha el scheduler y emite toasts.
-   * Vive sólo mientras `scheduler !== null`. Lo disponemos junto al scheduler
-   * en `dispose()` o cuando re-montamos el slot.
+   * Section 10.1 — handle of the notifier that listens to the scheduler and emits toasts.
+   * Only lives while `scheduler !== null`. We dispose it together with the scheduler
+   * in `dispose()` or when we re-mount the slot.
    */
   notifier: NotifierHandle | null;
 }
 
 /**
- * Monta el chrome dentro del contenedor dado (típicamente `#loop-root` del
- * `loop.html`). Devuelve un handle para limpiar listeners si la ventana se
- * destruye — equivalente al patrón de `mountLoopButton` en `loop-window.ts`.
+ * Mounts the chrome inside the given container (typically `#loop-root` from
+ * `loop.html`). Returns a handle to clean up listeners if the window is
+ * destroyed — equivalent to the pattern of `mountLoopButton` in `loop-window.ts`.
  */
 /**
- * Section 9: ID compuesto que identifica la última detección de runs
- * interrumpidos para un project. Lo usamos para no re-escanear el FS en cada
- * focus refresh del router — sólo cuando cambia el project activo.
+ * Section 9: composite ID that identifies the last detection of interrupted
+ * runs for a project. We use it to avoid re-scanning the FS on every
+ * focus refresh of the router — only when the active project changes.
  */
 interface ResumeProbe {
   projectPath: string;
-  /** Resultado de la última detección. null = ya se decidió (retomar/archivar/dismiss). */
+  /** Result of the last detection. null = already decided (resume/archive/dismiss). */
   pending: InterruptedRunDetails | null;
-  /** True si el scan ya corrió para este project. False = pendiente de scan. */
+  /** True if the scan already ran for this project. False = pending scan. */
   scanned: boolean;
 }
 
 export function mountLoopChrome(root: HTMLElement, router: LoopRouter): LoopChromeHandle {
   let mountedStep: MountedStep | null = null;
   /**
-   * Section 9: cache del último scan de runs interrumpidos. Lo invalidamos
-   * cuando cambia `projectPath` (transición de gate o cambio del project
-   * activo). El banner se monta una sola vez por project — si el usuario lo
-   * descarta, `pending=null` y no aparece más hasta que cambie de project.
+   * Section 9: cache of the last scan for interrupted runs. We invalidate it
+   * when `projectPath` changes (gate transition or change of the active
+   * project). The banner is mounted once per project — if the user
+   * dismisses it, `pending=null` and it doesn't appear again until the project changes.
    */
   let resumeProbe: ResumeProbe | null = null;
 
@@ -92,11 +92,11 @@ export function mountLoopChrome(root: HTMLElement, router: LoopRouter): LoopChro
     if (!mountedStep || mountedStep.step !== 3) return;
     const state = router.getState();
     if (state.status !== "active") return;
-    // 1) Cambiar el step del router → la subscription re-renderiza con
-    //    state.step=4, mostrando un placeholder vacío.
-    // 2) Disparar switchToRunView async para montar el scheduler + view
-    //    encima del placeholder. El `commit` callback actualiza mountedStep
-    //    a {step:4, handle, scheduler, notifier}.
+    // 1) Change the router step → the subscription re-renders with
+    //    state.step=4, showing an empty placeholder.
+    // 2) Trigger switchToRunView async to mount the scheduler + view
+    //    on top of the placeholder. The `commit` callback updates mountedStep
+    //    to {step:4, handle, scheduler, notifier}.
     router.setStep(4);
     const next = router.getState();
     if (next.status !== "active") return;
@@ -112,12 +112,12 @@ export function mountLoopChrome(root: HTMLElement, router: LoopRouter): LoopChro
 
   const unsubscribe = router.on((state) => {
     if (state.status === "active") {
-      // ¿Hay que escanear? Sólo si el project cambió o nunca escaneamos.
+      // Do we need to scan? Only if the project changed or we never scanned.
       if (!resumeProbe || resumeProbe.projectPath !== state.project.path) {
         resumeProbe = { projectPath: state.project.path, pending: null, scanned: false };
         void probeForInterruptedRun(state.project.path).then((details) => {
-          // Sólo aplicamos si seguimos en el mismo project — el usuario
-          // pudo haber cambiado mientras el scan estaba en vuelo.
+          // Only apply if we are still in the same project — the user
+          // may have changed it while the scan was in flight.
           if (resumeProbe && resumeProbe.projectPath === state.project.path) {
             resumeProbe.pending = details;
             resumeProbe.scanned = true;
@@ -131,21 +131,21 @@ export function mountLoopChrome(root: HTMLElement, router: LoopRouter): LoopChro
     mountedStep = render(root, router, state, mountedStep, handleExecuteRun, resumeProbe);
   });
 
-  const handleResumeAction = async (action: "retomar" | "archivar" | "dismiss"): Promise<void> => {
+  const handleResumeAction = async (action: "resume" | "archive" | "dismiss"): Promise<void> => {
     if (!resumeProbe?.pending) return;
     const details = resumeProbe.pending;
     const state = router.getState();
     if (state.status !== "active") return;
-    if (action === "archivar") {
+    if (action === "archive") {
       try {
         await archiveRun(state.project.path, details.summary.runId);
       } catch (err) {
-        console.error("loop chrome: archivar run falló", err);
-        showToast(`No pude archivar el run: ${stringifyError(err)}`, "error");
+        console.error("loop chrome: archive run failed", err);
+        showToast(`Could not archive run: ${stringifyError(err)}`, "error");
         return;
       }
       resumeProbe.pending = null;
-      showToast("run archivado", "info");
+      showToast("run archived", "info");
       rerender();
       return;
     }
@@ -154,21 +154,21 @@ export function mountLoopChrome(root: HTMLElement, router: LoopRouter): LoopChro
       rerender();
       return;
     }
-    // action === "retomar"
+    // action === "resume"
     try {
       await resumeInterruptedRun(root, state, details, router, (next) => {
         mountedStep = next;
       });
       if (resumeProbe) resumeProbe.pending = null;
     } catch (err) {
-      console.error("loop chrome: retomar run falló", err);
-      showToast(`No pude retomar el run: ${stringifyError(err)}`, "error");
+      console.error("loop chrome: resume run failed", err);
+      showToast(`Could not resume run: ${stringifyError(err)}`, "error");
     }
   };
 
-  // Adjuntamos el handler al chrome a través de un dataset hook que renderResumeBanner
-  // lee al re-bindear los listeners de los botones. Esto evita closures que
-  // capturan refs viejos del MountedStep.
+  // We attach the handler to the chrome through a dataset hook that renderResumeBanner
+  // reads when re-binding the button listeners. This avoids closures that
+  // capture stale refs of MountedStep.
   resumeActionHandler = handleResumeAction;
 
   return {
@@ -184,14 +184,14 @@ export function mountLoopChrome(root: HTMLElement, router: LoopRouter): LoopChro
 }
 
 /**
- * Section 9.4 — escanea el project buscando un run interrumpido y, si lo
- * encuentra, carga su state.json para validarlo. Devuelve el primer run
- * retomable (típicamente sólo hay uno; si hay más, el banner muestra el más
- * reciente — la lista del backend ya viene ordenada por heartbeat desc).
+ * Section 9.4 — scans the project looking for an interrupted run and, if it
+ * finds one, loads its state.json to validate it. Returns the first resumable
+ * run (typically there is only one; if there are more, the banner shows the most
+ * recent — the backend list already comes sorted by heartbeat desc).
  *
- * Si el state.json está corrupto, lo intentamos con el siguiente. Si ninguno
- * pasa la validación, devolvemos null y el banner no aparece — el usuario va
- * a ver el flow normal del paso 1.
+ * If state.json is corrupt, we try the next one. If none
+ * passes validation, we return null and the banner doesn't appear — the user
+ * will see the normal flow of step 1.
  */
 async function probeForInterruptedRun(projectPath: string): Promise<InterruptedRunDetails | null> {
   try {
@@ -201,17 +201,17 @@ async function probeForInterruptedRun(projectPath: string): Promise<InterruptedR
       if (details) return details;
     }
   } catch (err) {
-    console.error("loop chrome: probe de runs interrumpidos falló", err);
+    console.error("loop chrome: probe for interrupted runs failed", err);
   }
   return null;
 }
 
 /**
- * Module-scoped handler para los botones del banner. Se setea en
- * `mountLoopChrome` y se referencia desde `renderResumeBanner`. Mantenemos un
- * solo handler global porque sólo hay una instancia del chrome por ventana.
+ * Module-scoped handler for the banner buttons. It is set in
+ * `mountLoopChrome` and referenced from `renderResumeBanner`. We keep a
+ * single global handler because there is only one chrome instance per window.
  */
-let resumeActionHandler: ((action: "retomar" | "archivar" | "dismiss") => Promise<void>) | null =
+let resumeActionHandler: ((action: "resume" | "archive" | "dismiss") => Promise<void>) | null =
   null;
 
 function render(
@@ -222,8 +222,8 @@ function render(
   onExecuteRun: (config: RunConfig) => void,
   resumeProbe: ResumeProbe | null,
 ): MountedStep | null {
-  // Al salir de "active" o cambiar de runId/step, hay que desmontar el handle
-  // del step anterior para no leakear listeners del chat.
+  // When leaving "active" or changing runId/step, we need to unmount the handle
+  // of the previous step to avoid leaking chat listeners.
   function disposePrev(): void {
     if (prev?.handle) prev.handle.dispose();
   }
@@ -256,9 +256,9 @@ function renderActive(
   onExecuteRun: (config: RunConfig) => void,
   resumeProbe: ResumeProbe | null,
 ): MountedStep {
-  // Si seguimos en el mismo (runId, step), sólo refrescamos el header — el
-  // slot del paso ya está montado con su estado interno (chat con sus turnos,
-  // scheduler corriendo, etc.).
+  // If we are still in the same (runId, step), we only refresh the header — the
+  // step slot is already mounted with its internal state (chat with its turns,
+  // running scheduler, etc.).
   const sameSlot = prev && prev.runId === state.runId && prev.step === state.step;
   if (sameSlot) {
     const shell = root.querySelector(".loop-shell");
@@ -268,15 +268,15 @@ function renderActive(
       reconcileResumeBanner(shell, resumeProbe);
       return prev;
     }
-    // Fallback: si por alguna razón el DOM no está como esperamos, caemos al
-    // re-render completo.
+    // Fallback: if for some reason the DOM is not as we expect, we fall back to
+    // a full re-render.
   }
 
   if (prev?.handle) prev.handle.dispose();
   if (prev?.notifier) prev.notifier.dispose();
-  // No abortamos el scheduler si vamos hacia step 4 — el caller (handleExecuteRun
-  // o resumeInterruptedRun) lo monta inmediatamente después. Sí abortamos en
-  // transiciones entre otros pasos.
+  // We don't abort the scheduler if we are going to step 4 — the caller (handleExecuteRun
+  // or resumeInterruptedRun) mounts it immediately afterwards. We do abort on
+  // transitions between other steps.
   if (prev?.scheduler && state.step !== 4) prev.scheduler.abort();
 
   const shell = document.createElement("div");
@@ -324,15 +324,15 @@ function renderActive(
 }
 
 /**
- * Switch del slot del paso 3 desde la vista "setup" a la vista "run". Lee las
- * fases del run desde `02-phases.md`, crea el scheduler con la matriz +
- * settings que pasó el setup, inicializa la vista del timeline y arranca el
+ * Switch of the step 3 slot from the "setup" view to the "run" view. Reads the
+ * phases of the run from `02-phases.md`, creates the scheduler with the matrix +
+ * settings passed by the setup, initializes the timeline view and starts the
  * scheduler.
  *
- * Sigue siendo "imperativo": no introducimos un store global del scheduler —
- * el scheduler vive sólo mientras el step 3 esté montado en vista "run". Si
- * el usuario navega afuera (paso 1/2, abandonar run, cierra ventana) lo
- * abortamos en el `dispose()` del MountedStep correspondiente.
+ * It is still "imperative": we don't introduce a global store of the scheduler —
+ * the scheduler only lives while step 3 is mounted in "run" view. If
+ * the user navigates away (step 1/2, abandon run, close window) we
+ * abort it in the `dispose()` of the corresponding MountedStep.
  */
 async function switchToRunView(
   root: HTMLElement,
@@ -342,7 +342,7 @@ async function switchToRunView(
   prev: MountedStep,
   commit: (next: MountedStep) => void,
 ): Promise<void> {
-  // Leer fases desde el manifest persistido por el paso 2.
+  // Read phases from the manifest persisted by step 2.
   let phases: ReturnType<typeof parsePhasesManifest> = [];
   try {
     const manifest = await invoke<string>("loop_read_run_file", {
@@ -352,23 +352,23 @@ async function switchToRunView(
     });
     phases = manifest.trim() ? parsePhasesManifest(manifest) : [];
   } catch (err) {
-    console.error("loop chrome: no pude leer 02-phases.md", err);
+    console.error("loop chrome: could not read 02-phases.md", err);
   }
 
   if (phases.length === 0) {
-    // Sin fases no se puede ejecutar — volvemos al setup y mostramos un toast.
-    // La validación en step3-setup ya cubre el caso happy-path
-    // (canExecute exige phases.length > 0), así que esto es una salvaguarda.
+    // Without phases we cannot execute — we go back to setup and show a toast.
+    // The validation in step3-setup already covers the happy-path case
+    // (canExecute requires phases.length > 0), so this is a safeguard.
     showToast(
-      "No hay fases para ejecutar — volvé al Paso 2 para descomponer el problema.",
+      "No phases to execute — go back to Step 2 to decompose the problem.",
       "error",
     );
-    // Sacamos al usuario del paso 4 (slot vacío) volviendo al setup.
+    // Move the user out of step 4 (empty slot) back to setup.
     router.setStep(3);
     return;
   }
 
-  // Disponer del setup actual y abrir el slot para la nueva vista.
+  // Dispose the current setup and open the slot for the new view.
   if (prev.handle) prev.handle.dispose();
 
   const shell = root.querySelector(".loop-shell");
@@ -387,12 +387,12 @@ async function switchToRunView(
       matrix: config.matrix,
       promptOverrides: config.promptOverrides,
       maxRetries: config.config.maxRetries,
-      // 300s alineado con default del backend; setup del paso 3 todavía no expone
-      // el override per-run. Section 8/9+ pueden agregarlo si hace falta.
+      // 300s aligned with the backend default; the step 3 setup does not yet expose
+      // the per-run override. Section 8/9+ can add it if needed.
       agentTimeoutSecs: 300,
     },
-    // Section 8: el modo viene del RunConfig (effectiveMode ya degradó
-    // "híbrido" a "sequential" si el DAG es lineal — ver step3-setup).
+    // Section 8: the mode comes from RunConfig (effectiveMode already degraded
+    // "hybrid" to "sequential" if the DAG is linear — see step3-setup).
     config.mode,
   );
 
@@ -401,9 +401,9 @@ async function switchToRunView(
     projectName: state.project.name,
   });
 
-  // Section 10.1 — toasts auxiliares (run completado, warning, conflict).
-  // Lo adjuntamos después de mountStep3Run para que el view se suscriba
-  // primero y reciba el estado inicial sin ruido de toasts.
+  // Section 10.1 — auxiliary toasts (run completed, warning, conflict).
+  // We attach it after mountStep3Run so the view subscribes
+  // first and receives the initial state without toast noise.
   const notifier = attachRunNotifier(scheduler);
 
   commit({
@@ -414,24 +414,24 @@ async function switchToRunView(
     notifier,
   });
 
-  // Arrancar el ciclo. El scheduler emite estado por el listener — el view ya
-  // se está suscribiendo y va a re-renderizar en cada cambio. void el promise
-  // porque el ciclo dura todo el run.
+  // Start the loop. The scheduler emits state through the listener — the view is
+  // already subscribing and will re-render on every change. We void the promise
+  // because the loop lasts for the entire run.
   void scheduler.start();
 }
 
 /**
- * Section 9.5 — banner "run interrumpido detectado · ¿retomar?". Lo
- * insertamos entre el header y el slot del paso. Si no hay run pendiente, la
- * función devuelve null y `reconcileResumeBanner` retira un banner previo.
+ * Section 9.5 — "interrupted run detected · resume?" banner. We
+ * insert it between the header and the step slot. If there is no pending run, the
+ * function returns null and `reconcileResumeBanner` removes any previous banner.
  */
 function renderResumeBanner(details: InterruptedRunDetails): HTMLElement {
   const banner = document.createElement("section");
   banner.className = "loop-resume-banner";
   banner.dataset.runId = details.summary.runId;
-  // Section 10.6 — a11y. El banner es una notificación pasiva (live region).
+  // Section 10.6 — a11y. The banner is a passive notification (live region).
   banner.setAttribute("role", "region");
-  banner.setAttribute("aria-label", "run interrumpido detectado");
+  banner.setAttribute("aria-label", "interrupted run detected");
   banner.setAttribute("aria-live", "polite");
 
   const icon = document.createElement("span");
@@ -444,17 +444,17 @@ function renderResumeBanner(details: InterruptedRunDetails): HTMLElement {
 
   const title = document.createElement("p");
   title.className = "loop-resume-banner-title";
-  title.textContent = "run interrumpido detectado · ¿retomar?";
+  title.textContent = "interrupted run detected · resume?";
 
   const meta = document.createElement("p");
   meta.className = "loop-resume-banner-meta";
   const ageLabel = describeAge(details.summary.ageMs);
-  const stage = details.state.currentStage ? ` · ${details.state.currentStage} en curso` : "";
+  const stage = details.state.currentStage ? ` · ${details.state.currentStage} in progress` : "";
   const phaseLabel =
     details.state.currentPhaseIndex >= 0 && details.state.phases[details.state.currentPhaseIndex]
-      ? ` · fase ${details.state.phases[details.state.currentPhaseIndex].id}`
+      ? ` · phase ${details.state.phases[details.state.currentPhaseIndex].id}`
       : "";
-  meta.textContent = `run ${shortRunId(details.summary.runId)}${phaseLabel}${stage} · último heartbeat ${ageLabel}`;
+  meta.textContent = `run ${shortRunId(details.summary.runId)}${phaseLabel}${stage} · last heartbeat ${ageLabel}`;
 
   body.append(title, meta);
 
@@ -464,37 +464,37 @@ function renderResumeBanner(details: InterruptedRunDetails): HTMLElement {
   const resume = document.createElement("button");
   resume.type = "button";
   resume.className = "loop-btn loop-btn-primary";
-  resume.textContent = "retomar";
-  resume.dataset.resumeAction = "retomar";
-  resume.setAttribute("aria-label", "retomar el run interrumpido");
+  resume.textContent = "resume";
+  resume.dataset.resumeAction = "resume";
+  resume.setAttribute("aria-label", "resume the interrupted run");
 
   const archive = document.createElement("button");
   archive.type = "button";
   archive.className = "loop-btn loop-btn-ghost";
-  archive.textContent = "archivar";
-  archive.dataset.resumeAction = "archivar";
-  archive.setAttribute("aria-label", "archivar el run interrumpido");
+  archive.textContent = "archive";
+  archive.dataset.resumeAction = "archive";
+  archive.setAttribute("aria-label", "archive the interrupted run");
 
   const dismiss = document.createElement("button");
   dismiss.type = "button";
   dismiss.className = "loop-btn loop-btn-ghost loop-resume-banner-dismiss";
   dismiss.textContent = "×";
-  dismiss.title = "ocultar este banner (no archiva ni borra)";
-  dismiss.setAttribute("aria-label", "ocultar banner de resume");
+  dismiss.title = "hide this banner (does not archive or delete)";
+  dismiss.setAttribute("aria-label", "hide resume banner");
   dismiss.dataset.resumeAction = "dismiss";
 
-  // Los handlers se setean en `reconcileResumeBanner` después de insertar el
-  // banner en el DOM — así evitamos capturar refs viejos del MountedStep si
-  // el chrome se re-renderiza.
+  // The handlers are set in `reconcileResumeBanner` after inserting the
+  // banner into the DOM — this way we avoid capturing stale refs of MountedStep if
+  // the chrome re-renders.
   actions.append(resume, archive, dismiss);
   banner.append(icon, body, actions);
   return banner;
 }
 
 /**
- * Section 9.5 — inserta/actualiza/elimina el banner de resume al inicio del
- * shell (después del header). Centraliza la decisión para que tanto el
- * fast-path (sameSlot) como el full-render lo apliquen igual.
+ * Section 9.5 — inserts/updates/removes the resume banner at the start of the
+ * shell (after the header). Centralizes the decision so that both the
+ * fast-path (sameSlot) and the full-render apply it the same way.
  */
 function reconcileResumeBanner(shell: Element, resumeProbe: ResumeProbe | null): void {
   const existing = shell.querySelector<HTMLElement>(".loop-resume-banner");
@@ -504,15 +504,15 @@ function reconcileResumeBanner(shell: Element, resumeProbe: ResumeProbe | null):
   }
   const details = resumeProbe.pending;
   if (existing && existing.dataset.runId === details.summary.runId) {
-    // Banner ya está al día; reconectamos handlers por si el render previo
-    // cleared el closure.
+    // Banner is already up to date; we reconnect handlers in case the previous render
+    // cleared the closure.
     bindResumeBannerHandlers(existing);
     return;
   }
   const banner = renderResumeBanner(details);
   if (existing) existing.replaceWith(banner);
   else {
-    // Insertar después del header (primer hijo).
+    // Insert after the header (first child).
     const header = shell.querySelector(".loop-header");
     if (header && header.nextSibling) {
       shell.insertBefore(banner, header.nextSibling);
@@ -528,11 +528,11 @@ function reconcileResumeBanner(shell: Element, resumeProbe: ResumeProbe | null):
 function bindResumeBannerHandlers(banner: HTMLElement): void {
   const buttons = banner.querySelectorAll<HTMLButtonElement>("button[data-resume-action]");
   for (const btn of buttons) {
-    const action = btn.dataset.resumeAction as "retomar" | "archivar" | "dismiss" | undefined;
+    const action = btn.dataset.resumeAction as "resume" | "archive" | "dismiss" | undefined;
     if (!action) continue;
     btn.onclick = () => {
       if (!resumeActionHandler) return;
-      // Bloquear el botón mientras corre la acción para evitar dobles clicks.
+      // Block the button while the action runs to avoid double clicks.
       const all = banner.querySelectorAll<HTMLButtonElement>("button");
       for (const b of all) b.disabled = true;
       void resumeActionHandler(action).finally(() => {
@@ -543,29 +543,29 @@ function bindResumeBannerHandlers(banner: HTMLElement): void {
 }
 
 function describeAge(ageMs: number): string {
-  if (ageMs < 0) return "hace instantes";
-  if (ageMs === Number.MAX_SAFE_INTEGER || ageMs > 1_000_000_000_000) return "sin heartbeat";
+  if (ageMs < 0) return "moments ago";
+  if (ageMs === Number.MAX_SAFE_INTEGER || ageMs > 1_000_000_000_000) return "no heartbeat";
   const s = Math.floor(ageMs / 1000);
-  if (s < 60) return `hace ${s}s`;
+  if (s < 60) return `${s}s ago`;
   const m = Math.floor(s / 60);
-  if (m < 60) return `hace ${m}m`;
+  if (m < 60) return `${m}m ago`;
   const h = Math.floor(m / 60);
-  return `hace ${h}h`;
+  return `${h}h ago`;
 }
 
 /**
- * Section 9.6 — retoma un run interrumpido. Pasos:
- *   1. Descartar outputs parciales (archivos `<agent>.md` sin `.diff` companion).
- *   2. Hidratar el scheduler con el state persistido (degradando stages
- *      running a pending vía `rewindRunningStages`).
- *   3. Cambiar la vista del paso 3 a "run" — el usuario ve el timeline con
- *      el estado restaurado.
- *   4. Llamar `scheduler.start()` para relanzar el ciclo desde el último
- *      agente incompleto.
+ * Section 9.6 — resumes an interrupted run. Steps:
+ *   1. Discard partial outputs (`<agent>.md` files without a `.diff` companion).
+ *   2. Hydrate the scheduler with the persisted state (degrading stages
+ *      running to pending via `rewindRunningStages`).
+ *   3. Change the step 3 view to "run" — the user sees the timeline with
+ *      the restored state.
+ *   4. Call `scheduler.start()` to relaunch the loop from the last
+ *      incomplete agent.
  *
- * NO sincronizamos el router al paso 3 antes de invocar — el switch del slot
- * lo hace `switchToRunViewWithScheduler` directamente. Esto evita un commit
- * extra del router que dispararía un re-render inmediato.
+ * We do NOT sync the router to step 3 before invoking — the slot switch
+ * is done directly by `switchToRunViewWithScheduler`. This avoids an extra
+ * router commit that would trigger an immediate re-render.
  */
 async function resumeInterruptedRun(
   root: HTMLElement,
@@ -574,31 +574,31 @@ async function resumeInterruptedRun(
   router: LoopRouter,
   commit: (next: MountedStep) => void,
 ): Promise<void> {
-  // 1. Descartar outputs parciales.
+  // 1. Discard partial outputs.
   const discarded = await discardPartialOutputs(state.project.path, details.summary.runId).catch(
     (err) => {
-      console.error("loop chrome: descartar outputs parciales falló", err);
+      console.error("loop chrome: discarding partial outputs failed", err);
       return [];
     },
   );
   if (discarded.length > 0) {
-    console.info("loop resume: outputs parciales descartados", discarded);
+    console.info("loop resume: partial outputs discarded", discarded);
   }
 
-  // Sincronizar el router con el runId del run retomado. Si el router está
-  // generando un runId nuevo (caso default), reemplazarlo con el del run
-  // persistido. Lo hacemos con un truco: el router expone `abandonRun` para
-  // regenerar; no expone setRunId. Navegamos al paso 4 (run en vivo) — el
-  // chrome reusa ese slot para mostrar el timeline del scheduler retomado.
-  // El runId del router no importa al timeline (usamos el de details).
+  // Sync the router with the runId of the resumed run. If the router is
+  // generating a new runId (default case), replace it with the one of the
+  // persisted run. We do this with a trick: the router exposes `abandonRun` to
+  // regenerate; it does not expose setRunId. We navigate to step 4 (live run) — the
+  // chrome reuses that slot to show the timeline of the resumed scheduler.
+  // The router's runId doesn't matter to the timeline (we use the one from details).
   router.setStep(4);
 
-  // 2 + 3 + 4: rewind stages running → pending, hidratar scheduler, mountar
-  // vista run, arrancar ciclo.
+  // 2 + 3 + 4: rewind stages running → pending, hydrate scheduler, mount
+  // run view, start the loop.
   const rewinded = rewindRunningStages(details.state);
 
   const shell = root.querySelector(".loop-shell");
-  if (!shell) throw new Error("loop chrome: shell no encontrado al retomar");
+  if (!shell) throw new Error("loop chrome: shell not found while resuming");
 
   const oldSlot = shell.querySelector("#loop-step-slot");
   const newSlot = renderStepSlot(3);
@@ -623,13 +623,13 @@ async function resumeInterruptedRun(
     notifier,
   });
 
-  // Sacar el banner ahora que el run está retomado.
+  // Remove the banner now that the run is resumed.
   const banner = shell.querySelector(".loop-resume-banner");
   if (banner) banner.remove();
 
-  // Arrancar el ciclo. Como `rewindRunningStages` deja `status: "paused"`,
-  // el `start()` lo va a sobrescribir a "running" y arrancar desde el primer
-  // pending stage de la primera fase no-done.
+  // Start the loop. Since `rewindRunningStages` leaves `status: "paused"`,
+  // `start()` will overwrite it to "running" and start from the first
+  // pending stage of the first non-done phase.
   void scheduler.start();
 }
 
@@ -648,7 +648,7 @@ function renderLoading(): HTMLElement {
   wrap.className = "loop-gate";
   const p = document.createElement("p");
   p.className = "loop-gate-msg loop-gate-muted";
-  p.textContent = "cargando…";
+  p.textContent = "loading…";
   wrap.appendChild(p);
   return wrap;
 }
@@ -658,18 +658,18 @@ function renderNoProjectGate(): HTMLElement {
   wrap.className = "loop-gate";
   const h = document.createElement("h2");
   h.className = "loop-gate-title";
-  h.textContent = "Elegí un project primero";
+  h.textContent = "Pick a project first";
   const p = document.createElement("p");
   p.className = "loop-gate-msg";
   p.textContent =
-    "El /loop trabaja sobre el project activo del workspace. Abrí la ventana principal y seleccioná uno para empezar.";
+    "/loop operates on the workspace's active project. Open the main window and select one to start.";
   const cta = document.createElement("button");
   cta.type = "button";
   cta.className = "loop-btn loop-btn-primary";
-  cta.textContent = "Abrir workspace";
-  // Foco la ventana principal: el label "main" coincide con la ventana root
-  // de Tauri por convención (la abierta por la app al iniciar). Si no
-  // existe, no hay mucho más que podamos hacer desde acá.
+  cta.textContent = "Open workspace";
+  // Focus the main window: the label "main" matches Tauri's root window
+  // by convention (the one opened by the app at startup). If it doesn't
+  // exist, there isn't much more we can do from here.
   cta.addEventListener("click", () => {
     void focusMainWindow();
   });
@@ -697,17 +697,17 @@ function renderInvalidPathGate(name: string, path: string): HTMLElement {
   wrap.className = "loop-gate loop-gate-error";
   const h = document.createElement("h2");
   h.className = "loop-gate-title";
-  h.textContent = "Path inválido";
+  h.textContent = "Invalid path";
   const p = document.createElement("p");
   p.className = "loop-gate-msg";
-  p.textContent = `El project "${name}" apunta a un path que no existe o no es accesible.`;
+  p.textContent = `Project "${name}" points to a path that does not exist or is not accessible.`;
   const code = document.createElement("code");
   code.className = "loop-gate-path";
   code.textContent = path;
   const hint = document.createElement("p");
   hint.className = "loop-gate-msg loop-gate-muted";
   hint.textContent =
-    "Volvé al workspace y corregí el path (clic derecho → cambiar path) antes de usar /loop.";
+    "Go back to the workspace and fix the path (right click → change path) before using /loop.";
   wrap.append(h, p, code, hint);
   return wrap;
 }
@@ -720,7 +720,7 @@ function renderHeader(
   const header = document.createElement("header");
   header.className = "loop-header";
 
-  // Bloque izquierdo: project + run-id
+  // Left block: project + run-id
   const left = document.createElement("div");
   left.className = "loop-header-left";
 
@@ -735,25 +735,25 @@ function renderHeader(
 
   const runLabel = document.createElement("span");
   runLabel.className = "loop-header-run";
-  // Short run-id (8 chars del UUID) en el chrome; el id completo queda
-  // accesible vía `title` para copy-paste cuando se debuggea un run.
+  // Short run-id (8 chars of the UUID) in the chrome; the full id remains
+  // accessible via `title` for copy-paste when debugging a run.
   runLabel.textContent = `run ${shortRunId(state.runId)}`;
   runLabel.title = state.runId;
 
   left.append(projectName, sep1, runLabel);
 
-  // Bloque medio: step indicator (navegable). Cada pill es un botón que cambia
-  // el step actual via router. Si hay un scheduler corriendo y el usuario salta
-  // a otro step, pedimos confirmación porque la abortamos.
+  // Middle block: step indicator (navigable). Each pill is a button that changes
+  // the current step via the router. If a scheduler is running and the user jumps
+  // to another step, we ask for confirmation because we abort it.
   const steps = document.createElement("nav");
   steps.className = "loop-header-steps";
-  steps.setAttribute("aria-label", "pasos del run");
+  steps.setAttribute("aria-label", "run steps");
   const schedulerLive =
     prev?.scheduler != null &&
     (prev.scheduler.getState().status === "running" ||
       prev.scheduler.getState().status === "paused");
-  // Pill 4 sólo está habilitada si hay un scheduler vivo (el usuario sólo
-  // accede a step 4 vía "▶ ejecutar run" o un resume de run interrumpido).
+  // Pill 4 is only enabled if there is a live scheduler (the user only
+  // accesses step 4 via "▶ run" or by resuming an interrupted run).
   const hasScheduler = prev?.scheduler != null;
   for (const step of [1, 2, 3, 4] as const) {
     const isCurrent = step === state.step;
@@ -763,11 +763,11 @@ function renderHeader(
         if (disabled) return;
         if (schedulerLive && state.step === 4 && step !== 4) {
           const ok = await confirmModal({
-            title: "¿Salir del run en curso?",
+            title: "Leave the run in progress?",
             message:
-              "Hay un scheduler ejecutando agentes. Si volvés a otro paso ahora, el agente en curso se aborta y la fase queda incompleta (el resume puede levantarla después).",
-            confirmLabel: `ir al paso ${step}`,
-            cancelLabel: "quedarme",
+              "A scheduler is running agents. If you go back to another step now, the agent in progress is aborted and the phase remains incomplete (resume can pick it up later).",
+            confirmLabel: `go to step ${step}`,
+            cancelLabel: "stay",
             danger: true,
           });
           if (!ok) return;
@@ -778,17 +778,17 @@ function renderHeader(
     );
   }
 
-  // Bloque derecho: abandonar
+  // Right block: abandon
   const right = document.createElement("div");
   right.className = "loop-header-right";
   const abandon = document.createElement("button");
   abandon.type = "button";
   abandon.className = "loop-btn loop-btn-ghost";
-  abandon.textContent = "abandonar run";
-  abandon.setAttribute("aria-label", "abandonar run actual");
-  // Section 10.2 — confirmación modal antes de descartar progreso. El mensaje
-  // adapta su tono según si hay un run en ejecución (scheduler vivo) o sólo
-  // el chat del paso 1/2 sin guardar.
+  abandon.textContent = "abandon run";
+  abandon.setAttribute("aria-label", "abandon current run");
+  // Section 10.2 — modal confirmation before discarding progress. The message
+  // adapts its tone depending on whether there is a run in progress (live scheduler) or only
+  // the unsaved chat of step 1/2.
   const runIsLive =
     prev?.scheduler != null &&
     (prev.scheduler.getState().status === "running" ||
@@ -796,19 +796,19 @@ function renderHeader(
   abandon.addEventListener("click", () => {
     void (async () => {
       const ok = await confirmModal({
-        title: runIsLive ? "¿Abortar el run en curso?" : "¿Abandonar el run actual?",
+        title: runIsLive ? "Abort the run in progress?" : "Abandon the current run?",
         message: runIsLive
-          ? "El scheduler está ejecutando agentes. Si abortás ahora, los outputs del agente en curso se descartan y la fase queda incompleta — el resume del paso 9 detecta este caso, pero igualmente se pierde el trabajo en vuelo."
-          : "Se descarta el progreso del paso 1/2 que no haya sido guardado en disco (drafts, fases sin save, etc.).",
-        confirmLabel: runIsLive ? "abortar run" : "abandonar",
-        cancelLabel: "cancelar",
+          ? "The scheduler is running agents. If you abort now, the in-progress agent's outputs are discarded and the phase remains incomplete — the step 9 resume detects this case, but the in-flight work is still lost."
+          : "The unsaved step 1/2 progress is discarded (drafts, phases without save, etc.).",
+        confirmLabel: runIsLive ? "abort run" : "abandon",
+        cancelLabel: "cancel",
         danger: true,
       });
       if (!ok) return;
-      // Si hay un run vivo, abortamos el scheduler explícitamente antes de
-      // regenerar el runId — el dispose del MountedStep también lo hace, pero
-      // queremos asegurarnos de que el scheduler libere el heartbeat y
-      // persista el último state.json con status="aborted".
+      // If there is a live run, we abort the scheduler explicitly before
+      // regenerating the runId — the dispose of MountedStep also does it, but
+      // we want to make sure the scheduler releases the heartbeat and
+      // persists the last state.json with status="aborted".
       if (prev?.scheduler) prev.scheduler.abort();
       router.abandonRun();
     })();
@@ -832,7 +832,7 @@ function renderStepPill(
   if (step < current) pill.classList.add("loop-step-pill-done");
   pill.textContent = `${step}`;
   pill.setAttribute("aria-current", step === current ? "step" : "false");
-  pill.setAttribute("aria-label", `${stepLabel(step)}${step === current ? " (actual)" : ""}`);
+  pill.setAttribute("aria-label", `${stepLabel(step)}${step === current ? " (current)" : ""}`);
   pill.title = stepLabel(step);
   pill.disabled = disabled;
   pill.addEventListener("click", () => {
@@ -844,13 +844,13 @@ function renderStepPill(
 function stepLabel(step: LoopStep): string {
   switch (step) {
     case 1:
-      return "Paso 1 · problem intake";
+      return "Step 1 · problem intake";
     case 2:
-      return "Paso 2 · descomposición de fases";
+      return "Step 2 · phase decomposition";
     case 3:
-      return "Paso 3 · setup del run";
+      return "Step 3 · run setup";
     case 4:
-      return "Paso 4 · ejecución";
+      return "Step 4 · execution";
   }
 }
 
@@ -859,14 +859,14 @@ function renderStepSlot(step: LoopStep): HTMLElement {
   slot.className = "loop-step-slot";
   slot.id = "loop-step-slot";
   slot.dataset.step = `${step}`;
-  // Slot vacío; los pasos 1–4 montan su contenido encima reemplazando los
-  // children. Si por alguna razón nadie monta nada (estado inconsistente),
-  // el slot queda vacío sin texto de debug confuso.
+  // Empty slot; steps 1–4 mount their content on top replacing the
+  // children. If for some reason nobody mounts anything (inconsistent state),
+  // the slot stays empty without confusing debug text.
   return slot;
 }
 
 function shortRunId(id: string): string {
-  // UUID v4: `xxxxxxxx-xxxx-...` — los primeros 8 chars dan colisión
-  // virtualmente nula para los runs simultáneos que el usuario va a manejar.
+  // UUID v4: `xxxxxxxx-xxxx-...` — the first 8 chars give virtually zero
+  // collision for the simultaneous runs the user will handle.
   return id.split("-")[0] ?? id.slice(0, 8);
 }

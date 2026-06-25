@@ -19,20 +19,20 @@ import { loadWorkspaces } from "../../../shared/persistence/workspaces-store";
 import type { Project, ProjectId, WorkspacesState } from "../../workspaces/state/types";
 
 /**
- * 3 pasos del flow agéntico (proposal.md):
+ * 3 steps of the agentic flow (proposal.md):
  *   1 — problem intake (chat)
  *   2 — phase decomposition (editor)
  *   3 — setup + run engine
  */
 /**
- * Pasos del flujo /loop:
- * 1 — chat de problem intake
- * 2 — descomposición en fases
- * 3 — setup (matriz CLI×modelo + prompts del run)
- * 4 — ejecución del scheduler (vista del run en vivo)
+ * Steps of the /loop flow:
+ * 1 — problem intake chat
+ * 2 — phase decomposition
+ * 3 — setup (CLI×model matrix + run prompts)
+ * 4 — scheduler execution (live run view)
  *
- * El paso 4 se entra desde el paso 3 cuando el usuario pulsa "▶ ejecutar run".
- * Volver a 1/2/3 desde el 4 aborta el scheduler (con confirmación si está vivo).
+ * Step 4 is entered from step 3 when the user clicks "▶ run". Going back to
+ * 1/2/3 from 4 aborts the scheduler (with confirmation if it is alive).
  */
 export type LoopStep = 1 | 2 | 3 | 4;
 
@@ -92,8 +92,8 @@ function findProjectById(state: WorkspacesState, id: ProjectId): Project | null 
 }
 
 /**
- * `crypto.randomUUID()` lowercased matches the saneador del backend Rust
- * (`safe_run_id` rechaza espacios / `..` / `/` pero acepta `[A-Za-z0-9_-]`).
+ * `crypto.randomUUID()` lowercased matches the Rust backend sanitizer
+ * (`safe_run_id` rejects spaces / `..` / `/` but accepts `[A-Za-z0-9_-]`).
  */
 function generateRunId(): string {
   return crypto.randomUUID();
@@ -102,7 +102,7 @@ function generateRunId(): string {
 export class LoopRouter {
   private state: LoopRouterState = { status: "loading" };
   private readonly listeners = new Set<LoopRouterListener>();
-  /** Preservado entre refresh: el run-id se mantiene mientras el project no cambie. */
+  /** Preserved across refresh: the run-id is kept while the project does not change. */
   private currentRunId: string | null = null;
   private currentProjectId: ProjectId | null = null;
   private currentStep: LoopStep = 1;
@@ -119,13 +119,13 @@ export class LoopRouter {
     return () => this.listeners.delete(listener);
   }
 
-  /** Re-reads workspaces.json and recomputes the gate. Idempotente. */
+  /** Re-reads workspaces.json and recomputes the gate. Idempotent. */
   async refresh(): Promise<void> {
     const ws = await loadWorkspaces();
     const projectId = ws.activeProjectId;
-    // Cuando cambia el project activo, descartamos el run-id viejo: cada
-    // project arranca con su propio run-id fresco. Si el mismo project sigue
-    // activo, mantenemos el run-id para no perder el progreso de la sesión.
+    // When the active project changes, we discard the old run-id: each
+    // project starts with its own fresh run-id. If the same project remains
+    // active, we keep the run-id so we don't lose session progress.
     const sameProject = projectId !== null && projectId === this.currentProjectId;
     const next = computeGateFromWorkspaces(ws, {
       previousRunId: sameProject ? this.currentRunId : null,
@@ -143,7 +143,7 @@ export class LoopRouter {
     this.commit(next);
   }
 
-  /** Navegación al paso siguiente. Sólo válida en estado `active`. */
+  /** Navigate to the next step. Only valid in `active` state. */
   setStep(step: LoopStep): void {
     if (this.state.status !== "active") return;
     this.currentStep = step;
@@ -151,8 +151,8 @@ export class LoopRouter {
   }
 
   /**
-   * Abandona el run actual: regenera run-id y vuelve al paso 1. El UI
-   * confirma antes de llamar — esta función es la operación pura.
+   * Abandon the current run: regenerate run-id and go back to step 1. The UI
+   * confirms before calling — this function is the pure operation.
    */
   abandonRun(): void {
     if (this.state.status !== "active") return;
@@ -166,11 +166,11 @@ export class LoopRouter {
   }
 
   /**
-   * Adopta un run existente: cambia el `runId` actual sin tocar el project.
-   * Vuelve al paso 1 — el paso 1 va a hidratar el draft del runId adoptado
-   * y, si detecta `01-problem.md` consolidado, mostrar el atajo al paso 2.
-   * `step` opcional permite saltar directo al paso 2 o 3 si se llama desde
-   * un picker que ya sabe que el run tiene fases/state.
+   * Adopts an existing run: changes the current `runId` without touching the
+   * project. Returns to step 1 — step 1 will hydrate the draft of the adopted
+   * runId and, if it detects a consolidated `01-problem.md`, show the
+   * shortcut to step 2. The optional `step` lets us jump straight to step 2
+   * or 3 if called from a picker that already knows the run has phases/state.
    */
   adoptRunId(runId: string, step: LoopStep = 1): void {
     if (this.state.status !== "active") return;

@@ -1,9 +1,9 @@
 /*
- * Estilos del chrome de /loop. Reutilizo los tokens del app principal
+ * Styles for the /loop chrome. Reuses the tokens from the main app
  * (src/styles.css) — `--bg`, `--panel`, `--border`, `--accent`, `--text`,
- * `--cli-*` — para que el look se mantenga consistente entre la ventana
- * principal y el popup. Los tokens están duplicados acá porque /loop carga
- * un CSS independiente; mantenerlos en sync es manual.
+ * `--cli-*` — so the look stays consistent between the main window
+ * and the popup. The tokens are duplicated here because /loop loads
+ * an independent CSS; keeping them in sync is manual.
  */
 
 :root {
@@ -101,7 +101,7 @@ body {
   word-break: break-all;
 }
 
-/* ─────────── Botones genéricos del chrome ─────────── */
+/* ─────────── Generic chrome buttons ─────────── */
 
 .loop-btn {
   appearance: none;
@@ -150,7 +150,7 @@ body {
   border-color: rgba(255, 90, 90, 0.4);
 }
 
-/* ─────────── Shell con header + slot del step ─────────── */
+/* ─────────── Shell with header + step slot ─────────── */
 
 .loop-shell {
   flex: 1 1 0;
@@ -250,7 +250,7 @@ body {
   gap: 8px;
 }
 
-/* ─────────── Slot donde montan los pasos 1/2/3 ─────────── */
+/* ─────────── Slot where steps 1/2/3 mount ─────────── */
 
 .loop-step-slot {
   flex: 1 1 0;
@@ -270,12 +270,12 @@ body {
   color: var(--text-muted);
 }
 
-/* ─────────── Paso 1: chat de problem intake ─────────── */
+/* ─────────── Step 1: problem intake chat ─────────── */
 
 /*
- * Cuando el slot monta el chat del paso 1, el layout flexbox del slot
- * (center / center) no nos sirve — necesitamos una grilla de 3 filas:
- * header del step + lista de turnos (scroll) + composer fija al fondo.
+ * When the slot mounts the step 1 chat, the slot's flexbox layout
+ * (center / center) doesn't fit — we need a 3-row grid:
+ * step header + turn list (scroll) + composer pinned at the bottom.
  */
 .loop-step-slot.loop-step1 {
   display: block;
@@ -582,7 +582,7 @@ body {
   cursor: not-allowed;
 }
 
-/* ─────────── Paso 2: descomposición en fases ─────────── */
+/* ─────────── Step 2: phase decomposition ─────────── */
 
 .loop-step-slot.loop-step2 {
   display: block;
@@ -1082,7 +1082,7 @@ body {
   color: var(--text-muted);
 }
 
-/* ─────────── Paso 3: setup unificado ─────────── */
+/* ─────────── Step 3: unified setup ─────────── */
 
 .loop-step-slot.loop-step3 {
   display: block;
@@ -1598,7 +1598,7 @@ body {
   cursor: not-allowed;
 }
 
-/* ─────────── Paso 3 · vista de ejecución (timeline + budget) ─────────── */
+/* ─────────── Step 3 · execution view (timeline + budget) ─────────── */
 
 .loop-step-slot.loop-step3-run {
   display: block;
@@ -1968,7 +1968,7 @@ body {
   font-style: italic;
 }
 
-/* ─────────── Section 8 · vista del modo híbrido (batches + integrador) ─────────── */
+/* ─────────── Section 8 · hybrid mode view (batches + integrator) ─────────── */
 
 .loop-step3-run-banner {
   display: flex;
@@ -2321,7 +2321,7 @@ body {
   color: var(--danger);
 }
 
-/* ─────────── Section 9 · Banner de resume ─────────── */
+/* ─────────── Section 9 · Resume banner ─────────── */
 
 .loop-resume-banner {
   flex: 0 0 auto;
@@ -2389,9 +2389,9 @@ body {
 }
 
 /* ─────────── Section 10 · Toast host (shared/ui/toast.ts) ───────────
- * Duplicado de src/styles.css para que el host funcione en la ventana
- * /loop (carga este CSS independientemente del principal). Si los
- * tokens del host cambian, mantenerlos en sync con styles.css.
+ * Duplicated from src/styles.css so the host works in the
+ * /loop window (loads this CSS independently from the main one). If the
+ * host tokens change, keep them in sync with styles.css.
  */
 
 #toast-host {
@@ -2554,10 +2554,10 @@ body {
   opacity: 0.92;
 }
 
-/* ─────────── Section 10 · Focus rings y a11y ───────────
- * Asegura un focus ring visible y consistente en todos los botones e
- * inputs del módulo /loop. Sin esta regla algunos elementos heredados
- * dependen del default del browser, que en webview puede ser invisible.
+/* ─────────── Section 10 · Focus rings and a11y ───────────
+ * Ensures a visible and consistent focus ring on all buttons and
+ * inputs of the /loop module. Without this rule, some inherited
+ * elements depend on the browser default, which in webview can be invisible.
  */
 
 .loop-btn:focus-visible,

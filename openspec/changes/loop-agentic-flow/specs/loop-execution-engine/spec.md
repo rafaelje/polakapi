@@ -1,90 +1,90 @@
 ## ADDED Requirements
 
-### Requirement: Selección de modo de ejecución
-El Paso 3 SHALL ofrecer dos modos: **secuencial** (una fase a la vez con knowledge propagado) y **híbrido** (batches por sort topológico con integrador entre cada uno). El modo MUST seleccionarse antes de arrancar el run.
+### Requirement: Execution mode selection
+Step 3 SHALL offer two modes: **sequential** (one phase at a time with propagated knowledge) and **hybrid** (batches via topological sort with an integrator between each one). The mode MUST be selected before starting the run.
 
-#### Scenario: Modo híbrido no disponible
-- **WHEN** todas las fases dependen linealmente unas de otras (sort topológico produce N batches de 1)
-- **THEN** el selector permite elegir híbrido pero la UI advierte "equivalente a secuencial · sin paralelismo"
+#### Scenario: Hybrid mode unavailable
+- **WHEN** all phases depend linearly on each other (topological sort produces N batches of 1)
+- **THEN** the selector allows choosing hybrid but the UI warns "equivalent to sequential · no parallelism"
 
-### Requirement: Pipeline de agentes en modo secuencial
-En modo secuencial, por cada fase el sistema SHALL ejecutar agentes en este orden: **análisis → implementación → revisor → conocimiento**. Cada agente MUST esperar el output del anterior. La fase siguiente SHALL recibir el `knowledge.md` de la fase anterior como input adicional.
+### Requirement: Agent pipeline in sequential mode
+In sequential mode, for each phase the system SHALL execute agents in this order: **analysis → implementation → reviewer → knowledge**. Each agent MUST wait for the previous agent's output. The next phase SHALL receive the previous phase's `knowledge.md` as additional input.
 
-#### Scenario: Fase aprobada al primer intento
-- **WHEN** el revisor devuelve `ok` en el primer intento
-- **THEN** el knowledge agent corre con todos los outputs (analysis + implementation + review)
-- **AND** el sistema avanza a la fase siguiente con el `knowledge.md` producido
+#### Scenario: Phase approved on first attempt
+- **WHEN** the reviewer returns `ok` on the first attempt
+- **THEN** the knowledge agent runs with all outputs (analysis + implementation + review)
+- **AND** the system advances to the next phase with the produced `knowledge.md`
 
-### Requirement: Cap de reintentos del revisor
-El revisor SHALL aprobar o solicitar retry. Si devuelve `retry+feedback`, el sistema MUST relanzar la implementación con el feedback adjuntado. El cap es **3 intentos**. Al alcanzar 3 sin aprobación, la fase MUST quedar marcada con estado `warning` (⚠) y el sistema SHALL continuar al agente de conocimiento con el último intento.
+### Requirement: Reviewer retry cap
+The reviewer SHALL approve or request retry. If it returns `retry+feedback`, the system MUST relaunch the implementation with the attached feedback. The cap is **3 attempts**. When 3 are reached without approval, the phase MUST be marked with state `warning` (⚠) and the system SHALL continue to the knowledge agent with the last attempt.
 
-#### Scenario: Aprobado en intento 2
-- **WHEN** el revisor pide retry en intento 1 y aprueba en intento 2
-- **THEN** la fase queda en estado `done` (sin warning)
-- **AND** el contador de retries se persiste en `state.json`
+#### Scenario: Approved on attempt 2
+- **WHEN** the reviewer asks for retry on attempt 1 and approves on attempt 2
+- **THEN** the phase ends in state `done` (no warning)
+- **AND** the retry counter is persisted in `state.json`
 
-#### Scenario: Cap alcanzado
-- **WHEN** el revisor pide retry en los 3 intentos
-- **THEN** la fase queda en estado `warning`
-- **AND** el agente de conocimiento corre igual con el último output de implementación
-- **AND** el `knowledge.md` MUST mencionar explícitamente la deuda en la sección "Warnings"
+#### Scenario: Cap reached
+- **WHEN** the reviewer asks for retry on all 3 attempts
+- **THEN** the phase ends in state `warning`
+- **AND** the knowledge agent runs anyway with the last implementation output
+- **AND** the `knowledge.md` MUST explicitly mention the debt in the "Warnings" section
 
-### Requirement: Modo híbrido por batches
-En modo híbrido, el sistema SHALL agrupar fases en batches por sort topológico (fases sin dependencias pendientes corren en paralelo). Dentro de un batch, las fases SHALL correr sus pipelines de agentes (análisis → impl → revisor → conocimiento) sin compartir knowledge entre ellas. Entre batches, un agente integrador MUST consolidar los knowledge individuales y validar que no haya conflictos de FS.
+### Requirement: Hybrid mode by batches
+In hybrid mode, the system SHALL group phases into batches via topological sort (phases with no pending dependencies run in parallel). Within a batch, the phases SHALL run their agent pipelines (analysis → impl → reviewer → knowledge) without sharing knowledge between them. Between batches, an integrator agent MUST consolidate the individual knowledge and validate that there are no FS conflicts.
 
-#### Scenario: Dos batches con integrador entre
-- **WHEN** el sort topológico produce batch 1 = [01, 04] y batch 2 = [02, 03, 05] dependiendo de [01, 04]
-- **THEN** el sistema corre las pipelines de 01 y 04 en paralelo
-- **AND** al terminar ambos, ejecuta el integrador batch 1
-- **AND** el integrador produce un `knowledge.md` consolidado en `outputs/batches/batch-1/knowledge.md`
-- **AND** ese consolidado se pasa como input adicional a las fases 02, 03, 05
+#### Scenario: Two batches with integrator between
+- **WHEN** the topological sort produces batch 1 = [01, 04] and batch 2 = [02, 03, 05] depending on [01, 04]
+- **THEN** the system runs the pipelines of 01 and 04 in parallel
+- **AND** when both finish, executes the batch 1 integrator
+- **AND** the integrator produces a consolidated `knowledge.md` at `outputs/batches/batch-1/knowledge.md`
+- **AND** that consolidated file is passed as additional input to phases 02, 03, 05
 
-#### Scenario: Conflicto de FS detectado por el integrador
-- **WHEN** dos fases del mismo batch tocaron el mismo archivo con cambios incompatibles
-- **THEN** el integrador reporta el conflicto en su output
-- **AND** el run pausa esperando decisión del usuario (continuar / abortar / re-ejecutar fase)
+#### Scenario: FS conflict detected by the integrator
+- **WHEN** two phases of the same batch touched the same file with incompatible changes
+- **THEN** the integrator reports the conflict in its output
+- **AND** the run pauses waiting for the user's decision (continue / abort / re-execute phase)
 
-#### Scenario: Fase ⚠ en batch propaga warning
-- **WHEN** la fase 04 termina en estado warning dentro del batch 1
-- **THEN** el integrador del batch 1 lo anota en el knowledge consolidado
-- **AND** las fases del batch 2 reciben ese knowledge con la nota de la deuda
+#### Scenario: Phase ⚠ in batch propagates warning
+- **WHEN** phase 04 ends in warning state within batch 1
+- **THEN** the batch 1 integrator records it in the consolidated knowledge
+- **AND** the phases of batch 2 receive that knowledge with the note of the debt
 
-### Requirement: Invocación de agentes vía CLI configurado
-Cada agente SHALL ejecutarse invocando el CLI configurado (claude/codex/opencode) con su modelo correspondiente vía el comando Tauri `run_loop_agent`. La invocación MUST ser one-shot y devolver un `AgentResult` normalizado con `text`, `tokens_in`, `tokens_out`, `cost_usd`, `session_id`, y `error`. Cada invocación MUST respetar un timeout configurable (default 300s).
+### Requirement: Agent invocation via configured CLI
+Each agent SHALL be executed by invoking the configured CLI (claude/codex/opencode) with its corresponding model via the `run_loop_agent` Tauri command. The invocation MUST be one-shot and return a normalized `AgentResult` with `text`, `tokens_in`, `tokens_out`, `cost_usd`, `session_id`, and `error`. Each invocation MUST respect a configurable timeout (default 300s).
 
-#### Scenario: Invocación exitosa de claude
-- **WHEN** el agente de análisis está configurado como `claude / opus-4-7`
-- **THEN** el sistema invoca `claude -p <prompt> --model opus-4-7 --output-format json --append-system-prompt-file <prompts/analysis.md>`
-- **AND** parsea el JSON resultado y normaliza a `AgentResult`
+#### Scenario: Successful claude invocation
+- **WHEN** the analysis agent is configured as `claude / opus-4-7`
+- **THEN** the system invokes `claude -p <prompt> --model opus-4-7 --output-format json --append-system-prompt-file <prompts/analysis.md>`
+- **AND** parses the resulting JSON and normalizes it to `AgentResult`
 
-#### Scenario: Timeout en una invocación
-- **WHEN** una invocación de agente excede el timeout configurado
-- **THEN** el subproceso es matado
-- **AND** el agente reporta `error: "timeout"` y la fase entra en flujo de retry (si aplica)
+#### Scenario: Invocation timeout
+- **WHEN** an agent invocation exceeds the configured timeout
+- **THEN** the subprocess is killed
+- **AND** the agent reports `error: "timeout"` and the phase enters retry flow (if applicable)
 
-#### Scenario: CLI no disponible en PATH
-- **WHEN** el CLI configurado no es ejecutable
-- **THEN** la invocación falla rápido con error "cli not found"
-- **AND** el usuario es notificado antes de gastar tokens en agentes subsecuentes
+#### Scenario: CLI not available in PATH
+- **WHEN** the configured CLI is not executable
+- **THEN** the invocation fails fast with error "cli not found"
+- **AND** the user is notified before spending tokens on subsequent agents
 
-### Requirement: Persistencia de estado y resume
-Cada run SHALL persistir su estado en `<run>/state.json` con granularidad por agente, incluyendo el batch actual (modo híbrido), el agente en curso por fase, el contador de retries, y un `lastHeartbeat`. Al abrir `/loop` sobre un project que tiene un run con `status: "running"` y heartbeat viejo, el sistema MUST detectarlo y ofrecer retomar.
+### Requirement: State persistence and resume
+Each run SHALL persist its state in `<run>/state.json` with per-agent granularity, including the current batch (hybrid mode), the current agent per phase, the retry counter, and a `lastHeartbeat`. When opening `/loop` on a project that has a run with `status: "running"` and old heartbeat, the system MUST detect it and offer to resume.
 
-#### Scenario: Resume después de crash
-- **WHEN** la app crashea durante un run y el usuario reabre `/loop` sobre el mismo project
-- **THEN** el sistema lee `state.json` y muestra "run interrumpido detectado · ¿retomar?"
-- **AND** al confirmar, el scheduler reanuda desde la última tarea incompleta
-- **AND** si un agente quedó a medias (output parcial), su trabajo se descarta y se relanza desde cero
+#### Scenario: Resume after crash
+- **WHEN** the app crashes during a run and the user reopens `/loop` on the same project
+- **THEN** the system reads `state.json` and shows "interrupted run detected · resume?"
+- **AND** on confirm, the scheduler resumes from the last incomplete task
+- **AND** if an agent was halfway (partial output), its work is discarded and relaunched from scratch
 
-#### Scenario: Heartbeat actualizado
-- **WHEN** un agente está corriendo
-- **THEN** el run actualiza `lastHeartbeat` en `state.json` cada N segundos
-- **AND** si pasan más de N×3 segundos sin actualizar, se asume crash
+#### Scenario: Heartbeat updated
+- **WHEN** an agent is running
+- **THEN** the run updates `lastHeartbeat` in `state.json` every N seconds
+- **AND** if more than N×3 seconds pass without an update, a crash is assumed
 
-### Requirement: Budget visible en vivo
-La vista de ejecución SHALL mostrar el costo en USD y los tokens consumidos acumulados, desglosados por agente. Cuando el run supera el budget configurado, el sistema MUST pausar antes de la siguiente invocación y pedir confirmación.
+### Requirement: Budget visible live
+The execution view SHALL show the accumulated USD cost and consumed tokens, broken down per agent. When the run exceeds the configured budget, the system MUST pause before the next invocation and ask for confirmation.
 
-#### Scenario: Budget excedido
-- **WHEN** el costo acumulado supera el budget configurado del run
-- **THEN** el scheduler pausa antes del próximo agente
-- **AND** muestra "budget excedido · continuar / abortar"
+#### Scenario: Budget exceeded
+- **WHEN** the accumulated cost exceeds the run's configured budget
+- **THEN** the scheduler pauses before the next agent
+- **AND** shows "budget exceeded · continue / abort"

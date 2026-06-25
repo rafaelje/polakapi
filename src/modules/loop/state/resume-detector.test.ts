@@ -66,41 +66,41 @@ function makeState(): PersistedRunState {
 }
 
 describe("rewindRunningStages", () => {
-  it("degrada el stage running a pending", () => {
+  it("downgrades the running stage to pending", () => {
     const out = rewindRunningStages(makeState());
     expect(out.phases[0].stages.implementation.status).toBe("pending");
   });
 
-  it("preserva stages done", () => {
+  it("preserves done stages", () => {
     const out = rewindRunningStages(makeState());
     expect(out.phases[0].stages.analysis.status).toBe("done");
     expect(out.phases[1].stages.knowledge.status).toBe("done");
   });
 
-  it("rebaja status de la fase con running a pending", () => {
+  it("downgrades status of the phase with running to pending", () => {
     const out = rewindRunningStages(makeState());
     expect(out.phases[0].status).toBe("pending");
-    // Fase 2 no tiene running stages, mantiene su status original.
+    // Phase 2 has no running stages, keeps its original status.
     expect(out.phases[1].status).toBe("done");
   });
 
-  it("integrador running vuelve a pending", () => {
+  it("running integrator goes back to pending", () => {
     const out = rewindRunningStages(makeState());
     expect(out.integrators[0].status).toBe("pending");
   });
 
-  it("currentStage queda null", () => {
+  it("currentStage is left null", () => {
     const out = rewindRunningStages(makeState());
     expect(out.currentStage).toBeNull();
   });
 
-  it("status global queda paused y tiene mensaje", () => {
+  it("global status ends paused and carries a message", () => {
     const out = rewindRunningStages(makeState());
     expect(out.status).toBe("paused");
     expect(out.message).toBeTruthy();
   });
 
-  it("inmutabilidad: el state original no se muta", () => {
+  it("immutability: the original state is not mutated", () => {
     const original = makeState();
     rewindRunningStages(original);
     expect(original.phases[0].stages.implementation.status).toBe("running");

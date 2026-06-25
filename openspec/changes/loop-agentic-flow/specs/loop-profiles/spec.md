@@ -1,49 +1,49 @@
 ## ADDED Requirements
 
-### Requirement: Almacenamiento global de perfiles en JSON
-Los perfiles SHALL persistirse en `profiles.json` en el config dir de la app (vía `tauri-plugin-store`), siguiendo el mismo patrón que `workspaces.json`. El archivo MUST tener `schemaVersion` y un array `profiles[]`. Cada perfil contiene `id`, `name`, `createdAt`, y una `matrix` con los 5 agentes (`analysis`, `implementation`, `review`, `knowledge`, `integration`), cada uno con `{ cli, model }`.
+### Requirement: Global profile storage in JSON
+Profiles SHALL be persisted in `profiles.json` in the app's config dir (via `tauri-plugin-store`), following the same pattern as `workspaces.json`. The file MUST have `schemaVersion` and a `profiles[]` array. Each profile contains `id`, `name`, `createdAt`, and a `matrix` with the 5 agents (`analysis`, `implementation`, `review`, `knowledge`, `integration`), each with `{ cli, model }`.
 
-#### Scenario: Primera carga sin perfiles
-- **WHEN** la app se abre por primera vez y no existe `profiles.json`
-- **THEN** el sistema crea uno con `{ schemaVersion: 1, profiles: [] }`
-- **AND** la UI muestra "sin perfiles guardados"
+#### Scenario: First load with no profiles
+- **WHEN** the app opens for the first time and `profiles.json` does not exist
+- **THEN** the system creates one with `{ schemaVersion: 1, profiles: [] }`
+- **AND** the UI shows "no saved profiles"
 
-#### Scenario: Schema version incompatible
-- **WHEN** existe `profiles.json` con un `schemaVersion` desconocido
-- **THEN** el sistema lo trata como vacío (silent fallback, igual que `workspaces-store.ts`)
-- **AND** preserva el archivo original sin sobrescribir
+#### Scenario: Incompatible schema version
+- **WHEN** `profiles.json` exists with an unknown `schemaVersion`
+- **THEN** the system treats it as empty (silent fallback, same as `workspaces-store.ts`)
+- **AND** preserves the original file without overwriting
 
-### Requirement: Default sin perfil cargado
-Cuando ningún perfil está cargado en el setup del Paso 3, todos los slots de la matriz SHALL arrancar con `claude / opus-4-7`. El usuario puede editar cada slot manualmente desde ese punto.
+### Requirement: Default with no profile loaded
+When no profile is loaded in the Step 3 setup, all matrix slots SHALL start with `claude / opus-4-7`. The user can edit each slot manually from that point.
 
-#### Scenario: Setup inicial sin perfil
-- **WHEN** el usuario llega al setup del Paso 3 y no selecciona perfil del dropdown
-- **THEN** los 5 agentes muestran `claude / opus-4-7`
-- **AND** los badges de cada slot indican "default" (no "modificado")
+#### Scenario: Initial setup without profile
+- **WHEN** the user lands on the Step 3 setup and does not select a profile from the dropdown
+- **THEN** the 5 agents show `claude / opus-4-7`
+- **AND** the badge of each slot indicates "default" (not "modified")
 
-### Requirement: Overrides temporales sobre perfil cargado
-Cuando el usuario carga un perfil y modifica algún slot, los cambios SHALL aplicar sólo al run en curso. Para persistir, el sistema MUST exponer botones explícitos: "guardar" (pisa el perfil cargado) o "guardar como…" (crea uno nuevo).
+### Requirement: Temporary overrides on loaded profile
+When the user loads a profile and modifies any slot, the changes SHALL apply only to the current run. To persist, the system MUST expose explicit buttons: "save" (overwrites the loaded profile) or "save as…" (creates a new one).
 
-#### Scenario: Override aplica al run sin persistir
-- **WHEN** el usuario carga el perfil "mi mixto" y cambia el revisor de codex a claude/sonnet
-- **AND** apreta "ejecutar run" sin tocar "guardar"
-- **THEN** el run usa claude/sonnet para el revisor
-- **AND** "mi mixto" en `profiles.json` permanece con codex
+#### Scenario: Override applies to the run without persisting
+- **WHEN** the user loads the "my mixed" profile and changes the reviewer from codex to claude/sonnet
+- **AND** clicks "execute run" without touching "save"
+- **THEN** the run uses claude/sonnet for the reviewer
+- **AND** "my mixed" in `profiles.json` remains with codex
 
-#### Scenario: Guardar como nuevo
-- **WHEN** el usuario con un perfil cargado modifica slots y elige "guardar como…"
-- **THEN** se le pide un nombre y se crea un perfil nuevo en `profiles.json`
-- **AND** el perfil original no cambia
+#### Scenario: Save as new
+- **WHEN** the user with a loaded profile modifies slots and chooses "save as…"
+- **THEN** a name is requested and a new profile is created in `profiles.json`
+- **AND** the original profile does not change
 
-### Requirement: Validación de disponibilidad al cargar
-Al cargar un perfil, el sistema SHALL validar que cada CLI esté instalado (en PATH) y que el modelo configurado esté disponible. Si alguno falla, el slot correspondiente MUST marcarse en rojo en la UI, sin sugerir fallbacks automáticos. El usuario MUST elegir manualmente otro CLI/modelo antes de poder ejecutar el run.
+### Requirement: Availability validation on load
+On loading a profile, the system SHALL validate that each CLI is installed (in PATH) and that the configured model is available. If any fails, the corresponding slot MUST be marked red in the UI, without suggesting automatic fallbacks. The user MUST manually choose another CLI/model before being able to execute the run.
 
-#### Scenario: CLI no instalado
-- **WHEN** se carga un perfil cuyo agente de análisis está configurado con `opencode` y `opencode` no está en PATH
-- **THEN** el slot del agente de análisis se marca en rojo con texto "opencode no encontrado"
-- **AND** el botón "ejecutar run" queda deshabilitado hasta que el usuario corrija
+#### Scenario: CLI not installed
+- **WHEN** a profile is loaded whose analysis agent is configured with `opencode` and `opencode` is not in PATH
+- **THEN** the analysis agent slot is marked red with text "opencode not found"
+- **AND** the "execute run" button is disabled until the user corrects it
 
-#### Scenario: Modelo inexistente
-- **WHEN** un perfil referencia un modelo deprecado (ej. `haiku-4-5` en claude 2.1.187 que devuelve 404)
-- **THEN** el sistema marca el slot en rojo con "modelo no disponible"
-- **AND** el usuario elige otro modelo del dropdown manualmente
+#### Scenario: Nonexistent model
+- **WHEN** a profile references a deprecated model (e.g. `haiku-4-5` in claude 2.1.187 that returns 404)
+- **THEN** the system marks the slot red with "model not available"
+- **AND** the user manually chooses another model from the dropdown

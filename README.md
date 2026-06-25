@@ -27,9 +27,9 @@ on the user's `PATH`:
 - [`codex`](https://github.com/openai/codex) — OpenAI's Codex CLI.
 - [`opencode`](https://opencode.ai) — open-source multi-model CLI.
 
-You can mix and match CLIs per agent in the Paso 3 setup (e.g. analysis with
+You can mix and match CLIs per agent in the Step 3 setup (e.g. analysis with
 `claude`, implementation with `opencode`, review with `codex`). The app
-validates each slot at profile load and disables `▶ ejecutar run` while any
+validates each slot at profile load and disables `▶ run` while any
 slot is in red. Logs of every CLI invocation are appended to
 `<system-temp>/polakapi-loop-cli.log` (timestamp, cli, cwd, elapsed ms, exit
 code, byte counts) for post-mortem debugging.

@@ -106,9 +106,9 @@ pub fn open_in_editor(path: &str, editor: Option<&str>) -> Result<(), String> {
 /// step 1 to open `<run>/prompts/problem-intake.md` for editing.
 pub fn open_file_in_editor(path: &str, editor: Option<&str>) -> Result<(), String> {
     let p = std::path::Path::new(path);
-    let metadata = std::fs::metadata(p).map_err(|e| format!("path inválido: {e}"))?;
+    let metadata = std::fs::metadata(p).map_err(|e| format!("invalid path: {e}"))?;
     if metadata.is_dir() {
-        return Err("path es un directorio, usá open_in_editor".to_string());
+        return Err("path is a directory, use open_in_editor".to_string());
     }
 
     let cmd = resolve_editor(editor)

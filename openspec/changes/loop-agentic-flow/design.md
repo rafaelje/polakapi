@@ -1,137 +1,137 @@
 ## Context
 
-El módulo `/loop` hoy es una ventana Tauri vacía (`loop.html` + `src/modules/loop/loop.ts` placeholder, abierta desde `src/modules/agents-flow/loop-window.ts`). Esta propuesta lo convierte en un sistema agéntico de 3 pasos que orquesta múltiples CLIs LLM (claude, codex, opencode) en modo one-shot.
+The `/loop` module is currently an empty Tauri window (`loop.html` + `src/modules/loop/loop.ts` placeholder, opened from `src/modules/agents-flow/loop-window.ts`). This proposal turns it into a 3-step agentic system that orchestrates multiple LLM CLIs (claude, codex, opencode) in one-shot mode.
 
-El diseño completo y los mockups visuales están en `docs/loop-agentic-design.html` (15 decisiones cerradas, spike de CLI validado). Este documento extracta las decisiones técnicas y trade-offs.
+The complete design and visual mockups are in `docs/loop-agentic-design.html` (15 closed decisions, validated CLI spike). This document extracts the technical decisions and trade-offs.
 
-**Contexto del repo relevante**:
-- El app es Tauri 2 + Vite + TypeScript. State management custom (no React/Vue) — ver `src/modules/workspaces/state/` para el patrón establecido (reducer + controller + types).
-- Persistencia local: `tauri-plugin-store` con archivos JSON (ver `src/shared/persistence/workspaces-store.ts:1`).
-- Subprocesos: `std::process::Command::output()` (one-shot) y `portable_pty` (streaming) — ambos patrones ya en `src-tauri/src/`.
-- Bootstrap de PATH para macOS ya resuelto en `src-tauri/src/lib.rs:17` (menciona claude/codex/opencode por nombre).
-- El project activo del workspace expone `path`, `activeCliId`, y validación de path — todo heredable por `/loop`.
+**Relevant repo context**:
+- The app is Tauri 2 + Vite + TypeScript. Custom state management (no React/Vue) — see `src/modules/workspaces/state/` for the established pattern (reducer + controller + types).
+- Local persistence: `tauri-plugin-store` with JSON files (see `src/shared/persistence/workspaces-store.ts:1`).
+- Subprocesses: `std::process::Command::output()` (one-shot) and `portable_pty` (streaming) — both patterns already in `src-tauri/src/`.
+- macOS PATH bootstrap already resolved in `src-tauri/src/lib.rs:17` (mentions claude/codex/opencode by name).
+- The active workspace project exposes `path`, `activeCliId`, and path validation — all inheritable by `/loop`.
 
 ## Goals / Non-Goals
 
 **Goals:**
-- Permitir al usuario refinar un problema con LLM, descomponerlo en fases con dependencias, y ejecutarlo con agentes especializados.
-- Soportar dos modos de ejecución (secuencial / híbrido por batches) eligibles antes del run.
-- Multi-CLI por agente: cada uno de los 5 agentes del Paso 3 puede usar un CLI/modelo distinto.
-- Reanudación tras crash con granularidad por agente.
-- Cero acoplamiento entre CLIs: contrato vía archivos en disco (no por sesiones LLM heredadas).
-- Reutilizar lo que ya existe en el repo (PATH bootstrap, plugin-store, patrón Command).
+- Let the user refine a problem with an LLM, decompose it into phases with dependencies, and execute it with specialized agents.
+- Support two execution modes (sequential / hybrid by batches) selectable before the run.
+- Multi-CLI per agent: each of the 5 Step 3 agents can use a different CLI/model.
+- Resume after crash with per-agent granularity.
+- Zero coupling between CLIs: contract via files on disk (not via inherited LLM sessions).
+- Reuse what already exists in the repo (PATH bootstrap, plugin-store, Command pattern).
 
 **Non-Goals:**
-- Streaming token-a-token en los agentes del Paso 3 (one-shot es suficiente; sólo el chat del Paso 1 podría beneficiarse).
-- Compartir perfiles entre máquinas (son globales locales, no se commitean).
-- Sandbox de FS por agente (decisión: todos los agentes pueden escribir; mitigación vía registro de diff post-hoc).
-- Edición de prompts via UI separada de Settings (vive inline en el setup del Paso 3).
-- Override de profiles por project (sólo globales en esta iteración).
-- Worktrees git por fase (descartado al elegir "modo paralelo solo para fases independientes").
+- Token-by-token streaming in Step 3 agents (one-shot is enough; only the Step 1 chat could benefit).
+- Sharing profiles across machines (they are local globals, not committed).
+- Per-agent FS sandboxing (decision: all agents can write; mitigation via post-hoc diff log).
+- Prompt editing via UI separate from Settings (lives inline in the Step 3 setup).
+- Per-project profile overrides (globals only in this iteration).
+- Git worktrees per phase (discarded when choosing "parallel mode only for independent phases").
 
 ## Decisions
 
-### 1. Contrato entre agentes vía archivos en disco
-**Decisión**: cada agente lee archivos del run (`logic.md`, `visual.html`, `analysis.md`, etc.) y escribe **su** archivo. No hay conversaciones LLM heredadas entre agentes.
+### 1. Contract between agents via files on disk
+**Decision**: each agent reads files from the run (`logic.md`, `visual.html`, `analysis.md`, etc.) and writes **its own** file. There are no inherited LLM conversations between agents.
 
-**Alternativa considerada**: pasar el stream de mensajes del CLI anterior al siguiente. Rechazada porque acopla formatos heterogéneos (claude JSON, codex JSONL, opencode events) y bloquea la mezcla de CLIs.
+**Alternative considered**: passing the message stream from the previous CLI to the next. Rejected because it couples heterogeneous formats (claude JSON, codex JSONL, opencode events) and blocks mixing CLIs.
 
-**Implicancia**: facilita el resume — basta inspeccionar qué archivos existen y cuáles no.
+**Implication**: makes resume easier — just inspect which files exist and which do not.
 
-### 2. Modo paralelo "híbrido" con sort topológico
-**Decisión**: el modo paralelo no es "todo al mismo tiempo"; usa `dependsOn[]` declarado en cada fase para computar batches. Sort topológico estándar: batch 1 = fases sin dependencias, batch N+1 = fases cuyas dependencias están todas en batches ≤ N.
+### 2. "Hybrid" parallel mode with topological sort
+**Decision**: parallel mode is not "all at the same time"; it uses `dependsOn[]` declared on each phase to compute batches. Standard topological sort: batch 1 = phases with no dependencies, batch N+1 = phases whose dependencies are all in batches ≤ N.
 
-**Alternativa considerada**: paralelo "puro" con worktrees git por fase. Rechazada por la complejidad operacional (merges, conflictos, cleanup) y porque trasladaba el problema a un integrador final ciego.
+**Alternative considered**: "pure" parallel with git worktrees per phase. Rejected due to operational complexity (merges, conflicts, cleanup) and because it shifted the problem to a blind final integrator.
 
-**Implicancia**: el integrador corre **por batch**, no sólo al final. Permite detectar conflictos temprano y propagar knowledge entre batches.
+**Implication**: the integrator runs **per batch**, not just at the end. It allows detecting conflicts early and propagating knowledge between batches.
 
-### 3. One-shot CLI con history serializada en multi-turno
-**Decisión**: todas las invocaciones de CLI son one-shot (`claude -p`, `codex exec`, `opencode run`). En el Paso 1 (multi-turno), cada turno serializa la conversación previa en el prompt.
+### 3. One-shot CLI with serialized history in multi-turn
+**Decision**: all CLI invocations are one-shot (`claude -p`, `codex exec`, `opencode run`). In Step 1 (multi-turn), each turn serializes the previous conversation into the prompt.
 
-**Alternativa considerada**: sesiones persistentes con `--resume` flags. Rechazada porque (a) introduce estado en el CLI que la app no controla, (b) cada CLI tiene su propio formato de session id, (c) el spike confirmó que one-shot es suficiente y predecible.
+**Alternative considered**: persistent sessions with `--resume` flags. Rejected because (a) it introduces state in the CLI that the app does not control, (b) each CLI has its own session id format, (c) the spike confirmed that one-shot is enough and predictable.
 
-**Implicancia**: el costo por turno crece linealmente con la historia (cache de prompt del CLI puede mitigarlo). Aceptable para conversaciones cortas de refinamiento.
+**Implication**: per-turn cost grows linearly with history (the CLI's prompt cache can mitigate it). Acceptable for short refinement conversations.
 
-### 4. Cap del revisor en 3 con propagación de warning
-**Decisión**: el revisor tiene exactamente 3 intentos. Al cuarto se descarta — la fase queda con estado `warning` (⚠) y el knowledge agent corre igual con el último output. La deuda se anota en `knowledge.md` para que la(s) fase(s) dependiente(s) lo vean.
+### 4. Reviewer cap at 3 with warning propagation
+**Decision**: the reviewer has exactly 3 attempts. On the fourth it is discarded — the phase ends with state `warning` (⚠) and the knowledge agent still runs with the last output. The debt is noted in `knowledge.md` so the dependent phase(s) can see it.
 
-**Alternativa considerada**: preguntar al usuario al alcanzar el cap. Rechazada porque rompe el flow automático y agrega fricción a runs largos.
+**Alternative considered**: ask the user when the cap is reached. Rejected because it breaks the automatic flow and adds friction to long runs.
 
-**Implicancia**: el resumen final del run muestra qué fases quedaron sin aprobar. El usuario puede re-correr esas fases manualmente.
+**Implication**: the final run summary shows which phases ended unapproved. The user can re-run those phases manually.
 
-### 5. Almacenamiento JSON, no SQLite, para profiles y prompts
-**Decisión**: ambos viven en el config dir de la app vía `tauri-plugin-store` (`profiles.json`) o archivos sueltos (`prompts/*.md`).
+### 5. JSON storage, not SQLite, for profiles and prompts
+**Decision**: both live in the app's config dir via `tauri-plugin-store` (`profiles.json`) or loose files (`prompts/*.md`).
 
-**Alternativa considerada**: SQLite con `rusqlite`. Rechazada porque (a) 1-20 perfiles no justifican un motor relacional, (b) introduce dependencia nueva (+1MB binario), (c) rompe consistencia con `workspaces.json`, (d) los runs históricos no se indexan globalmente — viven como archivos en `<project>/.loop/runs/`.
+**Alternative considered**: SQLite with `rusqlite`. Rejected because (a) 1-20 profiles do not justify a relational engine, (b) it introduces a new dependency (+1MB binary), (c) it breaks consistency with `workspaces.json`, (d) historical runs are not indexed globally — they live as files in `<project>/.loop/runs/`.
 
-**Implicancia**: si en algún futuro se necesita indexar runs cross-project con queries, SQLite puede agregarse para eso sin tocar profiles/prompts.
+**Implication**: if cross-project run indexing with queries is needed in the future, SQLite can be added for that without touching profiles/prompts.
 
-### 6. Permisos de FS sin restricción + auditoría
-**Decisión**: todos los agentes pueden escribir cualquier archivo. No hay sandboxing por agente.
+### 6. Unrestricted FS permissions + auditing
+**Decision**: all agents can write any file. There is no per-agent sandboxing.
 
-**Alternativa considerada**: diff post-hoc descartando cambios fuera del `.md` esperado. Rechazada por la complejidad (qué cuenta como "esperado" varía por contexto) y por dejar la decisión al usuario.
+**Alternative considered**: post-hoc diff discarding changes outside the expected `.md`. Rejected due to complexity (what counts as "expected" varies per context) and because it leaves the decision to the user.
 
-**Mitigación**: cada agente se invoca con un `git stash` previo y posterior para snapshotear su diff. Se guarda en `<run>/outputs/<phase>/<agent>.diff` (o equivalente) para auditoría.
+**Mitigation**: each agent is invoked with a `git stash` before and after to snapshot its diff. It is saved in `<run>/outputs/<phase>/<agent>.diff` (or equivalent) for auditing.
 
-### 7. Estado persistente con granularidad por agente
-**Decisión**: `state.json` por run con campos: `currentBatch`, `phases[id]: { status, lastAgent, retryAttempt, warning }`, `integrators[batchId]: status`, `lastHeartbeat`. El resume detecta tareas incompletas y relanza el agente que estaba en curso (descartando outputs parciales).
+### 7. Persistent state with per-agent granularity
+**Decision**: `state.json` per run with fields: `currentBatch`, `phases[id]: { status, lastAgent, retryAttempt, warning }`, `integrators[batchId]: status`, `lastHeartbeat`. Resume detects incomplete tasks and relaunches the agent that was in progress (discarding partial outputs).
 
-**Alternativa considerada**: log estructurado (event-sourcing) reconstruido al abrir. Más robusto pero overkill — un snapshot bien definido cubre el caso.
+**Alternative considered**: structured log (event-sourcing) reconstructed on open. More robust but overkill — a well-defined snapshot covers the case.
 
-### 8. Validación de perfil al cargar sin auto-fallback
-**Decisión**: si un CLI no está instalado o un modelo no existe, el slot se marca en rojo y el run no puede ejecutarse hasta que el usuario corrija. Sin sugerencias automáticas.
+### 8. Profile validation on load without auto-fallback
+**Decision**: if a CLI is not installed or a model does not exist, the slot is marked red and the run cannot execute until the user corrects it. No automatic suggestions.
 
-**Alternativa considerada**: fallback automático a "claude/opus-4-7" si el slot rompe. Rechazada porque cambia el comportamiento esperado del run silenciosamente.
+**Alternative considered**: automatic fallback to "claude/opus-4-7" if the slot breaks. Rejected because it changes the expected behavior of the run silently.
 
-### 9. Prompts globales con copia atómica al run
-**Decisión**: los 7 prompts viven en `<app-config>/prompts/`. Al crear un run, se copian atómicamente a `<run>/prompts/`. Ediciones en el run no se propagan; ediciones en globales no afectan runs ya creados.
+### 9. Global prompts with atomic copy to the run
+**Decision**: the 7 prompts live in `<app-config>/prompts/`. When creating a run, they are copied atomically to `<run>/prompts/`. Edits in the run do not propagate; edits to globals do not affect already created runs.
 
-**Alternativa considerada**: referencia por path (run apunta al global). Rechazada porque rompe la inmutabilidad del run y dificulta el resume reproducible.
+**Alternative considered**: reference by path (run points to the global). Rejected because it breaks the immutability of the run and makes reproducible resume difficult.
 
-### 10. UI inline en el setup del Paso 3 (no settings separado)
-**Decisión**: la edición de prompts vive en una vista unificada del setup del Paso 3 — sidebar de los 7 prompts + editor principal con dropdowns de CLI/modelo. Sin pantalla de Settings dedicada.
+### 10. Inline UI in the Step 3 setup (no separate settings)
+**Decision**: prompt editing lives in a unified Step 3 setup view — sidebar of the 7 prompts + main editor with CLI/model dropdowns. No dedicated Settings screen.
 
-**Alternativa considerada**: pantalla de Settings global. Rechazada por preferencia del usuario (decisión 15 del design doc): mantener todo el ciclo de vida del run visible en una sola superficie.
+**Alternative considered**: global Settings screen. Rejected by user preference (decision 15 in the design doc): keep the entire run lifecycle visible on a single surface.
 
 ## Risks / Trade-offs
 
-| Riesgo | Mitigación |
+| Risk | Mitigation |
 |--------|-----------|
-| Aliases de modelo cambian entre versiones (ej. `haiku-4-5` 404 vs `haiku` OK) | Validación al cargar perfil marca slot en rojo. Documentar matriz `cli × modelo` soportada con versión testeada. |
-| Costo de tokens descontrolado con multi-CLI (cada agente factura aparte) | Budget visible en vivo desglosado por agente. Pausa automática al exceder. |
-| Loop revisor que oscila sin converger | Cap hard de 3 intentos. Más allá, fase queda con warning y el flow sigue. |
-| Modo paralelo + conflictos de FS no detectados por dependencias incorrectas | El integrador del batch hace `git diff --check` antes de aprobar el batch. Conflicto pausa el run. |
-| Agentes con permisos totales corrompen el FS sin control | `git stash` por agente para preservar el snapshot, diff exportable. El usuario revisa post-mortem. |
-| Aplicación cierra a mitad de un run sin guardar estado | Heartbeat cada N segundos en `state.json` + resume detect en próxima apertura del project. |
-| El LLM del Paso 2 declara mal las dependencias (fases que se pisan en realidad) | Usuario revisa la vista topología antes de ejecutar. El integrador del batch detecta conflictos reales. |
-| Subproceso colgado (CLI no responde) | `tokio::time::timeout` con default 300s. Al timeout, kill del subproceso y reporte como fallo. |
-| `--dangerously-skip-permissions` en claude / `--sandbox` en codex requieren configuración | Documentar la matriz: el agente de implementación corre sin restricción; análisis/revisor/conocimiento con `--print` (read-only de facto). |
-| Bundling de los 7 prompts default en el binario | Embeber con `include_str!` en Rust o resources de Tauri. Decisión deferred a implementación. |
+| Model aliases change between versions (e.g. `haiku-4-5` 404 vs `haiku` OK) | Validation on profile load marks slot in red. Document supported `cli × model` matrix with tested version. |
+| Uncontrolled token cost with multi-CLI (each agent bills separately) | Budget visible live broken down per agent. Automatic pause when exceeded. |
+| Reviewer loop oscillating without converging | Hard cap of 3 attempts. Beyond that, phase ends with warning and the flow continues. |
+| Parallel mode + FS conflicts not detected due to incorrect dependencies | The batch integrator runs `git diff --check` before approving the batch. A conflict pauses the run. |
+| Agents with total permissions corrupt the FS uncontrollably | `git stash` per agent to preserve the snapshot, exportable diff. The user reviews post-mortem. |
+| The application closes mid-run without saving state | Heartbeat every N seconds in `state.json` + resume detect on next project open. |
+| The Step 2 LLM declares dependencies wrong (phases that actually overlap) | The user reviews the topology view before executing. The batch integrator detects real conflicts. |
+| Hung subprocess (CLI does not respond) | `tokio::time::timeout` with default 300s. On timeout, kill the subprocess and report as failure. |
+| `--dangerously-skip-permissions` in claude / `--sandbox` in codex require configuration | Document the matrix: the implementation agent runs unrestricted; analysis/reviewer/knowledge with `--print` (read-only de facto). |
+| Bundling the 7 default prompts in the binary | Embed with `include_str!` in Rust or Tauri resources. Decision deferred to implementation. |
 
 ## Migration Plan
 
-No hay migración de datos — el `/loop` es aditivo. Los archivos nuevos viven en lugares nuevos:
-- Config dir: `profiles.json`, `prompts/*.md` (creados on-demand al primer arranque post-update)
-- Por project: `<project>/.loop/runs/<run-id>/...` (creado al iniciar el primer run)
+There is no data migration — `/loop` is additive. New files live in new places:
+- Config dir: `profiles.json`, `prompts/*.md` (created on-demand on first post-update launch)
+- Per project: `<project>/.loop/runs/<run-id>/...` (created when starting the first run)
 
-**Rollback**: el usuario puede borrar `<app-config>/profiles.json`, `<app-config>/prompts/`, y `<project>/.loop/` sin afectar el resto de la app. El módulo `/loop` puede coexistir o desaparecer sin tocar workspaces, terminales, ni notas.
+**Rollback**: the user can delete `<app-config>/profiles.json`, `<app-config>/prompts/`, and `<project>/.loop/` without affecting the rest of the app. The `/loop` module can coexist or disappear without touching workspaces, terminals, or notes.
 
-**Orden de implementación sugerido** (también reflejado en `tasks.md`):
-1. Backend del comando Tauri `run_loop_agent` + tests con smoke calls.
-2. Store de profiles + prompts globales (defaults bundled, copia atómica al run).
-3. UI del Paso 1 (más simple, valida el patrón one-shot + serialización de historia).
-4. UI del Paso 2 (más compleja: editor + topología + edición con AI).
-5. Engine secuencial del Paso 3 (sin batches, sin integrador).
-6. Engine híbrido con batches + integrador.
-7. Persistencia + resume.
+**Suggested implementation order** (also reflected in `tasks.md`):
+1. Backend of the Tauri command `run_loop_agent` + tests with smoke calls.
+2. Profiles store + global prompts (bundled defaults, atomic copy to the run).
+3. Step 1 UI (simpler, validates the one-shot pattern + history serialization).
+4. Step 2 UI (more complex: editor + topology + edit with AI).
+5. Sequential engine for Step 3 (no batches, no integrator).
+6. Hybrid engine with batches + integrator.
+7. Persistence + resume.
 
-Cada paso es un PR coherente, vendible solo. Si algo bloquea más adelante (ej. resume), los pasos previos siguen siendo útiles.
+Each step is a coherent PR, valuable on its own. If something blocks later (e.g. resume), the previous steps remain useful.
 
 ## Open Questions
 
-Ninguna que bloquee la implementación. Las cosas a decidir durante el código (no por el diseño) son:
+None blocking implementation. The things to decide during coding (not at design time) are:
 
-- **Cómo bundlear los 7 prompts default**: `include_str!` en Rust vs resources de Tauri vs archivos copiados por Vite a `dist/`. La decisión se toma al armar el commit del seed inicial.
-- **Default exacto del timeout por agente**: 300s parece razonable, pero podría ajustarse según el modelo (opus tarda más que haiku). Configurable global + override per-run en V2.
-- **Frecuencia del heartbeat para detectar crash**: 5s por defecto, recalibrar si hace ruido en la UI.
-- **Tamaño del knowledge.md**: queda como hard limit ~2k tokens (vía prompt). Si en runs grandes esto sufre, agregar compresión secundaria.
+- **How to bundle the 7 default prompts**: `include_str!` in Rust vs Tauri resources vs files copied by Vite to `dist/`. The decision is made when preparing the initial seed commit.
+- **Exact default of the per-agent timeout**: 300s seems reasonable, but it could be adjusted based on the model (opus takes longer than haiku). Configurable globally + per-run override in V2.
+- **Heartbeat frequency to detect a crash**: 5s by default, recalibrate if it adds UI noise.
+- **`knowledge.md` size**: stays as hard limit ~2k tokens (via prompt). If large runs suffer from this, add secondary compression.

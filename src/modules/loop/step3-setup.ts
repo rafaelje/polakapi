@@ -1,28 +1,28 @@
-// Paso 3 del flow agéntico: setup unificado del run.
+// Step 3 of the agentic flow: unified run setup.
 //
-// El paso 3 reúne en una sola vista todas las decisiones previas al ejecutar
-// el run: modo (secuencial/híbrido), perfil cargado, los 7 prompts editables
-// con CLI/modelo por agente, validación de slots, y la fila de config
-// (retries, budget, on-fail). Apunta a que el usuario tenga visible toda la
-// configuración antes de pulsar "▶ ejecutar run" (que esta Section 6 deja
-// armado pero no lo conecta al engine — Section 7+ lo arma).
+// Step 3 gathers in a single view all the decisions prior to running:
+// mode (sequential/hybrid), loaded profile, the 7 editable prompts with
+// CLI/model per agent, slot validation, and the config row
+// (retries, budget, on-fail). It aims to give the user visibility of all
+// configuration before pressing "▶ run" (which Section 6 wires up but
+// does not connect to the engine — Section 7+ wires it).
 //
-// Diseño general (alineado con design.md, decisión #10 "UI inline en el setup
-// del Paso 3, no settings separado"):
-// - Sidebar de los 7 prompts: 2 pre-fases (problem-intake / phase-decomposition)
-//   informativos + 5 agentes (analysis / implementation / review / knowledge /
-//   integration) con dropdowns de CLI/modelo y validación.
-// - Panel principal: textarea del prompt seleccionado, botones "↑ resetear a
-//   global" / "↓ guardar como default global", dropdowns CLI/modelo (sólo para
-//   los 5 agentes), descripción de inputs/outputs.
-// - Detección viva de `default` vs `modificado` comparando el textarea contra
-//   el contenido del global.
-// - Validación al cargar perfil: invoca `loop_validate_cli_model` por slot;
-//   slots inválidos quedan en rojo y deshabilitan "▶ ejecutar run".
+// Overall design (aligned with design.md, decision #10 "Inline UI in the
+// Step 3 setup, not a separate settings page"):
+// - Sidebar of the 7 prompts: 2 pre-phase (problem-intake / phase-decomposition)
+//   informational + 5 agents (analysis / implementation / review / knowledge /
+//   integration) with CLI/model dropdowns and validation.
+// - Main panel: textarea of the selected prompt, "↑ reset to global" /
+//   "↓ save as global default" buttons, CLI/model dropdowns (only for
+//   the 5 agents), input/output description.
+// - Live detection of `default` vs `modified` by comparing the textarea
+//   against the global content.
+// - Validation when loading a profile: invokes `loop_validate_cli_model`
+//   per slot; invalid slots turn red and disable "▶ run".
 //
-// Sigue el patrón "vista imperativa con re-render por replaceChildren()" del
-// step1-chat / step2-phases. No introducimos framework. Expone
-// `mountStep3Setup(slot, ctx)` con `dispose()`.
+// Follows the "imperative view with re-render via replaceChildren()" pattern
+// of step1-chat / step2-phases. We don't introduce a framework. Exposes
+// `mountStep3Setup(slot, ctx)` with `dispose()`.
 
 import { invoke } from "@tauri-apps/api/core";
 
@@ -48,23 +48,23 @@ import type {
 } from "./state/types";
 
 // ---------------------------------------------------------------------------
-// Tipos
+// Types
 // ---------------------------------------------------------------------------
 
 export interface Step3Context {
-  /** Path absoluto del project activo. */
+  /** Absolute path of the active project. */
   projectPath: string;
-  /** Nombre legible del project (mostrado en la top bar). */
+  /** Readable name of the project (shown in the top bar). */
   projectName: string;
-  /** CLI sugerido del project (chip activo del workspace). */
+  /** Suggested CLI of the project (active chip from the workspace). */
   suggestedCli: string | null;
-  /** UUID del run actual. */
+  /** UUID of the current run. */
   runId: string;
   /**
-   * Callback cuando el usuario pulsa "▶ ejecutar run". Section 6 deja el botón
-   * armado y la validación funcionando; el wiring al scheduler vive en Section
-   * 7 (engine secuencial) — por ahora el callback es opcional, si no se pasa
-   * el botón muestra un mensaje "engine pendiente (Section 7+)".
+   * Callback when the user presses "▶ run". Section 6 leaves the button
+   * wired and validation working; the scheduler wiring lives in Section
+   * 7 (sequential engine) — for now the callback is optional; if not passed
+   * the button shows a message "engine pending (Section 7+)".
    */
   onExecuteRun?: (config: RunConfig) => void;
 }
@@ -73,27 +73,27 @@ export interface Step3Handle {
   dispose(): void;
 }
 
-/** Modo de ejecución del run. */
+/** Execution mode of the run. */
 export type RunMode = "sequential" | "hybrid";
 
 /**
- * Comportamiento al fallo. Read-only en esta iteración — design.md decisión #4
- * fija "cap del revisor en 3 con propagación de warning". Lo dejamos como
- * union para que Section 7 lo extienda sin tocar el shape.
+ * On-fail behavior. Read-only in this iteration — design.md decision #4
+ * fixes "reviewer cap of 3 with warning propagation". We keep it as a
+ * union so Section 7 can extend it without touching the shape.
  */
 export type OnFailBehavior = "propagate-warning";
 
 /**
- * Snapshot final que el botón "▶ ejecutar run" pasa al engine. Section 7
- * consume esto.
+ * Final snapshot the "▶ run" button passes to the engine. Section 7
+ * consumes this.
  */
 export interface RunConfig {
   mode: RunMode;
   matrix: ProfileMatrix;
   /**
-   * Override por prompt: para cada uno de los 7 prompts, contenido editado del
-   * run (vs. el copiado del global). Sólo los modificados aparecen acá —
-   * Section 7 usa el global por defecto.
+   * Override per prompt: for each of the 7 prompts, run-edited content
+   * (vs. the copy from the global). Only the modified ones appear here —
+   * Section 7 uses the global by default.
    */
   promptOverrides: Partial<Record<LoopPromptName, string>>;
   config: {
@@ -104,43 +104,43 @@ export interface RunConfig {
 
 type SlotValidation = CliValidation | { ok: null; reason: "pending" };
 
-/** Estado interno del setup. */
+/** Internal state of the setup. */
 interface Step3State {
-  /** Perfiles cargados desde `profiles.json`. */
+  /** Profiles loaded from `profiles.json`. */
   profiles: LoopProfile[];
-  /** Id del perfil cargado en la UI (null = "sin perfil — todo claude/opus-4-7"). */
+  /** Id of the profile loaded in the UI (null = "no profile — all claude/opus-4-7"). */
   loadedProfileId: LoopProfileId | null;
-  /** Matriz actual editable (independiente de `loadedProfileId` — se hidrata desde él al cargar). */
+  /** Current editable matrix (independent of `loadedProfileId` — hydrated from it on load). */
   matrix: ProfileMatrix;
-  /** Modo de ejecución elegido por el usuario. */
+  /** Execution mode chosen by the user. */
   mode: RunMode;
-  /** Prompt seleccionado en el sidebar. */
+  /** Prompt selected in the sidebar. */
   selectedPrompt: LoopPromptName;
   /**
-   * Buffers editables del textarea de prompt, indexados por nombre. Si la entrada
-   * existe, ese es el contenido en pantalla; si no, leemos del archivo del run y
-   * lo memoizamos acá.
+   * Editable buffers of the prompt textarea, indexed by name. If the entry
+   * exists, that is the content on screen; if not, we read from the run file
+   * and memoize it here.
    */
   promptBuffers: Map<LoopPromptName, string>;
-  /** Contenido de los globales en memoria, para comparar default vs modificado. */
+  /** Content of the globals in memory, to compare default vs modified. */
   globals: Map<LoopPromptName, string>;
-  /** Validaciones por slot (sólo aplica a los 5 agentes). */
+  /** Validations per slot (only applies to the 5 agents). */
   validations: Map<LoopAgentRole, SlotValidation>;
-  /** Config row. `maxRetries` y `onFail` son read-only por design. */
+  /** Config row. `maxRetries` and `onFail` are read-only by design. */
   config: {
     maxRetries: number;
     onFail: OnFailBehavior;
   };
-  /** Mensaje status mostrado en la top bar (ej. "perfil guardado", error). */
+  /** Status message shown in the top bar (e.g. "profile saved", error). */
   status: string | null;
-  /** Si se está validando, guardando o ejecutando, deshabilita controles. */
+  /** If we are validating, saving or running, disables controls. */
   busy: boolean;
-  /** Fases del run, leídas del 02-phases.md, para detectar "todo lineal". */
+  /** Run phases, read from 02-phases.md, to detect "all linear". */
   phases: Phase[];
 }
 
 // ---------------------------------------------------------------------------
-// Defaults y catálogos
+// Defaults and catalogs
 // ---------------------------------------------------------------------------
 
 const ALL_AGENT_ROLES: readonly LoopAgentRole[] = [
@@ -152,8 +152,8 @@ const ALL_AGENT_ROLES: readonly LoopAgentRole[] = [
 ] as const;
 
 /**
- * Mapeo prompt-name → rol del agente. Los 2 prompts pre-fase no tienen rol del
- * agente — devuelve null para esos.
+ * Mapping prompt-name → agent role. The 2 pre-phase prompts don't have
+ * an agent role — returns null for those.
  */
 function promptToRole(name: LoopPromptName): LoopAgentRole | null {
   switch (name) {
@@ -173,48 +173,48 @@ function promptToRole(name: LoopPromptName): LoopAgentRole | null {
   }
 }
 
-/** Descripción legible (input → output) por prompt. */
+/** Readable description (input → output) per prompt. */
 function promptBlurb(name: LoopPromptName): { title: string; io: string } {
   switch (name) {
     case "problem-intake.md":
       return {
-        title: "Problem intake (pre-fase 1)",
-        io: "input: chat con el usuario → output: 01-problem.md consolidado",
+        title: "Problem intake (pre-phase 1)",
+        io: "input: chat with the user → output: consolidated 01-problem.md",
       };
     case "phase-decomposition.md":
       return {
-        title: "Phase decomposition (pre-fase 2)",
-        io: "input: 01-problem.md → output: lista JSON de fases con dependsOn",
+        title: "Phase decomposition (pre-phase 2)",
+        io: "input: 01-problem.md → output: JSON list of phases with dependsOn",
       };
     case "analysis.md":
       return {
-        title: "Análisis (agente 1)",
-        io: "input: logic.md de la fase + knowledge previo → output: analysis.md",
+        title: "Analysis (agent 1)",
+        io: "input: phase logic.md + previous knowledge → output: analysis.md",
       };
     case "implementation.md":
       return {
-        title: "Implementación (agente 2)",
-        io: "input: analysis.md → output: cambios en el repo + impl.md (diff snapshot)",
+        title: "Implementation (agent 2)",
+        io: "input: analysis.md → output: repo changes + impl.md (diff snapshot)",
       };
     case "review.md":
       return {
-        title: "Revisor (agente 3, cap 3 reintentos)",
+        title: "Reviewer (agent 3, cap 3 retries)",
         io: "input: analysis.md + impl.md + diff → output: review.md (approved | needs-changes)",
       };
     case "knowledge.md":
       return {
-        title: "Conocimiento (agente 4)",
-        io: "input: outputs de la fase → output: knowledge.md (≤ 2k tokens)",
+        title: "Knowledge (agent 4)",
+        io: "input: phase outputs → output: knowledge.md (≤ 2k tokens)",
       };
     case "integration.md":
       return {
-        title: "Integrador (agente 5, sólo modo híbrido)",
-        io: "input: knowledge.md de cada fase del batch + diffs → output: knowledge consolidado del batch",
+        title: "Integrator (agent 5, hybrid mode only)",
+        io: "input: knowledge.md from each phase in the batch + diffs → output: consolidated batch knowledge",
       };
   }
 }
 
-/** Default por CLI cuando no hay perfil. Coincide con step1-chat / step2-phases. */
+/** Default per CLI when there is no profile. Matches step1-chat / step2-phases. */
 function defaultModelFor(cli: LoopCli): string {
   switch (cli) {
     case "claude":
@@ -253,21 +253,21 @@ export function mountStep3Setup(slot: HTMLElement, ctx: Step3Context): Step3Hand
     void handleAction(action);
   });
 
-  // Hidratación inicial: perfiles, globales, fases del run.
+  // Initial hydration: profiles, globals, run phases.
   void hydrate();
 
   async function hydrate(): Promise<void> {
     state.busy = true;
-    state.status = "cargando configuración…";
+    state.status = "loading configuration…";
     refs.refresh();
     try {
-      // Asegurar que el dir global de prompts exista (idempotente).
+      // Ensure the global prompts dir exists (idempotent).
       await invoke<string[]>("loop_ensure_prompts_dir").catch(() => []);
 
       const profilesState = await loadLoopProfiles();
       state.profiles = profilesState.profiles;
 
-      // Cargamos los 7 globales de una en paralelo — son archivos chicos.
+      // Load the 7 globals in parallel — they are small files.
       const globalsEntries = await Promise.all(
         LOOP_PROMPT_NAMES.map(async (name) => {
           try {
@@ -280,7 +280,7 @@ export function mountStep3Setup(slot: HTMLElement, ctx: Step3Context): Step3Hand
       );
       state.globals = new Map(globalsEntries);
 
-      // Fases del run para la detección "hybrid ≡ sequential".
+      // Run phases for the "hybrid ≡ sequential" detection.
       try {
         const manifest = await invoke<string>("loop_read_run_file", {
           projectPath: ctx.projectPath,
@@ -294,12 +294,12 @@ export function mountStep3Setup(slot: HTMLElement, ctx: Step3Context): Step3Hand
 
       state.status = null;
     } catch (err) {
-      state.status = `error cargando: ${stringifyError(err)}`;
+      state.status = `error loading: ${stringifyError(err)}`;
     } finally {
       state.busy = false;
       refs.refresh();
-      // Disparamos validación de los slots por default — pueden ser CLI/modelo
-      // inválidos aunque el usuario no haya cargado un perfil.
+      // Trigger default slot validation — they can be invalid CLI/model
+      // even if the user hasn't loaded a profile.
       void validateAllSlots();
     }
   }
@@ -333,7 +333,7 @@ export function mountStep3Setup(slot: HTMLElement, ctx: Step3Context): Step3Hand
         return;
       case "set-prompt-buffer":
         state.promptBuffers.set(action.name, action.value);
-        // Re-render para actualizar el badge default/modificado del sidebar.
+        // Re-render to update the default/modified badge in the sidebar.
         refs.refresh();
         return;
       case "reset-to-global": {
@@ -359,14 +359,14 @@ export function mountStep3Setup(slot: HTMLElement, ctx: Step3Context): Step3Hand
       const p = state.profiles.find((x) => x.id === id);
       if (p) state.matrix = clone(p.matrix);
     }
-    state.status = id ? "perfil cargado" : "sin perfil — defaults";
+    state.status = id ? "profile loaded" : "no profile — defaults";
     refs.refresh();
     void validateAllSlots();
   }
 
   async function saveProfile(): Promise<void> {
     if (state.loadedProfileId === null) {
-      state.status = "no hay perfil cargado — usá 'guardar como…'";
+      state.status = "no profile loaded — use 'save as…'";
       refs.refresh();
       return;
     }
@@ -377,9 +377,9 @@ export function mountStep3Setup(slot: HTMLElement, ctx: Step3Context): Step3Hand
         p.id === state.loadedProfileId ? { ...p, matrix: clone(state.matrix) } : p,
       );
       await persistProfiles();
-      state.status = "perfil guardado";
+      state.status = "profile saved";
     } catch (err) {
-      state.status = `error guardando perfil: ${stringifyError(err)}`;
+      state.status = `error saving profile: ${stringifyError(err)}`;
     } finally {
       state.busy = false;
       refs.refresh();
@@ -389,7 +389,7 @@ export function mountStep3Setup(slot: HTMLElement, ctx: Step3Context): Step3Hand
   async function saveProfileAs(name: string): Promise<void> {
     const trimmed = name.trim();
     if (!trimmed) {
-      state.status = "el perfil necesita un nombre";
+      state.status = "the profile needs a name";
       refs.refresh();
       return;
     }
@@ -406,7 +406,7 @@ export function mountStep3Setup(slot: HTMLElement, ctx: Step3Context): Step3Hand
       state.profiles = [...state.profiles, newProfile];
       state.loadedProfileId = id;
       await persistProfiles();
-      state.status = `perfil "${trimmed}" guardado`;
+      state.status = `profile "${trimmed}" saved`;
     } catch (err) {
       state.status = `error: ${stringifyError(err)}`;
     } finally {
@@ -421,34 +421,34 @@ export function mountStep3Setup(slot: HTMLElement, ctx: Step3Context): Step3Hand
       schemaVersion: 1,
     };
     queueSaveLoopProfiles(payload);
-    // Forzamos flush antes de que el toast diga "guardado" para que el usuario
-    // no se sorprenda con un perfil que no aparece si cierra rápido. El debounce
-    // del store ya cubre el caso de ráfagas; acá pedimos confirmación.
+    // Force flush before the toast says "saved" so the user doesn't get
+    // surprised by a profile that doesn't appear if they close quickly.
+    // The store's debounce already covers bursts; here we ask for confirmation.
     await flushSaveLoopProfiles();
   }
 
   function loadPromptBufferIfNeeded(name: LoopPromptName): void {
     if (state.promptBuffers.has(name)) return;
-    // Intentamos leer el override del run; si no existe, caemos al global.
-    // El override del run para los prompts vive en `<run>/prompts/<name>` —
-    // pero `loop_read_run_file` no expone los archivos de prompts (allowlist
-    // restringida). En su lugar, leemos directamente con un read del global —
-    // los buffers del run aún no se editan en step3 (Section 7 lo extiende si
-    // hace falta). Mientras tanto, el buffer arranca igual al global.
+    // Try to read the run override; if it doesn't exist, fall back to global.
+    // The run override for prompts lives at `<run>/prompts/<name>` —
+    // but `loop_read_run_file` doesn't expose the prompt files (restricted
+    // allowlist). Instead, we read directly from the global —
+    // run buffers aren't yet edited in step3 (Section 7 extends this if
+    // needed). In the meantime, the buffer starts equal to the global.
     state.promptBuffers.set(name, state.globals.get(name) ?? "");
   }
 
   async function promoteToGlobal(name: LoopPromptName): Promise<void> {
     const content = state.promptBuffers.get(name) ?? "";
     state.busy = true;
-    state.status = "guardando como default global…";
+    state.status = "saving as global default…";
     refs.refresh();
     try {
       await invoke<void>("loop_write_global_prompt", { name, content });
       state.globals.set(name, content);
-      state.status = `${name} promovido a default global`;
+      state.status = `${name} promoted to global default`;
     } catch (err) {
-      state.status = `error promoviendo: ${stringifyError(err)}`;
+      state.status = `error promoting: ${stringifyError(err)}`;
     } finally {
       state.busy = false;
       refs.refresh();
@@ -477,7 +477,7 @@ export function mountStep3Setup(slot: HTMLElement, ctx: Step3Context): Step3Hand
 
   function executeRun(): void {
     if (!canExecute(state)) {
-      state.status = "hay slots inválidos — corregilos antes de ejecutar";
+      state.status = "there are invalid slots — fix them before running";
       refs.refresh();
       return;
     }
@@ -498,8 +498,8 @@ export function mountStep3Setup(slot: HTMLElement, ctx: Step3Context): Step3Hand
     if (ctx.onExecuteRun) {
       ctx.onExecuteRun(config);
     } else {
-      // Section 7+ va a pasar el callback. Mientras, dejamos feedback claro.
-      state.status = "engine pendiente — Section 7 conecta el run scheduler";
+      // Section 7+ will pass the callback. Meanwhile, leave clear feedback.
+      state.status = "engine pending — Section 7 wires the run scheduler";
       refs.refresh();
     }
   }
@@ -512,7 +512,7 @@ export function mountStep3Setup(slot: HTMLElement, ctx: Step3Context): Step3Hand
 }
 
 // ---------------------------------------------------------------------------
-// Acciones
+// Actions
 // ---------------------------------------------------------------------------
 
 type Step3Action =
@@ -528,7 +528,7 @@ type Step3Action =
   | { kind: "execute" };
 
 // ---------------------------------------------------------------------------
-// Vista
+// View
 // ---------------------------------------------------------------------------
 
 interface ViewRefs {
@@ -567,15 +567,15 @@ function render(
   }
 
   function refreshValidationsOnly(): void {
-    // Re-renderiza el sidebar (donde se muestran los badges de validación) y la
-    // fila del footer (donde el botón ▶ depende de la validación). Evitamos
-    // re-renderizar el textarea para no perder el caret.
+    // Re-renders the sidebar (where validation badges are shown) and the
+    // footer row (where the ▶ button depends on validation). We avoid
+    // re-rendering the textarea to not lose the caret.
     const sidebar = root.querySelector(".loop-step3-sidebar");
     if (sidebar) sidebar.replaceWith(renderSidebar());
     const footer = root.querySelector(".loop-step3-footer");
     if (footer) footer.replaceWith(renderFooter());
-    // El panel principal del agente también muestra los dropdowns de CLI/modelo
-    // con borde rojo cuando la validación falla.
+    // The agent main panel also shows the CLI/model dropdowns with a red
+    // border when validation fails.
     const mainSlot = root.querySelector(".loop-step3-main-validation");
     if (mainSlot) mainSlot.replaceWith(renderMainValidationRow(state.selectedPrompt));
   }
@@ -607,7 +607,7 @@ function render(
     sep.textContent = "·";
     const cli = document.createElement("span");
     cli.className = "loop-step3-topbar-cli";
-    cli.textContent = ctx.suggestedCli ? `CLI sugerido: ${ctx.suggestedCli}` : "sin CLI sugerido";
+    cli.textContent = ctx.suggestedCli ? `suggested CLI: ${ctx.suggestedCli}` : "no suggested CLI";
     left.append(proj, sep, cli);
 
     const center = document.createElement("div");
@@ -636,7 +636,7 @@ function render(
 
     const lbl = document.createElement("span");
     lbl.className = "loop-step3-mode-label";
-    lbl.textContent = "modo";
+    lbl.textContent = "mode";
 
     const group = document.createElement("div");
     group.className = "loop-step3-mode-group";
@@ -645,22 +645,22 @@ function render(
       btn.type = "button";
       btn.className = "loop-step3-mode-btn";
       if (mode === state.mode) btn.classList.add("loop-step3-mode-btn-active");
-      btn.textContent = mode === "sequential" ? "secuencial" : "híbrido";
+      btn.textContent = mode === "sequential" ? "sequential" : "hybrid";
       btn.disabled = state.busy;
       on(btn, "click", () => dispatch({ kind: "set-mode", mode }));
       group.appendChild(btn);
     }
     wrap.append(lbl, group);
 
-    // Detección "modo paralelo equivalente a secuencial" — cuando todas las
-    // fases están en lanes de 1, el híbrido degrada al secuencial. La aviso
-    // como hint cuando el usuario eligió híbrido.
+    // "Parallel mode equivalent to sequential" detection — when all
+    // phases are in lanes of 1, hybrid degrades to sequential. We show it
+    // as a hint when the user chose hybrid.
     if (state.mode === "hybrid" && state.phases.length > 0) {
       const batches = topologicalBatches(state.phases);
       if (batches && batches.every((b) => b.length === 1)) {
         const hint = document.createElement("span");
         hint.className = "loop-step3-mode-hint";
-        hint.textContent = "(híbrido ≡ secuencial: DAG lineal)";
+        hint.textContent = "(hybrid ≡ sequential: linear DAG)";
         wrap.appendChild(hint);
       }
     }
@@ -674,21 +674,21 @@ function render(
 
     const lbl = document.createElement("span");
     lbl.className = "loop-step3-profile-label";
-    lbl.textContent = "perfil";
+    lbl.textContent = "profile";
 
     const sel = document.createElement("select");
     sel.className = "loop-step3-profile-select";
     sel.disabled = state.busy;
-    sel.setAttribute("aria-label", "perfil de matriz CLI/modelo");
+    sel.setAttribute("aria-label", "CLI/model matrix profile");
     const optNone = document.createElement("option");
     optNone.value = "";
-    // Section 10.4 — empty state cuando no hay perfiles guardados. El hint
-    // dentro del placeholder le dice al usuario que puede crear el primer
-    // perfil con "guardar como…".
+    // Section 10.4 — empty state when there are no saved profiles. The hint
+    // inside the placeholder tells the user they can create the first
+    // profile with "save as…".
     optNone.textContent =
       state.profiles.length === 0
-        ? "— sin perfiles guardados (usá 'guardar como…') —"
-        : "— sin perfil (defaults) —";
+        ? "— no saved profiles (use 'save as…') —"
+        : "— no profile (defaults) —";
     if (state.loadedProfileId === null) optNone.selected = true;
     sel.appendChild(optNone);
     for (const p of state.profiles) {
@@ -707,29 +707,29 @@ function render(
     const save = document.createElement("button");
     save.type = "button";
     save.className = "loop-btn loop-btn-ghost";
-    save.textContent = "guardar";
+    save.textContent = "save";
     save.disabled = state.busy || state.loadedProfileId === null;
     save.title =
       state.loadedProfileId === null
-        ? "Cargá un perfil primero o usá 'guardar como…'"
-        : "Pisa el perfil cargado con la matriz actual";
+        ? "Load a profile first or use 'save as…'"
+        : "Overwrites the loaded profile with the current matrix";
     on(save, "click", () => dispatch({ kind: "save-profile" }));
 
     const saveAs = document.createElement("button");
     saveAs.type = "button";
     saveAs.className = "loop-btn loop-btn-ghost";
-    saveAs.textContent = "guardar como…";
+    saveAs.textContent = "save as…";
     saveAs.disabled = state.busy;
     on(saveAs, "click", () => {
-      // Section 10.2 — reemplaza window.prompt por el modal estilizado del
-      // shared/ui. El modal usa Enter para confirmar y Esc para cancelar.
+      // Section 10.2 — replaces window.prompt with the styled modal from
+      // shared/ui. The modal uses Enter to confirm and Esc to cancel.
       void (async () => {
         const name = await promptModal({
-          title: "Guardar perfil",
-          message: "Nombre del perfil (se guarda en profiles.json, local a esta máquina).",
-          placeholder: "ej. claude-only",
-          confirmLabel: "guardar",
-          cancelLabel: "cancelar",
+          title: "Save profile",
+          message: "Profile name (saved in profiles.json, local to this machine).",
+          placeholder: "e.g. claude-only",
+          confirmLabel: "save",
+          cancelLabel: "cancel",
         });
         if (name !== null) dispatch({ kind: "save-profile-as", name });
       })();
@@ -756,25 +756,25 @@ function render(
 
     const head = document.createElement("div");
     head.className = "loop-step3-sidebar-head";
-    head.textContent = "Prompts del run";
+    head.textContent = "Run prompts";
     aside.appendChild(head);
 
     const list = document.createElement("ul");
     list.className = "loop-step3-prompt-list";
 
-    // Grupo: pre-fases (2)
+    // Group: pre-phases (2)
     const preHeading = document.createElement("li");
     preHeading.className = "loop-step3-prompt-section";
-    preHeading.textContent = "Pre-fases";
+    preHeading.textContent = "Pre-phases";
     list.appendChild(preHeading);
     for (const name of LOOP_PROMPT_NAMES.slice(0, 2)) {
       list.appendChild(renderPromptItem(name));
     }
 
-    // Grupo: agentes (5)
+    // Group: agents (5)
     const agentHeading = document.createElement("li");
     agentHeading.className = "loop-step3-prompt-section";
-    agentHeading.textContent = "Agentes del Paso 3";
+    agentHeading.textContent = "Step 3 agents";
     list.appendChild(agentHeading);
     for (const name of LOOP_PROMPT_NAMES.slice(2)) {
       list.appendChild(renderPromptItem(name));
@@ -807,7 +807,7 @@ function render(
     const modified = isPromptModified(state, name);
     if (modified) {
       badge.classList.add("loop-step3-prompt-badge-modified");
-      badge.textContent = "modificado";
+      badge.textContent = "modified";
     } else {
       badge.classList.add("loop-step3-prompt-badge-default");
       badge.textContent = "default";
@@ -816,7 +816,7 @@ function render(
 
     btn.appendChild(titleRow);
 
-    // Línea inferior: CLI/modelo (sólo para agentes) + tilde de validación.
+    // Bottom line: CLI/model (only for agents) + validation tick.
     const role = promptToRole(name);
     if (role) {
       const meta = document.createElement("div");
@@ -832,16 +832,16 @@ function render(
       dot.className = "loop-step3-prompt-dot";
       if (!v) {
         dot.classList.add("loop-step3-prompt-dot-unknown");
-        dot.title = "sin validar";
+        dot.title = "not validated";
       } else if ("ok" in v && v.ok === null) {
         dot.classList.add("loop-step3-prompt-dot-pending");
-        dot.title = "validando…";
+        dot.title = "validating…";
       } else if (v.ok === true) {
         dot.classList.add("loop-step3-prompt-dot-ok");
-        dot.title = "CLI y modelo válidos";
+        dot.title = "CLI and model valid";
       } else {
         dot.classList.add("loop-step3-prompt-dot-error");
-        dot.title = v.reason ?? "inválido";
+        dot.title = v.reason ?? "invalid";
       }
       meta.appendChild(dot);
       btn.appendChild(meta);
@@ -850,7 +850,7 @@ function render(
       meta.className = "loop-step3-prompt-meta";
       const text = document.createElement("span");
       text.className = "loop-step3-prompt-cli loop-step3-prompt-cli-muted";
-      text.textContent = "(usado en el paso 1/2)";
+      text.textContent = "(used in step 1/2)";
       meta.appendChild(text);
       btn.appendChild(meta);
     }
@@ -893,8 +893,8 @@ function render(
   }
 
   /**
-   * Dropdowns CLI/modelo + marca roja si la validación falló. Para los prompts
-   * pre-fase (que no tienen rol del agente) se muestra una nota explicativa.
+   * CLI/model dropdowns + red mark if validation failed. For pre-phase
+   * prompts (which don't have an agent role) we show an explanatory note.
    */
   function renderMainValidationRow(name: LoopPromptName): HTMLElement {
     const row = document.createElement("div");
@@ -906,8 +906,8 @@ function render(
       note.className = "loop-step3-main-validation-note";
       note.textContent =
         name === "problem-intake.md"
-          ? "El CLI/modelo del intake se elige en el Paso 1. Acá sólo editás el prompt del agente."
-          : "El CLI/modelo de la descomposición se elige en el Paso 2. Acá sólo editás el prompt del agente.";
+          ? "The intake CLI/model is chosen in Step 1. Here you only edit the agent prompt."
+          : "The decomposition CLI/model is chosen in Step 2. Here you only edit the agent prompt.";
       row.appendChild(note);
       return row;
     }
@@ -934,8 +934,8 @@ function render(
     }
     on(cliSel, "change", () => {
       const nextCli = cliSel.value as LoopCli;
-      // Cuando se cambia el CLI, reseteamos el modelo al default del nuevo CLI
-      // para no quedar con `opus-4-7` apuntando a codex (que no lo conoce).
+      // When the CLI changes, we reset the model to the default of the new CLI
+      // to avoid leaving `opus-4-7` pointing at codex (which doesn't know it).
       const nextModel = slot.cli === nextCli ? slot.model : defaultModelFor(nextCli);
       dispatch({
         kind: "set-slot",
@@ -950,7 +950,7 @@ function render(
     modelWrap.className = "loop-step3-main-field";
     const modelLbl = document.createElement("span");
     modelLbl.className = "loop-step3-main-field-label";
-    modelLbl.textContent = "modelo";
+    modelLbl.textContent = "model";
     const modelInput = document.createElement("input");
     modelInput.type = "text";
     modelInput.className = "loop-step3-main-field-input";
@@ -972,12 +972,12 @@ function render(
     if (failed) {
       const err = document.createElement("span");
       err.className = "loop-step3-main-validation-error";
-      err.textContent = v?.reason ?? "inválido";
+      err.textContent = v?.reason ?? "invalid";
       row.appendChild(err);
     } else if (v && "ok" in v && v.ok === null) {
       const pending = document.createElement("span");
       pending.className = "loop-step3-main-validation-pending";
-      pending.textContent = "validando…";
+      pending.textContent = "validating…";
       row.appendChild(pending);
     } else if (v && "ok" in v && v.ok === true) {
       const okEl = document.createElement("span");
@@ -998,15 +998,15 @@ function render(
     ta.spellcheck = false;
     ta.value = content;
     ta.disabled = state.busy;
-    ta.placeholder = "Contenido del prompt (markdown). Cmd+S para promover a global.";
-    ta.setAttribute("aria-label", `editor del prompt ${name} — Cmd+S guarda como default global`);
+    ta.placeholder = "Prompt content (markdown). Cmd+S to promote to global.";
+    ta.setAttribute("aria-label", `editor for prompt ${name} — Cmd+S saves as global default`);
     on(ta, "input", () => {
       dispatch({ kind: "set-prompt-buffer", name, value: ta.value });
     });
-    // Section 10.3 — Cmd+S promueve el buffer actual al global. Si no hay
-    // cambios respecto al global, el dispatch es no-op (promote-to-global
-    // detecta el caso). Mantenemos el evento sólo dentro del textarea para no
-    // chocar con otros editores del módulo.
+    // Section 10.3 — Cmd+S promotes the current buffer to global. If there
+    // are no changes vs. global, the dispatch is a no-op (promote-to-global
+    // detects the case). We keep the event scoped to the textarea so it
+    // doesn't clash with other editors in the module.
     on(ta, "keydown", (e: KeyboardEvent) => {
       if (e.key === "s" && (e.metaKey || e.ctrlKey)) {
         e.preventDefault();
@@ -1025,17 +1025,17 @@ function render(
     const reset = document.createElement("button");
     reset.type = "button";
     reset.className = "loop-btn loop-btn-ghost";
-    reset.textContent = "↑ resetear a global";
+    reset.textContent = "↑ reset to global";
     reset.disabled = state.busy || !isPromptModified(state, name);
-    reset.title = "Descarta cambios en este run y vuelve al contenido del global";
+    reset.title = "Discards changes in this run and returns to the global content";
     on(reset, "click", () => dispatch({ kind: "reset-to-global", name }));
 
     const promote = document.createElement("button");
     promote.type = "button";
     promote.className = "loop-btn loop-btn-ghost";
-    promote.textContent = "↓ guardar como default global";
+    promote.textContent = "↓ save as global default";
     promote.disabled = state.busy || !isPromptModified(state, name);
-    promote.title = "Pisa el global con el contenido actual — afecta a runs futuros";
+    promote.title = "Overwrites the global with the current content — affects future runs";
     on(promote, "click", () => dispatch({ kind: "promote-to-global", name }));
 
     bar.append(reset, promote);
@@ -1065,7 +1065,7 @@ function render(
     retriesInput.readOnly = true;
     retriesInput.disabled = true;
     retriesInput.className = "loop-step3-config-input loop-step3-config-input-readonly";
-    retriesInput.title = "design.md decisión #4: cap fijo en 3 con warning propagado";
+    retriesInput.title = "design.md decision #4: fixed cap of 3 with propagated warning";
     retriesWrap.append(retriesLbl, retriesInput);
 
     // on-fail (read-only)
@@ -1073,14 +1073,14 @@ function render(
     onFailWrap.className = "loop-step3-config-field";
     const onFailLbl = document.createElement("span");
     onFailLbl.className = "loop-step3-config-label";
-    onFailLbl.textContent = "al fallo";
+    onFailLbl.textContent = "on fail";
     const onFailInput = document.createElement("input");
     onFailInput.type = "text";
-    onFailInput.value = "propagar warning";
+    onFailInput.value = "propagate warning";
     onFailInput.readOnly = true;
     onFailInput.disabled = true;
     onFailInput.className = "loop-step3-config-input loop-step3-config-input-readonly";
-    onFailInput.title = "design.md decisión #4: propagar warning al knowledge";
+    onFailInput.title = "design.md decision #4: propagate warning to knowledge";
     onFailWrap.append(onFailLbl, onFailInput);
 
     config.append(retriesWrap, onFailWrap);
@@ -1092,13 +1092,13 @@ function render(
     exec.disabled = !allowed;
     const invalid = countInvalidSlots(state);
     if (invalid > 0) {
-      exec.title = `${invalid} slot(s) inválido(s) — corregilos antes de ejecutar`;
+      exec.title = `${invalid} invalid slot(s) — fix them before running`;
     } else if (state.busy) {
-      exec.title = "esperando que termine la validación";
+      exec.title = "waiting for validation to finish";
     } else {
-      exec.title = "Ejecuta el run con la configuración actual";
+      exec.title = "Runs the run with the current configuration";
     }
-    exec.textContent = "▶ ejecutar run";
+    exec.textContent = "▶ run";
     on(exec, "click", () => dispatch({ kind: "execute" }));
 
     f.append(config, exec);
@@ -1119,20 +1119,20 @@ function render(
 }
 
 // ---------------------------------------------------------------------------
-// Helpers puros (también exportados para tests futuros y Section 7)
+// Pure helpers (also exported for future tests and Section 7)
 // ---------------------------------------------------------------------------
 
-/** ¿El buffer del prompt difiere del global cargado en memoria? */
+/** Does the prompt buffer differ from the global loaded in memory? */
 export function isPromptModified(state: Step3State, name: LoopPromptName): boolean {
   const buf = state.promptBuffers.get(name);
-  if (buf === undefined) return false; // no fue cargado aún
+  if (buf === undefined) return false; // not loaded yet
   return buf !== (state.globals.get(name) ?? "");
 }
 
 /**
- * Si el modo es híbrido pero todas las fases caen en lanes de 1, el engine
- * degrada a secuencial. Esta función devuelve el modo "efectivo" que va a usar
- * el scheduler — Section 7+ debería respetarlo.
+ * If the mode is hybrid but all phases fall into lanes of 1, the engine
+ * degrades to sequential. This function returns the "effective" mode the
+ * scheduler will use — Section 7+ should respect it.
  */
 export function effectiveMode(state: Step3State): RunMode {
   if (state.mode !== "hybrid") return state.mode;
@@ -1142,7 +1142,7 @@ export function effectiveMode(state: Step3State): RunMode {
   return batches.every((b) => b.length === 1) ? "sequential" : "hybrid";
 }
 
-/** Cantidad de slots con validación fallida (excluyendo "pending"). */
+/** Number of slots with failed validation (excluding "pending"). */
 export function countInvalidSlots(state: Step3State): number {
   let n = 0;
   for (const role of ALL_AGENT_ROLES) {
@@ -1152,7 +1152,7 @@ export function countInvalidSlots(state: Step3State): number {
   return n;
 }
 
-/** ¿Está bien armado para ejecutar? Validaciones cargadas y todas ok. */
+/** Is the setup well-formed to run? Validations loaded and all ok. */
 export function canExecute(state: Step3State): boolean {
   if (state.busy) return false;
   if (state.phases.length === 0) return false;

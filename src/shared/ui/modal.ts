@@ -143,7 +143,7 @@ export function confirmModal(opts: ConfirmModalOptions): Promise<boolean> {
     const cancelBtn = document.createElement("button");
     cancelBtn.type = "button";
     cancelBtn.className = "modal-btn";
-    cancelBtn.textContent = opts.cancelLabel ?? "Cancelar";
+    cancelBtn.textContent = opts.cancelLabel ?? "Cancel";
 
     const confirmBtn = document.createElement("button");
     confirmBtn.type = "button";

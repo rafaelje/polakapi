@@ -22,18 +22,18 @@ async function main(): Promise<void> {
   const router = new LoopRouter();
   mountLoopChrome(root, router);
 
-  // Primer load — pinta el gate apenas resuelve. Cualquier error de IO se
-  // queda en estado "loading" porque el router sólo conmuta on success; en
-  // ese caso log a consola para debug.
+  // Initial load — paints the gate as soon as it resolves. Any IO error
+  // keeps it in "loading" state because the router only switches on success;
+  // in that case we log to console for debugging.
   try {
     await router.refresh();
   } catch (err) {
     console.error("loop.ts: initial refresh failed", err);
   }
 
-  // Refresh-on-focus: la ventana principal puede cambiar el activeProject
-  // mientras /loop está abierta. Al volver el foco a esta ventana, re-leemos
-  // el snapshot del store y reconciliamos el gate.
+  // Refresh-on-focus: the main window can change the activeProject while
+  // /loop is open. When focus returns to this window, we re-read the store
+  // snapshot and reconcile the gate.
   const win = getCurrentWindow();
   void win.onFocusChanged(({ payload: focused }) => {
     if (focused) {

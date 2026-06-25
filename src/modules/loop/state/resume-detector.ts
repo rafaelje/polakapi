@@ -1,37 +1,37 @@
-// Section 9 — detección de runs interrumpidos y helpers de resume.
+// Section 9 — detection of interrupted runs and resume helpers.
 //
-// Al abrir `/loop` sobre un project, el chrome llama `findInterruptedRun(...)`
-// para detectar si hay un run vivo con heartbeat viejo. Si lo hay, monta un
-// banner ("run interrumpido detectado · ¿retomar?") con dos acciones:
-//   - retomar: descarta outputs parciales, hidrata el scheduler con el state
-//     persistido, y arranca el ciclo desde el último agente incompleto.
-//   - archivar: mueve `<run>/` a `<project>/.loop/archived/<run>/` y vuelve a
-//     mostrar el flow normal (paso 1 vacío).
+// When opening `/loop` on a project, the chrome calls `findInterruptedRun(...)`
+// to detect whether there is a live run with a stale heartbeat. If there is,
+// it mounts a banner ("interrupted run detected · resume?") with two actions:
+//   - resume: discards partial outputs, hydrates the scheduler with the
+//     persisted state, and starts the cycle from the last incomplete agent.
+//   - archive: moves `<run>/` to `<project>/.loop/archived/<run>/` and shows
+//     the normal flow again (step 1 empty).
 //
-// El parseo/validación del state.json vive en `state-schema.ts`. Acá sólo
-// orquestamos la invocación de los comandos Tauri.
+// The parsing/validation of state.json lives in `state-schema.ts`. Here we
+// only orchestrate the Tauri command invocations.
 
 import { invoke } from "@tauri-apps/api/core";
 
 import { parsePersistedRunState, type PersistedRunState } from "./state-schema";
 
 /**
- * Resumen mínimo de un run interrumpido devuelto por
- * `loop_list_interrupted_runs`. Coincide con `InterruptedRun` en Rust (camelCase
+ * Minimal summary of an interrupted run returned by
+ * `loop_list_interrupted_runs`. Matches `InterruptedRun` in Rust (camelCase
  * via serde rename).
  */
 export interface InterruptedRunSummary {
   runId: string;
-  /** Epoch ms del último heartbeat persistido. 0 si nunca hubo. */
+  /** Epoch ms of the last persisted heartbeat. 0 if there was never one. */
   lastHeartbeat: number;
-  /** Edad del heartbeat en milisegundos al momento del scan. */
+  /** Heartbeat age in milliseconds at scan time. */
   ageMs: number;
 }
 
 /**
- * Resultado de cargar el state.json de un run interrumpido para el banner. Si
- * el JSON es inválido o no matchea el schema, devolvemos `null` — el caller
- * debe archivar el run en lugar de intentar retomarlo.
+ * Result of loading the state.json of an interrupted run for the banner. If
+ * the JSON is invalid or does not match the schema, we return `null` — the
+ * caller should archive the run instead of trying to resume it.
  */
 export interface InterruptedRunDetails {
   summary: InterruptedRunSummary;
@@ -39,10 +39,9 @@ export interface InterruptedRunDetails {
 }
 
 /**
- * Lista runs interrumpidos del project. Pasa al backend el threshold de
- * staleness en ms (default 15s = N×3 con N=5s, lo elige el Rust si no se
- * pasa). En tests se puede subir el threshold para forzar/desactivar la
- * detección.
+ * Lists interrupted runs of the project. Passes the staleness threshold in ms
+ * to the backend (default 15s = N×3 with N=5s; Rust picks if not passed). In
+ * tests the threshold can be raised to force/disable detection.
  */
 export async function listInterruptedRuns(
   projectPath: string,
@@ -55,8 +54,9 @@ export async function listInterruptedRuns(
 }
 
 /**
- * Lee + valida el `state.json` de un run para confirmar que es retomable.
- * Devuelve `null` si el JSON falta, no parsea, o no matchea el schema.
+ * Reads + validates the `state.json` of a run to confirm it is resumable.
+ * Returns `null` if the JSON is missing, fails to parse, or does not match
+ * the schema.
  */
 export async function loadInterruptedRunDetails(
   projectPath: string,
@@ -73,9 +73,9 @@ export async function loadInterruptedRunDetails(
 }
 
 /**
- * Descarta outputs parciales (archivos `<agent>.md` sin `<agent>.diff` companion)
- * de un run. Devuelve la lista de paths borrados — útil para mostrar al usuario
- * qué se descartó.
+ * Discards partial outputs (`<agent>.md` files without a `<agent>.diff`
+ * companion) of a run. Returns the list of deleted paths — useful for
+ * showing the user what was discarded.
  */
 export async function discardPartialOutputs(projectPath: string, runId: string): Promise<string[]> {
   return invoke<string[]>("loop_discard_partial_outputs", {
@@ -85,8 +85,8 @@ export async function discardPartialOutputs(projectPath: string, runId: string):
 }
 
 /**
- * Archiva un run interrumpido: mueve `<project>/.loop/runs/<id>/` a
- * `<project>/.loop/archived/<id>/`. Devuelve el path destino.
+ * Archives an interrupted run: moves `<project>/.loop/runs/<id>/` to
+ * `<project>/.loop/archived/<id>/`. Returns the destination path.
  */
 export async function archiveRun(projectPath: string, runId: string): Promise<string> {
   return invoke<string>("loop_archive_run", {
@@ -96,15 +96,15 @@ export async function archiveRun(projectPath: string, runId: string): Promise<st
 }
 
 /**
- * Decide la "primera etapa pendiente" desde un state hidratado. El scheduler
- * arranca su ciclo desde `currentPhaseIndex`, pero después de descartar
- * outputs parciales algunos stages "done" pueden quedar inconsistentes con el
- * disco — en ese caso conviene degradar el stage al primer `pending`.
+ * Decides the "first pending stage" from a hydrated state. The scheduler
+ * starts its cycle from `currentPhaseIndex`, but after discarding partial
+ * outputs some "done" stages may end up inconsistent with disk — in that
+ * case it is best to downgrade the stage to the first `pending`.
  *
- * Estrategia conservadora: si la etapa `currentStage` quedó en `running` al
- * momento del crash, la degradamos a `pending`. El scheduler la va a relanzar
- * cuando arranque el ciclo. Otros stages "done" se preservan (sus outputs ya
- * tienen su `.diff` companion, no fueron borrados).
+ * Conservative strategy: if the `currentStage` was left as `running` at the
+ * moment of the crash, we downgrade it to `pending`. The scheduler will
+ * re-launch it when the cycle starts. Other "done" stages are preserved
+ * (their outputs already have their `.diff` companion, they were not deleted).
  */
 export function rewindRunningStages(state: PersistedRunState): PersistedRunState {
   const phases = state.phases.map((p) => {
@@ -117,14 +117,14 @@ export function rewindRunningStages(state: PersistedRunState): PersistedRunState
       }
     }
     if (!downgraded) return p;
-    // Si bajamos algún stage a pending, la fase agregada vuelve a "pending"
-    // también — el scheduler la va a recomputar al terminar.
+    // If we downgraded any stage to pending, the aggregate phase goes back to
+    // "pending" too — the scheduler will recompute it on completion.
     return { ...p, stages, status: "pending" as const };
   });
-  // Integradores en `running` también vuelven a `pending`. Su knowledge.md
-  // parcial puede haber quedado en disco (no lo borramos porque
-  // `discard_partial_outputs` excluye el batches/ subdir), pero el scheduler
-  // lo va a sobrescribir cuando re-ejecute.
+  // Integrators in `running` also go back to `pending`. Their partial
+  // knowledge.md may have been left on disk (we don't delete it because
+  // `discard_partial_outputs` excludes the batches/ subdir), but the
+  // scheduler will overwrite it when it re-runs.
   const integrators = state.integrators.map((i) =>
     i.status === "running" ? { ...i, status: "pending" as const, message: undefined } : i,
   );
@@ -134,6 +134,6 @@ export function rewindRunningStages(state: PersistedRunState): PersistedRunState
     integrators,
     currentStage: null,
     status: "paused",
-    message: "run retomado desde un crash · iniciando reintento",
+    message: "run resumed from a crash · starting retry",
   };
 }
