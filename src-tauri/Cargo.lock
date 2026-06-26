@@ -2534,11 +2534,14 @@ dependencies = [
  "parking_lot",
  "portable-pty",
  "serde",
+ "serde_json",
  "tauri",
  "tauri-build",
  "tauri-plugin-dialog",
  "tauri-plugin-notification",
  "tauri-plugin-store",
+ "tempfile",
+ "tokio",
  "uuid",
 ]
 
@@ -3937,6 +3940,7 @@ dependencies = [
  "libc",
  "mio",
  "pin-project-lite",
+ "signal-hook-registry",
  "socket2",
  "tokio-macros",
  "windows-sys 0.61.2",

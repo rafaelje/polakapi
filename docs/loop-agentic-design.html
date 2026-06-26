@@ -1,0 +1,2924 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>/loop · diseño del proceso agéntico</title>
+    <style>
+      :root {
+        --bg: #0f1115;
+        --bg-2: #161922;
+        --bg-3: #1d2230;
+        --border: #2a3041;
+        --border-hi: #3a4358;
+        --text: #e6e8ee;
+        --muted: #8a93a6;
+        --accent: #7aa2ff;
+        --accent-2: #b48cff;
+        --ok: #6fcf97;
+        --warn: #f2c94c;
+        --danger: #eb5757;
+        --code-bg: #0b0d12;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font:
+          14px/1.55 ui-sans-serif,
+          system-ui,
+          -apple-system,
+          sans-serif;
+      }
+      body {
+        padding: 32px 28px 80px;
+        max-width: 1180px;
+        margin: 0 auto;
+      }
+      h1 {
+        font-size: 22px;
+        margin: 0 0 4px;
+        letter-spacing: -0.01em;
+      }
+      h2 {
+        font-size: 17px;
+        margin: 36px 0 12px;
+        padding-top: 18px;
+        border-top: 1px solid var(--border);
+        letter-spacing: -0.01em;
+      }
+      h3 {
+        font-size: 14px;
+        margin: 18px 0 8px;
+        color: var(--accent);
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+      }
+      p {
+        margin: 8px 0;
+        color: var(--text);
+      }
+      .sub {
+        color: var(--muted);
+        margin: 0 0 18px;
+      }
+      code,
+      pre,
+      .mono {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 12.5px;
+      }
+      code {
+        background: var(--code-bg);
+        padding: 1px 6px;
+        border-radius: 4px;
+        border: 1px solid var(--border);
+      }
+      pre {
+        background: var(--code-bg);
+        padding: 12px 14px;
+        border-radius: 6px;
+        border: 1px solid var(--border);
+        overflow-x: auto;
+      }
+      .grid {
+        display: grid;
+        gap: 14px;
+      }
+      .grid-2 {
+        grid-template-columns: 1fr 1fr;
+      }
+      .grid-3 {
+        grid-template-columns: repeat(3, 1fr);
+      }
+      @media (max-width: 880px) {
+        .grid-2,
+        .grid-3 {
+          grid-template-columns: 1fr;
+        }
+      }
+      .card {
+        background: var(--bg-2);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 14px 16px;
+      }
+      .card.hi {
+        border-color: var(--border-hi);
+      }
+      .pill {
+        display: inline-block;
+        font-size: 11px;
+        padding: 2px 8px;
+        border-radius: 999px;
+        background: var(--bg-3);
+        color: var(--muted);
+        border: 1px solid var(--border);
+        margin-right: 4px;
+        vertical-align: middle;
+      }
+      .pill.accent {
+        color: var(--accent);
+        border-color: #2c3a5a;
+        background: #131a2a;
+      }
+      .pill.warn {
+        color: var(--warn);
+        border-color: #4a3e1a;
+        background: #1d1a10;
+      }
+      .pill.ok {
+        color: var(--ok);
+        border-color: #1f3f2a;
+        background: #10201a;
+      }
+      .pill.danger {
+        color: var(--danger);
+        border-color: #4a1f24;
+        background: #1f1316;
+      }
+      ul,
+      ol {
+        margin: 6px 0 6px 18px;
+        padding: 0;
+      }
+      li {
+        margin: 4px 0;
+      }
+      .pipeline {
+        display: grid;
+        grid-template-columns: 1fr 28px 1fr 28px 1fr;
+        align-items: stretch;
+        gap: 0;
+        margin: 20px 0 8px;
+      }
+      .pipeline .step {
+        background: var(--bg-2);
+        border: 1px solid var(--border-hi);
+        border-radius: 8px;
+        padding: 12px 14px;
+      }
+      .pipeline .step .n {
+        color: var(--accent);
+        font-weight: 600;
+        font-size: 12px;
+        letter-spacing: 0.06em;
+      }
+      .pipeline .step .t {
+        font-size: 14px;
+        margin: 4px 0 2px;
+      }
+      .pipeline .step .d {
+        color: var(--muted);
+        font-size: 12.5px;
+      }
+      .pipeline .arrow {
+        align-self: center;
+        text-align: center;
+        color: var(--muted);
+        font-size: 18px;
+      }
+      .ascii {
+        background: var(--code-bg);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 12px 14px;
+        white-space: pre;
+        overflow-x: auto;
+        color: #cfd5e3;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 12px;
+        line-height: 1.5;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 8px 0;
+        font-size: 13px;
+      }
+      th,
+      td {
+        text-align: left;
+        padding: 8px 10px;
+        border-bottom: 1px solid var(--border);
+        vertical-align: top;
+      }
+      th {
+        color: var(--muted);
+        font-weight: 500;
+        font-size: 12px;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      }
+      .legend {
+        color: var(--muted);
+        font-size: 12px;
+        margin-top: 6px;
+      }
+      .danger-text {
+        color: var(--danger);
+      }
+      .warn-text {
+        color: var(--warn);
+      }
+      .ok-text {
+        color: var(--ok);
+      }
+      .accent-text {
+        color: var(--accent);
+      }
+      .open {
+        background: var(--bg-3);
+        border-left: 3px solid var(--accent-2);
+        padding: 10px 12px;
+        border-radius: 0 6px 6px 0;
+        margin: 8px 0;
+      }
+      .open .q {
+        color: var(--accent-2);
+        font-weight: 600;
+        font-size: 12px;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+      .open p {
+        margin: 4px 0 0;
+        color: var(--text);
+        font-size: 13.5px;
+      }
+      .small {
+        font-size: 12.5px;
+        color: var(--muted);
+      }
+
+      /* ============ MOCKUP STYLES ============ */
+      .mock {
+        background: #0c0e14;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        overflow: hidden;
+        margin: 14px 0 6px;
+        box-shadow: 0 8px 28px rgba(0, 0, 0, 0.35);
+      }
+      .mock-chrome {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 12px;
+        background: #15192240;
+        border-bottom: 1px solid var(--border);
+      }
+      .mock-dots {
+        display: flex;
+        gap: 6px;
+      }
+      .mock-dot {
+        width: 11px;
+        height: 11px;
+        border-radius: 50%;
+        background: #3d4254;
+      }
+      .mock-dot.r {
+        background: #eb5757;
+      }
+      .mock-dot.y {
+        background: #f2c94c;
+      }
+      .mock-dot.g {
+        background: #6fcf97;
+      }
+      .mock-title {
+        color: var(--muted);
+        font-size: 12px;
+        flex: 1;
+        text-align: center;
+        font-family: ui-monospace, monospace;
+      }
+      .mock-body {
+        padding: 16px;
+      }
+      .mock-caption {
+        text-align: center;
+        color: var(--muted);
+        font-size: 12px;
+        padding: 8px 12px;
+        border-top: 1px solid var(--border);
+        background: #15192230;
+      }
+
+      /* Step 1 mock: chat */
+      .m1-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 14px;
+        padding-bottom: 12px;
+        border-bottom: 1px solid var(--border);
+      }
+      .m1-title {
+        font-size: 15px;
+        font-weight: 600;
+      }
+      .m1-cli {
+        display: flex;
+        gap: 6px;
+        align-items: center;
+      }
+      .m1-chip {
+        font-size: 11px;
+        padding: 4px 10px;
+        border-radius: 6px;
+        background: var(--bg-3);
+        color: var(--muted);
+        border: 1px solid var(--border);
+        cursor: default;
+      }
+      .m1-chip.on {
+        background: #131a2a;
+        color: var(--accent);
+        border-color: #2c3a5a;
+      }
+      .m1-chat {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        max-height: 280px;
+        overflow-y: auto;
+        padding: 4px 2px;
+      }
+      .m1-msg {
+        display: flex;
+        gap: 10px;
+      }
+      .m1-avatar {
+        width: 26px;
+        height: 26px;
+        border-radius: 50%;
+        background: var(--bg-3);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 11px;
+        color: var(--muted);
+        flex-shrink: 0;
+        border: 1px solid var(--border);
+      }
+      .m1-msg.user .m1-avatar {
+        background: #1a2238;
+        color: var(--accent);
+        border-color: #2c3a5a;
+      }
+      .m1-bubble {
+        background: var(--bg-2);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 8px 12px;
+        font-size: 13px;
+        max-width: 78%;
+      }
+      .m1-msg.user .m1-bubble {
+        background: #131a2a;
+        border-color: #2c3a5a;
+      }
+      .m1-input-row {
+        display: flex;
+        gap: 8px;
+        margin-top: 14px;
+        padding-top: 14px;
+        border-top: 1px solid var(--border);
+      }
+      .m1-input {
+        flex: 1;
+        background: var(--bg-2);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 10px 12px;
+        color: var(--text);
+        font-size: 13px;
+      }
+      .m1-btn {
+        background: var(--accent);
+        color: #0a0e1a;
+        border: none;
+        border-radius: 6px;
+        padding: 8px 14px;
+        font-size: 13px;
+        font-weight: 600;
+        cursor: default;
+      }
+      .m1-btn.ghost {
+        background: transparent;
+        color: var(--muted);
+        border: 1px solid var(--border);
+      }
+      .m1-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+        margin-top: 12px;
+      }
+
+      /* Step 2 mock: sidebar + editor */
+      .m2-shell {
+        display: grid;
+        grid-template-columns: 240px 1fr;
+        gap: 0;
+        min-height: 420px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        overflow: hidden;
+      }
+      .m2-side {
+        background: #0d1019;
+        border-right: 1px solid var(--border);
+        padding: 12px 8px;
+      }
+      .m2-side-head {
+        font-size: 11px;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        padding: 4px 8px 8px;
+      }
+      .m2-phase {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 10px;
+        border-radius: 6px;
+        font-size: 13px;
+        cursor: default;
+      }
+      .m2-phase:hover {
+        background: var(--bg-2);
+      }
+      .m2-phase.on {
+        background: #131a2a;
+        color: var(--accent);
+      }
+      .m2-phase .num {
+        font-family: ui-monospace, monospace;
+        color: var(--muted);
+        font-size: 11px;
+        width: 18px;
+      }
+      .m2-phase.on .num {
+        color: var(--accent);
+      }
+      .m2-phase .icons {
+        margin-left: auto;
+        display: flex;
+        gap: 3px;
+      }
+      .m2-icon {
+        font-size: 10px;
+        padding: 1px 5px;
+        border-radius: 3px;
+        background: var(--bg-3);
+        color: var(--muted);
+        font-family: ui-monospace, monospace;
+      }
+      .m2-phase-row {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        padding: 8px 10px;
+        border-radius: 6px;
+        font-size: 13px;
+        cursor: default;
+      }
+      .m2-phase-row:hover {
+        background: var(--bg-2);
+      }
+      .m2-phase-row.on {
+        background: #131a2a;
+        color: var(--accent);
+      }
+      .m2-phase-row .top {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .m2-phase-row .num {
+        font-family: ui-monospace, monospace;
+        color: var(--muted);
+        font-size: 11px;
+        width: 18px;
+      }
+      .m2-phase-row.on .num {
+        color: var(--accent);
+      }
+      .m2-phase-row .icons {
+        margin-left: auto;
+        display: flex;
+        gap: 3px;
+      }
+      .m2-phase-row .deps {
+        font-size: 10.5px;
+        color: var(--muted);
+        padding-left: 26px;
+        font-family: ui-monospace, monospace;
+      }
+      .m2-phase-row .deps .none {
+        color: var(--ok);
+      }
+      .m2-phase-row .deps .dep-pill {
+        display: inline-block;
+        padding: 0 4px;
+        border-radius: 3px;
+        background: var(--bg-3);
+        margin-left: 2px;
+        color: var(--text);
+        border: 1px solid var(--border);
+      }
+
+      /* Topology DAG view */
+      .m2-topo-mock {
+        background: #0c0e14;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        overflow: hidden;
+        margin: 14px 0;
+      }
+      .m2-topo-body {
+        padding: 22px 26px;
+      }
+      .m2-topo-lanes {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 24px;
+        position: relative;
+      }
+      .m2-topo-lane-head {
+        font-size: 11px;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        margin-bottom: 12px;
+        text-align: center;
+      }
+      .m2-topo-lane-head.par {
+        color: var(--accent);
+      }
+      .m2-topo-lane {
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+        align-items: center;
+      }
+      .m2-topo-node {
+        background: var(--bg-2);
+        border: 1px solid var(--border-hi);
+        border-radius: 8px;
+        padding: 8px 12px;
+        min-width: 160px;
+        text-align: center;
+        font-size: 12px;
+        position: relative;
+      }
+      .m2-topo-node .nnum {
+        color: var(--muted);
+        font-family: ui-monospace, monospace;
+        font-size: 10.5px;
+      }
+      .m2-topo-node .nname {
+        color: var(--text);
+        font-size: 12.5px;
+        margin-top: 1px;
+      }
+      .m2-topo-node.par-batch {
+        border-color: #2c3a5a;
+        background: #131a2a;
+      }
+      .m2-topo-summary {
+        display: flex;
+        gap: 16px;
+        justify-content: center;
+        margin-top: 20px;
+        padding-top: 16px;
+        border-top: 1px solid var(--border);
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .m2-topo-summary strong {
+        color: var(--ok);
+      }
+      .m2-add {
+        font-size: 12px;
+        color: var(--muted);
+        padding: 8px 10px;
+        margin-top: 6px;
+        border-top: 1px solid var(--border);
+      }
+      .m2-main {
+        background: #0a0c12;
+        display: flex;
+        flex-direction: column;
+      }
+      .m2-tabs {
+        display: flex;
+        border-bottom: 1px solid var(--border);
+        background: #0d1019;
+      }
+      .m2-tab {
+        padding: 10px 16px;
+        font-size: 12px;
+        color: var(--muted);
+        border-right: 1px solid var(--border);
+        cursor: default;
+        font-family: ui-monospace, monospace;
+      }
+      .m2-tab.on {
+        background: #0a0c12;
+        color: var(--text);
+        border-bottom: 2px solid var(--accent);
+        margin-bottom: -1px;
+      }
+      .m2-tab .x {
+        margin-left: 8px;
+        opacity: 0.5;
+      }
+      .m2-toolbar {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 8px 14px;
+        border-bottom: 1px solid var(--border);
+      }
+      .m2-breadcrumb {
+        color: var(--muted);
+        font-size: 12px;
+        font-family: ui-monospace, monospace;
+      }
+      .m2-tools {
+        display: flex;
+        gap: 6px;
+      }
+      .m2-tool {
+        font-size: 11px;
+        padding: 4px 10px;
+        background: var(--bg-2);
+        border: 1px solid var(--border);
+        border-radius: 5px;
+        color: var(--text);
+        cursor: default;
+      }
+      .m2-tool.ai {
+        background: linear-gradient(135deg, #1d1830, #131a2a);
+        color: var(--accent-2);
+        border-color: #3a2c5a;
+      }
+      .m2-editor {
+        flex: 1;
+        padding: 14px 18px;
+        font-family: ui-monospace, monospace;
+        font-size: 12.5px;
+        color: #cfd5e3;
+        line-height: 1.6;
+        overflow: auto;
+      }
+      .m2-editor .ln {
+        color: #3a4358;
+        user-select: none;
+        margin-right: 14px;
+        display: inline-block;
+        width: 22px;
+        text-align: right;
+      }
+      .m2-editor h1,
+      .m2-editor h2 {
+        color: var(--accent);
+        margin: 6px 0;
+        font-family: ui-monospace, monospace;
+        font-size: 13px;
+      }
+      .m2-editor .h {
+        color: var(--accent);
+      }
+      .m2-editor .b {
+        color: var(--ok);
+      }
+      .m2-editor .c {
+        color: #647189;
+        font-style: italic;
+      }
+
+      /* Step 3 mocks: mode select + timelines */
+      .m3-projectbar {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 8px 12px;
+        background: var(--bg-3);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        margin-bottom: 14px;
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .m3-projectbar .lbl {
+        color: var(--muted);
+      }
+      .m3-projectbar .val {
+        color: var(--text);
+        font-family: ui-monospace, monospace;
+      }
+      .m3-projectbar .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--ok);
+      }
+      .m3-matrix {
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        overflow: hidden;
+        margin-bottom: 16px;
+        background: var(--bg-2);
+      }
+      .m3-matrix-head {
+        padding: 8px 12px;
+        background: #0d1019;
+        border-bottom: 1px solid var(--border);
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-size: 11px;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+      }
+      .m3-matrix-head .profile {
+        margin-left: auto;
+        padding: 3px 8px;
+        background: var(--bg-3);
+        border-radius: 4px;
+        color: var(--text);
+        font-family: ui-monospace, monospace;
+        text-transform: none;
+        letter-spacing: 0;
+      }
+      .m3-matrix-row {
+        display: grid;
+        grid-template-columns: 1.2fr 1fr 1fr 0.8fr;
+        padding: 9px 12px;
+        border-bottom: 1px solid var(--border);
+        font-size: 12.5px;
+        align-items: center;
+      }
+      .m3-matrix-row:last-child {
+        border-bottom: none;
+      }
+      .m3-matrix-row.cap {
+        font-size: 10.5px;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--muted);
+        background: #0d1019;
+        padding: 6px 12px;
+      }
+      .m3-matrix-row .role {
+        color: var(--text);
+      }
+      .m3-matrix-row .write {
+        font-size: 10px;
+        padding: 1px 6px;
+        border-radius: 3px;
+        background: var(--bg-3);
+        color: var(--muted);
+        margin-left: 6px;
+      }
+      .m3-matrix-row .write.yes {
+        background: #1f3f2a;
+        color: var(--ok);
+      }
+      .m3-matrix-row .write.no {
+        background: #1f1316;
+        color: var(--danger);
+      }
+      .m3-matrix-row .sel {
+        background: var(--bg-3);
+        padding: 4px 10px;
+        border-radius: 5px;
+        font-family: ui-monospace, monospace;
+        font-size: 11.5px;
+        color: var(--text);
+        cursor: default;
+        border: 1px solid var(--border);
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .m3-matrix-row .sel .caret {
+        color: var(--muted);
+        font-size: 9px;
+      }
+      .m3-modes {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 14px;
+        margin-bottom: 16px;
+      }
+      .m3-mode {
+        background: var(--bg-2);
+        border: 2px solid var(--border);
+        border-radius: 8px;
+        padding: 14px 16px;
+        cursor: default;
+      }
+      .m3-mode.on {
+        border-color: var(--accent);
+        background: #131a2a;
+      }
+      .m3-mode-head {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 14px;
+        font-weight: 600;
+        margin-bottom: 4px;
+      }
+      .m3-mode-head .dot {
+        width: 14px;
+        height: 14px;
+        border: 2px solid var(--muted);
+        border-radius: 50%;
+        flex-shrink: 0;
+      }
+      .m3-mode.on .m3-mode-head .dot {
+        border-color: var(--accent);
+        background: var(--accent);
+        box-shadow: inset 0 0 0 3px #131a2a;
+      }
+      .m3-mode .desc {
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .m3-config {
+        display: flex;
+        gap: 18px;
+        padding: 12px 14px;
+        background: var(--bg-2);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        margin-bottom: 16px;
+        font-size: 12px;
+      }
+      .m3-config label {
+        color: var(--muted);
+        display: block;
+        margin-bottom: 4px;
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+      }
+      .m3-config .val {
+        color: var(--text);
+        font-family: ui-monospace, monospace;
+      }
+      .m3-run-btn {
+        background: var(--ok);
+        color: #08110b;
+        border: none;
+        border-radius: 6px;
+        padding: 8px 16px;
+        font-size: 13px;
+        font-weight: 600;
+        cursor: default;
+        margin-left: auto;
+        align-self: center;
+      }
+
+      /* Sequential timeline */
+      .m3-timeline {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      .m3-phase {
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        overflow: hidden;
+        background: var(--bg-2);
+      }
+      .m3-phase-head {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 14px;
+        background: #0d1019;
+        border-bottom: 1px solid var(--border);
+      }
+      .m3-phase.done .m3-phase-head {
+        background: #10201a;
+      }
+      .m3-phase.active .m3-phase-head {
+        background: #131a2a;
+      }
+      .m3-phase-status {
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 11px;
+        flex-shrink: 0;
+      }
+      .m3-phase.done .m3-phase-status {
+        background: var(--ok);
+        color: #08110b;
+      }
+      .m3-phase.active .m3-phase-status {
+        background: var(--accent);
+        color: #0a0e1a;
+      }
+      .m3-phase.pending .m3-phase-status {
+        background: var(--bg-3);
+        color: var(--muted);
+        border: 1px solid var(--border);
+      }
+      .m3-phase-name {
+        font-size: 13px;
+        font-weight: 500;
+      }
+      .m3-phase-meta {
+        margin-left: auto;
+        font-size: 11px;
+        color: var(--muted);
+        font-family: ui-monospace, monospace;
+      }
+      .m3-agents {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 0;
+      }
+      .m3-agent {
+        padding: 10px 12px;
+        border-right: 1px solid var(--border);
+        font-size: 12px;
+      }
+      .m3-agent:last-child {
+        border-right: none;
+      }
+      .m3-agent-name {
+        color: var(--muted);
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        margin-bottom: 4px;
+      }
+      .m3-agent-state {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .m3-agent-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+      }
+      .m3-agent-dot.done {
+        background: var(--ok);
+      }
+      .m3-agent-dot.run {
+        background: var(--accent);
+        animation: pulse 1.5s infinite;
+      }
+      .m3-agent-dot.wait {
+        background: var(--bg-3);
+        border: 1px solid var(--border-hi);
+      }
+      .m3-agent-dot.retry {
+        background: var(--warn);
+      }
+      @keyframes pulse {
+        0%,
+        100% {
+          opacity: 1;
+        }
+        50% {
+          opacity: 0.4;
+        }
+      }
+      .m3-agent-label {
+        font-size: 12px;
+        color: var(--text);
+      }
+      .m3-agent-sub {
+        font-size: 10.5px;
+        color: var(--muted);
+        margin-top: 2px;
+        font-family: ui-monospace, monospace;
+      }
+      .m3-agent.retry {
+        background: #1d1a10;
+      }
+
+      /* Parallel grid */
+      .m3-parallel {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 10px;
+        margin-bottom: 14px;
+      }
+      .m3-pcard {
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--bg-2);
+        overflow: hidden;
+      }
+      .m3-pcard-head {
+        padding: 10px 12px;
+        background: #0d1019;
+        border-bottom: 1px solid var(--border);
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .m3-pcard-title {
+        font-size: 12px;
+        font-weight: 500;
+      }
+      .m3-pcard-body {
+        padding: 10px 12px;
+      }
+      .m3-pstep {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 4px 0;
+        font-size: 11.5px;
+      }
+      .m3-pstep .bar {
+        flex: 1;
+        height: 4px;
+        background: var(--bg-3);
+        border-radius: 2px;
+        overflow: hidden;
+        position: relative;
+      }
+      .m3-pstep .bar .fill {
+        position: absolute;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        background: var(--ok);
+      }
+      .m3-pstep.run .bar .fill {
+        background: var(--accent);
+      }
+      .m3-pstep.wait .bar .fill {
+        background: transparent;
+      }
+      .m3-pstep .lbl {
+        width: 70px;
+        color: var(--muted);
+        font-size: 10.5px;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+      }
+      .m3-pstep .pct {
+        width: 32px;
+        text-align: right;
+        font-family: ui-monospace, monospace;
+        font-size: 10.5px;
+        color: var(--muted);
+      }
+      .m3-integrator {
+        border: 1px solid var(--accent-2);
+        border-radius: 8px;
+        background: linear-gradient(135deg, #1a1428, #131a2a);
+        padding: 12px 14px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .m3-integrator-icon {
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        background: #2a1f4a;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--accent-2);
+        font-size: 14px;
+        flex-shrink: 0;
+      }
+      .m3-integrator-title {
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--accent-2);
+      }
+      .m3-integrator-sub {
+        font-size: 11.5px;
+        color: var(--muted);
+        margin-top: 2px;
+      }
+      .m3-batch {
+        margin-bottom: 14px;
+      }
+      .m3-batch-head {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--muted);
+        margin-bottom: 8px;
+        padding: 0 2px;
+      }
+      .m3-batch-head .label {
+        color: var(--accent);
+      }
+      .m3-batch-head .status {
+        margin-left: auto;
+        font-family: ui-monospace, monospace;
+        color: var(--muted);
+        text-transform: none;
+        letter-spacing: 0;
+        font-size: 11.5px;
+      }
+      .m3-batch.done .m3-batch-head .label {
+        color: var(--ok);
+      }
+      .m3-batch.pending .m3-batch-head .label {
+        color: var(--muted);
+      }
+      .m3-batch-cards {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 10px;
+      }
+      .m3-batch-int {
+        margin: 8px 0 14px;
+        padding: 10px 14px;
+        border-radius: 6px;
+        border-left: 3px solid var(--accent-2);
+        background: linear-gradient(90deg, #1a1428, transparent);
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-size: 12px;
+      }
+      .m3-batch-int.done {
+        border-left-color: var(--ok);
+        background: linear-gradient(90deg, #10201a, transparent);
+      }
+      .m3-batch-int .ic {
+        width: 20px;
+        height: 20px;
+        border-radius: 50%;
+        background: var(--bg-3);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 11px;
+        flex-shrink: 0;
+      }
+      .m3-batch-int.done .ic {
+        background: var(--ok);
+        color: #08110b;
+      }
+      .m3-batch-int .t {
+        color: var(--text);
+        font-weight: 500;
+      }
+      .m3-batch-int .s {
+        color: var(--muted);
+      }
+      .m3-warn-banner {
+        padding: 8px 12px;
+        border-radius: 6px;
+        background: #1d1a10;
+        border: 1px solid #4a3e1a;
+        color: var(--warn);
+        font-size: 12px;
+        margin-top: 8px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      /* Step 3 setup · unified agent + prompt editor */
+      .m3e-shell {
+        display: grid;
+        grid-template-columns: 260px 1fr;
+        min-height: 460px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        overflow: hidden;
+        background: var(--bg-2);
+        margin-bottom: 14px;
+      }
+      .m3e-side {
+        background: #0d1019;
+        border-right: 1px solid var(--border);
+        padding: 8px 6px;
+        overflow-y: auto;
+      }
+      .m3e-sec {
+        font-size: 10px;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        padding: 10px 8px 4px;
+      }
+      .m3e-agent {
+        padding: 8px 10px;
+        border-radius: 6px;
+        cursor: default;
+        margin-bottom: 2px;
+      }
+      .m3e-agent:hover {
+        background: var(--bg-2);
+      }
+      .m3e-agent.on {
+        background: #131a2a;
+      }
+      .m3e-agent .row1 {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 12.5px;
+      }
+      .m3e-agent.on .row1 {
+        color: var(--accent);
+      }
+      .m3e-agent .row1 .mod {
+        margin-left: auto;
+        font-size: 10px;
+        color: var(--muted);
+        padding: 1px 5px;
+        background: var(--bg-3);
+        border-radius: 3px;
+        font-family: ui-monospace, monospace;
+      }
+      .m3e-agent.on .row1 .mod {
+        background: #1a2238;
+        color: var(--accent);
+      }
+      .m3e-agent .row2 {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin-top: 2px;
+        font-size: 10.5px;
+        color: var(--muted);
+        font-family: ui-monospace, monospace;
+        padding-left: 0;
+      }
+      .m3e-agent .badge {
+        font-size: 9.5px;
+        padding: 0 5px;
+        border-radius: 3px;
+      }
+      .m3e-agent .badge.mod {
+        background: #1d1a10;
+        color: var(--warn);
+        border: 1px solid #4a3e1a;
+      }
+      .m3e-agent .badge.def {
+        color: var(--muted);
+      }
+
+      .m3e-main {
+        display: flex;
+        flex-direction: column;
+        background: #0a0c12;
+      }
+      .m3e-toolbar {
+        padding: 12px 16px;
+        border-bottom: 1px solid var(--border);
+      }
+      .m3e-toolbar .role-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 10px;
+      }
+      .m3e-toolbar .role-name {
+        font-size: 14px;
+        font-weight: 600;
+        color: var(--text);
+      }
+      .m3e-toolbar .role-sub {
+        font-size: 11.5px;
+        color: var(--muted);
+        margin-left: 4px;
+      }
+      .m3e-toolbar .role-actions {
+        margin-left: auto;
+        display: flex;
+        gap: 6px;
+      }
+      .m3e-toolbar .role-actions .btn {
+        font-size: 11px;
+        padding: 4px 10px;
+        background: var(--bg-2);
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        color: var(--text);
+        cursor: default;
+      }
+      .m3e-toolbar .role-actions .btn.warn {
+        color: var(--warn);
+        border-color: #4a3e1a;
+        background: #1d1a10;
+      }
+      .m3e-toolbar .selectors {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+      }
+      .m3e-toolbar .selector {
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+      }
+      .m3e-toolbar .selector label {
+        font-size: 10px;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+      }
+      .m3e-toolbar .selector .sel {
+        background: var(--bg-2);
+        padding: 5px 10px;
+        border-radius: 5px;
+        font-family: ui-monospace, monospace;
+        font-size: 12px;
+        color: var(--text);
+        cursor: default;
+        border: 1px solid var(--border);
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        min-width: 140px;
+      }
+      .m3e-toolbar .selector .sel .caret {
+        color: var(--muted);
+        font-size: 9px;
+        margin-left: auto;
+      }
+      .m3e-toolbar .selector .sel.error {
+        border-color: var(--danger);
+        color: var(--danger);
+      }
+
+      .m3e-prompt {
+        flex: 1;
+        padding: 14px 18px;
+        font-family: ui-monospace, monospace;
+        font-size: 12.5px;
+        color: #cfd5e3;
+        line-height: 1.6;
+        overflow: auto;
+      }
+      .m3e-prompt .ln {
+        color: #3a4358;
+        user-select: none;
+        margin-right: 14px;
+        display: inline-block;
+        width: 22px;
+        text-align: right;
+      }
+      .m3e-prompt .h {
+        color: var(--accent);
+      }
+      .m3e-prompt .b {
+        color: var(--ok);
+      }
+      .m3e-prompt .c {
+        color: #647189;
+        font-style: italic;
+      }
+      .m3e-prompt .v {
+        color: var(--accent-2);
+      }
+    </style>
+  </head>
+  <body>
+    <h1>/loop · proceso agéntico de 3 pasos</h1>
+    <p class="sub">
+      Diseño del flujo dentro de la ventana <code>/loop</code>. Borrador para iterar — todo es
+      opinable.
+    </p>
+
+    <div class="pipeline">
+      <div class="step">
+        <div class="n">PASO 1</div>
+        <div class="t">Entender el objetivo</div>
+        <div class="d">Chat con CLI para refinar el problema</div>
+      </div>
+      <div class="arrow">→</div>
+      <div class="step">
+        <div class="n">PASO 2</div>
+        <div class="t">Descomponer en fases</div>
+        <div class="d">
+          Lista de tareas · cada fase: <code>.md</code> + <code>.html</code> opcional
+        </div>
+      </div>
+      <div class="arrow">→</div>
+      <div class="step">
+        <div class="n">PASO 3</div>
+        <div class="t">Ejecutar el loop</div>
+        <div class="d">Secuencial o paralelo · 3–4 agentes por fase</div>
+      </div>
+    </div>
+
+    <p class="legend">
+      CLIs disponibles: <span class="pill">claude</span><span class="pill">codex</span
+      ><span class="pill">opencode</span> — cada agente puede usar uno distinto. Invocados como
+      subprocesos shell desde Tauri.
+    </p>
+
+    <h2>Contexto de ejecución</h2>
+    <p class="sub">
+      El <code>/loop</code> <strong>siempre corre dentro del project activo</strong> del workspace.
+      No existe loop "global".
+    </p>
+    <div class="grid grid-2">
+      <div class="card">
+        <h3>Qué hereda del project</h3>
+        <ul>
+          <li><code>cwd</code> = path del project (todos los CLIs se invocan desde ahí)</li>
+          <li>
+            CLI por defecto sugerido (<code>activeCliId</code>) — el usuario lo puede pisar por
+            agente
+          </li>
+          <li>Configuración de git (branches, worktrees si aplican en el futuro)</li>
+          <li>
+            Validación de path: si el project está marcado <code>pathInvalid</code>,
+            <code>/loop</code> no arranca
+          </li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>Reglas de scope</h3>
+        <ul>
+          <li>
+            Abrir <code>/loop</code> sin project activo: bloquea con prompt "elegí un project
+            primero"
+          </li>
+          <li>
+            Todos los archivos del run viven en
+            <code>&lt;project-path&gt;/.loop/runs/&lt;run-id&gt;/</code>
+          </li>
+          <li>
+            Cambiar de project con un run activo: el run sigue corriendo (atado al project
+            original), pero la UI muestra "viendo project X · run activo en project Y"
+          </li>
+          <li>
+            Un mismo project puede tener múltiples runs históricos (carpeta <code>runs/</code> con N
+            entradas)
+          </li>
+        </ul>
+      </div>
+    </div>
+
+    <h2>Paso 1 — Entender el objetivo</h2>
+
+    <div class="mock">
+      <div class="mock-chrome">
+        <div class="mock-dots">
+          <div class="mock-dot r"></div>
+          <div class="mock-dot y"></div>
+          <div class="mock-dot g"></div>
+        </div>
+        <div class="mock-title">/loop · nuevo run</div>
+      </div>
+      <div class="mock-body">
+        <div class="m1-header">
+          <div class="m1-title">Paso 1 · Definir el problema</div>
+          <div class="m1-cli">
+            <span class="small" style="margin-right: 6px">CLI:</span>
+            <div class="m1-chip on">claude</div>
+            <div class="m1-chip">codex</div>
+            <div class="m1-chip">opencode</div>
+          </div>
+        </div>
+
+        <div class="m1-chat">
+          <div class="m1-msg user">
+            <div class="m1-avatar">tú</div>
+            <div class="m1-bubble">
+              Quiero agregar autenticación al panel admin con roles y un audit log.
+            </div>
+          </div>
+          <div class="m1-msg">
+            <div class="m1-avatar">ai</div>
+            <div class="m1-bubble">
+              Para acotar bien necesito tres cosas:<br />1. ¿Qué proveedor de auth? (propio, OAuth,
+              SSO empresarial)<br />2. ¿Cuántos roles iniciales y son jerárquicos?<br />3. ¿El audit
+              log es solo lectura o además debe alertar?
+            </div>
+          </div>
+          <div class="m1-msg user">
+            <div class="m1-avatar">tú</div>
+            <div class="m1-bubble">
+              OAuth con Google. Tres roles: owner, editor, viewer (jerárquico). Audit log solo
+              lectura, retención 90 días.
+            </div>
+          </div>
+          <div class="m1-msg">
+            <div class="m1-avatar">ai</div>
+            <div class="m1-bubble">
+              Perfecto. Última pregunta: ¿el panel ya tiene sesiones de usuario o partimos de cero?
+              Si ya hay, ¿migrás usuarios existentes o invitás de nuevo?
+            </div>
+          </div>
+        </div>
+
+        <div class="m1-input-row">
+          <input
+            class="m1-input"
+            placeholder="Tu respuesta…"
+            value="Partimos de cero, sin migración."
+          />
+          <button class="m1-btn">Enviar</button>
+        </div>
+
+        <div class="m1-actions">
+          <button class="m1-btn ghost">↺ reiniciar conversación</button>
+          <button class="m1-btn ghost">✎ editar prompt de sistema</button>
+          <button class="m1-btn">✓ consolidar problema.md →</button>
+        </div>
+      </div>
+      <div class="mock-caption">
+        Multi-turno con el CLI seleccionado · botón "consolidar" produce
+        <code style="font-size: 11px">01-problem.md</code> y habilita el Paso 2
+      </div>
+    </div>
+
+    <div class="grid grid-2">
+      <div class="card">
+        <h3>UI</h3>
+        <ul>
+          <li>Input grande de texto libre: "¿qué querés construir?"</li>
+          <li>
+            Selector de CLI (claude / codex / opencode) — default heredado del project activo.
+          </li>
+          <li>
+            Chat panel: el LLM responde con preguntas clarificadoras; el usuario contesta inline.
+          </li>
+          <li>
+            Botón "consolidar" cuando el problema esté claro → produce <code>problem.md</code>.
+          </li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>Mecánica</h3>
+        <ul>
+          <li>
+            Multi-turno con el CLI elegido. Prompt de sistema fijo (editable): "actuá como product
+            engineer; hacé preguntas hasta entender alcance, restricciones, criterio de éxito".
+          </li>
+          <li>
+            Output final: <code>problem.md</code> firmado por el usuario (acepta/edita antes de
+            pasar al Paso 2).
+          </li>
+          <li>
+            Persistido en el directorio del workspace activo:
+            <code>&lt;project&gt;/.loop/runs/&lt;run-id&gt;/01-problem.md</code>.
+          </li>
+        </ul>
+      </div>
+    </div>
+
+    <h2>Paso 2 — Descomponer en fases</h2>
+
+    <div class="mock">
+      <div class="mock-chrome">
+        <div class="mock-dots">
+          <div class="mock-dot r"></div>
+          <div class="mock-dot y"></div>
+          <div class="mock-dot g"></div>
+        </div>
+        <div class="mock-title">/loop · run #a3f2 · editor de fases</div>
+      </div>
+      <div class="mock-body" style="padding: 0">
+        <div class="m2-shell">
+          <div class="m2-side">
+            <div class="m2-side-head">Fases (5)</div>
+            <div class="m2-phase-row">
+              <div class="top">
+                <span class="num">01</span>
+                <span>Modelo de auth + OAuth</span>
+                <span class="icons"><span class="m2-icon">md</span></span>
+              </div>
+              <div class="deps"><span class="none">↳ raíz</span></div>
+            </div>
+            <div class="m2-phase-row on">
+              <div class="top">
+                <span class="num">02</span>
+                <span>Roles y permisos</span>
+                <span class="icons"
+                  ><span class="m2-icon">md</span><span class="m2-icon">html</span></span
+                >
+              </div>
+              <div class="deps">↳ depende de <span class="dep-pill">01</span></div>
+            </div>
+            <div class="m2-phase-row">
+              <div class="top">
+                <span class="num">03</span>
+                <span>Pantalla de login</span>
+                <span class="icons"
+                  ><span class="m2-icon">md</span><span class="m2-icon">html</span></span
+                >
+              </div>
+              <div class="deps">↳ depende de <span class="dep-pill">01</span></div>
+            </div>
+            <div class="m2-phase-row">
+              <div class="top">
+                <span class="num">04</span>
+                <span>Audit log (lectura)</span>
+                <span class="icons"><span class="m2-icon">md</span></span>
+              </div>
+              <div class="deps"><span class="none">↳ raíz</span></div>
+            </div>
+            <div class="m2-phase-row">
+              <div class="top">
+                <span class="num">05</span>
+                <span>Retención + cleanup job</span>
+                <span class="icons"><span class="m2-icon">md</span></span>
+              </div>
+              <div class="deps">↳ depende de <span class="dep-pill">04</span></div>
+            </div>
+            <div class="m2-add">+ agregar fase</div>
+          </div>
+          <div class="m2-main">
+            <div class="m2-tabs">
+              <div class="m2-tab on">logic.md<span class="x">●</span></div>
+              <div class="m2-tab">visual.html</div>
+            </div>
+            <div class="m2-toolbar">
+              <div class="m2-breadcrumb">phases / 02-roles-permisos / logic.md</div>
+              <div class="m2-tools">
+                <div class="m2-tool">guardar</div>
+                <div class="m2-tool ai">✨ editar con AI</div>
+              </div>
+            </div>
+            <div class="m2-editor">
+              <span class="ln">1</span><span class="h"># Fase 02 — Roles y permisos</span>
+              <span class="ln">2</span>
+              <span class="ln">3</span><span class="h">## Objetivo</span>
+              <span class="ln">4</span>Implementar 3 roles jerárquicos (owner &gt; editor &gt;
+              viewer) y la capa <span class="ln">5</span>de autorización que los aplica en cada
+              endpoint.
+              <span class="ln">6</span>
+              <span class="ln">7</span><span class="h">## Pasos</span> <span class="ln">8</span>1.
+              Agregar tabla <span class="b">memberships</span> (user_id, org_id, role).
+              <span class="ln">9</span>2. Middleware <span class="b">requireRole(min)</span> que lee
+              la sesión. <span class="ln">10</span>3. Helper
+              <span class="b">canDo(user, action)</span> con la jerarquía hardcoded.
+              <span class="ln">11</span>4. Tests de integración para cada rol × endpoint.
+              <span class="ln">12</span>
+              <span class="ln">13</span
+              ><span class="c">// supuesto: la sesión ya está poblada por la Fase 01</span>
+              <span class="ln">14</span
+              ><span class="c">// gotcha: viewer puede leer audit log pero no exportarlo</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="mock-caption">
+        Sidebar de fases con indicadores <code style="font-size: 11px">md</code>/<code
+          style="font-size: 11px"
+          >html</code
+        >
+        + dependencias · editor monaco-like · "editar con AI" abre un mini-chat sobre la selección
+      </div>
+    </div>
+
+    <h3 style="margin-top: 22px">Vista "topología de ejecución" del run</h3>
+    <p class="sub small">
+      Derivada de los <code>dependsOn</code> de cada fase. Muestra los batches que se van a formar
+      en modo híbrido. Read-only — para editar dependencias, volvés al editor de fases.
+    </p>
+    <div class="m2-topo-mock">
+      <div class="mock-chrome">
+        <div class="mock-dots">
+          <div class="mock-dot r"></div>
+          <div class="mock-dot y"></div>
+          <div class="mock-dot g"></div>
+        </div>
+        <div class="mock-title">/loop · run #a3f2 · topología</div>
+      </div>
+      <div class="m2-topo-body">
+        <div class="m2-topo-lanes">
+          <div>
+            <div class="m2-topo-lane-head par">batch 1 · paralelo</div>
+            <div class="m2-topo-lane">
+              <div class="m2-topo-node par-batch">
+                <div class="nnum">01</div>
+                <div class="nname">Modelo de auth + OAuth</div>
+              </div>
+              <div class="m2-topo-node par-batch">
+                <div class="nnum">04</div>
+                <div class="nname">Audit log (lectura)</div>
+              </div>
+            </div>
+          </div>
+          <div>
+            <div class="m2-topo-lane-head par">batch 2 · paralelo</div>
+            <div class="m2-topo-lane">
+              <div class="m2-topo-node par-batch">
+                <div class="nnum">02</div>
+                <div class="nname">Roles y permisos</div>
+              </div>
+              <div class="m2-topo-node par-batch">
+                <div class="nnum">03</div>
+                <div class="nname">Pantalla de login</div>
+              </div>
+              <div class="m2-topo-node par-batch">
+                <div class="nnum">05</div>
+                <div class="nname">Retención + cleanup</div>
+              </div>
+            </div>
+          </div>
+          <div>
+            <div class="m2-topo-lane-head">final</div>
+            <div class="m2-topo-lane">
+              <div
+                class="m2-topo-node"
+                style="
+                  background: linear-gradient(135deg, #1a1428, #131a2a);
+                  border-color: var(--accent-2);
+                "
+              >
+                <div class="nnum" style="color: var(--accent-2)">merge</div>
+                <div class="nname">Reporte final</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="m2-topo-summary">
+          <div><strong>2</strong> batches paralelos</div>
+          <div><strong>5</strong> fases en total</div>
+          <div>Modo paralelo: <strong>✓ posible</strong></div>
+          <div>Ahorro estimado vs secuencial: <strong>~60%</strong></div>
+        </div>
+      </div>
+      <div class="mock-caption">
+        Batch 1: las raíces (01, 04) sin dependencias. Batch 2: las que ya tienen lista su
+        dependencia. Integrador corre entre batches (no dibujado para no saturar).
+      </div>
+    </div>
+
+    <div class="grid grid-2">
+      <div class="card">
+        <h3>Generación</h3>
+        <ul>
+          <li>
+            CLI toma <code>problem.md</code> y produce una lista de fases (cada fase = una "tarea"
+            del loop).
+          </li>
+          <li>
+            Por cada fase emite dos archivos:
+            <ul>
+              <li><code>NN-fase/logic.md</code> — análisis técnico + pasos detallados</li>
+              <li><code>NN-fase/visual.html</code> — mock visual (solo si aplica)</li>
+            </ul>
+          </li>
+          <li>
+            UI: árbol/lista de fases a la izquierda; tabs <span class="pill">logic.md</span>
+            <span class="pill">visual.html</span> a la derecha.
+          </li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>Edición</h3>
+        <ul>
+          <li>
+            Editor en línea para ambos archivos (Monaco o similar — el repo ya tiene ecosistema
+            TS/Vite).
+          </li>
+          <li>
+            Botón "editar con AI" sobre cualquier sección: abre un mini-chat que toma el archivo +
+            instrucción y devuelve diff.
+          </li>
+          <li>Reordenar / agregar / borrar fases manualmente.</li>
+          <li>Preview del <code>visual.html</code> en iframe sandbox.</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="ascii">
+      project-root/ └── .loop/ └── runs/ └── &lt;run-id&gt;/ ├── 01-problem.md ├── phases/ │ ├──
+      01-auth-model/ │ │ ├── logic.md │ │ └── visual.html ← opcional │ ├── 02-routes/ │ │ └──
+      logic.md ← sin visual │ └── 03-ui-flow/ │ ├── logic.md │ └── visual.html ├── prompts/ ← copia
+      de los globales al crear el run │ ├── problem-intake.md (Paso 1) │ ├── phase-decomposition.md
+      (Paso 2) │ ├── analysis.md │ ├── implementation.md │ ├── review.md │ ├── knowledge.md │ └──
+      integration.md ├── state.json ← snapshot para resume tras crash └── outputs/ ← producidos por
+      el Paso 3 ├── 01-auth-model/ │ ├── analysis.md │ ├── implementation.md │ ├── review.md ← con
+      historial de iteraciones │ └── knowledge.md ← input para la fase siguiente ├── batches/ │ └──
+      batch-1/ │ └── knowledge.md ← consolidado por el integrador └── ...
+    </div>
+
+    <h2>Paso 3 — Ejecutar el loop</h2>
+    <p class="sub">Dos modos. La elección la hace el usuario antes de arrancar el run.</p>
+
+    <div class="mock">
+      <div class="mock-chrome">
+        <div class="mock-dots">
+          <div class="mock-dot r"></div>
+          <div class="mock-dot y"></div>
+          <div class="mock-dot g"></div>
+        </div>
+        <div class="mock-title">/loop · run #a3f2 · configurar ejecución</div>
+      </div>
+      <div class="mock-body">
+        <div class="m3-projectbar">
+          <div class="dot"></div>
+          <span class="lbl">project activo:</span>
+          <span class="val">~/projects/rafa/polakapi</span>
+          <span style="margin-left: auto" class="lbl">CLI sugerido del project:</span>
+          <span class="val">claude</span>
+        </div>
+
+        <div class="m3-modes">
+          <div class="m3-mode">
+            <div class="m3-mode-head">
+              <div class="dot"></div>
+              Secuencial
+            </div>
+            <div class="desc">
+              Una fase a la vez. Knowledge fluye entre fases. Más lento, máxima coherencia.
+            </div>
+          </div>
+          <div class="m3-mode on">
+            <div class="m3-mode-head">
+              <div class="dot"></div>
+              Híbrido (batched)
+            </div>
+            <div class="desc">
+              Fases con <code style="font-size: 11px">dependsOn</code> resueltas en batches
+              paralelos. Integrador entre batches.
+              <span style="color: var(--ok)">2 batches detectados</span>
+            </div>
+          </div>
+        </div>
+
+        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px">
+          <span
+            style="
+              font-size: 11px;
+              color: var(--muted);
+              text-transform: uppercase;
+              letter-spacing: 0.06em;
+            "
+            >agentes &amp; prompts</span
+          >
+          <span
+            style="
+              margin-left: auto;
+              font-size: 11px;
+              padding: 3px 8px;
+              background: var(--bg-3);
+              border-radius: 4px;
+              color: var(--text);
+              border: 1px solid var(--border);
+              font-family: ui-monospace, monospace;
+            "
+            >perfil: mi setup mixto ▾</span
+          >
+          <span
+            style="
+              font-size: 11px;
+              padding: 3px 8px;
+              background: var(--bg-3);
+              border-radius: 4px;
+              color: var(--accent-2);
+              border: 1px solid var(--border);
+            "
+            >+ guardar como…</span
+          >
+        </div>
+
+        <div class="m3e-shell">
+          <div class="m3e-side">
+            <div class="m3e-sec">pre-fases</div>
+            <div class="m3e-agent">
+              <div class="row1"><span>① problem intake</span><span class="mod">opus-4-7</span></div>
+              <div class="row2"><span>claude</span><span class="badge def">default</span></div>
+            </div>
+            <div class="m3e-agent">
+              <div class="row1">
+                <span>② phase decomposition</span><span class="mod">opus-4-7</span>
+              </div>
+              <div class="row2"><span>claude</span><span class="badge def">default</span></div>
+            </div>
+
+            <div class="m3e-sec">agentes del paso 3</div>
+            <div class="m3e-agent on">
+              <div class="row1"><span>análisis</span><span class="mod">opus-4-8</span></div>
+              <div class="row2"><span>claude</span><span class="badge mod">modificado</span></div>
+            </div>
+            <div class="m3e-agent">
+              <div class="row1"><span>implementación</span><span class="mod">GLM-5.2</span></div>
+              <div class="row2"><span>opencode</span><span class="badge def">default</span></div>
+            </div>
+            <div class="m3e-agent">
+              <div class="row1"><span>revisor</span><span class="mod">default</span></div>
+              <div class="row2"><span>codex</span><span class="badge def">default</span></div>
+            </div>
+            <div class="m3e-agent">
+              <div class="row1"><span>conocimiento</span><span class="mod">sonnet-4-6</span></div>
+              <div class="row2"><span>claude</span><span class="badge def">default</span></div>
+            </div>
+            <div class="m3e-agent">
+              <div class="row1"><span>integrador</span><span class="mod">opus-4-8</span></div>
+              <div class="row2"><span>claude</span><span class="badge def">default</span></div>
+            </div>
+          </div>
+
+          <div class="m3e-main">
+            <div class="m3e-toolbar">
+              <div class="role-row">
+                <span class="role-name">análisis</span>
+                <span class="role-sub"
+                  >· lee logic.md + visual.html + knowledge previa · escribe analysis.md</span
+                >
+                <div class="role-actions">
+                  <div class="btn">↑ resetear a global</div>
+                  <div class="btn warn">↓ guardar como default global</div>
+                </div>
+              </div>
+              <div class="selectors">
+                <div class="selector">
+                  <label>CLI</label>
+                  <div class="sel">claude <span class="caret">▾</span></div>
+                </div>
+                <div class="selector">
+                  <label>modelo</label>
+                  <div class="sel">opus-4-8 <span class="caret">▾</span></div>
+                </div>
+                <div class="selector" style="margin-left: auto">
+                  <label>estado</label>
+                  <div
+                    class="sel"
+                    style="color: var(--warn); border-color: #4a3e1a; background: #1d1a10"
+                  >
+                    ⚠ prompt modificado vs global
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="m3e-prompt">
+              <span class="ln">1</span><span class="h"># Agente de análisis</span>
+              <span class="ln">2</span>
+              <span class="ln">3</span><span class="h">## Rol</span> <span class="ln">4</span>Sos el
+              primer agente que toca una fase. Tu trabajo es entender el problema
+              <span class="ln">5</span>técnico antes de implementarlo. No escribís código todavía.
+              <span class="ln">6</span>
+              <span class="ln">7</span><span class="h">## Inputs disponibles</span>
+              <span class="ln">8</span>- <span class="b">logic.md</span> lógica técnica de la fase
+              <span class="ln">9</span>- <span class="b">visual.html</span> mock visual (puede no
+              existir) <span class="ln">10</span>- <span class="b">knowledge.md</span> contexto de
+              la(s) fase(s) anterior(es)
+              <span class="ln">11</span>
+              <span class="ln">12</span><span class="h">## Output esperado</span>
+              <span class="ln">13</span>Escribí <span class="b">analysis.md</span> con estas
+              secciones obligatorias: <span class="ln">14</span>1.
+              <span class="v">Resumen ejecutable</span> — qué hay que hacer en 3 bullets
+              <span class="ln">15</span>2. <span class="v">Decisiones técnicas</span> — opciones
+              consideradas + elegida + razón <span class="ln">16</span>3.
+              <span class="v">Archivos a tocar</span> — paths con propósito breve
+              <span class="ln">17</span>4. <span class="v">Riesgos identificados</span> — qué puede
+              salir mal <span class="ln">18</span>5. <span class="v">Criterio de éxito</span> — cómo
+              va a saber el revisor que está OK
+              <span class="ln">19</span>
+              <span class="ln">20</span
+              ><span class="c">// Si knowledge.md menciona fases ⚠, anotá explícitamente cómo</span>
+              <span class="ln">21</span
+              ><span class="c">// tu plan compensa esa deuda técnica.</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="m3-config">
+          <div>
+            <label>Max retries del revisor</label>
+            <div class="val">3 → ⚠ y sigue</div>
+          </div>
+          <div>
+            <label>Budget total</label>
+            <div class="val">500k tokens</div>
+          </div>
+          <div>
+            <label>Comportamiento al fallo</label>
+            <div class="val">propagar warning</div>
+          </div>
+          <button class="m3-run-btn">▶ ejecutar run</button>
+        </div>
+      </div>
+      <div class="mock-caption">
+        Sidebar con los 7 prompts (2 pre-fases + 5 agentes) · selección de CLI/modelo y editor de
+        prompt todo en la misma vista · badges <code style="font-size: 11px">default</code>/<code
+          style="font-size: 11px"
+          >modificado</code
+        >
+        indican divergencia vs global · botones por agente para sincronizar globals ↑↓
+      </div>
+    </div>
+
+    <h3 style="margin-top: 28px">Vista en ejecución · modo secuencial</h3>
+    <div class="mock">
+      <div class="mock-chrome">
+        <div class="mock-dots">
+          <div class="mock-dot r"></div>
+          <div class="mock-dot y"></div>
+          <div class="mock-dot g"></div>
+        </div>
+        <div class="mock-title">/loop · run #a3f2 · ejecutando · 2/5 fases</div>
+      </div>
+      <div class="mock-body">
+        <div class="m3-timeline">
+          <div class="m3-phase done">
+            <div class="m3-phase-head">
+              <div class="m3-phase-status">✓</div>
+              <div class="m3-phase-name">01 · Modelo de auth + OAuth</div>
+              <div class="m3-phase-meta">42s · 28k tokens · ✓ aprobado en intento 1</div>
+            </div>
+            <div class="m3-agents">
+              <div class="m3-agent">
+                <div class="m3-agent-name">análisis</div>
+                <div class="m3-agent-state">
+                  <div class="m3-agent-dot done"></div>
+                  <span class="m3-agent-label">listo</span>
+                </div>
+                <div class="m3-agent-sub">analysis.md · 1.2k</div>
+              </div>
+              <div class="m3-agent">
+                <div class="m3-agent-name">implementación</div>
+                <div class="m3-agent-state">
+                  <div class="m3-agent-dot done"></div>
+                  <span class="m3-agent-label">listo</span>
+                </div>
+                <div class="m3-agent-sub">+3 archivos · -42 / +186</div>
+              </div>
+              <div class="m3-agent">
+                <div class="m3-agent-name">revisor</div>
+                <div class="m3-agent-state">
+                  <div class="m3-agent-dot done"></div>
+                  <span class="m3-agent-label">aprobado</span>
+                </div>
+                <div class="m3-agent-sub">intento 1/3</div>
+              </div>
+              <div class="m3-agent">
+                <div class="m3-agent-name">conocimiento</div>
+                <div class="m3-agent-state">
+                  <div class="m3-agent-dot done"></div>
+                  <span class="m3-agent-label">listo</span>
+                </div>
+                <div class="m3-agent-sub">knowledge.md · 0.4k</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="m3-phase active">
+            <div class="m3-phase-head">
+              <div class="m3-phase-status">▶</div>
+              <div class="m3-phase-name">02 · Roles y permisos</div>
+              <div class="m3-phase-meta">en curso · 0:18 · 14k tokens</div>
+            </div>
+            <div class="m3-agents">
+              <div class="m3-agent">
+                <div class="m3-agent-name">análisis</div>
+                <div class="m3-agent-state">
+                  <div class="m3-agent-dot done"></div>
+                  <span class="m3-agent-label">listo</span>
+                </div>
+                <div class="m3-agent-sub">analysis.md · 0.9k</div>
+              </div>
+              <div class="m3-agent retry">
+                <div class="m3-agent-name">implementación</div>
+                <div class="m3-agent-state">
+                  <div class="m3-agent-dot run"></div>
+                  <span class="m3-agent-label">corriendo</span>
+                </div>
+                <div class="m3-agent-sub">reintento 2/3</div>
+              </div>
+              <div class="m3-agent">
+                <div class="m3-agent-name">revisor</div>
+                <div class="m3-agent-state">
+                  <div class="m3-agent-dot wait"></div>
+                  <span class="m3-agent-label">esperando</span>
+                </div>
+                <div class="m3-agent-sub">↻ pidió cambios x1</div>
+              </div>
+              <div class="m3-agent">
+                <div class="m3-agent-name">conocimiento</div>
+                <div class="m3-agent-state">
+                  <div class="m3-agent-dot wait"></div>
+                  <span class="m3-agent-label">pendiente</span>
+                </div>
+                <div class="m3-agent-sub">—</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="m3-phase pending">
+            <div class="m3-phase-head">
+              <div class="m3-phase-status">○</div>
+              <div class="m3-phase-name">03 · Pantalla de login</div>
+              <div class="m3-phase-meta">pendiente</div>
+            </div>
+          </div>
+
+          <div class="m3-phase pending">
+            <div class="m3-phase-head">
+              <div class="m3-phase-status">○</div>
+              <div class="m3-phase-name">04 · Audit log (lectura)</div>
+              <div class="m3-phase-meta">pendiente</div>
+            </div>
+          </div>
+
+          <div class="m3-phase pending">
+            <div class="m3-phase-head">
+              <div class="m3-phase-status">○</div>
+              <div class="m3-phase-name">05 · Retención + cleanup job</div>
+              <div class="m3-phase-meta">pendiente</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="mock-caption">
+        Cada fila es una fase · 4 agentes en columnas · el revisor pidió cambios → implementación
+        está en reintento 2/3 (máx 3)
+      </div>
+    </div>
+
+    <h3 style="margin-top: 28px">Vista en ejecución · modo híbrido (batched)</h3>
+    <div class="mock">
+      <div class="mock-chrome">
+        <div class="mock-dots">
+          <div class="mock-dot r"></div>
+          <div class="mock-dot y"></div>
+          <div class="mock-dot g"></div>
+        </div>
+        <div class="mock-title">/loop · run #b91c · híbrido · batch 2 de 2</div>
+      </div>
+      <div class="mock-body">
+        <div class="m3-batch done">
+          <div class="m3-batch-head">
+            <span class="label">● batch 1 · paralelo</span>
+            <span class="status">2 fases · 1:08 · 41k tokens · ✓ completo</span>
+          </div>
+          <div class="m3-batch-cards">
+            <div class="m3-pcard">
+              <div class="m3-pcard-head">
+                <div class="m3-agent-dot done"></div>
+                <div class="m3-pcard-title">01 · Modelo de auth</div>
+              </div>
+              <div class="m3-pcard-body">
+                <div class="m3-pstep">
+                  <span class="lbl">análisis</span>
+                  <div class="bar"><div class="fill" style="width: 100%"></div></div>
+                  <span class="pct">100%</span>
+                </div>
+                <div class="m3-pstep">
+                  <span class="lbl">implem.</span>
+                  <div class="bar"><div class="fill" style="width: 100%"></div></div>
+                  <span class="pct">100%</span>
+                </div>
+                <div class="m3-pstep">
+                  <span class="lbl">revisor</span>
+                  <div class="bar"><div class="fill" style="width: 100%"></div></div>
+                  <span class="pct">✓ 1/3</span>
+                </div>
+              </div>
+            </div>
+            <div class="m3-pcard">
+              <div class="m3-pcard-head">
+                <div class="m3-agent-dot retry"></div>
+                <div class="m3-pcard-title">04 · Audit log</div>
+              </div>
+              <div class="m3-pcard-body">
+                <div class="m3-pstep">
+                  <span class="lbl">análisis</span>
+                  <div class="bar"><div class="fill" style="width: 100%"></div></div>
+                  <span class="pct">100%</span>
+                </div>
+                <div class="m3-pstep">
+                  <span class="lbl">implem.</span>
+                  <div class="bar"><div class="fill" style="width: 100%"></div></div>
+                  <span class="pct">100%</span>
+                </div>
+                <div class="m3-pstep">
+                  <span class="lbl">revisor</span>
+                  <div class="bar">
+                    <div class="fill" style="width: 100%; background: var(--warn)"></div>
+                  </div>
+                  <span class="pct">⚠ 3/3</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="m3-warn-banner">
+            ⚠ fase 04 llegó a 3/3 sin aprobar · warning propagado al knowledge del batch · la fase
+            05 (que depende) lo va a ver
+          </div>
+        </div>
+
+        <div class="m3-batch-int done">
+          <div class="ic">✓</div>
+          <div>
+            <div class="t">Integrador batch 1 — sin conflictos de FS</div>
+            <div class="s">
+              consolidó <code style="font-size: 11px">knowledge.md</code> (1.8k tokens) → input del
+              batch 2 · incluye nota de la fase 04 ⚠
+            </div>
+          </div>
+        </div>
+
+        <div class="m3-batch">
+          <div class="m3-batch-head">
+            <span class="label">▶ batch 2 · paralelo (en curso)</span>
+            <span class="status">3 fases · 0:42 · 18k tokens</span>
+          </div>
+          <div class="m3-batch-cards">
+            <div class="m3-pcard">
+              <div class="m3-pcard-head">
+                <div class="m3-agent-dot run"></div>
+                <div class="m3-pcard-title">02 · Roles y permisos</div>
+              </div>
+              <div class="m3-pcard-body">
+                <div class="m3-pstep">
+                  <span class="lbl">análisis</span>
+                  <div class="bar"><div class="fill" style="width: 100%"></div></div>
+                  <span class="pct">100%</span>
+                </div>
+                <div class="m3-pstep run">
+                  <span class="lbl">implem.</span>
+                  <div class="bar"><div class="fill" style="width: 65%"></div></div>
+                  <span class="pct">65%</span>
+                </div>
+                <div class="m3-pstep wait">
+                  <span class="lbl">revisor</span>
+                  <div class="bar"></div>
+                  <span class="pct">—</span>
+                </div>
+              </div>
+            </div>
+            <div class="m3-pcard">
+              <div class="m3-pcard-head">
+                <div class="m3-agent-dot run"></div>
+                <div class="m3-pcard-title">03 · Pantalla login</div>
+              </div>
+              <div class="m3-pcard-body">
+                <div class="m3-pstep">
+                  <span class="lbl">análisis</span>
+                  <div class="bar"><div class="fill" style="width: 100%"></div></div>
+                  <span class="pct">100%</span>
+                </div>
+                <div class="m3-pstep">
+                  <span class="lbl">implem.</span>
+                  <div class="bar"><div class="fill" style="width: 100%"></div></div>
+                  <span class="pct">100%</span>
+                </div>
+                <div class="m3-pstep run">
+                  <span class="lbl">revisor</span>
+                  <div class="bar"><div class="fill" style="width: 40%"></div></div>
+                  <span class="pct">↻ 2/3</span>
+                </div>
+              </div>
+            </div>
+            <div class="m3-pcard">
+              <div class="m3-pcard-head">
+                <div class="m3-agent-dot run"></div>
+                <div class="m3-pcard-title">05 · Retención</div>
+              </div>
+              <div class="m3-pcard-body">
+                <div class="m3-pstep run">
+                  <span class="lbl">análisis</span>
+                  <div class="bar"><div class="fill" style="width: 60%"></div></div>
+                  <span class="pct">60%</span>
+                </div>
+                <div class="m3-pstep wait">
+                  <span class="lbl">implem.</span>
+                  <div class="bar"></div>
+                  <span class="pct">—</span>
+                </div>
+                <div class="m3-pstep wait">
+                  <span class="lbl">revisor</span>
+                  <div class="bar"></div>
+                  <span class="pct">—</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="m3-batch-int">
+          <div class="ic">⛙</div>
+          <div>
+            <div class="t">Integrador batch 2 — esperando</div>
+            <div class="s">
+              arranca cuando las 3 fases del batch 2 terminen · validará conflictos de FS y
+              producirá reporte final
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="mock-caption">
+        Batches separados visualmente · integrador entre ellos · fases con ⚠ propagan warning al
+        knowledge consolidado pero no abortan el run
+      </div>
+    </div>
+
+    <h3 style="margin-top: 20px">Agentes (compartidos entre modos)</h3>
+    <p class="small">
+      Contrato: cada agente lee archivos del run y escribe <strong>solo su artefacto</strong> en
+      disco. No hay conversación heredada entre CLIs distintos.
+    </p>
+    <table>
+      <thead>
+        <tr>
+          <th>Agente</th>
+          <th>Input</th>
+          <th>Output</th>
+          <th>Escribe FS?</th>
+          <th>CLI / prompt</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><span class="pill accent">análisis</span></td>
+          <td><code>logic.md</code> + <code>visual.html</code> + knowledge previa</td>
+          <td><code>analysis.md</code></td>
+          <td><span class="pill danger">no</span></td>
+          <td>configurable · <code>prompts/analysis.md</code></td>
+        </tr>
+        <tr>
+          <td><span class="pill accent">implementación</span></td>
+          <td><code>analysis.md</code> + <code>visual.html</code> (ref)</td>
+          <td><code>implementation.md</code> + cambios reales en archivos</td>
+          <td><span class="pill ok">sí</span></td>
+          <td>configurable · <code>prompts/implementation.md</code></td>
+        </tr>
+        <tr>
+          <td><span class="pill accent">revisor</span></td>
+          <td><code>implementation.md</code> + diff + criterio</td>
+          <td>veredicto <code>ok</code> / <code>retry+feedback</code> (max 3 → ⚠ y sigue)</td>
+          <td><span class="pill danger">no</span></td>
+          <td>configurable · <code>prompts/review.md</code></td>
+        </tr>
+        <tr>
+          <td><span class="pill accent">conocimiento</span></td>
+          <td>todo lo anterior, incluye estado ⚠ si aplica</td>
+          <td><code>knowledge.md</code> (síntesis compacta)</td>
+          <td><span class="pill danger">no</span></td>
+          <td>configurable · <code>prompts/knowledge.md</code></td>
+        </tr>
+        <tr>
+          <td>
+            <span class="pill accent">integrador</span> <span class="small">(modo híbrido)</span>
+          </td>
+          <td>todos los <code>implementation.md</code> + diffs del batch</td>
+          <td>reporte de conflictos + <code>knowledge.md</code> consolidado del batch</td>
+          <td><span class="pill danger">no</span></td>
+          <td>configurable · <code>prompts/integration.md</code></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="grid grid-2" style="margin-top: 20px">
+      <div class="card hi">
+        <h3>Modo A · Secuencial</h3>
+        <p class="small">
+          Una fase a la vez. Cada fase enriquece a la siguiente vía <code>knowledge.md</code>.
+        </p>
+        <div class="ascii">
+          ┌─────────────────────────────────────────────┐ │ fase N │ │ │ │ logic.md + visual.html +
+          knowledge[N-1] │ │ │ │ │ ▼ │ │ ┌────────────┐ │ │ │ análisis │ │ │ └─────┬──────┘ │ │ ▼ │
+          │ ┌────────────┐ │ │ │ implem. │◀──┐ │ │ └─────┬──────┘ │ retry + feedback │ │ ▼ │ │ │
+          ┌────────────┐ │ │ │ │ revisor │───┘ │ │ └─────┬──────┘ │ │ │ ok │ │ ▼ │ │ ┌────────────┐
+          │ │ │ conocim. │── knowledge[N] ─┐ │ │ └────────────┘ │ │
+          └─────────────────────────────────────┼───────┘ ▼ fase N+1 ...
+        </div>
+        <p class="small ok-text">✓ Coherente: cada fase ve lo que pasó antes.</p>
+        <p class="small warn-text">⚠ Lento: tiempo total ≈ suma de fases.</p>
+        <p class="small danger-text">
+          ⚠ Loop revisor → impl. puede ser infinito. Hace falta un máximo (¿3? ¿5?) + escape
+          "aceptar igual / abortar".
+        </p>
+      </div>
+      <div class="card hi">
+        <h3>Modo B · Híbrido (batched)</h3>
+        <p class="small">
+          Cada fase declara <code>dependsOn: [ids]</code>. El sistema computa
+          <strong>batches</strong> con sort topológico: las fases sin dependencias pendientes corren
+          en paralelo, las dependientes esperan. Integrador entre cada batch.
+        </p>
+        <div class="ascii">
+          batch 1 batch 2 batch 3 ┌── fase 1 ──┐ │ a → i → r │──┐ └────────────┘ │ ┌── fase 2 ──┐ │
+          ┌── fase 4 ──┐ │ a → i → r │──┼────▶│ a → i → r │──┐ └────────────┘ │ └────────────┘ │ ┌──
+          fase 3 ──┐ │ ┌── fase 5 ──┐ │ ┌── fase 6 ──┐ │ a → i → r │──┘ │ a → i → r │──┴────▶│ a → i
+          → r │ └────────────┘ └────────────┘ └────────────┘ │ │ │ ▼ ▼ ▼ ┌─────────────┐
+          ┌─────────────┐ ┌─────────────┐ │ integrador │ │ integrador │ │ integrador │ │ batch 1 │──
+          K ─▶│ batch 2 │── K ─▶│ batch 3 │ └─────────────┘ └─────────────┘ └─────────────┘ │ ▼
+          merge final + reporte K = knowledge consolidado del batch (input del batch siguiente)
+        </div>
+        <p class="small ok-text">
+          ✓ Rápido sin perder coherencia: knowledge fluye <em>entre</em> batches.
+        </p>
+        <p class="small ok-text">
+          ✓ Conflictos detectados temprano: el integrador del batch N valida antes de arrancar N+1.
+        </p>
+        <p class="small warn-text">
+          ⚠ Requiere que el usuario (o el LLM) declare dependencias correctas en el Paso 2.
+        </p>
+      </div>
+    </div>
+
+    <h2>Decisiones tomadas</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Decisión</th>
+          <th>Resolución</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Scope del loop</td>
+          <td>
+            <span class="pill ok">cerrado</span> Corre dentro del project activo (hereda
+            <code>cwd</code>, CLI default, validación de path)
+          </td>
+        </tr>
+        <tr>
+          <td>Modo paralelo</td>
+          <td>
+            <span class="pill ok">cerrado</span> Híbrido con <code>dependsOn</code> + batches
+            topológicos. No worktrees, no patches. Sólo fases declaradas independientes corren en
+            paralelo.
+          </td>
+        </tr>
+        <tr>
+          <td>Declaración de dependencias</td>
+          <td>
+            <span class="pill ok">cerrado</span> Lista explícita <code>dependsOn: [phaseId]</code>.
+            El LLM del Paso 2 propone, el usuario corrige en la UI.
+          </td>
+        </tr>
+        <tr>
+          <td>Integrador en modo híbrido</td>
+          <td>
+            <span class="pill ok">cerrado</span> Uno por batch — valida no-conflictos y consolida el
+            <code>knowledge.md</code> que entra al siguiente batch.
+          </td>
+        </tr>
+        <tr>
+          <td>Tope del bucle revisor</td>
+          <td>
+            <span class="pill ok">cerrado</span> Max 3 intentos. Al límite, la fase pasa al agente
+            de conocimiento con estado <span class="pill warn">⚠ sin aprobar</span> — el knowledge
+            anota la deuda.
+          </td>
+        </tr>
+        <tr>
+          <td>Fallo de fase con dependientes</td>
+          <td>
+            <span class="pill ok">cerrado</span> La fase dependiente arranca igual, con el warning
+            propagado en su contexto.
+          </td>
+        </tr>
+        <tr>
+          <td>CLI por agente</td>
+          <td>
+            <span class="pill ok">cerrado</span> Matriz
+            <code>agente × CLI × modelo</code> configurable por run. Ej: análisis = claude/opus-4.8,
+            implementación = opencode/GLM-5.2, revisor = codex.
+          </td>
+        </tr>
+        <tr>
+          <td>Contrato entre agentes</td>
+          <td>
+            <span class="pill ok">cerrado</span> Por archivos en disco, no por conversación
+            heredada. Permite mezclar CLIs heterogéneos sin acoplar formatos.
+          </td>
+        </tr>
+        <tr>
+          <td>Invocación de CLIs</td>
+          <td>
+            <span class="pill ok">cerrado</span> One-shot (<code>claude -p</code>,
+            <code>codex -p</code>, <code>opencode</code> con flag equivalente). En el Paso 1
+            (multi-turno) cada turno serializa la conversación previa en el prompt.
+          </td>
+        </tr>
+        <tr>
+          <td>Formato del <code>knowledge.md</code></td>
+          <td>
+            <span class="pill ok">cerrado</span> Estructurado con plantilla fija (ver sección
+            abajo). El agente de conocimiento e integrador llenan las mismas secciones.
+          </td>
+        </tr>
+        <tr>
+          <td>Resume tras corte</td>
+          <td>
+            <span class="pill ok">cerrado</span> El run guarda <code>state.json</code> y se puede
+            retomar buscando tareas incompletas. Granularidad: por agente. Outputs parciales se
+            descartan.
+          </td>
+        </tr>
+        <tr>
+          <td>Detección de parte visual</td>
+          <td>
+            <span class="pill ok">cerrado</span> Lo decide el LLM en el Paso 2. El usuario puede
+            agregar/quitar manualmente en el editor.
+          </td>
+        </tr>
+        <tr>
+          <td>Permisos de FS por agente</td>
+          <td>
+            <span class="pill ok">cerrado</span> Todos los agentes pueden escribir cualquier
+            archivo. Mitigación: cada agente queda registrado con su diff propio, auditable en
+            post-mortem.
+          </td>
+        </tr>
+        <tr>
+          <td>Almacenamiento de perfiles</td>
+          <td>
+            <span class="pill ok">cerrado</span> JSON vía <code>tauri-plugin-store</code> (mismo
+            patrón que <code>workspaces.json</code>). Archivo <code>profiles.json</code> en config
+            dir de la app. <strong>No</strong> SQLite — overkill para 1–20 registros sin queries.
+          </td>
+        </tr>
+        <tr>
+          <td>Alcance de perfiles</td>
+          <td>
+            <span class="pill ok">cerrado</span> Globales. No viajan con el repo. Son
+            <em>tus</em> defaults personales.
+          </td>
+        </tr>
+        <tr>
+          <td>Contenido de un perfil</td>
+          <td>
+            <span class="pill ok">cerrado</span> Sólo la matriz <code>agente × CLI × modelo</code>.
+            <code>max retries</code> / <code>budget</code> / prompts son del run, no del perfil.
+          </td>
+        </tr>
+        <tr>
+          <td>Default inicial sin perfil cargado</td>
+          <td>
+            <span class="pill ok">cerrado</span> Todos los slots arrancan en
+            <code>claude / opus-4.7</code>. El usuario customiza desde ahí.
+          </td>
+        </tr>
+        <tr>
+          <td>Built-in presets</td>
+          <td>
+            <span class="pill ok">cerrado</span> Ninguno. El usuario crea sus propios perfiles
+            (botón "guardar como…" desde la matriz).
+          </td>
+        </tr>
+        <tr>
+          <td>Comportamiento de overrides</td>
+          <td>
+            <span class="pill ok">cerrado</span> Temporales: los cambios sobre un perfil cargado
+            aplican solo al run actual. Para persistir, "guardar" o "guardar como…" explícito.
+          </td>
+        </tr>
+        <tr>
+          <td>Validación al cargar perfil</td>
+          <td>
+            <span class="pill ok">cerrado</span> Slot marcado en rojo si el CLI no está instalado o
+            el modelo no existe. El usuario elige manualmente. No hay fallback automático.
+          </td>
+        </tr>
+        <tr>
+          <td>Almacenamiento de prompts</td>
+          <td>
+            <span class="pill ok">cerrado</span> Globales editables en config dir de la app
+            (<code>prompts/*.md</code>). Al crear un run, se copian al árbol del run. Edits del run
+            no afectan globales (y viceversa para runs vivos).
+          </td>
+        </tr>
+        <tr>
+          <td>UI para editar prompts</td>
+          <td>
+            <span class="pill ok">cerrado</span> <strong>Inline en el setup del Paso 3</strong>:
+            sidebar con los 7 agentes + editor en el panel principal con dropdowns CLI/modelo
+            arriba. Botones "↓ guardar como default global" y "↑ resetear a global" por agente.
+          </td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h3 style="margin-top: 24px">Plantilla de <code>knowledge.md</code></h3>
+    <p class="small">
+      Estructura fija que rellenan tanto el agente de conocimiento (por fase) como el integrador
+      (consolidado por batch). Secciones vacías permitidas — pero no removibles.
+    </p>
+    <div class="ascii">
+      # Knowledge · &lt;fase-id&gt; o &lt;batch-id&gt; ## Decisiones tomadas - &lt;decisión&gt; —
+      &lt;razón breve&gt; ## Archivos tocados - path/al/archivo.ts (+N / -M)
+      agente=&lt;impl|otro&gt; - ... ## Supuestos - &lt;cosa que se asumió que es cierta y la
+      próxima fase puede confiar en&gt; ## Gotchas - &lt;cosa contra-intuitiva que la próxima fase
+      debe saber para no repetir el error&gt; ## Warnings (fases ⚠) - fase 04 quedó sin aprobar en
+      3/3 — el revisor pedía X; queda como deuda. - (vacío si todo aprobó) ## Próximos pasos
+      sugeridos - &lt;pista útil para el análisis de la fase/batch siguiente&gt;
+    </div>
+
+    <h3 style="margin-top: 24px">Modelo de resume</h3>
+    <p class="small">
+      Si la app crashea o el usuario cierra el run, al reabrir <code>/loop</code> sobre ese project
+      se detecta el run vivo y se ofrece retomar. Granularidad: por agente. Si el revisor estaba a
+      medias, se descarta y se relanza desde cero (no se intenta retomar a media respuesta).
+    </p>
+    <div class="ascii">
+      .loop/runs/&lt;run-id&gt;/state.json { "schemaVersion": 1, "runId": "a3f2", "mode": "hybrid",
+      // o "sequential" "status": "running", // running | completed | aborted | crashed
+      "currentBatch": 1, // null en modo secuencial "phases": { "01": { "status": "done",
+      "lastAgent": "knowledge", "warning": false }, "02": { "status": "running", "lastAgent":
+      "implementation", "retryAttempt": 2, "outputPartial": true }, "03": { "status": "pending" },
+      "04": { "status": "done", "lastAgent": "knowledge", "warning": true }, "05": { "status":
+      "pending" } }, "integrators": { "batch1": "done" }, "lastHeartbeat": "&lt;timestamp&gt;" // si
+      pasa &gt; N min sin actualizar, asumir crash }
+    </div>
+
+    <h2>Esquema de <code>profiles.json</code></h2>
+    <p class="small">
+      Vive en el config dir de la app (no se commitea con el repo). Mismo patrón de persistencia que
+      <code>workspaces.json</code> (<code>tauri-plugin-store</code> con debounce + schemaVersion).
+    </p>
+    <div class="ascii">
+      { "schemaVersion": 1, "profiles": [ { "id": "&lt;uuid&gt;", "name": "mi setup barato",
+      "createdAt": "&lt;iso&gt;", "matrix": { "analysis": { "cli": "claude", "model": "haiku-4-5" },
+      "implementation": { "cli": "opencode", "model": "GLM-5.2" }, "review": { "cli": "codex",
+      "model": "default" }, "knowledge": { "cli": "claude", "model": "sonnet-4-6" }, "integration":
+      { "cli": "claude", "model": "haiku-4-5" } } } ] } reglas: • si no hay perfil cargado → matriz
+      arranca con TODO en claude/opus-4-7 • cambios sobre un perfil cargado: temporales (sólo este
+      run) • para persistir cambios: botón "guardar" o "guardar como…" • CLI o modelo inexistente al
+      cargar → slot en rojo, usuario re-elige a mano
+    </div>
+
+    <h2>Almacenamiento de prompts</h2>
+    <p class="small">
+      Hay <strong>7 prompts</strong> en total: 2 para las pre-fases (Paso 1 y Paso 2) + 5 para los
+      agentes del Paso 3.
+    </p>
+    <div class="ascii">
+      ~/Library/Application Support/polakapi/ ← config dir de la app (Tauri) ├── workspaces.json ←
+      (ya existe) ├── profiles.json ← perfiles globales (matriz CLI×modelo) └── prompts/ ← defaults
+      globales editables ├── problem-intake.md (Paso 1 · chat de refinamiento) ├──
+      phase-decomposition.md (Paso 2 · genera fases + dependsOn) ├── analysis.md (Paso 3 · agente
+      análisis) ├── implementation.md (Paso 3 · agente implementación) ├── review.md (Paso 3 ·
+      agente revisor) ├── knowledge.md (Paso 3 · agente conocimiento) └── integration.md (Paso 3 ·
+      agente integrador · modo híbrido) &lt;project-path&gt;/.loop/runs/&lt;run-id&gt;/ └── prompts/
+      ← copia de los globales al crear el run ├── ... mismos 7 archivos ← editables solo para este
+      run reglas: • Primera instalación: la app ships con prompts default bundled. • Al crear un
+      run: copia atómica global → run/prompts/. • Edits en el run no se propagan a global. • Edits
+      en global no afectan runs ya creados (los del run son su contrato). • "↓ guardar como default
+      global" desde el editor: pisa el global con el del run. • "↑ resetear a global": reemplaza el
+      del run con el global actual.
+    </div>
+
+    <h2>Estado del plan</h2>
+    <div
+      class="card"
+      style="border-color: #1f3f2a; background: linear-gradient(135deg, #10201a, #131a2a)"
+    >
+      <p style="margin: 0; color: var(--ok); font-weight: 600">
+        ✓ Diseño cerrado · 0 decisiones abiertas
+      </p>
+      <p style="margin: 6px 0 0; color: var(--muted); font-size: 12.5px">
+        Las 15 decisiones de diseño están resueltas. Lo que sigue es validación práctica (spike de
+        invocación CLI) y formalización en OpenSpec.
+      </p>
+    </div>
+
+    <h2>Mapa de riesgos</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Riesgo</th>
+          <th>Mitigación</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Loop revisor infinito</td>
+          <td>Hard cap 3 intentos · al límite la fase queda ⚠ y sigue al agente de conocimiento</td>
+        </tr>
+        <tr>
+          <td>Contexto explota entre fases / batches</td>
+          <td>
+            El <code>knowledge.md</code> es justamente la compresión — limitar tamaño (¿2k tokens?)
+          </td>
+        </tr>
+        <tr>
+          <td>Dependencias mal declaradas en Paso 2</td>
+          <td>
+            El LLM propone, el usuario valida. Vista "topología" muestra el DAG resultante antes de
+            ejecutar.
+          </td>
+        </tr>
+        <tr>
+          <td>Modo híbrido + conflictos de FS</td>
+          <td>
+            El integrador <em>por batch</em> diffea y avisa antes de empezar el batch siguiente. Si
+            hay solapes inesperados, pausa para revisión.
+          </td>
+        </tr>
+        <tr>
+          <td>Agente escribe archivos fuera de su rol</td>
+          <td>
+            Sin restricciones de FS (decisión tomada). Mitigación: cada agente registra su propio
+            diff (<code>git stash</code> entre invocaciones) — en post-mortem se ve quién tocó qué y
+            se puede revertir selectivo.
+          </td>
+        </tr>
+        <tr>
+          <td>Fase ⚠ rompe la fase dependiente</td>
+          <td>
+            El warning se propaga en el knowledge. La fase dependiente decide qué hacer (puede
+            pedirle al usuario que retome la fallada).
+          </td>
+        </tr>
+        <tr>
+          <td>El usuario pierde el hilo del run</td>
+          <td>Vista timeline (secuencial) o lanes por batch (híbrido) con estado de cada fase</td>
+        </tr>
+        <tr>
+          <td>Costo de tokens descontrolado con multi-CLI</td>
+          <td>Budget visible en vivo, desglosado por agente. Corte automático configurable.</td>
+        </tr>
+        <tr>
+          <td>Prompts editables que rompen el flujo</td>
+          <td>
+            Validar mínimos en prompts (ej. revisor debe devolver veredicto parseable); restaurar
+            defaults a un click
+          </td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2>Spike de invocación CLI · resultados</h2>
+    <p class="sub">
+      Validación práctica de que claude/codex/opencode se pueden invocar desde Tauri en modo
+      one-shot. <span class="pill ok">✓ aprobado</span> — sin riesgos técnicos bloqueantes.
+    </p>
+
+    <div class="grid grid-2">
+      <div class="card">
+        <h3>Confirmado</h3>
+        <ul>
+          <li>
+            Los 3 CLIs están instalados y soportan one-shot: <code>claude -p</code>,
+            <code>codex exec</code>, <code>opencode run</code>
+          </li>
+          <li>
+            JSON output parseable en los 3 (claude: 1 doc; codex: JSONL +
+            <code>--output-last-message</code>; opencode: stream JSON)
+          </li>
+          <li>
+            <code>claude -p --output-format json</code> devuelve <code>result</code>,
+            <code>usage.{input,output}_tokens</code>, <code>total_cost_usd</code>,
+            <code>session_id</code> en un solo doc — ideal para el contrato per-agente
+          </li>
+          <li>
+            Working directory parametrizable (<code>cwd</code> nativo de <code>Command</code> + flag
+            <code>--dir</code> en opencode)
+          </li>
+          <li>
+            Cada CLI maneja su propia auth (<code>~/.claude/</code>, <code>~/.codex/</code>,
+            <code>~/.opencode/</code>) — <code>/loop</code> no orquesta credenciales
+          </li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>Bonus: patrones ya en el repo</h3>
+        <ul>
+          <li>
+            <code>src-tauri/src/lib.rs:17</code> — <code>import_user_path()</code> ya resuelve el
+            PATH issue de macOS; menciona explícitamente claude/codex/opencode.
+            <strong>Cero setup adicional.</strong>
+          </li>
+          <li>
+            <code>src-tauri/src/lib.rs:29</code> y <code>src-tauri/src/open.rs:29</code> — patrón de
+            <code>std::process::Command::output()</code> para one-shot
+          </li>
+          <li>
+            <code>src-tauri/src/pty.rs</code> — <code>portable_pty</code> para streaming
+            bidireccional (útil si el chat del Paso 1 quiere streaming token-a-token)
+          </li>
+        </ul>
+      </div>
+    </div>
+
+    <h3 style="margin-top: 20px">Riesgos identificados</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>Riesgo</th>
+          <th>Severidad</th>
+          <th>Mitigación</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>
+            Aliases de modelo cambian entre versiones (ej. <code>haiku-4-5</code> 404 vs
+            <code>haiku</code> OK en claude 2.1.187)
+          </td>
+          <td><span class="pill warn">media</span></td>
+          <td>Validación al cargar perfil (decisión 14 ya cubre esto: slot rojo)</td>
+        </tr>
+        <tr>
+          <td>Streams largos JSONL en codex/opencode requieren parse incremental</td>
+          <td><span class="pill">baja</span></td>
+          <td>
+            Para one-shot, leer todo y parsear al final. Usar <code>--output-last-message</code> en
+            codex.
+          </td>
+        </tr>
+        <tr>
+          <td>
+            Sandboxing del CLI (codex <code>--sandbox</code>, claude <code>--allowedTools</code>)
+          </td>
+          <td><span class="pill warn">media</span></td>
+          <td>
+            Implementación corre sin restricción (necesita escribir FS).
+            Análisis/revisor/conocimiento con <code>--print</code> + flags read-only cuando estén.
+          </td>
+        </tr>
+        <tr>
+          <td>Agente colgado / no responde</td>
+          <td><span class="pill warn">media</span></td>
+          <td>
+            Wrapping con <code>tokio::time::timeout</code>, bound configurable (default ¿5 min?). Al
+            timeout: kill subprocess, reportar como fallo del agente.
+          </td>
+        </tr>
+        <tr>
+          <td>Stderr mezclado con stdout</td>
+          <td><span class="pill">baja</span></td>
+          <td><code>Command::output()</code> ya separa los streams en Rust.</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h3 style="margin-top: 20px">Forma de la integración</h3>
+    <p class="small">
+      Pseudocódigo del comando Tauri que va a wrappear cada llamada de agente.
+      <strong>No implementado todavía</strong> — es referencia para la fase de implementación.
+    </p>
+    <div class="ascii">
+      // src-tauri/src/loop_cli.rs (nuevo, en la implementación) #[tauri::command] async fn
+      run_loop_agent( cli: String, // "claude" | "codex" | "opencode" model: String, cwd: String,
+      system_prompt_path: String, // path al prompt del agente (run-local) user_input: String, //
+      contenido del input para esa invocación timeout_secs: u64, ) -&gt; Result&lt;AgentResult,
+      String&gt; { let args = match cli.as_str() { "claude" =&gt; vec!["-p", &user_input, "--model",
+      &model, "--output-format", "json", "--append-system-prompt-file", &system_prompt_path],
+      "codex" =&gt; vec!["exec", &user_input, "-m", &model, "--output-last-message",
+      "/tmp/loop-out-&lt;run&gt;.txt"], "opencode" =&gt; vec!["run", &user_input, "-m", &model,
+      "--format", "json", "--dir", &cwd], _ =&gt; return Err(format!("unknown cli: {}", cli)), };
+      let output = tokio::time::timeout( Duration::from_secs(timeout_secs),
+      Command::new(&cli).args(args).current_dir(&cwd).output() ).await .map_err(|_|
+      "timeout".to_string())? .map_err(|e| e.to_string())?; parse_output(&cli, &output) // normaliza
+      al AgentResult común } // AgentResult { text, tokens_in, tokens_out, cost_usd, session_id,
+      error }
+    </div>
+
+    <p class="small" style="margin-top: 12px; color: var(--muted)">
+      Versiones validadas en el spike (24-jun-2026): claude 2.1.187, codex 0.142.0, opencode 1.17.9.
+    </p>
+
+    <h2>Próximos pasos</h2>
+    <ol>
+      <li>
+        <strong>Spike de invocación CLI</strong> · <span class="pill ok">✓ hecho</span> — ver
+        sección "Spike de invocación CLI · resultados" arriba.
+      </li>
+      <li>
+        <strong>Formalizar en OpenSpec</strong> — crear
+        <code>openspec/changes/loop-agentic-flow/</code> con specs por capability:
+        <ul>
+          <li><code>loop-problem-intake</code> — Paso 1 (chat multi-turno serializado)</li>
+          <li><code>loop-phase-decomposition</code> — Paso 2 (generación + editor + topología)</li>
+          <li><code>loop-execution-engine</code> — Paso 3 (scheduler, batches, agentes, resume)</li>
+          <li><code>loop-profiles</code> — perfiles globales JSON</li>
+        </ul>
+      </li>
+      <li>
+        <strong>Mock funcional</strong> (HTML+TS, sin backend real) — validar el editor de fases con
+        <code>dependsOn</code> y la vista topología. Permite iterar UX antes de codear el engine.
+      </li>
+      <li>
+        <strong>Implementación incremental</strong>: primero modo secuencial (más simple) con un
+        solo CLI; después multi-CLI y multi-modelo; después modo híbrido con batches y integrador;
+        al final resume tras crash.
+      </li>
+    </ol>
+  </body>
+</html>

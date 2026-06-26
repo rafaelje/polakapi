@@ -1,0 +1,2 @@
+- siempre escribe el codigo y comentarios en ingles
+- coloca solamente comentarios cuando es estrictamente requerido

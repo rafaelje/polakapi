@@ -1,4 +1,4 @@
-export type ToastVariant = "error" | "info";
+export type ToastVariant = "error" | "info" | "success" | "warning";
 
 const HOST_ID = "toast-host";
 const DEFAULT_DURATION_MS = 4500;
