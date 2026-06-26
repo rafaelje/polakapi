@@ -153,6 +153,11 @@ export class RunScheduler {
   async start(): Promise<void> {
     const state = this.store.getState();
     if (state.status === "running") return;
+    // From a terminal state, a fresh attempt must call initialize() first —
+    // otherwise the persisted indices would re-run the last batch.
+    if (state.status === "completed" || state.status === "aborted" || state.status === "error") {
+      return;
+    }
     if (!state.settings) {
       this.store.commit({
         ...state,
@@ -267,7 +272,13 @@ export class RunScheduler {
         continue;
       }
 
-      await Promise.all(phaseIndices.map((idx) => this.phaseRunner.runPhase(idx)));
+      // Sequential within a batch: phases share a working tree, so concurrent
+      // `git diff HEAD` snapshots would cross-contaminate each phase's .diff
+      // and poison detectBatchConflicts. Real parallelism needs worktrees.
+      for (const idx of phaseIndices) {
+        if (this.shouldStop()) break;
+        await this.phaseRunner.runPhase(idx);
+      }
 
       if (this.shouldStop()) break;
       const anyError = phaseIndices.some((i) => this.store.getState().phases[i].status === "error");
@@ -293,7 +304,7 @@ export class RunScheduler {
           break;
         }
         if (decision === "rerun") {
-          this.integratorRunner.resetBatchPhases(phaseIndices);
+          this.integratorRunner.resetBatchPhases(phaseIndices, batchIndex);
           this.store.patchIntegrator(batchIndex, {
             status: "pending",
             conflicts: [],

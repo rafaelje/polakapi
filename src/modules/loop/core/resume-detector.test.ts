@@ -106,4 +106,48 @@ describe("rewindRunningStages", () => {
     expect(original.phases[0].stages.implementation.status).toBe("running");
     expect(original.integrators[0].status).toBe("running");
   });
+
+  it("preserves a phase's `warning` status when only an unrelated stage rewinds", () => {
+    // The reviewer exhausted retries (review = warning, phase = warning) and
+    // then the run crashed while running knowledge. The rewind must NOT
+    // overwrite the phase status with `pending` and hide the warning.
+    const s = makeState();
+    s.phases[0].status = "warning";
+    s.phases[0].reviewerExhausted = true;
+    s.phases[0].stages.analysis.status = "done";
+    s.phases[0].stages.implementation.status = "done";
+    s.phases[0].stages.review.status = "warning";
+    s.phases[0].stages.knowledge.status = "running";
+
+    const out = rewindRunningStages(s);
+
+    expect(out.phases[0].stages.knowledge.status).toBe("pending");
+    expect(out.phases[0].stages.review.status).toBe("warning");
+    expect(out.phases[0].status).toBe("warning");
+  });
+
+  it("preserves review.message and decrements retries when review was running", () => {
+    // A review at attempt 2 was in flight when the run crashed. The
+    // implementation retry that resumes must see the prior reviewer's notes
+    // (review.message preserved) and the runReviewLoop must re-attempt N,
+    // not skip past it — so retries is decremented by 1.
+    const s = makeState();
+    s.phases[0].stages.implementation.status = "running";
+    s.phases[0].stages.review = {
+      status: "running",
+      tokensIn: 0,
+      tokensOut: 0,
+      costUsd: 0,
+      retries: 2,
+      message: "needs more docs on the error path",
+    };
+
+    const out = rewindRunningStages(s);
+
+    expect(out.phases[0].stages.review.status).toBe("pending");
+    expect(out.phases[0].stages.review.message).toBe("needs more docs on the error path");
+    expect(out.phases[0].stages.review.retries).toBe(1);
+    // Implementation rewind still clears its own message (no notes there).
+    expect(out.phases[0].stages.implementation.message).toBeUndefined();
+  });
 });

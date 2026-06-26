@@ -1,6 +1,24 @@
 import { invoke } from "@tauri-apps/api/core";
 
 import { parsePersistedRunState, type PersistedRunState } from "./state-schema";
+import type {
+  AgentStageState,
+  AgentStageStatus,
+  SequentialAgent,
+} from "./run-scheduler";
+
+function recomputePhaseStatus(
+  stages: Record<SequentialAgent, AgentStageState>,
+): AgentStageStatus {
+  const order: SequentialAgent[] = ["analysis", "implementation", "review", "knowledge"];
+  const all = order.map((a) => stages[a]);
+  if (all.some((s) => s.status === "error")) return "error";
+  if (all.every((s) => s.status === "done" || s.status === "warning")) {
+    return all.some((s) => s.status === "warning") ? "warning" : "done";
+  }
+  if (all.some((s) => s.status === "warning")) return "warning";
+  return "pending";
+}
 
 // Matches `InterruptedRun` in Rust (camelCase via serde rename).
 export interface InterruptedRunSummary {
@@ -68,13 +86,22 @@ export function rewindRunningStages(state: PersistedRunState): PersistedRunState
     const stages = { ...p.stages };
     let downgraded = false;
     for (const agent of ["analysis", "implementation", "review", "knowledge"] as const) {
-      if (stages[agent].status === "running") {
+      if (stages[agent].status !== "running") continue;
+      if (agent === "review") {
+        // Preserve `message` (reviewer notes for the next implementation
+        // retry) and roll back `retries` for the in-flight attempt.
+        stages[agent] = {
+          ...stages[agent],
+          status: "pending",
+          retries: Math.max(0, stages[agent].retries - 1),
+        };
+      } else {
         stages[agent] = { ...stages[agent], status: "pending", message: undefined };
-        downgraded = true;
       }
+      downgraded = true;
     }
     if (!downgraded) return p;
-    return { ...p, stages, status: "pending" as const };
+    return { ...p, stages, status: recomputePhaseStatus(stages) };
   });
   // Integrators' partial knowledge.md may survive on disk because
   // `discard_partial_outputs` excludes the batches/ subdir; the scheduler

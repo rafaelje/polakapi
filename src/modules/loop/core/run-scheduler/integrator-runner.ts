@@ -1,7 +1,7 @@
 import { stringifyError } from "../../../../shared/errors";
 import { buildRunPromptPath, type AgentSlot, type LoopAgentRole } from "../../types";
 
-import { batchIdFor, createEmptyStage } from "./factories";
+import { SEQUENTIAL_AGENTS, batchIdFor, createEmptyStage } from "./factories";
 import { detectBatchConflicts, parseIntegrationVerdict, truncateForIntegrator } from "./helpers";
 import type { HeartbeatController } from "./heartbeat";
 import type { StateStore } from "./store";
@@ -25,6 +25,10 @@ export class IntegratorRunner {
     const { store, invokers, heartbeat, slotFor, persistState } = this.deps;
     const settings = store.getState().settings;
     if (!settings) return "error";
+
+    // On resume, currentBatchIndex points at the LAST started batch — skip if
+    // the integrator already produced a verdict in the prior run.
+    if (store.getState().integrators[batchIndex]?.status === "done") return "done";
 
     store.patchIntegrator(batchIndex, { status: "running", message: undefined });
     store.commit({ ...store.getState(), currentStage: null });
@@ -179,11 +183,37 @@ export class IntegratorRunner {
     return "done";
   }
 
-  resetBatchPhases(phaseIndices: number[]): void {
-    const phases = this.deps.store.getState().phases.slice();
+  // Subtracts the prior attempt's tokens from totals/byAgent so a `rerun`
+  // decision does not double-count against the budget.
+  resetBatchPhases(phaseIndices: number[], batchIndex: number): void {
+    const state = this.deps.store.getState();
+    const phases = state.phases.slice();
+    const integrators = state.integrators.slice();
+    const totals = { ...state.totals };
+    const byAgent: typeof state.byAgent = {
+      analysis: { ...state.byAgent.analysis },
+      implementation: { ...state.byAgent.implementation },
+      review: { ...state.byAgent.review },
+      knowledge: { ...state.byAgent.knowledge },
+      integration: { ...state.byAgent.integration },
+    };
+
+    const subtract = (role: LoopAgentRole, tIn: number, tOut: number, cost: number): void => {
+      totals.tokensIn -= tIn;
+      totals.tokensOut -= tOut;
+      totals.costUsd -= cost;
+      byAgent[role].tokensIn -= tIn;
+      byAgent[role].tokensOut -= tOut;
+      byAgent[role].costUsd -= cost;
+    };
+
     for (const idx of phaseIndices) {
       const p = phases[idx];
       if (!p) continue;
+      for (const agent of SEQUENTIAL_AGENTS) {
+        const s = p.stages[agent];
+        subtract(agent, s.tokensIn, s.tokensOut, s.costUsd);
+      }
       phases[idx] = {
         ...p,
         status: "pending",
@@ -196,7 +226,25 @@ export class IntegratorRunner {
         },
       };
     }
-    this.deps.store.commit({ ...this.deps.store.getState(), phases });
+
+    const integ = integrators[batchIndex];
+    if (integ) {
+      subtract("integration", integ.tokensIn, integ.tokensOut, integ.costUsd);
+      integrators[batchIndex] = {
+        ...integ,
+        tokensIn: 0,
+        tokensOut: 0,
+        costUsd: 0,
+      };
+    }
+
+    this.deps.store.commit({
+      ...state,
+      phases,
+      integrators,
+      totals,
+      byAgent,
+    });
   }
 }
 

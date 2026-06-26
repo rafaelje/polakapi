@@ -47,6 +47,13 @@ export class PhaseRunner {
       }
       if (agent === "review") {
         await this.runReviewLoop(index);
+      } else if (agent === "implementation") {
+        // On resume, replay the prior reviewer's notes so the regenerated
+        // output addresses the same complaints.
+        const review = store.getState().phases[index]?.stages.review;
+        const reviewNotes =
+          review && review.retries > 0 && review.message ? review.message : undefined;
+        await this.runStage(index, agent, reviewNotes ? { reviewNotes } : undefined);
       } else {
         await this.runStage(index, agent);
       }
@@ -82,7 +89,9 @@ export class PhaseRunner {
     const { store, shouldStop } = this.deps;
     const settings = store.getState().settings;
     if (!settings) return;
-    let attempt = 0;
+    // Fast-forward past attempts the reviewer already completed in a prior
+    // run (rewind decremented the in-flight one by 1).
+    let attempt = store.getState().phases[phaseIndex]?.stages.review.retries ?? 0;
     while (attempt < settings.maxRetries) {
       if (shouldStop()) return;
       attempt += 1;
@@ -92,9 +101,12 @@ export class PhaseRunner {
         return;
       }
       if (verdict.approved) {
-        store.patchStage(phaseIndex, "review", { status: "done" });
+        store.patchStage(phaseIndex, "review", { status: "done", message: undefined });
         return;
       }
+      // Persist notes before the implementation retry — the resume path
+      // reads them to re-feed the regenerated implementation.
+      store.patchStage(phaseIndex, "review", { message: verdict.notes });
       if (attempt < settings.maxRetries) {
         if (shouldStop()) return;
         await this.runStage(phaseIndex, "implementation", { reviewNotes: verdict.notes });
@@ -109,7 +121,7 @@ export class PhaseRunner {
     store.patchPhase(phaseIndex, { reviewerExhausted: true });
     store.patchStage(phaseIndex, "review", {
       status: "warning",
-      message: "reviewer did not approve after 3 attempts — debt recorded in knowledge",
+      message: `reviewer did not approve after ${settings.maxRetries} attempt(s) — debt recorded in knowledge`,
     });
   }
 

@@ -6,18 +6,15 @@ import type { BatchConflict } from "./types";
  * better a false retry than a false approval.
  */
 export function parseReviewVerdict(text: string): { approved: boolean; notes: string } {
-  const lines = text.split(/\r?\n/);
-  for (const line of lines) {
-    const m = line.match(/^\s*(?:VERDICT|VEREDICTO)\s*[:=]\s*([\w-]+)/i);
-    if (m) {
-      const v = m[1].toLowerCase();
-      const approved = v === "approved" || v === "aprobado" || v === "ok";
-      const idx = text.indexOf(line);
-      const notes = text.slice(idx + line.length).trim();
-      return { approved, notes: approved ? "" : notes };
-    }
-  }
-  return { approved: false, notes: text.trim() };
+  // Use the regex match offset, not `text.indexOf(line)` — an earlier echo of
+  // the verdict line in the body would corrupt the notes slice.
+  const re = /^[ \t]*(?:VERDICT|VEREDICTO)[ \t]*[:=][ \t]*([\w-]+).*$/im;
+  const m = re.exec(text);
+  if (!m) return { approved: false, notes: text.trim() };
+  const v = m[1].toLowerCase();
+  const approved = v === "approved" || v === "aprobado" || v === "ok";
+  const notes = text.slice(m.index + m[0].length).trim();
+  return { approved, notes: approved ? "" : notes };
 }
 
 export function buildAgentDiff(diffBefore: string, diffAfter: string): string {

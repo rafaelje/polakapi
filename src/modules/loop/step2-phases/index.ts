@@ -411,7 +411,11 @@ export function mountStep2Phases(slot: HTMLElement, ctx: Step2Context): Step2Han
   }
 
   async function addPhase(): Promise<void> {
-    const nextNum = state.phases.length + 1;
+    // max+1 (not length+1) so a phase added after a delete gets a unique id.
+    const existingNums = state.phases
+      .map((p) => parseInt(p.id, 10))
+      .filter((n) => Number.isFinite(n));
+    const nextNum = existingNums.length === 0 ? 1 : Math.max(...existingNums) + 1;
     const id = String(nextNum).padStart(2, "0");
     const name = `phase-${id}`;
     const newPhase: Phase = {

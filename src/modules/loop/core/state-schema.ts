@@ -230,13 +230,17 @@ function validateSettings(value: unknown): RunSettings | null {
       }
     }
   }
+  // Reject on missing/non-numeric — silently substituting defaults would
+  // downgrade the user's explicit choice on schema drift.
+  if (!isNumber(value.maxRetries)) return null;
+  if (!isNumber(value.agentTimeoutSecs)) return null;
   return {
     projectPath,
     runId,
     matrix,
     promptOverrides,
-    maxRetries: asNumber(value.maxRetries, 3),
-    agentTimeoutSecs: asNumber(value.agentTimeoutSecs, 300),
+    maxRetries: value.maxRetries,
+    agentTimeoutSecs: value.agentTimeoutSecs,
   };
 }
 

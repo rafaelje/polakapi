@@ -93,26 +93,22 @@ describe("RunScheduler — skip-done on resume (sequential)", () => {
   });
 });
 
-describe("RunScheduler — atomic totals under concurrent batch (hybrid)", () => {
-  it("does not drop tokens when two phases of the same batch invoke in parallel", async () => {
-    // Two independent phases run in the same batch — Promise.all kicks both
-    // off concurrently. Each agent invocation reports +10/+5/+0.01. The two
-    // phases run 4 stages each => 8 invocations. Total must be 80/40/0.08
-    // exactly (no race-induced loss).
-    let resolveGate: (() => void) | null = null;
-    const gate = new Promise<void>((r) => {
-      resolveGate = r;
-    });
+describe("RunScheduler — within-batch hybrid execution", () => {
+  it("runs phases of the same batch sequentially (not in parallel)", async () => {
+    // Phases share a working tree, so each agent's `git diff HEAD` snapshot
+    // would otherwise capture sibling phases' changes — corrupting the
+    // per-phase `.diff` and poisoning detectBatchConflicts. The scheduler
+    // serializes within a batch to keep the diff attribution honest.
     let inflight = 0;
     let peakInflight = 0;
     const { invokers } = fakeInvokers({
       runAgent: async (args) => {
         inflight += 1;
         peakInflight = Math.max(peakInflight, inflight);
-        // Hold the first parallel pair so they have to commit concurrently —
-        // a non-atomic accumulator would lose one of them.
-        if (inflight === 2) resolveGate!();
-        await gate;
+        // Yield to other microtasks so any concurrent invocation would
+        // become observable in `peakInflight`.
+        await Promise.resolve();
+        await Promise.resolve();
         inflight -= 1;
         const agentName = args.systemPromptPath?.match(/([a-z]+)\.md$/)?.[1] ?? "?";
         const text = agentName === "review" ? "VERDICT: ok" : "ok";
@@ -125,16 +121,15 @@ describe("RunScheduler — atomic totals under concurrent batch (hybrid)", () =>
     await scheduler.start();
 
     const totals = scheduler.getState().totals;
-    // 4 stages × 2 phases + 1 integrator = 9 invocations × +10 = 90; same
-    // shape for out/cost.
+    // 4 stages × 2 phases + 1 integrator = 9 invocations × +10 = 90.
     expect(totals.tokensIn).toBe(90);
     expect(totals.tokensOut).toBe(45);
     expect(totals.costUsd).toBeCloseTo(0.09, 5);
-    // Sanity: the gate forced at least one window with 2 in-flight agents.
-    expect(peakInflight).toBeGreaterThanOrEqual(2);
+    // No two agent invocations may overlap within the batch.
+    expect(peakInflight).toBe(1);
   });
 
-  it("per-agent rollup also survives parallel commits", async () => {
+  it("per-agent rollup tallies every invocation", async () => {
     const { invokers } = fakeInvokers();
     const scheduler = new RunScheduler(invokers);
     scheduler.initialize([phase("a"), phase("b")], baseSettings(), "hybrid");
@@ -298,12 +293,138 @@ describe("RunScheduler — hybrid integrator", () => {
   });
 });
 
+describe("RunScheduler — terminal-state guard", () => {
+  it("start() is a no-op from completed/aborted/error", async () => {
+    // Re-entering start() from a terminal state would re-run the last batch's
+    // integrator (no skip-done upstream): a fresh attempt must call
+    // initialize() first.
+    const { invokers, calls } = trackingInvokers((agent) =>
+      Promise.resolve({
+        text: agent === "review" ? "VERDICT: ok" : "ok",
+        tokensIn: 0,
+        tokensOut: 0,
+        costUsd: 0,
+      }),
+    );
+    const scheduler = new RunScheduler(invokers);
+    scheduler.initialize([phase("a")], baseSettings(), "sequential");
+    await scheduler.start();
+    const callsAfterFirst = calls.length;
+    expect(scheduler.getState().status).toBe("completed");
+
+    await scheduler.start();
+    expect(calls.length).toBe(callsAfterFirst);
+  });
+});
+
+describe("RunScheduler — integrator skip-done on resume", () => {
+  it("does not re-run an integrator already marked done", async () => {
+    // Simulate a crash that landed between integrator.status='done' and
+    // currentBatchIndex += 1. On resume the hybrid cycle re-enters the same
+    // batch index; the integrator must NOT re-run.
+    const { invokers, calls } = trackingInvokers((agent) =>
+      Promise.resolve({
+        text:
+          agent === "review" ? "VERDICT: ok" : agent === "integration" ? "INTEGRATION: ok" : "ok",
+        tokensIn: 0,
+        tokensOut: 0,
+        costUsd: 0,
+      }),
+    );
+    const scheduler = new RunScheduler(invokers);
+    scheduler.initialize([phase("a")], baseSettings(), "hybrid");
+    const state = scheduler.getState();
+    // Pretend every stage already completed in a prior run and the integrator
+    // also already produced a verdict, but currentBatchIndex never advanced.
+    for (const stage of ["analysis", "implementation", "review", "knowledge"] as const) {
+      state.phases[0].stages[stage].status = "done";
+    }
+    state.phases[0].status = "done";
+    state.integrators[0].status = "done";
+
+    await scheduler.start();
+
+    expect(calls.filter((c) => c.agent === "integration")).toHaveLength(0);
+    expect(scheduler.getState().status).toBe("completed");
+  });
+});
+
+describe("RunScheduler — resetBatchPhases token accounting", () => {
+  it("subtracts spent tokens from totals/byAgent on rerun", async () => {
+    // 1-phase batch where the integrator returns BLOCKER on the first run.
+    // We resolve the conflict with 'rerun' on the SECOND run; the rerun's
+    // tokens must NOT double-count against totals.
+    let integratorCallCount = 0;
+    const { invokers } = trackingInvokers((agent) => {
+      if (agent === "integration") {
+        integratorCallCount += 1;
+        return Promise.resolve({
+          // First call returns BLOCKER → conflict path; second returns ok.
+          text: integratorCallCount === 1 ? "INTEGRATION: blocker" : "INTEGRATION: ok",
+          tokensIn: 10,
+          tokensOut: 5,
+          costUsd: 0.01,
+        });
+      }
+      return Promise.resolve({
+        text: agent === "review" ? "VERDICT: ok" : "ok",
+        tokensIn: 10,
+        tokensOut: 5,
+        costUsd: 0.01,
+      });
+    });
+    const scheduler = new RunScheduler(invokers);
+    scheduler.initialize([phase("a")], baseSettings(), "hybrid");
+
+    const run = scheduler.start();
+    // Wait for the conflict to pause the scheduler.
+    await new Promise<void>((resolve) => {
+      const off = scheduler.on((s) => {
+        if (s.status === "paused") {
+          off();
+          resolve();
+        }
+      });
+    });
+    scheduler.resolveConflict("rerun");
+    await run;
+
+    const totals = scheduler.getState().totals;
+    // After the rerun, only the SECOND attempt's tokens should be accounted
+    // for: 4 phase stages + 1 integrator = 5 invocations × 10/5/0.01.
+    expect(totals.tokensIn).toBe(50);
+    expect(totals.tokensOut).toBe(25);
+    expect(totals.costUsd).toBeCloseTo(0.05, 5);
+    // The integrator's per-stage counters also reset between attempts.
+    const integ = scheduler.getState().integrators[0];
+    expect(integ.tokensIn).toBe(10);
+    expect(integ.status).toBe("done");
+  });
+});
+
 describe("pure helpers", () => {
   it("parseReviewVerdict accepts ok/approved synonyms", () => {
     expect(parseReviewVerdict("VERDICT: ok").approved).toBe(true);
     expect(parseReviewVerdict("verdict: approved").approved).toBe(true);
     expect(parseReviewVerdict("VERDICT: retry\nneeds X").approved).toBe(false);
     expect(parseReviewVerdict("no header at all").approved).toBe(false);
+  });
+
+  it("parseReviewVerdict picks the actual verdict line, not an earlier echo", () => {
+    // The body quotes the rubric ("emit `VERDICT: retry`…") BEFORE the real
+    // verdict line. A naive `indexOf(line)` would slice notes from the echo
+    // and include the verdict line itself inside the notes.
+    const text = [
+      "Rubric note: the reviewer may emit `VERDICT: retry` for any issue.",
+      "",
+      "VERDICT: retry",
+      "real reason A",
+      "real reason B",
+    ].join("\n");
+    const v = parseReviewVerdict(text);
+    expect(v.approved).toBe(false);
+    expect(v.notes.startsWith("real reason A")).toBe(true);
+    expect(v.notes).not.toContain("VERDICT: retry");
   });
 
   it("parseIntegrationVerdict surfaces blocker", () => {
