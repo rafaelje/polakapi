@@ -23,9 +23,8 @@ use crate::loop_prompts::{
     loop_read_batch_file, loop_read_global_prompt, loop_read_output_file, loop_read_phase_file,
     loop_read_run_file, loop_read_run_prompt, loop_read_state_file, loop_reseed_global_prompt,
     loop_reset_run_prompt_to_global, loop_validate_cli_model, loop_write_batch_file,
-    loop_write_global_prompt,
-    loop_write_output_file, loop_write_phase_file, loop_write_run_file, loop_write_run_prompt,
-    loop_write_state_file,
+    loop_write_global_prompt, loop_write_output_file, loop_write_phase_file, loop_write_run_file,
+    loop_write_run_prompt, loop_write_state_file,
 };
 use crate::pty::PtyStore;
 

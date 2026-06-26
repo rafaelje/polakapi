@@ -32,8 +32,9 @@ describe("PersistenceQueue", () => {
     let after = false;
 
     const failing = queue.enqueue(() => Promise.reject(new Error("disk full")));
-    const ok = queue.enqueue(async () => {
+    const ok = queue.enqueue(() => {
       after = true;
+      return Promise.resolve();
     });
 
     await expect(failing).resolves.toBeUndefined();
@@ -48,8 +49,9 @@ describe("PersistenceQueue", () => {
     const bomb = queue.enqueue(() => {
       throw new Error("boom");
     });
-    const next = queue.enqueue(async () => {
+    const next = queue.enqueue(() => {
       landed = true;
+      return Promise.resolve();
     });
 
     await expect(bomb).resolves.toBeUndefined();
@@ -70,8 +72,9 @@ describe("PersistenceQueue", () => {
       await gate;
       order.push("first");
     });
-    const second = queue.enqueue(async () => {
+    const second = queue.enqueue(() => {
       order.push("second");
+      return Promise.resolve();
     });
 
     expect(order).toEqual([]);

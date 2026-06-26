@@ -111,10 +111,11 @@ export function mountStep3Setup(slot: HTMLElement, ctx: Step3Context): Step3Hand
       if (disposed) return;
       state.status = `error loading: ${stringifyError(err)}`;
     } finally {
-      if (disposed) return;
-      state.busy = false;
-      refs.refresh();
-      void validateAllSlots();
+      if (!disposed) {
+        state.busy = false;
+        refs.refresh();
+        void validateAllSlots();
+      }
     }
   }
 
@@ -293,9 +294,10 @@ export function mountStep3Setup(slot: HTMLElement, ctx: Step3Context): Step3Hand
       if (disposed) return;
       state.status = `error resetting: ${stringifyError(err)}`;
     } finally {
-      if (disposed) return;
-      state.busy = false;
-      refs.refresh();
+      if (!disposed) {
+        state.busy = false;
+        refs.refresh();
+      }
     }
   }
 
@@ -323,9 +325,10 @@ export function mountStep3Setup(slot: HTMLElement, ctx: Step3Context): Step3Hand
       if (disposed) return;
       state.status = `error reseeding: ${stringifyError(err)}`;
     } finally {
-      if (disposed) return;
-      state.busy = false;
-      refs.refresh();
+      if (!disposed) {
+        state.busy = false;
+        refs.refresh();
+      }
     }
   }
 

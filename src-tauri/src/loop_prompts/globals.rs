@@ -234,15 +234,11 @@ pub async fn loop_write_run_prompt(
 /// in-repo `src-tauri/prompts/*.md` and pull the result into the live globals
 /// after a rebuild without manually deleting the app-config copy.
 #[tauri::command]
-pub async fn loop_reseed_global_prompt(
-    app: tauri::AppHandle,
-    name: String,
-) -> Result<(), String> {
+pub async fn loop_reseed_global_prompt(app: tauri::AppHandle, name: String) -> Result<(), String> {
     if !is_known_prompt(&name) {
         return Err(format!("unknown prompt: {name}"));
     }
-    let seed =
-        bundled_content(&name).ok_or_else(|| format!("missing bundled seed for {name}"))?;
+    let seed = bundled_content(&name).ok_or_else(|| format!("missing bundled seed for {name}"))?;
     let dir = prompts_dir(&app)?;
     tokio::task::spawn_blocking(move || -> Result<(), String> {
         std::fs::create_dir_all(&dir).map_err(|e| format!("could not create {dir:?}: {e}"))?;
