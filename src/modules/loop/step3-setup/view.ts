@@ -456,8 +456,8 @@ export function renderView(
     reset.type = "button";
     reset.className = "loop-btn loop-btn-ghost";
     reset.textContent = "↑ reset to global";
-    reset.disabled = state.busy || !isPromptModified(state, name);
-    reset.title = "Discards changes in this run and returns to the global content";
+    reset.disabled = state.busy;
+    reset.title = "Reloads the global from disk and overwrites the run prompt";
     on(reset, "click", () => dispatch({ kind: "reset-to-global", name }));
 
     const promote = document.createElement("button");
@@ -468,7 +468,16 @@ export function renderView(
     promote.title = "Overwrites the global with the current content — affects future runs";
     on(promote, "click", () => dispatch({ kind: "promote-to-global", name }));
 
-    bar.append(reset, promote);
+    const reseed = document.createElement("button");
+    reseed.type = "button";
+    reseed.className = "loop-btn loop-btn-ghost";
+    reseed.textContent = "↻ reseed from bundled";
+    reseed.disabled = state.busy;
+    reseed.title =
+      "Restores the bundled prompt compiled into the binary, overwriting the global and the run copy";
+    on(reseed, "click", () => dispatch({ kind: "reseed-from-bundled", name }));
+
+    bar.append(reset, promote, reseed);
     return bar;
   }
 

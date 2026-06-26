@@ -48,6 +48,60 @@ pub async fn loop_read_global_prompt(
     .map_err(|e| format!("join error: {e}"))?
 }
 
+/// Idempotently materializes the per-run copy of a prompt from the current
+/// global content (falling back to the bundled seed if the global was
+/// deleted). Returns immediately if the file already exists in the run, so
+/// every step can safely call this before invoking an agent without paying
+/// any I/O cost on subsequent turns.
+#[tauri::command]
+pub async fn loop_ensure_run_prompt(
+    app: tauri::AppHandle,
+    project_path: String,
+    run_id: String,
+    name: String,
+) -> Result<(), String> {
+    if !is_known_prompt(&name) {
+        return Err(format!("unknown prompt: {name}"));
+    }
+    if !is_safe_run_id(&run_id) {
+        return Err(format!("invalid run_id: {run_id}"));
+    }
+    let global_dir = prompts_dir(&app)?;
+    tokio::task::spawn_blocking(move || -> Result<(), String> {
+        let project = PathBuf::from(&project_path);
+        if !project.is_dir() {
+            return Err(format!("project not found: {project:?}"));
+        }
+        let run_prompts_dir = project
+            .join(".loop")
+            .join("runs")
+            .join(&run_id)
+            .join("prompts");
+        if !run_prompts_dir.is_dir() {
+            return Err(format!(
+                "run dir not initialized: {run_prompts_dir:?} (run loop_create_run first)"
+            ));
+        }
+        let target = run_prompts_dir.join(&name);
+        if target.exists() {
+            return Ok(());
+        }
+        // Source: global → bundled fallback. Atomic single write.
+        std::fs::create_dir_all(&global_dir)
+            .map_err(|e| format!("could not create {global_dir:?}: {e}"))?;
+        let global_target = global_dir.join(&name);
+        let content = match std::fs::read_to_string(&global_target) {
+            Ok(c) => c,
+            Err(_) => bundled_content(&name)
+                .ok_or_else(|| format!("missing bundled seed for {name}"))?
+                .to_string(),
+        };
+        write_atomic(&target, &content)
+    })
+    .await
+    .map_err(|e| format!("join error: {e}"))?
+}
+
 /// Overwrites the run copy of a prompt with the current global content.
 /// Useful when the global was updated after creating the run (runs already
 /// created have an atomic copy from the moment of creation; this command
@@ -170,6 +224,30 @@ pub async fn loop_write_run_prompt(
         }
         let target = run_prompts_dir.join(&name);
         write_atomic(&target, &content)
+    })
+    .await
+    .map_err(|e| format!("join error: {e}"))?
+}
+
+/// Restores the global prompt from the bundled seed compiled into the binary,
+/// overwriting whatever is currently on disk. Lets developers iterate on the
+/// in-repo `src-tauri/prompts/*.md` and pull the result into the live globals
+/// after a rebuild without manually deleting the app-config copy.
+#[tauri::command]
+pub async fn loop_reseed_global_prompt(
+    app: tauri::AppHandle,
+    name: String,
+) -> Result<(), String> {
+    if !is_known_prompt(&name) {
+        return Err(format!("unknown prompt: {name}"));
+    }
+    let seed =
+        bundled_content(&name).ok_or_else(|| format!("missing bundled seed for {name}"))?;
+    let dir = prompts_dir(&app)?;
+    tokio::task::spawn_blocking(move || -> Result<(), String> {
+        std::fs::create_dir_all(&dir).map_err(|e| format!("could not create {dir:?}: {e}"))?;
+        let target = dir.join(&name);
+        write_atomic(&target, seed)
     })
     .await
     .map_err(|e| format!("join error: {e}"))?

@@ -83,6 +83,13 @@ export class IntegratorRunner {
       settings.runId,
       "integration.md",
     );
+    // Per-run prompts are seeded lazily — ensure integration.md exists before
+    // the CLI reads it.
+    await invokers.ensureRunPrompt({
+      projectPath: settings.projectPath,
+      runId: settings.runId,
+      name: "integration.md",
+    });
 
     let result: AgentResult;
     heartbeat.start();

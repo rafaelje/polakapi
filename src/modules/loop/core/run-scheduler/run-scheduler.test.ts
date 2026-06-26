@@ -44,6 +44,7 @@ const fakeInvokers = (
     readPhaseFile: () => Promise.resolve(""),
     readBatchFile: () => Promise.resolve(""),
     writeBatchFile: () => Promise.resolve(),
+    ensureRunPrompt: () => Promise.resolve(),
     ...overrides,
   };
   // Re-apply any overrides that took precedence over runAgent so we still
@@ -173,6 +174,7 @@ const trackingInvokers = (
     readPhaseFile: () => Promise.resolve(""),
     readBatchFile: () => Promise.resolve(""),
     writeBatchFile: () => Promise.resolve(),
+    ensureRunPrompt: () => Promise.resolve(),
   };
   return { invokers, calls };
 };

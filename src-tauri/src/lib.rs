@@ -18,11 +18,12 @@ use crate::commands::{
 use crate::loop_cli::run_loop_agent;
 use crate::loop_prompts::{
     loop_archive_run, loop_create_phase_dir, loop_create_run, loop_delete_phase_dir,
-    loop_discard_partial_outputs, loop_ensure_prompts_dir, loop_git_diff_snapshot,
-    loop_list_interrupted_runs, loop_list_phase_dirs, loop_list_runs, loop_read_batch_file,
-    loop_read_global_prompt, loop_read_output_file, loop_read_phase_file, loop_read_run_file,
-    loop_read_run_prompt, loop_read_state_file, loop_reset_run_prompt_to_global,
-    loop_validate_cli_model, loop_write_batch_file, loop_write_global_prompt,
+    loop_discard_partial_outputs, loop_ensure_prompts_dir, loop_ensure_run_prompt,
+    loop_git_diff_snapshot, loop_list_interrupted_runs, loop_list_phase_dirs, loop_list_runs,
+    loop_read_batch_file, loop_read_global_prompt, loop_read_output_file, loop_read_phase_file,
+    loop_read_run_file, loop_read_run_prompt, loop_read_state_file, loop_reseed_global_prompt,
+    loop_reset_run_prompt_to_global, loop_validate_cli_model, loop_write_batch_file,
+    loop_write_global_prompt,
     loop_write_output_file, loop_write_phase_file, loop_write_run_file, loop_write_run_prompt,
     loop_write_state_file,
 };
@@ -117,6 +118,8 @@ pub fn run() {
             loop_list_interrupted_runs,
             loop_list_runs,
             loop_reset_run_prompt_to_global,
+            loop_reseed_global_prompt,
+            loop_ensure_run_prompt,
             loop_read_run_prompt,
             loop_write_run_prompt,
             loop_archive_run,

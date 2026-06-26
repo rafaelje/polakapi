@@ -126,6 +126,12 @@ export interface SchedulerInvokers {
     file: "knowledge.md";
     content: string;
   }): Promise<void>;
+  /**
+   * Materialize the per-run copy of a prompt from the global if it does not
+   * exist yet. Cheap to call before every agent invocation — no-op once the
+   * file has been seeded.
+   */
+  ensureRunPrompt(args: { projectPath: string; runId: string; name: string }): Promise<void>;
 }
 
 export interface BatchConflict {

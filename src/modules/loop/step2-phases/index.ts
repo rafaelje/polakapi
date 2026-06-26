@@ -32,6 +32,14 @@ export {
 };
 export type { Phase, PhaseDraft, Step2Context };
 
+/**
+ * Reinforces the "fewest phases possible" rule on every regenerate call. The
+ * system prompt may be stale (existing global was seeded before the rule was
+ * tightened) so we restate the policy alongside the user input.
+ */
+const SIMPLICITY_GUARDRAIL =
+  "\n\n---\n[hard constraint — phase count: minimize phases, max 5, default 1. For small or focused problems return exactly ONE phase. Do NOT split work into many small phases to look thorough; merge anything that doesn't have a genuinely independent acceptance criterion. A 9-phase plan for a small change is wrong — prefer 1 or 2 phases.]";
+
 export interface Step2Handle {
   dispose(): void;
 }
@@ -281,6 +289,21 @@ export function mountStep2Phases(slot: HTMLElement, ctx: Step2Context): Step2Han
     state.status = "generating phases…";
     refs.refresh();
 
+    // Lazy seed: the run dir was created in step 1 without prompt files,
+    // so we materialize phase-decomposition.md before the agent reads it.
+    try {
+      await invoke<void>("loop_ensure_run_prompt", {
+        projectPath: ctx.projectPath,
+        runId: ctx.runId,
+        name: "phase-decomposition.md",
+      });
+    } catch (err) {
+      state.busy = false;
+      state.status = `could not seed phase-decomposition.md: ${stringifyError(err)}`;
+      refs.refresh();
+      return;
+    }
+
     const systemPromptPath = buildRunPromptPath(
       ctx.projectPath,
       ctx.runId,
@@ -293,7 +316,7 @@ export function mountStep2Phases(slot: HTMLElement, ctx: Step2Context): Step2Han
         model: defaultModelFor(state.cli),
         cwd: ctx.projectPath,
         systemPromptPath,
-        userInput: problem,
+        userInput: problem + SIMPLICITY_GUARDRAIL,
         timeoutSecs: 180,
       });
       if (result.error) {

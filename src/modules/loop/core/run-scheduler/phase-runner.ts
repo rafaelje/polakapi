@@ -150,6 +150,13 @@ export class PhaseRunner {
       settings.runId,
       `${agent}.md` as LoopPromptName,
     );
+    // Per-run prompts are seeded lazily — make sure this agent's file exists
+    // on disk before the CLI tries to read it.
+    await invokers.ensureRunPrompt({
+      projectPath: settings.projectPath,
+      runId: settings.runId,
+      name: `${agent}.md`,
+    });
 
     const result = await this.invokeAgent({
       cli: slot.cli,

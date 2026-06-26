@@ -24,6 +24,18 @@ import { renderView } from "./view";
 
 export type { ChatTurn, Step1Context } from "./state";
 
+const AUTO_ANALYZE_PROMPT =
+  "Briefly explore the project files in the current working directory and reply with ONE single paragraph, in English, easy to understand. This step is RESEARCH AND ANALYSIS ONLY: cover what the project does (scope), any obvious strengths, and any weaknesses, risks, or ambiguities you notice. Do NOT propose solutions, fixes, architectures, libraries, or implementation steps — solving is for later steps. Do not ask any questions yet — only the analytical paragraph.";
+
+/**
+ * Appended to every user turn in step 1. The system prompt is only sent on
+ * the first turn of a CLI session, so an existing session that started before
+ * the rules were tightened would otherwise keep proposing solutions. This
+ * per-turn reminder reinforces the no-solving rule on every turn.
+ */
+const STEP1_GUARDRAIL =
+  "\n\n---\n[step 1 reminder — RESEARCH AND ANALYSIS ONLY: do NOT propose solutions, fixes, implementations, architectures, libraries, patterns, file layouts, APIs, or plans. Your job is to clarify scope, surface weaknesses, highlight strengths, and ask precise technical questions. If you are tempted to propose a solution, ask a clarifying question instead.]";
+
 interface AgentResult {
   text: string;
   tokensIn?: number | null;
@@ -106,6 +118,16 @@ export function mountStep1Chat(slot: HTMLElement, ctx: Step1Context): Step1Handl
     }
     if (disposed) return;
     if (touched) refs.refresh();
+    if (state.turns.length === 0 && !state.consolidatedExists) {
+      await autoAnalyzeProject();
+    }
+  }
+
+  async function autoAnalyzeProject(): Promise<void> {
+    if (disposed) return;
+    if (state.turns.length > 0 || state.consolidatedExists) return;
+    state.inputDraft = AUTO_ANALYZE_PROMPT;
+    await sendTurn({ intro: true });
   }
 
   async function handleAction(action: ChatAction): Promise<void> {
@@ -163,10 +185,16 @@ export function mountStep1Chat(slot: HTMLElement, ctx: Step1Context): Step1Handl
       projectPath: ctx.projectPath,
       runId: ctx.runId,
     });
+    // Per-run prompts are seeded lazily — step 1 only needs problem-intake.md.
+    await invoke<void>("loop_ensure_run_prompt", {
+      projectPath: ctx.projectPath,
+      runId: ctx.runId,
+      name: "problem-intake.md",
+    });
     runDirReady = true;
   }
 
-  async function sendTurn(): Promise<void> {
+  async function sendTurn(opts?: { intro?: boolean }): Promise<void> {
     const userMsg = state.inputDraft.trim();
     if (!userMsg) return;
     if (state.turns.some((t) => t.pending)) return;
@@ -175,6 +203,7 @@ export function mountStep1Chat(slot: HTMLElement, ctx: Step1Context): Step1Handl
       user: userMsg,
       assistant: "",
       pending: true,
+      intro: opts?.intro,
     };
     state.turns.push(turn);
     state.inputDraft = "";
@@ -191,9 +220,13 @@ export function mountStep1Chat(slot: HTMLElement, ctx: Step1Context): Step1Handl
 
     // With an active session for this CLI, send only the new message —
     // the CLI already remembers prior turns. Otherwise serialize the full
-    // history into the prompt to bootstrap.
+    // history into the prompt to bootstrap. Either way we append the
+    // step-1 guardrail so the no-solving rule is reinforced every turn.
     const sessionId = state.sessionByCli[state.cli];
-    const prompt = sessionId ? userMsg : buildHistoryPrompt(state.turns.slice(0, -1), userMsg);
+    const baseUserMsg = userMsg + STEP1_GUARDRAIL;
+    const prompt = sessionId
+      ? baseUserMsg
+      : buildHistoryPrompt(state.turns.slice(0, -1), baseUserMsg);
 
     const systemPromptPath = buildRunPromptPath(ctx.projectPath, ctx.runId, "problem-intake.md");
 

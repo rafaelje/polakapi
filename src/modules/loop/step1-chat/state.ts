@@ -7,6 +7,11 @@ export interface ChatTurn {
   error?: string;
   tokensIn?: number | null;
   tokensOut?: number | null;
+  /**
+   * Auto-generated intro turn (project analysis fired on first mount).
+   * The view hides the synthetic user bubble for these turns.
+   */
+  intro?: boolean;
 }
 
 export interface Step1Context {

@@ -36,8 +36,9 @@ pub use admin::{
     loop_validate_cli_model,
 };
 pub use globals::{
-    loop_ensure_prompts_dir, loop_read_global_prompt, loop_read_run_prompt,
-    loop_reset_run_prompt_to_global, loop_write_global_prompt, loop_write_run_prompt,
+    loop_ensure_prompts_dir, loop_ensure_run_prompt, loop_read_global_prompt, loop_read_run_prompt,
+    loop_reseed_global_prompt, loop_reset_run_prompt_to_global, loop_write_global_prompt,
+    loop_write_run_prompt,
 };
 pub use runs::{loop_create_run, loop_read_run_file, loop_write_run_file};
 pub use storage::{

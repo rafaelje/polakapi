@@ -206,6 +206,13 @@ export function renderView(
     const block = document.createElement("article");
     block.className = "loop-step1-turn";
 
+    if (turn.intro) {
+      const intro = document.createElement("div");
+      intro.className = "loop-step1-intro-label";
+      intro.textContent = "automatic project analysis";
+      block.append(intro);
+    }
+
     const userRow = document.createElement("div");
     userRow.className = "loop-step1-row loop-step1-row-user";
     const userLabel = document.createElement("span");
@@ -239,7 +246,11 @@ export function renderView(
     }
     agentRow.append(agentLabel, agentText);
 
-    block.append(userRow, agentRow);
+    if (turn.intro) {
+      block.append(agentRow);
+    } else {
+      block.append(userRow, agentRow);
+    }
 
     if (turn.error) {
       const err = document.createElement("p");

@@ -60,6 +60,7 @@ export type Step3Action =
   | { kind: "select-prompt"; name: LoopPromptName }
   | { kind: "set-prompt-buffer"; name: LoopPromptName; value: string }
   | { kind: "reset-to-global"; name: LoopPromptName }
+  | { kind: "reseed-from-bundled"; name: LoopPromptName }
   | { kind: "promote-to-global"; name: LoopPromptName }
   | { kind: "execute" };
 

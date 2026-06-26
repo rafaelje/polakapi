@@ -11,4 +11,5 @@ export const defaultInvokers: SchedulerInvokers = {
   readPhaseFile: (args) => invoke<string>("loop_read_phase_file", args),
   readBatchFile: (args) => invoke<string>("loop_read_batch_file", args),
   writeBatchFile: (args) => invoke<void>("loop_write_batch_file", args),
+  ensureRunPrompt: (args) => invoke<void>("loop_ensure_run_prompt", args),
 };

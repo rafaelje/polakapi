@@ -81,6 +81,9 @@ export function serializeDraftMarkdown(turns: ChatTurn[]): string {
   for (let i = 0; i < turns.length; i++) {
     const turn = turns[i];
     parts.push(`## Turn ${i + 1}\n`);
+    if (turn.intro) {
+      parts.push(`> intro\n`);
+    }
     parts.push(`### User\n${turn.user.trim()}\n`);
     if (turn.assistant.trim()) {
       parts.push(`### Agent\n${turn.assistant.trim()}\n`);
@@ -106,10 +109,12 @@ export function parseDraftMarkdown(content: string): ChatTurn[] {
     if (!userMatch) continue;
     const user = userMatch[1].trim();
     if (!user) continue;
+    const isIntro = /^> intro\s*$/m.test(block.split(/### User/)[0] ?? "");
     turns.push({
       user,
       assistant: agentMatch ? agentMatch[1].trim() : "",
       pending: false,
+      ...(isIntro ? { intro: true } : {}),
     });
   }
   return turns;

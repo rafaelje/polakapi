@@ -6,9 +6,7 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-use super::{
-    bundled_content, ensure_dir_sync, is_safe_run_id, prompts_dir, write_atomic, PROMPT_NAMES,
-};
+use super::{ensure_dir_sync, is_safe_run_id, prompts_dir, write_atomic};
 
 /// Output of `loop_create_run`: absolute paths of the created directories,
 /// in case the frontend wants to show or open them.
@@ -56,21 +54,11 @@ pub async fn loop_create_run(
         std::fs::create_dir_all(&prompts_dir_run)
             .map_err(|e| format!("could not create {prompts_dir_run:?}: {e}"))?;
 
-        for name in PROMPT_NAMES.iter() {
-            let source = globals_dir.join(name);
-            let content = match std::fs::read_to_string(&source) {
-                Ok(c) => c,
-                Err(_) => {
-                    // If the global was deleted between the ensure and the
-                    // copy, fall back to the bundled seed.
-                    bundled_content(name)
-                        .ok_or_else(|| format!("missing bundled seed for {name}"))?
-                        .to_string()
-                }
-            };
-            let dest = prompts_dir_run.join(name);
-            write_atomic(&dest, &content)?;
-        }
+        // Per-run prompts are materialized lazily via `loop_ensure_run_prompt`:
+        // step 1 only needs `problem-intake.md`, step 2 only needs
+        // `phase-decomposition.md`, and steps 3/4 ensure their own prompts on
+        // demand. Eagerly seeding all 7 here would dirty the run dir with
+        // files the user may never reach.
 
         Ok(CreatedRunPaths {
             run_dir: run_dir.to_string_lossy().to_string(),

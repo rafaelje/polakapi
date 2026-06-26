@@ -149,12 +149,12 @@ export function mountStep3Setup(slot: HTMLElement, ctx: Step3Context): Step3Hand
         state.promptBuffers.set(action.name, action.value);
         refs.refresh();
         return;
-      case "reset-to-global": {
-        const content = state.globals.get(action.name) ?? "";
-        state.promptBuffers.set(action.name, content);
-        refs.refresh();
+      case "reset-to-global":
+        await resetToGlobal(action.name);
         return;
-      }
+      case "reseed-from-bundled":
+        await reseedFromBundled(action.name);
+        return;
       case "promote-to-global":
         await promoteToGlobal(action.name);
         return;
@@ -259,6 +259,76 @@ export function mountStep3Setup(slot: HTMLElement, ctx: Step3Context): Step3Hand
     }
   }
 
+  async function ensureRunDir(): Promise<void> {
+    try {
+      await invoke<unknown>("loop_create_run", {
+        projectPath: ctx.projectPath,
+        runId: ctx.runId,
+      });
+    } catch (err) {
+      const msg = stringifyError(err);
+      if (!msg.includes("already exists")) throw err;
+    }
+  }
+
+  async function resetToGlobal(name: LoopPromptName): Promise<void> {
+    state.busy = true;
+    state.status = "resetting to global…";
+    refs.refresh();
+    try {
+      await ensureRunDir();
+      if (disposed) return;
+      const fresh = await invoke<string>("loop_read_global_prompt", { name });
+      if (disposed) return;
+      state.globals.set(name, fresh);
+      state.promptBuffers.set(name, fresh);
+      await invoke<void>("loop_reset_run_prompt_to_global", {
+        projectPath: ctx.projectPath,
+        runId: ctx.runId,
+        name,
+      });
+      if (disposed) return;
+      state.status = `${name} reset to global`;
+    } catch (err) {
+      if (disposed) return;
+      state.status = `error resetting: ${stringifyError(err)}`;
+    } finally {
+      if (disposed) return;
+      state.busy = false;
+      refs.refresh();
+    }
+  }
+
+  async function reseedFromBundled(name: LoopPromptName): Promise<void> {
+    state.busy = true;
+    state.status = "reseeding from bundled…";
+    refs.refresh();
+    try {
+      await invoke<void>("loop_reseed_global_prompt", { name });
+      if (disposed) return;
+      await ensureRunDir();
+      if (disposed) return;
+      const fresh = await invoke<string>("loop_read_global_prompt", { name });
+      if (disposed) return;
+      state.globals.set(name, fresh);
+      state.promptBuffers.set(name, fresh);
+      await invoke<void>("loop_reset_run_prompt_to_global", {
+        projectPath: ctx.projectPath,
+        runId: ctx.runId,
+        name,
+      });
+      if (disposed) return;
+      state.status = `${name} reseeded from bundled`;
+    } catch (err) {
+      if (disposed) return;
+      state.status = `error reseeding: ${stringifyError(err)}`;
+    } finally {
+      if (disposed) return;
+      state.busy = false;
+      refs.refresh();
+    }
+  }
+
   async function promoteToGlobal(name: LoopPromptName): Promise<void> {
     const content = state.promptBuffers.get(name) ?? "";
     state.busy = true;
@@ -313,6 +383,7 @@ export function mountStep3Setup(slot: HTMLElement, ctx: Step3Context): Step3Hand
     refs.refresh();
     const overrides: Partial<Record<LoopPromptName, string>> = {};
     try {
+      await ensureRunDir();
       for (const name of LOOP_PROMPT_NAMES) {
         const buf = state.promptBuffers.get(name);
         if (buf === undefined) continue;
