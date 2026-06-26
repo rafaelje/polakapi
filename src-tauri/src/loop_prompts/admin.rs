@@ -93,7 +93,7 @@ pub async fn loop_list_interrupted_runs(
         }
         // Most recent first so the banner shows the most relevant one at
         // the top if there is more than one (rare but possible case).
-        out.sort_by(|a, b| b.last_heartbeat.cmp(&a.last_heartbeat));
+        out.sort_by_key(|r| std::cmp::Reverse(r.last_heartbeat));
         Ok(out)
     })
     .await
@@ -165,7 +165,7 @@ pub async fn loop_list_runs(project_path: String) -> Result<Vec<RunSummary>, Str
                 preview,
             });
         }
-        out.sort_by(|a, b| b.last_modified_ms.cmp(&a.last_modified_ms));
+        out.sort_by_key(|r| std::cmp::Reverse(r.last_modified_ms));
         Ok(out)
     })
     .await

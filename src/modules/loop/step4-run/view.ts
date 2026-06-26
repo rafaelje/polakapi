@@ -35,7 +35,9 @@ export function renderView(
   const children: HTMLElement[] = [renderHeader(state, ctx, on)];
   const banner = renderWarningBanner(state);
   if (banner) children.push(banner);
-  children.push(state.mode === "hybrid" ? renderHybridTimeline(state, ctx, on) : renderTimeline(state));
+  children.push(
+    state.mode === "hybrid" ? renderHybridTimeline(state, ctx, on) : renderTimeline(state),
+  );
   children.push(renderBudgetPanel(state));
   slot.replaceChildren(...children);
 }
@@ -151,11 +153,7 @@ function renderTimeline(state: RunSchedulerState): HTMLElement {
   return wrap;
 }
 
-function renderHybridTimeline(
-  state: RunSchedulerState,
-  ctx: Step3RunContext,
-  on: On,
-): HTMLElement {
+function renderHybridTimeline(state: RunSchedulerState, ctx: Step3RunContext, on: On): HTMLElement {
   const wrap = document.createElement("section");
   wrap.className = "loop-step3-run-timeline loop-step3-run-hybrid";
 
@@ -395,11 +393,7 @@ function conflictBtn(
   return btn;
 }
 
-function renderPhaseRow(
-  phase: PhaseState,
-  index: number,
-  state: RunSchedulerState,
-): HTMLElement {
+function renderPhaseRow(phase: PhaseState, index: number, state: RunSchedulerState): HTMLElement {
   const row = document.createElement("div");
   row.className = "loop-step3-run-grid loop-step3-run-row";
   if (state.currentPhaseIndex === index) {
@@ -509,8 +503,7 @@ function renderBudgetPanel(state: RunSchedulerState): HTMLElement {
   totalLbl.textContent = `${formatNumber(used)} tokens`;
   const totalCost = document.createElement("span");
   totalCost.className = "loop-step3-run-budget-cost";
-  totalCost.textContent =
-    state.totals.costUsd > 0 ? ` · $${state.totals.costUsd.toFixed(3)}` : "";
+  totalCost.textContent = state.totals.costUsd > 0 ? ` · $${state.totals.costUsd.toFixed(3)}` : "";
   total.append(totalLbl, totalCost);
   panel.appendChild(total);
 

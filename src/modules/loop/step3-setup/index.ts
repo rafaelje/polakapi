@@ -20,22 +20,11 @@ import type {
 } from "../types";
 
 import { canExecute, clone, effectiveMode } from "./helpers";
-import type {
-  RunConfig,
-  RunMode,
-  Step3Action,
-  Step3Context,
-  Step3State,
-} from "./state";
+import type { RunConfig, RunMode, Step3Action, Step3Context, Step3State } from "./state";
 import { renderView } from "./view";
 
 export type { RunConfig, RunMode, Step3Context };
-export {
-  canExecute,
-  countInvalidSlots,
-  effectiveMode,
-  isPromptModified,
-} from "./helpers";
+export { canExecute, countInvalidSlots, effectiveMode, isPromptModified } from "./helpers";
 
 export interface Step3Handle {
   dispose(): void;

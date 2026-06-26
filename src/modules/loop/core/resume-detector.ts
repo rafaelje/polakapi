@@ -1,15 +1,9 @@
 import { invoke } from "@tauri-apps/api/core";
 
 import { parsePersistedRunState, type PersistedRunState } from "./state-schema";
-import type {
-  AgentStageState,
-  AgentStageStatus,
-  SequentialAgent,
-} from "./run-scheduler";
+import type { AgentStageState, AgentStageStatus, SequentialAgent } from "./run-scheduler";
 
-function recomputePhaseStatus(
-  stages: Record<SequentialAgent, AgentStageState>,
-): AgentStageStatus {
+function recomputePhaseStatus(stages: Record<SequentialAgent, AgentStageState>): AgentStageStatus {
   const order: SequentialAgent[] = ["analysis", "implementation", "review", "knowledge"];
   const all = order.map((a) => stages[a]);
   if (all.some((s) => s.status === "error")) return "error";

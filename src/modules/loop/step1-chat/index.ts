@@ -12,14 +12,7 @@ import {
   parseDraftMarkdown,
   serializeDraftMarkdown,
 } from "./prompts";
-import type {
-  ChatAction,
-  ChatTurn,
-  RunSummary,
-  Step1Context,
-  Step1State,
-  ViewRefs,
-} from "./state";
+import type { ChatAction, ChatTurn, RunSummary, Step1Context, Step1State, ViewRefs } from "./state";
 import { renderView } from "./view";
 
 export type { ChatTurn, Step1Context } from "./state";
