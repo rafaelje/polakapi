@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="stylesheet" href="/src/modules/prompts/prompts.css" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>/prompts</title>
+    <script type="module" src="/src/modules/prompts/prompts.ts" defer></script>
+  </head>
+  <body>
+    <main class="prompts-body">
+      <header class="prompts-header">
+        <div class="prompts-header-title">
+          <strong>/prompts</strong>
+          <span class="prompts-sub" id="prompts-counter">0 sessions</span>
+        </div>
+        <div class="prompts-header-actions">
+          <label class="prompts-select-all">
+            <input type="checkbox" id="prompts-select-all" />
+            all
+          </label>
+          <button type="button" id="prompts-delete" class="prompts-btn prompts-btn-danger" disabled>
+            delete
+          </button>
+          <input
+            type="search"
+            id="prompts-filter"
+            class="prompts-filter"
+            placeholder="filter prompts…"
+            autocomplete="off"
+          />
+          <button type="button" id="prompts-refresh" class="prompts-btn" title="Reload">
+            reload
+          </button>
+        </div>
+      </header>
+      <aside class="prompts-sessions" id="prompts-sessions"></aside>
+      <section class="prompts-detail" id="prompts-detail">
+        <p class="prompts-empty">select a session to see its prompts.</p>
+      </section>
+    </main>
+  </body>
+</html>

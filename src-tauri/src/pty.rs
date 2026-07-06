@@ -110,7 +110,13 @@ pub fn spawn_session(
     let validated_args = validate_args(args)?;
     let validated_cwd = validate_cwd(cwd)?;
 
-    let mut cmd = CommandBuilder::new(shell);
+    // Generate the pty id up front so it can be injected as an env var into
+    // the spawned AI CLI process (claude / codex / opencode). The hooks the
+    // CLI invokes read these vars to attribute the prompt to this tab and
+    // to know which DB to write to.
+    let id = uuid::Uuid::new_v4().to_string();
+
+    let mut cmd = CommandBuilder::new(&shell);
     for arg in validated_args {
         cmd.arg(arg);
     }
@@ -121,13 +127,18 @@ pub fn spawn_session(
     }
     cmd.env("TERM", "xterm-256color");
 
+    // If this session spawns an AI CLI directly (claude / codex / opencode),
+    // inject env vars that let the polakapi-capture hooks (registered by the
+    // user's settings.json / hooks.json) write back to the right DB and
+    // attribute the prompt to this terminal tab. No keystroke capture —
+    // the hooks are invoked by the CLI itself with structured JSON.
+    inject_polakapi_env(&mut cmd, app.clone(), &id, &shell);
+
     let child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
     drop(pair.slave);
 
     let writer = pair.master.take_writer().map_err(|e| e.to_string())?;
     let mut reader = pair.master.try_clone_reader().map_err(|e| e.to_string())?;
-
-    let id = uuid::Uuid::new_v4().to_string();
 
     let session = Arc::new(PtySession {
         writer: Mutex::new(writer),
@@ -290,6 +301,33 @@ fn home_dir_from_env() -> Option<PathBuf> {
 
 /// Drains the longest valid UTF-8 prefix from `buf` and returns it as a String.
 /// Any trailing partial code-point bytes remain in `buf` for the next chunk.
+/// Injects `POLAKAPI_PTY_ID`, `POLAKAPI_DB_PATH` and `POLAKAPI_HELPER` into
+/// the spawned PTY's environment when the command is an AI CLI
+/// (`claude` / `codex` / `opencode`). The hooks registered by polakapi in
+/// the user's `~/.claude/settings.json` / `~/.codex/hooks.json` read these
+/// to attribute prompts to this terminal tab and to know which DB to
+/// write to. No-op for shell sessions.
+fn inject_polakapi_env(cmd: &mut CommandBuilder, app: AppHandle, pty_id: &str, command: &str) {
+    let basename = Path::new(command)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or(command);
+    if !ALLOWED_AI_CLI_BASENAMES
+        .iter()
+        .any(|allowed| allowed.eq_ignore_ascii_case(basename))
+    {
+        return;
+    }
+    cmd.env("POLAKAPI_PTY_ID", pty_id);
+    cmd.env("POLAKAPI_CLI", basename);
+    if let Ok(db_path) = crate::db::Db::resolve_path(&app) {
+        cmd.env("POLAKAPI_DB_PATH", db_path.to_string_lossy().to_string());
+    }
+    if let Ok(exe) = std::env::current_exe() {
+        cmd.env("POLAKAPI_HELPER", exe.to_string_lossy().to_string());
+    }
+}
+
 fn drain_valid_utf8(buf: &mut Vec<u8>) -> String {
     match std::str::from_utf8(buf) {
         Ok(s) => {

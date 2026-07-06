@@ -20,6 +20,10 @@ import {
 import { mountBottomPanel, type BottomPanelHandle } from "../modules/bottom-panel/bottom-panel";
 import { isBottomTab } from "../modules/bottom-panel/types";
 import { mountLoopButton, type LoopButtonHandle } from "../modules/agents-flow/loop-window";
+import {
+  mountPromptsButton,
+  type PromptsButtonHandle,
+} from "../modules/agents-flow/prompts-window";
 import { bootstrapWorkspaces, type WorkspacesBootstrapHandle } from "./workspaces-bootstrap";
 import { wireWindowLifecycle } from "./lifecycle";
 import { wireQuitConfirm } from "./quit-confirm";
@@ -32,6 +36,7 @@ export class AppController {
   private palette: CommandPaletteHandle | null = null;
   private bottomPanel: BottomPanelHandle | null = null;
   private loopButton: LoopButtonHandle | null = null;
+  private promptsButton: PromptsButtonHandle | null = null;
   private unwireShortcuts: (() => void) | null = null;
   private unwireWindowLifecycle: (() => void) | null = null;
   private unwireQuitConfirm: (() => void) | null = null;
@@ -63,6 +68,7 @@ export class AppController {
       onTabChange: (tab) => queueSave({ activeBottomTab: tab }),
     });
     this.loopButton = mountLoopButton();
+    this.promptsButton = mountPromptsButton();
     await this.wirePtyEvents();
     this.wireGutters();
     this.wirePanelToggles();
@@ -126,6 +132,9 @@ export class AppController {
 
     this.loopButton?.dispose();
     this.loopButton = null;
+
+    this.promptsButton?.dispose();
+    this.promptsButton = null;
 
     const workspaces = this.workspaces;
     this.workspaces = null;

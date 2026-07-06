@@ -1,19 +1,27 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+pub mod capture;
 mod commands;
+pub mod db;
 mod fs;
 mod loop_cli;
 mod loop_prompts;
 mod open;
 mod pty;
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use tauri::Manager;
 
+use crate::db::Db;
+
 use crate::commands::{
-    fs_validate_path, open_file_in_editor, open_in_editor, open_in_explorer, pty_kill, pty_resize,
-    pty_spawn, pty_write,
+    app_exit, fs_validate_path, open_file_in_editor, open_in_editor, open_in_explorer, pty_kill,
+    pty_resize, pty_spawn, pty_write,
+};
+use crate::db::{
+    prompt_delete_sessions, prompt_get, prompt_install_hooks, prompt_list_by_session,
+    prompt_list_sessions, prompt_search,
 };
 use crate::loop_cli::run_loop_agent;
 use crate::loop_prompts::{
@@ -74,13 +82,34 @@ pub fn run() {
             let store = store.clone();
             move |app| {
                 app.manage(store);
+                // Open the prompts history DB at <app_config_dir>/polakapi.db
+                // and register it as `State<Mutex<Db>>` for the read commands.
+                // If opening fails we still boot the app — the read commands
+                // will return errors and the capture helper keeps writing
+                // via its own connection.
+                match Db::resolve_path(app.handle()) {
+                    Ok(path) => match Db::open(&path) {
+                        Ok(db) => {
+                            app.manage(Mutex::new(db));
+                        }
+                        Err(e) => {
+                            eprintln!(
+                                "polakapi: could not open prompts DB at {}: {e}",
+                                path.display()
+                            );
+                        }
+                    },
+                    Err(e) => {
+                        eprintln!("polakapi: could not resolve prompts DB path: {e}");
+                    }
+                }
                 Ok(())
             }
         })
         .on_window_event({
             let store = store.clone();
-            move |_window, event| {
-                if matches!(event, tauri::WindowEvent::CloseRequested { .. }) {
+            move |window, event| {
+                if window.label() == "main" && matches!(event, tauri::WindowEvent::Destroyed) {
                     store.kill_all();
                 }
             }
@@ -90,6 +119,7 @@ pub fn run() {
             pty_write,
             pty_resize,
             pty_kill,
+            app_exit,
             fs_validate_path,
             open_in_explorer,
             open_in_editor,
@@ -122,7 +152,13 @@ pub fn run() {
             loop_read_run_prompt,
             loop_write_run_prompt,
             loop_archive_run,
-            loop_discard_partial_outputs
+            loop_discard_partial_outputs,
+            prompt_list_sessions,
+            prompt_list_by_session,
+            prompt_get,
+            prompt_search,
+            prompt_delete_sessions,
+            prompt_install_hooks
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

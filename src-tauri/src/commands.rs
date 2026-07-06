@@ -67,6 +67,17 @@ pub fn pty_kill(store: State<'_, Arc<PtyStore>>, id: String) -> Result<(), Strin
     Ok(())
 }
 
+#[tauri::command]
+pub fn app_exit(app: AppHandle, store: State<'_, Arc<PtyStore>>) -> Result<(), String> {
+    std::thread::spawn(|| {
+        std::thread::sleep(std::time::Duration::from_millis(750));
+        std::process::exit(0);
+    });
+    store.kill_all();
+    app.exit(0);
+    Ok(())
+}
+
 /// Validates a filesystem path on behalf of the workspaces module.
 ///
 /// Returns `Ok(())` if the path exists, is a directory and is readable by the

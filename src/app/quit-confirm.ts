@@ -1,9 +1,13 @@
+import { invoke as tauriInvoke } from "@tauri-apps/api/core";
+import { getAllWebviewWindows } from "@tauri-apps/api/webviewWindow";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
 import { confirmModal } from "../modules/workspaces/forms/confirm-delete";
 import type { WorkspacesState } from "../modules/workspaces/state/types";
 import { findProject } from "../modules/workspaces/state/workspaces-reducer";
 import type { TerminalRouter } from "./terminal-router";
+
+const EXIT_FALLBACK_MS = 500;
 
 export interface QuitConfirmOptions {
   router: TerminalRouter;
@@ -27,6 +31,7 @@ export function wireQuitConfirm(opts: QuitConfirmOptions): () => void {
   const { router, getState } = opts;
   let closing = false;
   let unlistenClose: (() => void) | null = null;
+  const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
   const formatMessage = (): string => {
     const counts = router.liveCountsByProject();
@@ -62,12 +67,20 @@ export function wireQuitConfirm(opts: QuitConfirmOptions): () => void {
       const ok = await askToQuit();
       if (!ok) return;
       closing = true;
-      try {
-        await router.disposeAll();
-      } catch (error) {
+      void router.disposeAll().catch((error) => {
         console.error("Failed to dispose terminals before quit", error);
+      });
+      try {
+        await Promise.race([tauriInvoke("app_exit"), sleep(EXIT_FALLBACK_MS)]);
+      } catch (error) {
+        console.error("Failed to request app exit", error);
       }
-      await getCurrentWindow().destroy();
+      try {
+        const windows = await getAllWebviewWindows();
+        await Promise.all(windows.map((win) => win.destroy().catch(() => undefined)));
+      } catch {
+        await getCurrentWindow().destroy();
+      }
     })
     .then((un) => {
       unlistenClose = un;

@@ -1,0 +1,866 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Historial de prompts en SQLite · propuesta</title>
+    <style>
+      :root {
+        --bg: #0f1115;
+        --bg-2: #161922;
+        --bg-3: #1d2230;
+        --border: #2a3041;
+        --border-hi: #3a4358;
+        --text: #e6e8ee;
+        --muted: #8a93a6;
+        --accent: #7aa2ff;
+        --accent-2: #b48cff;
+        --ok: #6fcf97;
+        --warn: #f2c94c;
+        --danger: #eb5757;
+        --code-bg: #0b0d12;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font:
+          14px/1.55 ui-sans-serif,
+          system-ui,
+          -apple-system,
+          sans-serif;
+      }
+      body {
+        padding: 32px 28px 80px;
+        max-width: 1180px;
+        margin: 0 auto;
+      }
+      h1 {
+        font-size: 22px;
+        margin: 0 0 4px;
+        letter-spacing: -0.01em;
+      }
+      h2 {
+        font-size: 17px;
+        margin: 36px 0 12px;
+        padding-top: 18px;
+        border-top: 1px solid var(--border);
+        letter-spacing: -0.01em;
+      }
+      h3 {
+        font-size: 14px;
+        margin: 18px 0 8px;
+        color: var(--accent);
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+      }
+      p {
+        margin: 8px 0;
+      }
+      .sub {
+        color: var(--muted);
+        margin-bottom: 24px;
+      }
+      code {
+        background: var(--code-bg);
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        padding: 1px 5px;
+        font:
+          12.5px/1.5 ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          monospace;
+        color: var(--accent-2);
+      }
+      ul {
+        margin: 8px 0;
+        padding-left: 22px;
+      }
+      li {
+        margin: 4px 0;
+      }
+      table {
+        border-collapse: collapse;
+        width: 100%;
+        margin: 12px 0;
+        font-size: 13px;
+      }
+      th,
+      td {
+        border: 1px solid var(--border);
+        padding: 7px 10px;
+        text-align: left;
+        vertical-align: top;
+      }
+      th {
+        background: var(--bg-3);
+        color: var(--accent);
+        font-weight: 600;
+      }
+      td {
+        background: var(--bg-2);
+      }
+      .card {
+        background: var(--bg-2);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 14px 16px;
+        margin: 12px 0;
+      }
+      .card.ok {
+        border-left: 3px solid var(--ok);
+      }
+      .card.warn {
+        border-left: 3px solid var(--warn);
+      }
+      .card.danger {
+        border-left: 3px solid var(--danger);
+      }
+      .pill {
+        display: inline-block;
+        background: var(--bg-3);
+        border: 1px solid var(--border-hi);
+        border-radius: 999px;
+        padding: 1px 10px;
+        font-size: 12px;
+        color: var(--muted);
+        margin-right: 6px;
+      }
+      .diagram {
+        background: var(--bg-2);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 16px;
+        margin: 16px 0;
+        overflow-x: auto;
+      }
+      .diagram svg {
+        display: block;
+        margin: 0 auto;
+        min-width: 860px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Historial de prompts en SQLite</h1>
+    <p class="sub">
+      Propuesta de feature · captura nativa vía hooks/plugins de cada CLI LLM para sesiones abiertas
+      desde el <strong>panel de terminales</strong> (sin captura de keystrokes)
+    </p>
+    <span class="pill">estado: propuesta</span>
+    <span class="pill">motor: rusqlite (bundled)</span>
+    <span class="pill">alcance: módulo terminal</span>
+    <span class="pill">rótulo: sin keylogger</span>
+
+    <h2>1 · Problema</h2>
+    <p>
+      El panel de terminales puede lanzar directamente un CLI LLM (<code>claude</code>,
+      <code>codex</code>, <code>opencode</code>) como sesión PTY — ver
+      <code>ALLOWED_AI_CLI_BASENAMES</code> en <code>src-tauri/src/pty.rs:24</code> y la validación
+      en <code>pty.rs:218</code>. Hoy, lo que el usuario envía y lo que el agente responde solo
+      existe como stream en vivo emitido por el reader thread (<code>pty.rs:142</code>) al evento
+      <code>pty:data</code>. Al cerrar la pestaña, se pierde. No hay historial consultable, ni
+      búsqueda, ni forma de revisar qué se preguntó y respondió.
+    </p>
+
+    <h2>2 · Principio rector: sin captura de keystrokes</h2>
+    <div class="card danger">
+      <p>
+        La captura de keystrokes del PTY <strong>no es una opción</strong>: aunque sea local y
+        benévola, los AVs la detectan como keylogger, rompe la confianza del usuario y reconstruir
+        el prompt desde raw keystrokes (backspaces, flechas, <code>Ctrl+U</code>, pegados
+        multi-línea) es inherentemente con pérdidas.
+      </p>
+    </div>
+    <p>
+      En su lugar, los <strong>propios CLIs</strong> nos entregan el prompt ya hecho y la respuesta
+      ya generada a través de sus mecanismos de extensión nativos (hooks / plugins). polakapi
+      <em>registra</em> un integrador por CLI y deja que el CLI mismo lo invoque. Esto no toca el
+      stream PTY, no intercepta entrada del usuario, y no añade superficie de seguridad beyond el
+      mecanismo de sandboxing que ya aplica cada CLI a sus hooks.
+    </p>
+    <p>
+      El PTY sigue siendo el mero transporte de render (xterm.js + pty:data + pty:exit). La captura
+      ocurre <strong>fuera</strong> del PTY, en el proceso del CLI o en un subproceso que el CLI
+      lanza.
+    </p>
+
+    <h2>3 · Alcance y definiciones</h2>
+    <ul>
+      <li>
+        <strong>Sesión</strong> = una pestaña del panel de terminales cuyo comando spawnado es un
+        CLI LLM. Se identifica por el <code>pty_id</code> que <code>pty_spawn</code> devuelve
+        (<code>pty.rs:130</code>). 1 sesión por pestaña.
+      </li>
+      <li>
+        <strong>Prompt</strong> = cada envío del usuario al CLI + el turno de respuesta del agente
+        asociado. Capturado como texto estructurado entregado por el hook/evento del CLI, no como
+        keystrokes.
+      </li>
+      <li>
+        <strong>Fuera de alcance</strong>:
+        <ul>
+          <li>
+            Las invocaciones one-shot de <code>/loop</code> (<code>run_loop_agent</code> en
+            <code>loop_cli.rs:90</code>) — ya tienen su propio árbol de archivos y logs.
+          </li>
+          <li>PTYs de shell puro (<code>bash</code>, <code>zsh</code>, …).</li>
+          <li>
+            CLIs LLM ejecutados como one-shot dentro de un shell PTY (p.ej. escribir
+            <code>claude -p "..."</code> en <code>bash</code>) — la sesión es de shell, no de AI CLI
+            directo, y por la regla "sin keystrokes" no podemos parsear el stream.
+          </li>
+          <li>Captura en tiempo real cuando el CLI no la soporta (ver opencode más abajo).</li>
+        </ul>
+      </li>
+    </ul>
+
+    <h2>4 · Arquitectura</h2>
+    <div class="diagram">
+      <svg
+        viewBox="0 0 920 720"
+        width="920"
+        height="720"
+        role="img"
+        aria-label="Arquitectura de captura nativa vía hooks/plugins de cada CLI"
+        font-family="ui-sans-serif, system-ui, sans-serif"
+      >
+        <defs>
+          <marker
+            id="arrow"
+            viewBox="0 0 10 10"
+            refX="9"
+            refY="5"
+            markerWidth="7"
+            markerHeight="7"
+            orient="auto-start-reverse"
+          >
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="#7aa2ff" />
+          </marker>
+          <marker
+            id="arrow-ok"
+            viewBox="0 0 10 10"
+            refX="9"
+            refY="5"
+            markerWidth="7"
+            markerHeight="7"
+            orient="auto-start-reverse"
+          >
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="#6fcf97" />
+          </marker>
+          <marker
+            id="arrow-purple"
+            viewBox="0 0 10 10"
+            refX="9"
+            refY="5"
+            markerWidth="7"
+            markerHeight="7"
+            orient="auto-start-reverse"
+          >
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="#b48cff" />
+          </marker>
+        </defs>
+
+        <!-- ============ Frontend zone ============ -->
+        <rect x="20" y="20" width="880" height="124" rx="10" fill="#161922" stroke="#2a3041" />
+        <text x="40" y="46" fill="#8a93a6" font-size="11" letter-spacing="2" font-weight="600">
+          FRONTEND · TYPESCRIPT (src/modules/terminal)
+        </text>
+
+        <rect x="40" y="62" width="260" height="70" rx="8" fill="#1d2230" stroke="#3a4358" />
+        <text x="170" y="88" fill="#e6e8ee" font-size="13" text-anchor="middle" font-weight="600">
+          Panel de terminales
+        </text>
+        <text x="170" y="107" fill="#8a93a6" font-size="11" text-anchor="middle">
+          pestañas PTY · render xterm
+        </text>
+        <text x="170" y="122" fill="#8a93a6" font-size="11" text-anchor="middle">
+          NO captura keystrokes
+        </text>
+
+        <rect
+          x="680"
+          y="62"
+          width="200"
+          height="70"
+          rx="8"
+          fill="#1d2230"
+          stroke="#b48cff"
+          stroke-dasharray="5 4"
+        />
+        <text x="780" y="88" fill="#b48cff" font-size="13" text-anchor="middle" font-weight="600">
+          UI de historial (fase 3)
+        </text>
+        <text x="780" y="107" fill="#8a93a6" font-size="11" text-anchor="middle">
+          sesiones → prompts
+        </text>
+        <text x="780" y="122" fill="#8a93a6" font-size="11" text-anchor="middle">búsqueda</text>
+
+        <!-- ============ IPC boundary ============ -->
+        <line x1="20" y1="178" x2="900" y2="178" stroke="#3a4358" stroke-dasharray="8 6" />
+        <rect x="380" y="165" width="150" height="26" rx="13" fill="#0f1115" stroke="#3a4358" />
+        <text x="455" y="182" fill="#8a93a6" font-size="11" text-anchor="middle" letter-spacing="1">
+          TAURI IPC
+        </text>
+
+        <path
+          d="M 130 132 L 130 210"
+          fill="none"
+          stroke="#7aa2ff"
+          stroke-width="1.6"
+          marker-end="url(#arrow)"
+        />
+        <text x="42" y="172" fill="#7aa2ff" font-size="11">pty_spawn (open tab)</text>
+
+        <!-- ============ Rust zone ============ -->
+        <rect x="20" y="218" width="880" height="440" rx="10" fill="#161922" stroke="#2a3041" />
+        <text x="40" y="244" fill="#8a93a6" font-size="11" letter-spacing="2" font-weight="600">
+          BACKEND · RUST (src-tauri)
+        </text>
+
+        <!-- pty_spawn -->
+        <rect x="40" y="258" width="170" height="86" rx="8" fill="#1d2230" stroke="#7aa2ff" />
+        <text x="125" y="286" fill="#e6e8ee" font-size="13" text-anchor="middle" font-weight="600">
+          pty_spawn
+        </text>
+        <text x="125" y="304" fill="#8a93a6" font-size="11" text-anchor="middle">
+          commands.rs:14
+        </text>
+        <text x="125" y="319" fill="#8a93a6" font-size="11" text-anchor="middle">
+          inyecta env vars
+        </text>
+        <text x="125" y="334" fill="#8a93a6" font-size="11" text-anchor="middle">POLAKAPI_*</text>
+
+        <!-- spawned AI CLI processes -->
+        <rect x="240" y="258" width="170" height="86" rx="8" fill="#1d2230" stroke="#3a4358" />
+        <text x="325" y="286" fill="#e6e8ee" font-size="13" text-anchor="middle" font-weight="600">
+          CLI LLM (hijo PTY)
+        </text>
+        <text x="325" y="305" fill="#8a93a6" font-size="11" text-anchor="middle">
+          claude · codex
+        </text>
+        <text x="325" y="320" fill="#8a93a6" font-size="11" text-anchor="middle">opencode</text>
+        <text x="325" y="335" fill="#8a93a6" font-size="11" text-anchor="middle">
+          hereda POLAKAPI_* env
+        </text>
+
+        <path
+          d="M 210 301 L 240 301"
+          fill="none"
+          stroke="#7aa2ff"
+          stroke-width="1.6"
+          marker-end="url(#arrow)"
+        />
+
+        <!-- ============ Hooks/plugins layer ============ -->
+        <text x="440" y="248" fill="#6fcf97" font-size="11" letter-spacing="2" font-weight="600">
+          CAPTURA NATIVA (uno por CLI)
+        </text>
+
+        <!-- Claude -->
+        <rect x="440" y="258" width="440" height="56" rx="8" fill="#1d2230" stroke="#6fcf97" />
+        <text x="450" y="278" fill="#e6e8ee" font-size="12" font-weight="600">
+          claude · settings.json hook
+        </text>
+        <text x="450" y="296" fill="#8a93a6" font-size="11">
+          UserPromptSubmit.prompt → Stop.last_assistant_message · fallback: transcript_path (.jsonl)
+        </text>
+        <text x="450" y="310" fill="#8a93a6" font-size="10.5">
+          session_id (de Claude) · puente con POLAKAPI_PTY_ID
+        </text>
+
+        <!-- Codex -->
+        <rect x="440" y="324" width="440" height="56" rx="8" fill="#1d2230" stroke="#6fcf97" />
+        <text x="450" y="344" fill="#e6e8ee" font-size="12" font-weight="600">
+          codex · hooks.json hook (trust via /hooks)
+        </text>
+        <text x="450" y="362" fill="#8a93a6" font-size="11">
+          UserPromptSubmit.prompt → Stop.last_assistant_message (puede ser null) · fallback:
+          transcript_path
+        </text>
+        <text x="450" y="376" fill="#8a93a6" font-size="10.5">
+          flujo de trust: hash del hook, hay que aceptarlo una vez
+        </text>
+
+        <!-- opencode -->
+        <rect x="440" y="390" width="440" height="56" rx="8" fill="#1d2230" stroke="#6fcf97" />
+        <text x="450" y="410" fill="#e6e8ee" font-size="12" font-weight="600">
+          opencode · plugin .ts (in-process)
+        </text>
+        <text x="450" y="428" fill="#8a93a6" font-size="11">
+          session.idle → client.session.messages() · prompt via info.role="user"
+        </text>
+        <text x="450" y="442" fill="#8a93a6" font-size="10.5">
+          NO hay hook UserPromptSubmit; captura post-turno (no real-time)
+        </text>
+
+        <!-- integrator arrows -->
+        <path
+          d="M 410 285 L 440 285"
+          fill="none"
+          stroke="#6fcf97"
+          stroke-width="1.6"
+          marker-end="url(#arrow-ok)"
+        />
+        <path
+          d="M 410 350 L 440 350"
+          fill="none"
+          stroke="#6fcf97"
+          stroke-width="1.6"
+          marker-end="url(#arrow-ok)"
+        />
+        <path
+          d="M 410 415 L 440 415"
+          fill="none"
+          stroke="#6fcf97"
+          stroke-width="1.6"
+          marker-end="url(#arrow-ok)"
+        />
+
+        <!-- ============ Helper / writer ============ -->
+        <rect x="120" y="430" width="280" height="56" rx="8" fill="#1d2230" stroke="#6fcf97" />
+        <text x="260" y="452" fill="#e6e8ee" font-size="13" text-anchor="middle" font-weight="600">
+          polakapi-capture (helper CLI)
+        </text>
+        <text x="260" y="470" fill="#8a93a6" font-size="11" text-anchor="middle">
+          lee JSON de stdin · escribe en polakapi.db
+        </text>
+        <text x="260" y="482" fill="#8a93a6" font-size="10.5" text-anchor="middle">
+          best-effort · nunca bloquea al CLI
+        </text>
+
+        <!-- hooks call helper -->
+        <path
+          d="M 440 286 L 400 440"
+          fill="none"
+          stroke="#6fcf97"
+          stroke-width="1.4"
+          marker-end="url(#arrow-ok)"
+        />
+        <path
+          d="M 440 352 L 400 458"
+          fill="none"
+          stroke="#6fcf97"
+          stroke-width="1.4"
+          marker-end="url(#arrow-ok)"
+        />
+
+        <!-- opencode calls SDK directly, then helper -->
+        <path
+          d="M 440 418 L 400 470"
+          fill="none"
+          stroke="#6fcf97"
+          stroke-width="1.4"
+          marker-end="url(#arrow-ok)"
+        />
+
+        <!-- db.rs -->
+        <rect x="120" y="510" width="280" height="56" rx="8" fill="#1d2230" stroke="#6fcf97" />
+        <text x="260" y="532" fill="#e6e8ee" font-size="13" text-anchor="middle" font-weight="600">
+          db.rs (nuevo)
+        </text>
+        <text x="260" y="550" fill="#8a93a6" font-size="11" text-anchor="middle">
+          rusqlite · WAL · migraciones
+        </text>
+        <text x="260" y="563" fill="#8a93a6" font-size="10.5" text-anchor="middle">
+          State&lt;Mutex&lt;Db&gt;&gt; · schema_version
+        </text>
+
+        <path
+          d="M 260 486 L 260 510"
+          fill="none"
+          stroke="#6fcf97"
+          stroke-width="1.6"
+          marker-end="url(#arrow-ok)"
+        />
+
+        <!-- read commands -->
+        <rect x="460" y="510" width="420" height="56" rx="8" fill="#1d2230" stroke="#b48cff" />
+        <text x="670" y="532" fill="#e6e8ee" font-size="13" text-anchor="middle" font-weight="600">
+          Comandos de lectura
+        </text>
+        <text x="670" y="550" fill="#8a93a6" font-size="11" text-anchor="middle">
+          prompt_list_sessions · prompt_list_by_session · prompt_search
+        </text>
+        <text x="670" y="563" fill="#8a93a6" font-size="10.5" text-anchor="middle">
+          excluye response_text / user_input en listados
+        </text>
+
+        <path
+          d="M 780 132 L 800 510"
+          fill="none"
+          stroke="#b48cff"
+          stroke-width="1.6"
+          marker-start="url(#arrow-purple)"
+        />
+        <text x="814" y="320" fill="#b48cff" font-size="11">solo lectura</text>
+
+        <path
+          d="M 660 538 L 400 545"
+          fill="none"
+          stroke="#b48cff"
+          stroke-width="1.4"
+          marker-end="url(#arrow-purple)"
+        />
+        <text x="500" y="535" fill="#8a93a6" font-size="10.5">SELECT</text>
+
+        <!-- ============ Storage zone ============ -->
+        <rect x="160" y="612" width="600" height="38" rx="8" fill="#0b0d12" stroke="#6fcf97" />
+        <text x="460" y="636" fill="#6fcf97" font-size="13" text-anchor="middle" font-weight="600">
+          &lt;app-config&gt;/polakapi.db · SQLite (modo WAL)
+        </text>
+
+        <path
+          d="M 260 566 L 260 612"
+          fill="none"
+          stroke="#6fcf97"
+          stroke-width="1.6"
+          marker-end="url(#arrow-ok)"
+        />
+        <path
+          d="M 670 566 L 670 612"
+          fill="none"
+          stroke="#b48cff"
+          stroke-width="1.6"
+          marker-end="url(#arrow-purple)"
+        />
+      </svg>
+    </div>
+    <p class="sub">
+      Azul: flujo PTY existente (apertura de pestaña y render), <strong>sin cambios</strong>. Verde:
+      la captura nativa — cada CLI LLM invoca a su hook/plugin registrado, que escribe al helper
+      <code>polakapi-capture</code> o al SDK的过程 de opencode, sin tocar el stream PTY. Morado: la
+      ruta de solo lectura para la futura UI de historial.
+    </p>
+
+    <h2>5 · El puente polakapi ↔ CLI</h2>
+    <p>
+      Cada CLI LLM se ejecuta como hijo del PTY y hereda su entorno. polakapi inyecta, en
+      <code>pty_spawn</code> (<code>commands.rs:14</code>), variables de entorno cuando el
+      <code>command</code> cae en <code>ALLOWED_AI_CLI_BASENAMES</code>:
+    </p>
+    <ul>
+      <li><code>POLAKAPI_PTY_ID</code> = el id de la sesión PTY (pestaña).</li>
+      <li><code>POLAKAPI_DB_PATH</code> = ruta absoluta a <code>polakapi.db</code>.</li>
+      <li><code>POLAKAPI_HELPER</code> = ruta al binario <code>polakapi-capture</code>.</li>
+    </ul>
+    <p>
+      El hook/plugin lee estas variables del entorno (los hooks de Claude/Codex heredan el env del
+      CLI; el plugin de opencode corre en-proceso y también ve <code>process.env</code>) y las usa
+      para asociar el prompt a la pestaña correcta y para saber dónde escribir. La captura es
+      <strong>best-effort</strong>: si el insert falla, se loggea y se continúa — nunca se bloquea
+      la invocación del CLI ni se interrumpe al usuario.
+    </p>
+
+    <h2>6 · Diseño por CLI</h2>
+
+    <h3>Claude Code · <code>settings.json</code> hook</h3>
+    <table>
+      <tr>
+        <th>Evento</th>
+        <th>Field en stdin</th>
+        <th>Uso</th>
+      </tr>
+      <tr>
+        <td><code>SessionStart</code></td>
+        <td><code>session_id</code>, <code>source</code>, <code>cwd</code></td>
+        <td>
+          Crea fila en <code>sessions</code> (mapea <code>session_id</code> de Claude ↔
+          <code>POLAKAPI_PTY_ID</code>).
+        </td>
+      </tr>
+      <tr>
+        <td><code>UserPromptSubmit</code></td>
+        <td><code>prompt</code> <em>(string exacto)</em></td>
+        <td>Inserta fila <code>prompts</code> con <code>user_input</code>.</td>
+      </tr>
+      <tr>
+        <td><code>Stop</code></td>
+        <td><code>last_assistant_message</code> <em>(string)</em></td>
+        <td>Actualiza la fila <code>prompts</code> del turno con <code>response_text</code>.</td>
+      </tr>
+      <tr>
+        <td><code>SessionEnd</code></td>
+        <td><code>reason</code></td>
+        <td>Cierra la sesión en DB (<code>closed_at</code>).</td>
+      </tr>
+    </table>
+    <p>
+      Fallback si <code>last_assistant_message</code> no ba en <code>Stop</code>: parsear
+      <code>transcript_path</code> (JSONL estble según la doc). Registro: polakapi añade un bloque
+      <code>hooks</code> a <code>~/.claude/settings.json</code> apuntando a
+      <code>${POLAKAPI_HELPER}</code> (o a un script wrapper shipped con polakapi).
+    </p>
+
+    <h3>Codex · <code>hooks.json</code> hook</h3>
+    <p>
+      Igual que Claude — mismos 4 eventos, mismo field <code>prompt</code> (en
+      <code>UserPromptSubmit</code>) y <code>last_assistant_message</code> (en <code>Stop</code>,
+      puede ser <code>null</code>). Registro en <code>~/.codex/hooks.json</code> o
+      <code>&lt;repo&gt;/.codex/hooks.json</code>.
+    </p>
+    <div class="card warn">
+      <p>
+        <strong>Caveat Codex (flujo de trust):</strong> los hooks non-managed deben revisarse y
+        confiarse vía <code>/hooks</code> antes de correr — Codex guarda el hash y exige re-trust si
+        el script cambia. polakapi puede escribir el <code>hooks.json</code>, pero el usuario debe
+        aceptarlo una vez. Existe <code>--dangerously-bypass-hook-trust</code>
+        para automatización, pero no es el default y no lo activaremos por prefencia.
+      </p>
+    </div>
+
+    <h3>opencode · plugin <code>.ts</code></h3>
+    <p>
+      opencode no tiene un evento <code>UserPromptSubmit</code> equivalente:
+      <code>tui.prompt.append</code> es manipulación del TUI, no envío. La captura es
+      <strong>post-turno</strong>: el plugin escucha <code>session.idle</code> (fin de turno del
+      agente) y llama al SDK <code>client.session.messages({ path: { id } })</code>, que devuelve
+      <code>[{ info, parts: [] }]</code>. Itera <code>parts</code> para armar
+      <code>user_input</code> (filtrando por <code>info.role === "user"</code>) y
+      <code>response_text</code> (<code>info.role === "assistant"</code>).
+    </p>
+    <div class="card warn">
+      <p>
+        <strong>Caveat opencode (no real-time):</strong> la captura ocurre al final del turno, no
+        por cada envío. Para el historial es suficiente, pero el UX de la UI de historial debe
+        entender que el prompt puede no estar visible hasta que el agente termina de responder. Si
+        el usuario aborta el turno (Ctrl+C), el evento <code>session.idle</code>
+        puede no dispararse con todos los mensajes — hay que manejarlo como best-effort.
+      </p>
+    </div>
+    <p>
+      Registro: <code>~/.config/opencode/plugins/polakapi-capture.ts</code> (cargado automáticamente
+      por opencode desde el directorio global de plugins) o como paquete npm añadido a
+      <code>opencode.json → plugin</code>. El plugin tiene acceso al SDK client en-proceso, así que
+      no necesita el helper CLI externo — escribe directo a <code>polakapi.db</code> vía
+      <code>bun:sqlite</code> (que ya está disponible porque opencode corre sobre Bun).
+    </p>
+
+    <h2>7 · Decisiones de diseño</h2>
+
+    <h3>Motor: rusqlite bundled, no tauri-plugin-sql</h3>
+    <div class="card ok">
+      <p>
+        El repo ya sigue el principio de que Rust es dueño del estado pesado (PTYs en
+        <code>PtyStore</code>, árbol de archivos de runs). Con <code>rusqlite</code> la escritura
+        ocurre vía el helper <code>polakapi-capture</code> (subproceso lanzado por los hooks de
+        Claude/Codex) o vía el SDK del plugin de opencode, sin exponer SQL al frontend y sin ampliar
+        las capabilities de Tauri. Los comandos de lectura son los únicos expuestos al frontend,
+        tipados.
+      </p>
+    </div>
+
+    <h3>Esquema (2 tablas, una por sesión-pestaña)</h3>
+    <table>
+      <tr>
+        <th>Tabla</th>
+        <th>Columnas</th>
+        <th>Notas</th>
+      </tr>
+      <tr>
+        <td><code>sessions</code></td>
+        <td>
+          <code>id</code>, <code>pty_id</code>, <code>cli</code>, <code>cli_session_id</code>,
+          <code>cwd</code>, <code>title</code>, <code>status</code>, <code>created_at</code>,
+          <code>closed_at</code>
+        </td>
+        <td>
+          1 fila por pestaña del panel de terminales cuyo comando spawnado es un AI CLI.
+          <code>pty_id</code> viene de <code>POLAKAPI_PTY_ID</code>; <code>cli_session_id</code> es
+          el <code>session_id</code> que entrega el CLI en sus hooks (distinto para Claude vs Codex
+          vs opencode). <code>title</code> = primer prompt truncado.
+        </td>
+      </tr>
+      <tr>
+        <td><code>prompts</code></td>
+        <td>
+          <code>id</code>, <code>session_id</code> (FK a <code>sessions.id</code>),
+          <code>seq</code>, <code>user_input</code>, <code>response_text</code>,
+          <code>tokens_in</code>, <code>tokens_out</code>, <code>cost_usd</code>,
+          <code>elapsed_ms</code>, <code>error</code>, <code>created_at</code>
+        </td>
+        <td>
+          1 fila por turno (prompt + respuesta). Índices en <code>session_id</code> y
+          <code>created_at</code>. <code>tokens_in/out</code> y <code>cost_usd</code> son nullable:
+          los CLIs no los entregan en modo interactivo/stream en sus hooks.
+        </td>
+      </tr>
+    </table>
+    <ul>
+      <li>
+        <strong>No se guarda <code>system_prompt</code> ni snapshot de archivos:</strong> en
+        sesiones del panel de terminales no hay "system prompt editable por run" como en
+        <code>/loop</code> — el contexto se acumula en la sesión del propio CLI. Guardar solo el
+        turno user/assistant es lo que tiene valor.
+      </li>
+      <li>
+        Modo WAL obligatorio: varias pestañas PTY pueden estar activas a la vez y varios hooks
+        pueden correr concurrentemente.
+      </li>
+    </ul>
+
+    <h3>Helper <code>polakapi-capture</code></h3>
+    <p>
+      Binario Rust pequeño (mismo crate que el backend de Tauri, feature gate aparte o sub-comando)
+      que lee JSON de stdin, lo valida contra un schema mínimo y lo inserta en
+      <code>polakapi.db</code> vía <code>rusqlite</code>. Lo llaman los hooks de Claude y Codex. El
+      plugin de opencode no lo necesita (escribe directo vía Bun). Env vars que usa:
+      <code>POLAKAPI_DB_PATH</code> (requerida) y <code>POLAKAPI_PTY_ID</code> (para lookup de
+      sesión).
+    </p>
+
+    <h3>Estado de Tauri y concurrencia</h3>
+    <p>
+      <code>Db</code> se guarda como <code>State&lt;Mutex&lt;Db&gt;&gt;</code> en
+      <code>tauri::Builder</code>, igual que <code>PtyStore</code> hoy. Esto cubre los comandos de
+      lectura del frontend. Las escrituras desde los hooks vienen del helper
+      <code>polakapi-capture</code> (proceso aparte que abre su propia conexión a
+      <code>polakapi.db</code> en modo WAL) — no compiten por el mutex del backend de Tauri. El
+      plugin de opencode también abre su conexión propia (vía Bun). WAL cubre la concurrencia entre
+      writers.
+    </p>
+
+    <h3>Migraciones</h3>
+    <p>
+      Tabla <code>schema_version</code> + scripts SQL embebidos con
+      <code>include_str!("migrations/0001_init.sql")</code>. Sin librería externa — mantiene el
+      árbol de dependencias minimalista, alineado con el principio del README de capabilities
+      mínimas. Las migraciones se aplican al arrancar la app (desde el backend de Tauri) y también,
+      de forma idempotente, desde el helper <code>polakapi-capture</code> al arranque (por si se
+      invoca antes de que Tauri arranque).
+    </p>
+
+    <h2>8 · Fases de implementación</h2>
+    <table>
+      <tr>
+        <th>Fase</th>
+        <th>Contenido</th>
+        <th>Entregable</th>
+      </tr>
+      <tr>
+        <td>1 · Infra</td>
+        <td>
+          Módulo <code>db.rs</code>: apertura, migración versionada, tests (estilo
+          <code>pty.rs</code>). Helper <code>polakapi-capture</code> como sub-comando del mismo
+          binario. Registrar <code>State&lt;Mutex&lt;Db&gt;&gt;</code> en
+          <code>tauri::Builder</code>.
+        </td>
+        <td>Base creada y migrada al arrancar la app.</td>
+      </tr>
+      <tr>
+        <td>2 · Inyección de env</td>
+        <td>
+          Instrumentar <code>pty_spawn</code> para que, si el <code>command</code> es un AI CLI,
+          añada <code>POLAKAPI_PTY_ID</code>, <code>POLAKAPI_DB_PATH</code>,
+          <code>POLAKAPI_HELPER</code> al env del hijo.
+        </td>
+        <td>Sesiones AI CLI marcadas y bridge env activo.</td>
+      </tr>
+      <tr>
+        <td>3 · Integrador Claude</td>
+        <td>
+          Script wrapper <code>polakapi-hook-claude.{sh,ps1}</code> shipped con la app; registro en
+          <code>~/.claude/settings.json</code> (idempotente, no sobrescribe hooks del usuario).
+          Hooks <code>SessionStart</code>, <code>UserPromptSubmit</code>, <code>Stop</code>,
+          <code>SessionEnd</code> hacia <code>polakapi-capture</code>.
+        </td>
+        <td>Historial poblado en sessions PTY de Claude.</td>
+      </tr>
+      <tr>
+        <td>4 · Integrador Codex</td>
+        <td>
+          Mismo patrón que Claude; registro en <code>~/.codex/hooks.json</code>. Documentar el flujo
+          de <code>/hooks</code> trust requerido.
+        </td>
+        <td>Historial poblado en sessions PTY de Codex.</td>
+      </tr>
+      <tr>
+        <td>5 · Integrador opencode</td>
+        <td>
+          Plugin <code>~/.config/opencode/plugins/polakapi-capture.ts</code>: escucha
+          <code>session.idle</code>, llama <code>client.session.messages(...)</code>, filtra
+          user/assistant por <code>info.role</code>, escribe a <code>polakapi.db</code> vía
+          <code>bun:sqlite</code>.
+        </td>
+        <td>Historial poblado en sessions PTY de opencode (post-turno).</td>
+      </tr>
+      <tr>
+        <td>6 · Consulta + UI</td>
+        <td>
+          Comandos de lectura (<code>list_sessions</code>, <code>list_by_session</code>,
+          <code>search</code>) + vista de historial. <code>list_by_session</code> excluye
+          <code>response_text</code> / <code>user_input</code> del listado; se devuelven solo bajo
+          demanda por id.
+        </td>
+        <td>Historial navegable desde la app.</td>
+      </tr>
+      <tr>
+        <td>7 · Opcional</td>
+        <td>
+          FTS5 para búsqueda, export a Markdown/JSON, retención/purga, extracción de tokens/costo si
+          algún CLI empieza a reportarlos en sus hooks.
+        </td>
+        <td>Según necesidad real de uso.</td>
+      </tr>
+    </table>
+
+    <h2>9 · Riesgos y decisiones abiertas</h2>
+    <div class="card warn">
+      <ul>
+        <li>
+          <strong>Trust flow en Codex:</strong> el usuario debe aceptar el hook una vez vía
+          <code>/hooks</code>. Considerar UX (toast la primera vez que polakapi detecta una sesión
+          de Codex sin hook trusted).
+        </li>
+        <li>
+          <strong>opencode no es real-time:</strong> la captura es post-turno. Si el usuario aborta,
+          parte del turno puede no llegar a DB. Aceptable para historial; no para telemetría en
+          vivo.
+        </li>
+        <li>
+          <strong>opencode plugin via Bun:</strong> el plugin es JS/TS. Hay que empaquetarlo (p.ej.
+          como npm propio <code>@polakapi/opencode-plugin</code>) o copiarlo a
+          <code>~/.config/opencode/plugins/</code>. Considerar versioning del plugin.
+        </li>
+        <li>
+          <strong>Idempotencia del registro:</strong> polakapi no debe sobrescribir hooks del
+          usuario. Usar merge estructural (solo añadir el bloque si no existe) y dejar nota en el
+          <code>settings.json</code> de que es gestionado por polakapi.
+        </li>
+        <li>
+          <strong>Versiones de los CLIs:</strong> los schemas de hooks pueden cambiar entre
+          versiones de Claude/Codex/opencode. El helper debe validar el JSON de entrada y fallar
+          soft si falta un field (no romper).
+        </li>
+        <li>
+          <strong>Multi-instancia:</strong> si polakapi está corriendo en varios proyectos a la vez,
+          cada uno escribe a su propio <code>polakapi.db</code> (en su
+          <code>app_config_dir</code> project-local). Evita colisión global.
+        </li>
+        <li>
+          <strong>Privacidad:</strong> la base es local en <code>app_config_dir</code>; los prompts
+          pueden contener código del proyecto del usuario — no debe salir de la máquina. El helper
+          no hace network. El plugin de opencode tampoco.
+        </li>
+        <li>
+          <strong>Detcción de AVs:</strong> al no capturar keystrokes y al ser invocado por el
+          propio CLI como hook/plugin (no inyectando DLLs ni escuchando teclado global), el riesgo
+          de falso positivo de AV es mínimo.
+        </li>
+        <li>
+          <strong>¿UI desde el inicio?</strong> La captura (fases 1–5) es independiente de la UI; el
+          esquema no cambia si la UI llega después.
+        </li>
+        <li>
+          <strong>Retención:</strong> ¿ilimitada o purga configurable? Punto de partida sugerido:
+          ilimitada (volumen bajo), revisar en fase 7.
+        </li>
+      </ul>
+    </div>
+  </body>
+</html>
