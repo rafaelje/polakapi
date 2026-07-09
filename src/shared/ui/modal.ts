@@ -179,6 +179,7 @@ export function confirmModal(opts: ConfirmModalOptions): Promise<boolean> {
         cancel();
       } else if (e.key === "Enter") {
         e.preventDefault();
+        if (opts.danger) return;
         confirm();
       }
     };

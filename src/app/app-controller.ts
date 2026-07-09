@@ -99,6 +99,7 @@ export class AppController {
     this.unwireQuitConfirm = wireQuitConfirm({
       router: this.router,
       getState: () => workspaces.controller.getState(),
+      beforeQuit: () => this.flushBeforeQuit(),
     });
   }
 
@@ -164,6 +165,15 @@ export class AppController {
     void flushSave().catch((error) => console.error("Failed to flush layout before unload", error));
   }
 
+  private async flushBeforeQuit(): Promise<void> {
+    const workspaces = this.workspaces;
+    if (workspaces) {
+      workspaces.notesPanel.dispose();
+      await workspaces.controller.dispose();
+    }
+    await flushSave();
+  }
+
   private async wirePtyEvents(): Promise<void> {
     this.unlistenData = await onPtyData(({ id, data }) => {
       if (this.bottomPanel?.handlePtyData(id, data)) return;
@@ -171,7 +181,10 @@ export class AppController {
     });
     this.unlistenExit = await onPtyExit(({ id }) => {
       if (this.bottomPanel?.handlePtyExit(id)) return;
-      this.router.findPaneById(id)?.pane.markExited();
+      const found = this.router.findPaneById(id);
+      if (!found) return;
+      found.pane.markExited();
+      found.manager.markExited(id);
     });
   }
 

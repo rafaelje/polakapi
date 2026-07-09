@@ -69,6 +69,7 @@ export type TerminalManagerListener = (event: TerminalManagerEvent) => void;
 export class TerminalManager {
   private readonly panes = new Map<string, TerminalPane>();
   private readonly order: string[] = [];
+  private readonly liveIds = new Set<string>();
   private readonly specsById = new Map<string, TerminalSpec>();
   private focusedId: string | null = null;
   private readonly grid: HTMLElement;
@@ -135,7 +136,7 @@ export class TerminalManager {
   }
 
   get size(): number {
-    return this.order.length;
+    return this.liveIds.size;
   }
 
   get focusedPaneId(): string | null {
@@ -219,6 +220,7 @@ export class TerminalManager {
     };
     this.panes.set(ptyId, pane);
     this.order.push(ptyId);
+    if (!spawnError) this.liveIds.add(ptyId);
     this.specsById.set(ptyId, finalSpec);
     pane.el.dataset.ptyId = ptyId;
 
@@ -369,6 +371,7 @@ export class TerminalManager {
         this.setFocus(newId);
       }
       this.relayout();
+      this.emitCount();
       this.emitSpecs();
     } finally {
       this.respawning.delete(ptyId);
@@ -385,6 +388,7 @@ export class TerminalManager {
     if (!pane) return;
     this.panes.delete(ptyId);
     this.specsById.delete(ptyId);
+    const wasLive = this.liveIds.delete(ptyId);
     this.bellHandles.get(ptyId)?.dispose();
     this.bellHandles.delete(ptyId);
     const idx = this.order.indexOf(ptyId);
@@ -400,9 +404,14 @@ export class TerminalManager {
     await pane.dispose();
     if (!opts?.silent) {
       this.relayout();
-      this.emitCount();
+      if (wasLive) this.emitCount();
       this.emitSpecs();
     }
+  }
+
+  markExited(ptyId: string): void {
+    if (!this.liveIds.delete(ptyId)) return;
+    this.emitCount();
   }
 
   closeFocused(): void {
@@ -436,6 +445,7 @@ export class TerminalManager {
     this.bellHandles.clear();
     const toClose = [...this.panes.values()];
     this.panes.clear();
+    this.liveIds.clear();
     this.specsById.clear();
     this.order.splice(0);
     this.focusedId = null;

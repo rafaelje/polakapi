@@ -53,7 +53,7 @@ impl PtyStore {
 
     pub fn kill_session(&self, id: &str) {
         if let Some(session) = self.remove_session(id) {
-            let _ = session.child.lock().kill();
+            kill_and_wait(session);
         }
     }
 
@@ -65,9 +65,17 @@ impl PtyStore {
             .map(|(_, session)| session)
             .collect();
         for session in sessions {
-            let _ = session.child.lock().kill();
+            kill_and_wait(session);
         }
     }
+}
+
+fn kill_and_wait(session: Arc<PtySession>) {
+    std::thread::spawn(move || {
+        let mut child = session.child.lock();
+        let _ = child.kill();
+        let _ = child.wait();
+    });
 }
 
 impl Drop for PtyStore {
@@ -188,7 +196,9 @@ pub fn spawn_session(
                 id: id_for_thread.clone(),
             },
         );
-        store_for_thread.remove_session(&id_for_thread);
+        if let Some(session) = store_for_thread.remove_session(&id_for_thread) {
+            let _ = session.child.lock().wait();
+        }
     });
 
     Ok(id)

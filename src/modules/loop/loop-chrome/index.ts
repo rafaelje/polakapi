@@ -345,11 +345,7 @@ async function resumeInterruptedRun(
     console.info("loop resume: partial outputs discarded", discarded);
   }
 
-  // The router exposes `abandonRun` to regenerate but not `setRunId`, so we
-  // navigate to step 4 and let the chrome reuse that slot for the resumed
-  // scheduler's timeline. The router's runId is irrelevant to the timeline
-  // (we use the one from `details`).
-  router.setStep(4);
+  router.adoptRunId(details.summary.runId, 4);
 
   const rewinded = rewindRunningStages(details.state);
 
@@ -357,7 +353,7 @@ async function resumeInterruptedRun(
   if (!shell) throw new Error("loop chrome: shell not found while resuming");
 
   const oldSlot = shell.querySelector("#loop-step-slot");
-  const newSlot = renderStepSlot(3);
+  const newSlot = renderStepSlot(4);
   if (oldSlot) oldSlot.replaceWith(newSlot);
   else shell.appendChild(newSlot);
 

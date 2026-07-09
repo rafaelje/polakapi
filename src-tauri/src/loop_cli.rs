@@ -25,7 +25,7 @@
 //!   fields.
 
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::Duration;
 
@@ -87,10 +87,12 @@ impl AgentResult {
 ///
 /// `timeout_secs` below 1 is replaced with [`DEFAULT_TIMEOUT_SECS`].
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn run_loop_agent(
     cli: String,
     model: String,
     cwd: String,
+    run_id: String,
     system_prompt_path: Option<String>,
     user_input: String,
     timeout_secs: Option<u64>,
@@ -103,6 +105,9 @@ pub async fn run_loop_agent(
     let cli_lower = cli.to_ascii_lowercase();
     let sid = session_id.as_deref();
     let timeout_dur = Duration::from_secs(secs);
+    let scope = validate_loop_invocation_scope(&cwd, &run_id, system_prompt_path.as_deref())?;
+    let cwd = scope.cwd.to_string_lossy().to_string();
+    let system_prompt_path = scope.system_prompt_path.as_deref();
 
     // The per-CLI wrappers do their own spawn via `run_command`, which applies
     // `kill_on_drop(true)` and uses the same timeout. We forward the timeout
@@ -115,7 +120,7 @@ pub async fn run_loop_agent(
             invoke_claude(
                 &model,
                 &cwd,
-                system_prompt_path.as_deref(),
+                system_prompt_path,
                 &user_input,
                 sid,
                 timeout_dur,
@@ -126,7 +131,7 @@ pub async fn run_loop_agent(
             invoke_codex(
                 &model,
                 &cwd,
-                system_prompt_path.as_deref(),
+                system_prompt_path,
                 &user_input,
                 sid,
                 timeout_dur,
@@ -137,7 +142,7 @@ pub async fn run_loop_agent(
             invoke_opencode(
                 &model,
                 &cwd,
-                system_prompt_path.as_deref(),
+                system_prompt_path,
                 &user_input,
                 sid,
                 timeout_dur,
@@ -146,6 +151,82 @@ pub async fn run_loop_agent(
         }
         other => Err(format!("unsupported CLI: {other}")),
     }
+}
+
+#[derive(Debug)]
+struct InvocationScope {
+    cwd: PathBuf,
+    system_prompt_path: Option<String>,
+}
+
+fn validate_loop_invocation_scope(
+    cwd: &str,
+    run_id: &str,
+    system_prompt_path: Option<&str>,
+) -> Result<InvocationScope, String> {
+    if !crate::loop_prompts::is_safe_run_id(run_id) {
+        return Err(format!("invalid run_id: {run_id}"));
+    }
+
+    let cwd_path = PathBuf::from(cwd);
+    let cwd_canon = cwd_path
+        .canonicalize()
+        .map_err(|e| format!("invalid cwd: {e}"))?;
+    if !cwd_canon.is_dir() {
+        return Err(format!("cwd is not a directory: {cwd}"));
+    }
+
+    let run_dir = cwd_canon.join(".loop").join("runs").join(run_id);
+    let run_dir_canon = run_dir
+        .canonicalize()
+        .map_err(|e| format!("invalid run directory: {e}"))?;
+    if !run_dir_canon.is_dir() {
+        return Err(format!("run directory is not a directory: {run_dir:?}"));
+    }
+    if !run_dir_canon.starts_with(&cwd_canon) {
+        return Err("run directory escapes cwd".to_string());
+    }
+
+    let system_prompt_path = match system_prompt_path {
+        Some(path) => Some(validate_system_prompt_path(path, &run_dir_canon)?),
+        None => None,
+    };
+
+    Ok(InvocationScope {
+        cwd: cwd_canon,
+        system_prompt_path,
+    })
+}
+
+fn validate_system_prompt_path(path: &str, run_dir: &Path) -> Result<String, String> {
+    let prompt_path = PathBuf::from(path);
+    let prompt_canon = prompt_path
+        .canonicalize()
+        .map_err(|e| format!("invalid system prompt path: {e}"))?;
+    if !prompt_canon.is_file() {
+        return Err(format!("system prompt path is not a file: {path}"));
+    }
+
+    let prompt_name = prompt_canon
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| "system prompt path has no file name".to_string())?;
+    if !crate::loop_prompts::is_known_prompt(prompt_name) {
+        return Err(format!("system prompt not allowed: {prompt_name}"));
+    }
+
+    let prompts_dir = run_dir.join("prompts");
+    let prompts_dir_canon = prompts_dir
+        .canonicalize()
+        .map_err(|e| format!("invalid prompts directory: {e}"))?;
+    let parent = prompt_canon
+        .parent()
+        .ok_or_else(|| "system prompt path has no parent".to_string())?;
+    if parent != prompts_dir_canon {
+        return Err("system prompt must live in the run prompts directory".to_string());
+    }
+
+    Ok(prompt_canon.to_string_lossy().to_string())
 }
 
 // ---------------------------------------------------------------------------
@@ -332,6 +413,7 @@ async fn invoke_codex(
             .arg("--json")
             .arg("--output-last-message")
             .arg(&tmp_path)
+            .arg("--")
             .arg(sid)
             .arg(&full_input);
     } else {
@@ -340,6 +422,7 @@ async fn invoke_codex(
             .arg("--json")
             .arg("--output-last-message")
             .arg(&tmp_path)
+            .arg("--")
             .arg(&full_input);
     }
 
@@ -462,6 +545,7 @@ async fn invoke_opencode(
     if let Some(sid) = session_id {
         cmd.arg("--session").arg(sid);
     }
+    cmd.arg("--");
     cmd.arg(&full_input);
 
     let output = run_command(cmd, cwd, "opencode", timeout_dur).await?;
@@ -785,5 +869,52 @@ mod tests {
     fn opencode_non_jsonl_fallbacks_to_plain_text() {
         let parsed = parse_opencode_stream("just plain text\n").unwrap();
         assert_eq!(parsed.text, "just plain text");
+    }
+
+    #[test]
+    fn invocation_scope_accepts_run_prompt() {
+        let tmp = tempfile::tempdir().unwrap();
+        let run_prompts = tmp.path().join(".loop/runs/run-1/prompts");
+        std::fs::create_dir_all(&run_prompts).unwrap();
+        let prompt = run_prompts.join("analysis.md");
+        std::fs::write(&prompt, "prompt").unwrap();
+
+        let scope = validate_loop_invocation_scope(
+            tmp.path().to_str().unwrap(),
+            "run-1",
+            Some(prompt.to_str().unwrap()),
+        )
+        .unwrap();
+
+        assert_eq!(scope.cwd, tmp.path().canonicalize().unwrap());
+        assert_eq!(
+            scope.system_prompt_path.as_deref(),
+            Some(prompt.canonicalize().unwrap().to_str().unwrap())
+        );
+    }
+
+    #[test]
+    fn invocation_scope_rejects_prompt_outside_run() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(tmp.path().join(".loop/runs/run-1/prompts")).unwrap();
+        let prompt = tmp.path().join("analysis.md");
+        std::fs::write(&prompt, "prompt").unwrap();
+
+        let err = validate_loop_invocation_scope(
+            tmp.path().to_str().unwrap(),
+            "run-1",
+            Some(prompt.to_str().unwrap()),
+        )
+        .unwrap_err();
+
+        assert!(err.contains("run prompts directory"));
+    }
+
+    #[test]
+    fn invocation_scope_rejects_unsafe_run_id() {
+        let tmp = tempfile::tempdir().unwrap();
+        let err =
+            validate_loop_invocation_scope(tmp.path().to_str().unwrap(), "../x", None).unwrap_err();
+        assert!(err.contains("invalid run_id"));
     }
 }

