@@ -478,18 +478,71 @@ async fn invoke_codex(
     }
 
     let output = run_command(cmd, cwd, "codex", effort, timeout_dur).await?;
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
 
     if !output.status.success() {
-        return Ok(AgentResult::empty_with_error(format!(
-            "codex exit {}: {}",
-            output.status,
-            String::from_utf8_lossy(&output.stderr)
-        )));
+        // codex emits its real error via the JSONL stream on stdout (e.g. a
+        // 400 from the API); stderr just contains its "Reading input..."
+        // banner. Pull the human-readable message out of the JSONL if we can.
+        let detail = extract_codex_error(&stdout).unwrap_or_else(|| {
+            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+            if stderr.is_empty() {
+                format!("exit {}", output.status)
+            } else {
+                stderr
+            }
+        });
+        return Ok(AgentResult::empty_with_error(format!("codex: {detail}")));
     }
 
     let last_message = std::fs::read_to_string(&tmp_path).unwrap_or_default();
-    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
     parse_codex_jsonl(&stdout, &last_message)
+}
+
+/// Extracts the most informative error line from codex's JSONL output. Codex
+/// emits `{"type":"error","message":"..."}` and `{"type":"turn.failed",...}`
+/// events with the API error inside; we prefer the first `error` message we
+/// find, falling back to any error-typed item.
+fn extract_codex_error(stdout: &str) -> Option<String> {
+    for line in stdout.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let Ok(value) = serde_json::from_str::<serde_json::Value>(trimmed) else {
+            continue;
+        };
+        let type_field = value.get("type").and_then(|v| v.as_str());
+        if type_field == Some("error") {
+            if let Some(msg) = value.get("message").and_then(|v| v.as_str()) {
+                return Some(unwrap_nested_json_message(msg));
+            }
+        }
+        if type_field == Some("item.completed") {
+            let item = value.pointer("/item")?;
+            if item.get("type").and_then(|v| v.as_str()) == Some("error") {
+                if let Some(msg) = item.get("message").and_then(|v| v.as_str()) {
+                    return Some(unwrap_nested_json_message(msg));
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Codex sometimes stuffs the raw provider JSON into the `message` field
+/// (`"{\"type\":\"error\",\"status\":400,\"error\":{\"message\":\"...\"}}"`).
+/// Peel that layer off so the user sees the sentence, not the payload.
+fn unwrap_nested_json_message(msg: &str) -> String {
+    if let Ok(inner) = serde_json::from_str::<serde_json::Value>(msg) {
+        if let Some(deep) = inner.pointer("/error/message").and_then(|v| v.as_str()) {
+            return deep.to_string();
+        }
+        if let Some(deep) = inner.get("message").and_then(|v| v.as_str()) {
+            return deep.to_string();
+        }
+    }
+    msg.to_string()
 }
 
 fn parse_codex_jsonl(stdout: &str, last_message: &str) -> Result<AgentResult, String> {
@@ -933,6 +986,32 @@ mod tests {
         let parsed = parse_claude_json("not json").unwrap();
         assert!(parsed.error.is_some());
         assert!(parsed.text.is_empty());
+    }
+
+    #[test]
+    fn extracts_codex_error_from_top_level_event() {
+        let stdout = concat!(
+            r#"{"type":"thread.started","thread_id":"x"}"#,
+            "\n",
+            r#"{"type":"error","message":"{\"type\":\"error\",\"status\":400,\"error\":{\"type\":\"invalid_request_error\",\"message\":\"The 'gpt-5' model is not supported when using Codex with a ChatGPT account.\"}}"}"#,
+            "\n"
+        );
+        let err = extract_codex_error(stdout).unwrap();
+        assert!(err.contains("not supported when using Codex with a ChatGPT account"));
+    }
+
+    #[test]
+    fn extracts_codex_error_from_item_completed_error() {
+        let stdout =
+            r#"{"type":"item.completed","item":{"id":"item_0","type":"error","message":"Model metadata for `gpt-5` not found."}}"#;
+        let err = extract_codex_error(stdout).unwrap();
+        assert_eq!(err, "Model metadata for `gpt-5` not found.");
+    }
+
+    #[test]
+    fn returns_none_when_no_error_present() {
+        let stdout = r#"{"type":"turn.completed","usage":{"input_tokens":10}}"#;
+        assert!(extract_codex_error(stdout).is_none());
     }
 
     #[test]

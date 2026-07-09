@@ -41,6 +41,50 @@ describe("parsePassOutput", () => {
     expect(res.ok).toBe(false);
   });
 
+  it("infers action=new when a critic finding has file/severity/claim but no action", () => {
+    const raw = [
+      "```json",
+      JSON.stringify({
+        pass: "critic",
+        findings: [
+          {
+            id: "F1",
+            file: "src/foo.ts",
+            line: 10,
+            severity: "major",
+            claim: "off by one",
+            argument: "evidence",
+          },
+        ],
+      }),
+      "```",
+    ].join("\n");
+    const res = parsePassOutput(raw);
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.parsed.findings).toHaveLength(1);
+    expect(res.parsed.findings[0].action).toBe("new");
+  });
+
+  it("does not infer action=new when severity or claim is missing", () => {
+    const raw =
+      '```json\n{"pass":"critic","findings":[{"id":"F1","file":"a.ts","argument":"e"}]}\n```';
+    const res = parsePassOutput(raw);
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.parsed.findings).toHaveLength(0);
+  });
+
+  it("does not infer action=new for defender passes", () => {
+    // Defenders never emit `new` — a missing action means a genuinely bad output.
+    const raw =
+      '```json\n{"pass":"defender","findings":[{"id":"F1","file":"a.ts","severity":"major","claim":"c","argument":"e"}]}\n```';
+    const res = parsePassOutput(raw);
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.parsed.findings).toHaveLength(0);
+  });
+
   it("drops findings with unknown actions", () => {
     const raw =
       '```json\n{"pass":"critic","findings":[{"id":"F1","action":"bogus","argument":"e"}]}\n```';

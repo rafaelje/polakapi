@@ -147,7 +147,7 @@ export function defaultModelForCli(cli: LoopCli): string {
     case "claude":
       return "claude-opus-4-7";
     case "codex":
-      return "gpt-5";
+      return "gpt-5.5";
     case "opencode":
       return "opencode-go/glm-5.2";
   }

@@ -130,9 +130,8 @@ export function parsePassOutput(raw: string): ParseResult {
     if (typeof entry !== "object" || entry === null) continue;
     const f = entry as Record<string, unknown>;
     const id = typeof f.id === "string" ? f.id.trim() : "";
-    const action = typeof f.action === "string" ? f.action.trim() : "";
+    const rawAction = typeof f.action === "string" ? f.action.trim() : "";
     if (!id) continue;
-    if (!VALID_ACTIONS.has(action as DebateAction)) continue;
 
     const argument = typeof f.argument === "string" ? f.argument.slice(0, MAX_ARGUMENT_LEN) : "";
     const file = typeof f.file === "string" ? f.file : undefined;
@@ -143,9 +142,29 @@ export function parsePassOutput(raw: string): ParseResult {
         : undefined;
     const claim = typeof f.claim === "string" ? f.claim.trim() : undefined;
 
+    let action: DebateAction;
+    if (VALID_ACTIONS.has(rawAction as DebateAction)) {
+      action = rawAction as DebateAction;
+    } else if (
+      pass === "critic" &&
+      file !== undefined &&
+      severity !== undefined &&
+      claim !== undefined &&
+      claim.length > 0
+    ) {
+      // Infer `action: "new"` when a critic finding has the anchor fields but
+      // the model forgot the discriminator. Real-world models (GLM, small
+      // Sonnets) omit `action` even when the prompt requires it; dropping
+      // otherwise-well-formed findings is much worse than accepting the
+      // implied "new".
+      action = "new";
+    } else {
+      continue;
+    }
+
     findings.push({
       id,
-      action: action as DebateAction,
+      action,
       argument,
       file,
       line,

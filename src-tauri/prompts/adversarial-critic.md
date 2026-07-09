@@ -42,3 +42,5 @@ Free-form reasoning is allowed above, but the message MUST end with exactly one 
 ```
 
 `file`, `line`, `severity` and `claim` are required when `action` is `new`; for `maintain` / `withdraw` only `id`, `action` and `argument` are read.
+
+**The `action` field is not optional.** In `find` mode every finding must have `"action": "new"` verbatim. Omitting it is a common failure mode — a finding without an `action` will be dropped as ill-formed.
