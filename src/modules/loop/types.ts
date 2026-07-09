@@ -92,7 +92,7 @@ export function defaultModelFor(cli: LoopCli): string {
     case "codex":
       return "gpt-5";
     case "opencode":
-      return "anthropic/claude-sonnet-4-5";
+      return "opencode-go/glm-5.2";
   }
 }
 

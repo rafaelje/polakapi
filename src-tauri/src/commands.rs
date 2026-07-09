@@ -1,4 +1,5 @@
 use crate::fs::validate_path;
+use crate::open::ShellRegistry;
 use crate::pty::{spawn_session, PtyStore};
 use portable_pty::PtySize;
 use std::io::Write;
@@ -103,10 +104,10 @@ pub fn open_in_editor(path: String, editor: Option<String>) -> Result<(), String
 }
 
 /// Launches an external Ghostty terminal window with `path` as the working
-/// directory. Returns an error on Windows where Ghostty is unavailable.
+/// directory. If a window is already open for that path it is reused.
 #[tauri::command]
-pub fn open_in_shell(path: String) -> Result<(), String> {
-    crate::open::open_in_shell(&path)
+pub fn open_in_shell(shell: State<'_, ShellRegistry>, path: String) -> Result<(), String> {
+    crate::open::open_in_shell(&shell, &path)
 }
 
 /// Opens a single file `path` in an editor. Same resolver as

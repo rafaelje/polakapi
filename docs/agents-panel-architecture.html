@@ -1,0 +1,893 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>/agents · arquitectura y mockup</title>
+    <style>
+      :root {
+        --bg: #0f1115;
+        --bg-2: #161922;
+        --bg-3: #1d2230;
+        --border: #2a3041;
+        --border-hi: #3a4358;
+        --text: #e6e8ee;
+        --muted: #8a93a6;
+        --accent: #7aa2ff;
+        --accent-2: #b48cff;
+        --ok: #6fcf97;
+        --warn: #f2c94c;
+        --danger: #eb5757;
+        --code-bg: #0b0d12;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font:
+          14px/1.55 ui-sans-serif,
+          system-ui,
+          -apple-system,
+          sans-serif;
+      }
+      body {
+        padding: 32px 28px 80px;
+        max-width: 1180px;
+        margin: 0 auto;
+      }
+      h1 {
+        font-size: 22px;
+        margin: 0 0 4px;
+        letter-spacing: -0.01em;
+      }
+      h2 {
+        font-size: 17px;
+        margin: 36px 0 12px;
+        padding-top: 18px;
+        border-top: 1px solid var(--border);
+        letter-spacing: -0.01em;
+      }
+      h3 {
+        font-size: 14px;
+        margin: 22px 0 8px;
+        color: var(--accent);
+      }
+      p.lead {
+        color: var(--muted);
+        margin: 0 0 24px;
+        max-width: 860px;
+      }
+      p {
+        max-width: 860px;
+      }
+      code {
+        background: var(--code-bg);
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        padding: 1px 5px;
+        font:
+          12.5px/1.5 ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          monospace;
+      }
+      .diagram {
+        background: var(--bg-2);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 18px;
+        margin: 14px 0 8px;
+        overflow-x: auto;
+      }
+      .diagram svg {
+        display: block;
+        min-width: 900px;
+      }
+      .caption {
+        color: var(--muted);
+        font-size: 12.5px;
+        margin: 6px 2px 0;
+      }
+      svg text {
+        font:
+          12px/1.3 ui-sans-serif,
+          system-ui,
+          sans-serif;
+        fill: var(--text);
+      }
+      svg .mono {
+        font:
+          11px/1.3 ui-monospace,
+          Menlo,
+          monospace;
+      }
+      svg .muted {
+        fill: var(--muted);
+      }
+      svg .small {
+        font-size: 10.5px;
+      }
+      svg .box {
+        fill: var(--bg-3);
+        stroke: var(--border-hi);
+        rx: 8;
+      }
+      svg .box-accent {
+        stroke: var(--accent);
+      }
+      svg .box-ok {
+        stroke: var(--ok);
+      }
+      svg .box-warn {
+        stroke: var(--warn);
+      }
+      svg .box-purple {
+        stroke: var(--accent-2);
+      }
+      svg .zone {
+        fill: none;
+        stroke: var(--border);
+        stroke-dasharray: 5 5;
+        rx: 12;
+      }
+      svg .arrow {
+        stroke: var(--muted);
+        stroke-width: 1.4;
+        fill: none;
+        marker-end: url(#arr);
+      }
+      svg .arrow-hi {
+        stroke: var(--accent);
+        marker-end: url(#arr-hi);
+      }
+      svg .arrow-ok {
+        stroke: var(--ok);
+        marker-end: url(#arr-ok);
+      }
+      svg .lane {
+        stroke: var(--border);
+        stroke-width: 1;
+      }
+
+      /* ------- mockups ------- */
+      .mock-window {
+        background: var(--bg-2);
+        border: 1px solid var(--border-hi);
+        border-radius: 12px;
+        overflow: hidden;
+        margin: 14px 0 8px;
+        box-shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
+      }
+      .mock-titlebar {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 9px 12px;
+        background: var(--bg-3);
+        border-bottom: 1px solid var(--border);
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        display: inline-block;
+      }
+      .dot.r {
+        background: #ff5f57;
+      }
+      .dot.y {
+        background: #febc2e;
+      }
+      .dot.g {
+        background: #28c840;
+      }
+      .mock-titlebar .title {
+        margin-left: 8px;
+      }
+      .mock-app {
+        position: relative;
+        display: grid;
+        grid-template-columns: 1fr 168px;
+        min-height: 430px;
+      }
+      .mock-terminals {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+        padding: 10px;
+        background: var(--bg);
+      }
+      .mock-pane {
+        background: var(--code-bg);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 10px 12px;
+        font:
+          11.5px/1.65 ui-monospace,
+          Menlo,
+          monospace;
+        color: #b9c2d4;
+        overflow: hidden;
+      }
+      .mock-pane.focused {
+        border-color: var(--accent);
+        box-shadow: 0 0 0 1px var(--accent);
+      }
+      .mock-pane .pane-tag {
+        float: right;
+        font-size: 10px;
+        color: var(--muted);
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        padding: 0 5px;
+      }
+      .mock-pane .prompt {
+        color: var(--ok);
+      }
+      .mock-pane .claude {
+        color: var(--accent-2);
+      }
+      .mock-pane .pasted {
+        display: block;
+        margin-top: 6px;
+        padding: 7px 9px;
+        border-left: 2px solid var(--accent);
+        background: rgba(122, 162, 255, 0.07);
+        color: #dfe5f1;
+        white-space: pre-wrap;
+      }
+      .mock-pane .cursor {
+        display: inline-block;
+        width: 7px;
+        height: 13px;
+        background: var(--text);
+        vertical-align: text-bottom;
+        margin-left: 2px;
+      }
+      .mock-sidebar {
+        border-left: 1px solid var(--border);
+        background: var(--bg-2);
+        padding: 12px 10px;
+      }
+      .mock-sidebar .side-title {
+        font-size: 11px;
+        text-transform: lowercase;
+        color: var(--muted);
+        margin-bottom: 10px;
+      }
+      .flow-btn {
+        display: block;
+        width: 100%;
+        text-align: left;
+        background: var(--bg-3);
+        border: 1px solid var(--border);
+        color: var(--text);
+        border-radius: 6px;
+        padding: 6px 9px;
+        font:
+          12px ui-monospace,
+          Menlo,
+          monospace;
+        margin-bottom: 7px;
+      }
+      .flow-btn.hot {
+        border-color: var(--accent);
+        color: var(--accent);
+        box-shadow: 0 0 0 1px rgba(122, 162, 255, 0.35);
+      }
+
+      /* modal overlay mock */
+      .mock-overlay {
+        position: absolute;
+        inset: 0;
+        background: rgba(8, 10, 14, 0.62);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        backdrop-filter: blur(1px);
+      }
+      .mock-modal {
+        width: 640px;
+        max-width: 92%;
+        background: var(--bg-2);
+        border: 1px solid var(--border-hi);
+        border-radius: 10px;
+        box-shadow: 0 24px 70px rgba(0, 0, 0, 0.6);
+        overflow: hidden;
+      }
+      .mock-modal-head {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        padding: 10px;
+        border-bottom: 1px solid var(--border);
+      }
+      .mock-search {
+        flex: 1;
+        background: var(--code-bg);
+        border: 1px solid var(--border-hi);
+        border-radius: 6px;
+        padding: 6px 10px;
+        color: var(--text);
+        font-size: 12.5px;
+      }
+      .mock-search .ph {
+        color: var(--muted);
+      }
+      .target-badge {
+        font:
+          10.5px ui-monospace,
+          Menlo,
+          monospace;
+        color: var(--ok);
+        border: 1px solid rgba(111, 207, 151, 0.45);
+        background: rgba(111, 207, 151, 0.08);
+        border-radius: 5px;
+        padding: 4px 7px;
+        white-space: nowrap;
+      }
+      .btn-mini {
+        font-size: 11.5px;
+        border: 1px solid var(--border-hi);
+        background: var(--bg-3);
+        color: var(--text);
+        border-radius: 6px;
+        padding: 5px 9px;
+        white-space: nowrap;
+      }
+      .btn-mini.primary {
+        border-color: var(--accent);
+        color: var(--accent);
+      }
+      .btn-mini.danger {
+        border-color: rgba(235, 87, 87, 0.55);
+        color: var(--danger);
+      }
+      .mock-modal-body {
+        display: grid;
+        grid-template-columns: 240px 1fr;
+        min-height: 280px;
+      }
+      .agent-list {
+        border-right: 1px solid var(--border);
+        padding: 6px;
+      }
+      .agent-row {
+        padding: 7px 9px;
+        border-radius: 6px;
+        cursor: default;
+      }
+      .agent-row .name {
+        font-size: 12.5px;
+      }
+      .agent-row .desc {
+        font-size: 11px;
+        color: var(--muted);
+      }
+      .agent-row .files {
+        font-size: 10px;
+        color: var(--muted);
+      }
+      .agent-row.sel {
+        background: rgba(122, 162, 255, 0.12);
+        outline: 1px solid rgba(122, 162, 255, 0.5);
+      }
+      .agent-preview {
+        padding: 12px 14px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .chip-row {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+      }
+      .chip {
+        font:
+          10.5px ui-monospace,
+          Menlo,
+          monospace;
+        border: 1px solid var(--border-hi);
+        border-radius: 999px;
+        padding: 2px 9px;
+        color: var(--muted);
+      }
+      .chip.on {
+        color: var(--accent);
+        border-color: rgba(122, 162, 255, 0.5);
+      }
+      .preview-box {
+        flex: 1;
+        background: var(--code-bg);
+        border: 1px solid var(--border);
+        border-radius: 7px;
+        padding: 10px 12px;
+        font:
+          11px/1.6 ui-monospace,
+          Menlo,
+          monospace;
+        color: #b9c2d4;
+        white-space: pre-wrap;
+        overflow: hidden;
+      }
+      .preview-actions {
+        display: flex;
+        gap: 8px;
+        justify-content: flex-end;
+      }
+      .kbd-hint {
+        font-size: 10.5px;
+        color: var(--muted);
+        padding: 8px 12px;
+        border-top: 1px solid var(--border);
+        display: flex;
+        gap: 14px;
+      }
+      kbd {
+        background: var(--bg-3);
+        border: 1px solid var(--border-hi);
+        border-bottom-width: 2px;
+        border-radius: 4px;
+        padding: 0 5px;
+        font-size: 10px;
+      }
+
+      /* editor mock */
+      .editor-body {
+        padding: 14px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      .field label {
+        display: block;
+        font-size: 11px;
+        color: var(--muted);
+        margin-bottom: 4px;
+      }
+      .field input,
+      .file-block textarea {
+        width: 100%;
+        background: var(--code-bg);
+        border: 1px solid var(--border-hi);
+        border-radius: 6px;
+        padding: 6px 10px;
+        color: var(--text);
+        font-size: 12.5px;
+      }
+      .file-block {
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 10px;
+        background: var(--bg-3);
+      }
+      .file-block-head {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        margin-bottom: 8px;
+      }
+      .file-block-head input {
+        flex: 1;
+        background: var(--code-bg);
+        border: 1px solid var(--border-hi);
+        border-radius: 6px;
+        padding: 4px 9px;
+        color: var(--text);
+        font:
+          11.5px ui-monospace,
+          Menlo,
+          monospace;
+      }
+      .file-block textarea {
+        font:
+          11px/1.6 ui-monospace,
+          Menlo,
+          monospace;
+        resize: none;
+        min-height: 64px;
+      }
+      .toast {
+        position: absolute;
+        right: 14px;
+        bottom: 14px;
+        background: var(--bg-3);
+        border: 1px solid rgba(111, 207, 151, 0.55);
+        color: var(--ok);
+        border-radius: 8px;
+        padding: 8px 12px;
+        font-size: 12px;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+      }
+      .grid-2 {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 26px;
+      }
+      .step-label {
+        display: inline-block;
+        background: var(--accent);
+        color: #0b0d12;
+        font-weight: 700;
+        font-size: 11px;
+        border-radius: 999px;
+        padding: 1px 9px;
+        margin-right: 8px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>/agents · biblioteca de agentes insertables</h1>
+    <p class="lead">
+      Cuarto botón del panel <em>agents flow</em>. Abre un <strong>modal dentro de la ventana
+      principal</strong> (patrón command-palette, no ventana Tauri aparte) con una biblioteca de
+      agentes reutilizables — cada agente agrupa uno o varios archivos markdown. Un click inserta el
+      contenido compuesto en la terminal seleccionada vía <code>ptyWrite</code> con
+      <em>bracketed paste</em>, sin Enter final. CRUD completo: crear, editar, eliminar y buscar.
+      Plan detallado en <code>docs/agents-panel-plan.md</code>.
+    </p>
+
+    <h2>1 · Arquitectura</h2>
+    <div class="diagram">
+      <svg viewBox="0 0 980 560" width="980" height="560">
+        <defs>
+          <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0 0 L10 5 L0 10 z" fill="#8a93a6" />
+          </marker>
+          <marker id="arr-hi" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0 0 L10 5 L0 10 z" fill="#7aa2ff" />
+          </marker>
+          <marker id="arr-ok" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0 0 L10 5 L0 10 z" fill="#6fcf97" />
+          </marker>
+        </defs>
+
+        <!-- zone: main webview -->
+        <rect class="zone" x="16" y="16" width="640" height="416" />
+        <text x="30" y="38" class="muted small">ventana principal (webview · index.html)</text>
+
+        <!-- agents flow panel -->
+        <rect class="box" x="36" y="56" width="180" height="128" />
+        <text x="52" y="80">panel agents flow</text>
+        <text x="52" y="100" class="mono muted small">/loop · /prompts</text>
+        <text x="52" y="115" class="mono muted small">/adversarial review</text>
+        <rect x="48" y="128" width="156" height="26" rx="6" fill="none" stroke="#7aa2ff" />
+        <text x="60" y="145" class="mono" fill="#7aa2ff">#open-agents  /agents</text>
+
+        <!-- agents modal -->
+        <rect class="box box-accent" x="300" y="56" width="200" height="128" />
+        <text x="316" y="80">agents-modal.ts</text>
+        <text x="316" y="99" class="mono muted small">overlay in-app (Cmd-P style)</text>
+        <text x="316" y="116" class="mono muted small">lista + búsqueda + preview</text>
+        <text x="316" y="131" class="mono muted small">modo editor (create/edit)</text>
+        <text x="316" y="150" class="mono muted small">↑↓ Enter Esc · Cmd+N</text>
+
+        <!-- controller -->
+        <rect class="box box-purple" x="300" y="228" width="200" height="96" />
+        <text x="316" y="252">agents-controller.ts</text>
+        <text x="316" y="271" class="mono muted small">estado + CRUD + subscribe</text>
+        <text x="316" y="286" class="mono muted small">create / update / remove</text>
+        <text x="316" y="301" class="mono muted small">queueSaveAgents() debounce</text>
+
+        <!-- compose -->
+        <rect class="box" x="540" y="90" width="96" height="60" />
+        <text x="554" y="114">compose.ts</text>
+        <text x="554" y="132" class="mono muted small">pure fns</text>
+
+        <!-- insert target -->
+        <rect class="box box-ok" x="36" y="228" width="200" height="96" />
+        <text x="52" y="252">resolveInsertTarget()</text>
+        <text x="52" y="271" class="mono muted small">router.getActive()</text>
+        <text x="52" y="286" class="mono muted small">manager.focusedPaneId</text>
+        <text x="52" y="301" class="mono muted small">→ ptyId capturado al abrir</text>
+
+        <!-- pty client -->
+        <rect class="box box-ok" x="300" y="360" width="200" height="52" />
+        <text x="316" y="382">pty-client.ts</text>
+        <text x="316" y="399" class="mono muted small">ptyWrite(ptyId, texto)</text>
+
+        <!-- zone: rust -->
+        <rect class="zone" x="696" y="16" width="268" height="200" />
+        <text x="710" y="38" class="muted small">backend Rust (src-tauri) — sin cambios</text>
+        <rect class="box" x="716" y="56" width="228" height="64" />
+        <text x="732" y="80">pty.rs</text>
+        <text x="732" y="99" class="mono muted small">pty_write → PTY del pane</text>
+        <rect class="box" x="716" y="140" width="228" height="56" />
+        <text x="732" y="164">CLI en la terminal</text>
+        <text x="732" y="182" class="mono muted small">claude / codex — recibe paste</text>
+
+        <!-- zone: persistence -->
+        <rect class="zone" x="696" y="256" width="268" height="176" />
+        <text x="710" y="278" class="muted small">persistencia (plugin-store)</text>
+        <rect class="box box-warn" x="716" y="296" width="228" height="108" />
+        <text x="732" y="320">agents-store.ts → agents.json</text>
+        <text x="732" y="340" class="mono muted small">{ agents: AgentDef[],</text>
+        <text x="732" y="355" class="mono muted small">  schemaVersion: 1 }</text>
+        <text x="732" y="375" class="mono muted small">AgentDef.files: 1..n archivos</text>
+        <text x="732" y="390" class="mono muted small">{ title, content } markdown</text>
+
+        <!-- arrows -->
+        <path class="arrow arrow-hi" d="M216 120 H292" />
+        <text x="222" y="112" class="small muted">click abre</text>
+
+        <path class="arrow" d="M136 184 V220" />
+        <text x="146" y="208" class="small muted">snapshot antes de abrir</text>
+
+        <path class="arrow" d="M236 276 H292" />
+        <text x="240" y="268" class="small muted">InsertTarget</text>
+
+        <path class="arrow" d="M400 184 V220" />
+        <text x="410" y="208" class="small muted">CRUD / lectura</text>
+
+        <path class="arrow" d="M500 110 H532" />
+        <text x="502" y="102" class="small muted">compone</text>
+
+        <path class="arrow arrow-hi" d="M400 324 V352" />
+        <text x="410" y="345" class="small muted">insert(agent)</text>
+
+        <path class="arrow arrow-ok" d="M500 386 H660 V88 H708" />
+        <text x="508" y="404" class="small muted">invoke("pty_write", ESC[200~…ESC[201~)</text>
+
+        <path class="arrow" d="M830 120 V132" />
+
+        <path class="arrow arrow-hi" d="M500 300 H600 V350 H708" />
+        <text x="508" y="342" class="small muted">snapshot 250ms</text>
+
+        <!-- legend -->
+        <text x="36" y="470" class="small muted">decisión clave: /agents NO abre WebviewWindow como /loop//prompts — necesita saber qué pane está</text>
+        <text x="36" y="486" class="small muted">enfocado en la ventana principal en el momento del click, así que es un overlay in-app (precedente:</text>
+        <text x="36" y="502" class="small muted">src/modules/workspaces/command-palette). El ptyId destino se captura ANTES de que el modal robe el foco.</text>
+        <text x="36" y="530" class="small muted">bracketed paste: el contenido multilinea llega al CLI como UN solo bloque pegado (no envía línea por línea)</text>
+        <text x="36" y="546" class="small muted">y sin Enter final — misma convención que terminal-drop.ts: el usuario revisa y envía él mismo.</text>
+      </svg>
+    </div>
+    <p class="caption">
+      Módulos nuevos: <code>src/modules/agents/</code> (types, compose, controller, modal) y
+      <code>src/shared/persistence/agents-store.ts</code>. Cero cambios en Rust.
+    </p>
+
+    <h2>2 · Flujo de inserción (secuencia)</h2>
+    <div class="diagram">
+      <svg viewBox="0 0 980 330" width="980" height="330">
+        <!-- lanes -->
+        <text x="40" y="28">usuario</text>
+        <line class="lane" x1="70" y1="38" x2="70" y2="310" />
+        <text x="200" y="28">botón /agents</text>
+        <line class="lane" x1="240" y1="38" x2="240" y2="310" />
+        <text x="390" y="28">agents-modal</text>
+        <line class="lane" x1="430" y1="38" x2="430" y2="310" />
+        <text x="580" y="28">controller/store</text>
+        <line class="lane" x1="625" y1="38" x2="625" y2="310" />
+        <text x="760" y="28">pty-client</text>
+        <line class="lane" x1="795" y1="38" x2="795" y2="310" />
+        <text x="900" y="28">CLI (claude)</text>
+        <line class="lane" x1="930" y1="38" x2="930" y2="310" />
+
+        <path class="arrow" d="M70 60 H232" />
+        <text x="90" y="52" class="small muted">click</text>
+
+        <path class="arrow arrow-ok" d="M240 92 H422" />
+        <text x="250" y="84" class="small muted">resolveInsertTarget() → { ptyId, "pane 2 · claude" }</text>
+
+        <path class="arrow" d="M430 124 H617" />
+        <text x="445" y="116" class="small muted">getState() → agentes</text>
+
+        <path class="arrow" d="M625 148 H438" />
+        <text x="445" y="140" class="small muted">lista ordenada por updatedAt</text>
+
+        <path class="arrow" d="M70 180 H422" />
+        <text x="90" y="172" class="small muted">escribe "front", ↑↓, Enter (o click en "frontend reviewer")</text>
+
+        <path class="arrow arrow-hi" d="M430 212 H787" />
+        <text x="445" y="204" class="small muted">ptyWrite(ptyId, ESC[200~ composeAgentText(agent) ESC[201~)</text>
+
+        <path class="arrow arrow-ok" d="M795 244 H922" />
+        <text x="805" y="236" class="small muted">paste 1 bloque</text>
+
+        <path class="arrow" d="M430 276 H78" />
+        <text x="95" y="268" class="small muted">cierra modal + refocus terminal + toast "inserted into pane 2"</text>
+
+        <path class="arrow" d="M930 276 H938" style="opacity: 0" />
+        <text x="838" y="296" class="small muted">usuario revisa y</text>
+        <text x="838" y="310" class="small muted">presiona Enter</text>
+      </svg>
+    </div>
+    <p class="caption">
+      Si el pane murió mientras el modal estaba abierto, <code>ptyWrite</code> rechaza: se muestra
+      toast de error y el modal permanece abierto. Sin panes vivos → insert deshabilitado con hint.
+    </p>
+
+    <h2>3 · Mockup — paso 1: abrir /agents y elegir agente</h2>
+    <div class="grid-2">
+      <div class="mock-window">
+        <div class="mock-titlebar">
+          <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
+          <span class="title">polakapi — proyecto: simple-c</span>
+        </div>
+        <div class="mock-app">
+          <div class="mock-terminals">
+            <div class="mock-pane">
+              <span class="pane-tag">pane 1 · zsh</span>
+              <span class="prompt">➜ simple-c</span> git status<br />
+              <span class="muted">On branch feat-entries…</span>
+            </div>
+            <div class="mock-pane focused">
+              <span class="pane-tag" style="color: #7aa2ff; border-color: #7aa2ff">pane 2 · claude ● focused</span>
+              <span class="claude">✳ claude</span><br />
+              <span class="muted">esperando prompt…</span>
+            </div>
+          </div>
+          <div class="mock-sidebar">
+            <div class="side-title">agents flow</div>
+            <button class="flow-btn">/loop</button>
+            <button class="flow-btn">/prompts</button>
+            <button class="flow-btn">/adversarial review</button>
+            <button class="flow-btn hot">/agents ←</button>
+          </div>
+
+          <!-- overlay -->
+          <div class="mock-overlay">
+            <div class="mock-modal">
+              <div class="mock-modal-head">
+                <div class="mock-search">front<span class="cursor" style="height: 11px"></span></div>
+                <span class="target-badge">→ pane 2 · claude</span>
+                <button class="btn-mini primary">+ new agent</button>
+              </div>
+              <div class="mock-modal-body">
+                <div class="agent-list">
+                  <div class="agent-row sel">
+                    <div class="name">frontend reviewer</div>
+                    <div class="desc">React/CSS review checklist</div>
+                    <div class="files">2 files</div>
+                  </div>
+                  <div class="agent-row">
+                    <div class="name">frontend a11y audit</div>
+                    <div class="desc">WCAG + keyboard pass</div>
+                    <div class="files">1 file</div>
+                  </div>
+                </div>
+                <div class="agent-preview">
+                  <div class="chip-row">
+                    <span class="chip on">review-checklist.md</span>
+                    <span class="chip on">css-conventions.md</span>
+                  </div>
+                  <div class="preview-box">&lt;!-- review-checklist.md --&gt;
+You are a senior frontend reviewer. Review the current
+diff focusing on: component boundaries, hook deps,
+re-render cost, accessibility…
+
+&lt;!-- css-conventions.md --&gt;
+Tailwind first; no new Bootstrap. Prefer shadcn/ui…</div>
+                  <div class="preview-actions">
+                    <button class="btn-mini danger">delete</button>
+                    <button class="btn-mini">edit</button>
+                    <button class="btn-mini primary">insert ⏎</button>
+                  </div>
+                </div>
+              </div>
+              <div class="kbd-hint">
+                <span><kbd>↑</kbd><kbd>↓</kbd> navegar</span>
+                <span><kbd>⏎</kbd> insertar</span>
+                <span><kbd>⌘N</kbd> nuevo</span>
+                <span><kbd>esc</kbd> cerrar</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="caption">
+      <span class="step-label">1</span>El badge verde muestra el destino capturado al abrir (pane
+      enfocado). La búsqueda filtra por nombre + descripción + títulos y contenido de archivos
+      (multi-token AND, igual que el command palette). El preview muestra exactamente lo que se
+      pegará.
+    </p>
+
+    <h2>4 · Mockup — paso 2: contenido insertado en la terminal</h2>
+    <div class="mock-window">
+      <div class="mock-titlebar">
+        <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
+        <span class="title">polakapi — proyecto: simple-c</span>
+      </div>
+      <div class="mock-app" style="min-height: 300px">
+        <div class="mock-terminals" style="grid-template-columns: 1fr">
+          <div class="mock-pane focused">
+            <span class="pane-tag" style="color: #7aa2ff; border-color: #7aa2ff">pane 2 · claude</span>
+            <span class="claude">✳ claude</span><br />
+            <span class="pasted">&lt;!-- review-checklist.md --&gt;
+You are a senior frontend reviewer. Review the current diff focusing on:
+component boundaries, hook deps, re-render cost, accessibility…
+
+&lt;!-- css-conventions.md --&gt;
+Tailwind first; no new Bootstrap. Prefer shadcn/ui components…<span class="cursor"></span></span>
+            <span class="muted" style="font-size: 10.5px">[pasted text — press Enter to send]</span>
+          </div>
+        </div>
+        <div class="mock-sidebar">
+          <div class="side-title">agents flow</div>
+          <button class="flow-btn">/loop</button>
+          <button class="flow-btn">/prompts</button>
+          <button class="flow-btn">/adversarial review</button>
+          <button class="flow-btn">/agents</button>
+        </div>
+        <div class="toast">✓ inserted “frontend reviewer” into pane 2</div>
+      </div>
+    </div>
+    <p class="caption">
+      <span class="step-label">2</span>Los 2 archivos del agente llegan como <em>un solo bloque</em>
+      (bracketed paste) con cada archivo precedido por su título como comentario. Sin Enter
+      automático: el usuario revisa y envía. El modal se cerró y el foco volvió a la terminal.
+    </p>
+
+    <h2>5 · Mockup — modo editor (crear / modificar)</h2>
+    <div class="grid-2">
+      <div class="mock-window" style="max-width: 720px">
+        <div class="mock-titlebar">
+          <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
+          <span class="title">modal /agents — edit agent</span>
+        </div>
+        <div style="position: relative; background: rgba(8, 10, 14, 0.62); padding: 22px">
+          <div class="mock-modal" style="margin: 0 auto">
+            <div class="mock-modal-head">
+              <strong style="font-size: 13px">edit agent</strong>
+              <span style="flex: 1"></span>
+              <button class="btn-mini">cancel</button>
+              <button class="btn-mini primary">save</button>
+            </div>
+            <div class="editor-body">
+              <div class="field">
+                <label>name</label>
+                <input value="frontend reviewer" readonly />
+              </div>
+              <div class="field">
+                <label>description</label>
+                <input value="React/CSS review checklist" readonly />
+              </div>
+              <div class="field">
+                <label>files (1..n) — un agente puede ser un archivo o varios</label>
+                <div class="file-block">
+                  <div class="file-block-head">
+                    <input value="review-checklist.md" readonly />
+                    <button class="btn-mini danger">remove</button>
+                  </div>
+                  <textarea readonly>You are a senior frontend reviewer. Review the current diff focusing on: component boundaries, hook deps…</textarea>
+                </div>
+                <div class="file-block" style="margin-top: 8px">
+                  <div class="file-block-head">
+                    <input value="css-conventions.md" readonly />
+                    <button class="btn-mini danger">remove</button>
+                  </div>
+                  <textarea readonly>Tailwind first; no new Bootstrap. Prefer shadcn/ui components…</textarea>
+                </div>
+                <button class="btn-mini" style="margin-top: 8px">+ add file</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="caption">
+      Validación al guardar: nombre no vacío y ≥1 archivo con contenido. "remove" se deshabilita
+      cuando queda un solo archivo. Eliminar un agente desde la lista usa
+      <code>confirmModal({ danger: true })</code> existente. Todo persiste en
+      <code>agents.json</code> (snapshot debounced, <code>schemaVersion</code> guard — patrón
+      loop-profiles-store).
+    </p>
+
+    <h2>6 · Fases</h2>
+    <p>
+      <strong>F1</strong> tipos + compose + store + controller (con tests) ·
+      <strong>F2</strong> modal lista/búsqueda/insert + botón en el panel ·
+      <strong>F3</strong> editor CRUD + delete con confirmación ·
+      <strong>F4</strong> polish (badge destino, toasts, ⌘N, empty states).
+      Detalle completo y contratos de código en <code>docs/agents-panel-plan.md</code>.
+    </p>
+  </body>
+</html>

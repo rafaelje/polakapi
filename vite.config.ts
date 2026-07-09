@@ -40,6 +40,7 @@ export default defineConfig(async () => ({
         main: resolve(projectRoot, "index.html"),
         loop: resolve(projectRoot, "loop.html"),
         prompts: resolve(projectRoot, "prompts.html"),
+        adversarial: resolve(projectRoot, "adversarial.html"),
       },
     },
   },

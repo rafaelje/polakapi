@@ -47,11 +47,11 @@ pub use storage::{
     loop_write_batch_file, loop_write_output_file, loop_write_phase_file, loop_write_state_file,
 };
 
-/// The 7 canonical prompt names. Any other name is rejected by
-/// `loop_read_global_prompt` / `loop_write_global_prompt`. We keep this
-/// constant as the single source of truth so that a typo in TS does not
-/// produce orphan files.
-pub(crate) const PROMPT_NAMES: [&str; 7] = [
+/// The 9 canonical prompt names: 7 for `/loop` + 2 for `/adversarial review`.
+/// Any other name is rejected by `loop_read_global_prompt` /
+/// `loop_write_global_prompt`. We keep this constant as the single source of
+/// truth so that a typo in TS does not produce orphan files.
+pub(crate) const PROMPT_NAMES: [&str; 9] = [
     "problem-intake.md",
     "phase-decomposition.md",
     "analysis.md",
@@ -59,6 +59,8 @@ pub(crate) const PROMPT_NAMES: [&str; 7] = [
     "review.md",
     "knowledge.md",
     "integration.md",
+    "adversarial-critic.md",
+    "adversarial-defender.md",
 ];
 
 /// Bundled content of each prompt. Embedded with `include_str!` from
@@ -73,6 +75,8 @@ pub(crate) fn bundled_content(name: &str) -> Option<&'static str> {
         "review.md" => Some(include_str!("../prompts/review.md")),
         "knowledge.md" => Some(include_str!("../prompts/knowledge.md")),
         "integration.md" => Some(include_str!("../prompts/integration.md")),
+        "adversarial-critic.md" => Some(include_str!("../prompts/adversarial-critic.md")),
+        "adversarial-defender.md" => Some(include_str!("../prompts/adversarial-defender.md")),
         _ => None,
     }
 }
@@ -178,11 +182,17 @@ mod tests {
     use super::*;
 
     #[test]
-    fn bundled_content_covers_all_7() {
+    fn bundled_content_covers_all_prompts() {
         for name in PROMPT_NAMES.iter() {
             let content = bundled_content(name).expect("bundled missing");
             assert!(!content.is_empty(), "bundled empty for {name}");
         }
+    }
+
+    #[test]
+    fn adversarial_prompts_are_registered() {
+        assert!(is_known_prompt("adversarial-critic.md"));
+        assert!(is_known_prompt("adversarial-defender.md"));
     }
 
     #[test]

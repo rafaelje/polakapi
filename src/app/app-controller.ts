@@ -24,6 +24,10 @@ import {
   mountPromptsButton,
   type PromptsButtonHandle,
 } from "../modules/agents-flow/prompts-window";
+import {
+  mountAdversarialButton,
+  type AdversarialButtonHandle,
+} from "../modules/agents-flow/adversarial-window";
 import { bootstrapWorkspaces, type WorkspacesBootstrapHandle } from "./workspaces-bootstrap";
 import { wireWindowLifecycle } from "./lifecycle";
 import { wireQuitConfirm } from "./quit-confirm";
@@ -37,6 +41,7 @@ export class AppController {
   private bottomPanel: BottomPanelHandle | null = null;
   private loopButton: LoopButtonHandle | null = null;
   private promptsButton: PromptsButtonHandle | null = null;
+  private adversarialButton: AdversarialButtonHandle | null = null;
   private unwireShortcuts: (() => void) | null = null;
   private unwireWindowLifecycle: (() => void) | null = null;
   private unwireQuitConfirm: (() => void) | null = null;
@@ -69,6 +74,7 @@ export class AppController {
     });
     this.loopButton = mountLoopButton();
     this.promptsButton = mountPromptsButton();
+    this.adversarialButton = mountAdversarialButton();
     await this.wirePtyEvents();
     this.wireGutters();
     this.wirePanelToggles();
@@ -136,6 +142,9 @@ export class AppController {
 
     this.promptsButton?.dispose();
     this.promptsButton = null;
+
+    this.adversarialButton?.dispose();
+    this.adversarialButton = null;
 
     const workspaces = this.workspaces;
     this.workspaces = null;

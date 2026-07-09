@@ -1,0 +1,58 @@
+{
+  "findings": [
+    {
+      "id": "F1",
+      "file": "src-tauri/src/open.rs",
+      "line": 17,
+      "severity": "major",
+      "claim": "ShellRegistry keys entries by the raw input path rather than a canonical path, so the dedup feature silently fails for path variants of the same directory.",
+      "status": "open",
+      "history": [
+        {
+          "round": 1,
+          "role": "critic",
+          "action": "new",
+          "argument": "The struct comment claims entries are 'keyed by canonical project path', but `spawn_or_focus` does `let canonical = PathBuf::from(path);` without calling `fs::canonicalize`. `validate_path` (fs.rs:34) only validates existence/readability and returns `Ok(())` without transforming the path, so `open_in_shell` passes the raw frontend string straight into `spawn_or_focus`. Two calls for the same directory with different representations — e.g. `/Users/foo` vs `/Users/foo/`, or a symlink vs its target, or a relative path resolved by Ghostty — produce distinct `PathBuf` keys, so a second window for the same project is spawned and the 'If a window is already open for that path it is reused' guarantee in the new docstring (commands.rs:106) is violated."
+        }
+      ]
+    },
+    {
+      "id": "F2",
+      "file": "src-tauri/src/loop_cli.rs",
+      "line": 287,
+      "severity": "minor",
+      "claim": "`invoke_claude` introduces a dead `if effort.is_some() { /* comment */ }` block that compiles to nothing.",
+      "status": "open",
+      "history": [
+        {
+          "round": 1,
+          "role": "critic",
+          "action": "new",
+          "argument": "The hunk adds: `if effort.is_some() { // Non-fatal: the log line below records the requested effort. }`. The branch body contains only a comment, so the entire `if` is a no-op. The comment claims a 'log line below' records the effort, but there is no such log line in `invoke_claude` — `effort` is only logged later via `run_command`. The block is dead code whose comment mis-describes the surrounding control flow."
+        }
+      ]
+    },
+    {
+      "id": "F3",
+      "file": "src-tauri/src/loop_cli.rs",
+      "line": 658,
+      "severity": "minor",
+      "claim": "`parse_opencode_stream` uses 'last wins' for the new step_finish tokens/cost but 'first wins' for the legacy usage/cost fallback, so a mixed stream yields inconsistent token accounting.",
+      "status": "open",
+      "history": [
+        {
+          "round": 1,
+          "role": "critic",
+          "action": "new",
+          "argument": "In the new path, every `step_finish` event overwrites unconditionally: `tokens_in = Some(v)` (line ~651), `cost_usd = Some(c)`. In the legacy fallback path the values use `get_or_insert`: `tokens_in.get_or_insert(v)`, `cost_usd.get_or_insert(c)`. The pre-change behavior was last-wins for legacy. If a stream ever contains both an older `usage`/`cost_usd` event and a `step_finish` event, the legacy values stick (first wins) and then step_finish overwrites them anyway — but if multiple legacy events appear, only the first contributes, diverging from the prior overwriting semantics and from the step_finish semantics. This is an unintended behavioral split introduced purely by the rewrite."
+        }
+      ]
+    }
+  ],
+  "appliedPasses": [
+    {
+      "round": 1,
+      "role": "critic"
+    }
+  ]
+}

@@ -1,6 +1,53 @@
-use std::process::Command;
+use std::collections::HashMap;
+use std::path::PathBuf;
+use std::process::{Child, Command};
+use std::sync::Mutex;
 
 use crate::fs::validate_path;
+
+/// Tracks live external terminal windows (Ghostty) keyed by canonical project
+/// path. Prevents a second click from spawning a duplicate window for the same
+/// project. Entries whose child has exited are lazily reaped on the next
+/// `spawn_or_focus` call for that path.
+#[derive(Default)]
+pub struct ShellRegistry {
+    inner: Mutex<HashMap<PathBuf, Child>>,
+}
+
+impl ShellRegistry {
+    /// Spawns a Ghostty window at `path` unless one is already open for that
+    /// path. Returns `Ok(())` in both cases — the caller cannot distinguish
+    /// "opened" from "already open" and doesn't need to.
+    pub fn spawn_or_focus(&self, path: &str) -> Result<(), String> {
+        let canonical = PathBuf::from(path);
+        let mut map = self.inner.lock().map_err(|e| e.to_string())?;
+
+        // Reap any dead entry for this path before deciding.
+        if let Some(child) = map.get_mut(&canonical) {
+            match child.try_wait() {
+                Ok(None) => return Ok(()),
+                Ok(Some(_)) | Err(_) => {
+                    map.remove(&canonical);
+                }
+            }
+        }
+
+        #[cfg(unix)]
+        {
+            let child = Command::new("ghostty")
+                .arg(format!("--working-directory={path}"))
+                .spawn()
+                .map_err(|e| format!("failed to launch ghostty: {e}"))?;
+            map.insert(canonical, child);
+        }
+        #[cfg(windows)]
+        {
+            let _ = path;
+            return Err("ghostty is not available on Windows".to_string());
+        }
+        Ok(())
+    }
+}
 
 /// Closed set of editor binaries the frontend is allowed to invoke. The
 /// WebView cannot pass arbitrary commands — only these basenames are accepted.
@@ -101,30 +148,12 @@ pub fn open_in_editor(path: &str, editor: Option<&str>) -> Result<(), String> {
     Ok(())
 }
 
-/// Launches an external terminal emulator at `path` as the working directory.
-/// The frontend is only ever allowed to launch `ghostty` (fixed binary, no
-/// arbitrary arguments), so there is no allowlist maintenance burden like with
-/// editors — and no risk of confusing this surface with a shell command runner.
-///
-/// On macOS/Unix `ghostty --working-directory=<path>` spawns a detached window.
-/// On Windows Ghostty is not available; the command returns an error so the
-/// frontend can show a toast rather than silently no-op'ing.
-pub fn open_in_shell(path: &str) -> Result<(), String> {
+/// Launches an external Ghostty terminal window at `path` as the working
+/// directory. If a window is already open for that path it is reused (no-op).
+/// Returns an error on Windows where Ghostty is unavailable.
+pub fn open_in_shell(registry: &ShellRegistry, path: &str) -> Result<(), String> {
     validate_path(path).map_err(|err| err.as_contract_string())?;
-
-    #[cfg(unix)]
-    {
-        Command::new("ghostty")
-            .arg(format!("--working-directory={path}"))
-            .spawn()
-            .map_err(|e| format!("failed to launch ghostty: {e}"))?;
-    }
-    #[cfg(windows)]
-    {
-        let _ = path;
-        return Err("ghostty is not available on Windows".to_string());
-    }
-    Ok(())
+    registry.spawn_or_focus(path)
 }
 
 /// Opens a single file `path` in an editor. Same resolver/allowlist as
@@ -183,7 +212,8 @@ mod tests {
 
     #[test]
     fn open_in_shell_rejects_nonexistent_path() {
-        let result = open_in_shell("/nonexistent/does-not-exist-12345");
+        let registry = ShellRegistry::default();
+        let result = open_in_shell(&registry, "/nonexistent/does-not-exist-12345");
         assert!(result.is_err());
     }
 }

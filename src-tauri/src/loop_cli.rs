@@ -97,6 +97,17 @@ pub async fn run_loop_agent(
     user_input: String,
     timeout_secs: Option<u64>,
     session_id: Option<String>,
+    // `effort` (optional): reasoning-effort tier. Recognized values:
+    // `low` | `medium` | `high` | `xhigh`. Currently only `codex` maps this to
+    // a CLI flag (`-c model_reasoning_effort=<effort>`); `claude` and
+    // `opencode` log the intent and ignore it. `default` / `None` disables it.
+    //
+    // `run_dir_root` (optional): run-directory root under `cwd`. Defaults to
+    // `.loop`; the `/adversarial review` feature passes `.adversarial` so it
+    // can reuse this command without duplicating the whole scope-validation
+    // logic.
+    effort: Option<String>,
+    run_dir_root: Option<String>,
 ) -> Result<AgentResult, String> {
     let secs = timeout_secs
         .filter(|s| *s >= 1)
@@ -105,9 +116,14 @@ pub async fn run_loop_agent(
     let cli_lower = cli.to_ascii_lowercase();
     let sid = session_id.as_deref();
     let timeout_dur = Duration::from_secs(secs);
-    let scope = validate_loop_invocation_scope(&cwd, &run_id, system_prompt_path.as_deref())?;
+    let root = run_dir_root.as_deref().unwrap_or(".loop");
+    if !is_allowed_run_dir_root(root) {
+        return Err(format!("invalid run_dir_root: {root}"));
+    }
+    let scope = validate_loop_invocation_scope(&cwd, &run_id, root, system_prompt_path.as_deref())?;
     let cwd = scope.cwd.to_string_lossy().to_string();
     let system_prompt_path = scope.system_prompt_path.as_deref();
+    let effort = normalize_effort(effort.as_deref());
 
     // The per-CLI wrappers do their own spawn via `run_command`, which applies
     // `kill_on_drop(true)` and uses the same timeout. We forward the timeout
@@ -123,6 +139,7 @@ pub async fn run_loop_agent(
                 system_prompt_path,
                 &user_input,
                 sid,
+                effort.as_deref(),
                 timeout_dur,
             )
             .await
@@ -134,6 +151,7 @@ pub async fn run_loop_agent(
                 system_prompt_path,
                 &user_input,
                 sid,
+                effort.as_deref(),
                 timeout_dur,
             )
             .await
@@ -145,11 +163,30 @@ pub async fn run_loop_agent(
                 system_prompt_path,
                 &user_input,
                 sid,
+                effort.as_deref(),
                 timeout_dur,
             )
             .await
         }
         other => Err(format!("unsupported CLI: {other}")),
+    }
+}
+
+fn is_allowed_run_dir_root(root: &str) -> bool {
+    matches!(root, ".loop" | ".adversarial")
+}
+
+/// Only pass through recognized values; `default` and empty become `None` so
+/// the CLI sees no flag at all (matches its own default).
+fn normalize_effort(effort: Option<&str>) -> Option<String> {
+    let raw = effort?.trim();
+    if raw.is_empty() || raw.eq_ignore_ascii_case("default") {
+        return None;
+    }
+    let lower = raw.to_ascii_lowercase();
+    match lower.as_str() {
+        "low" | "medium" | "high" | "xhigh" => Some(lower),
+        _ => None,
     }
 }
 
@@ -162,6 +199,7 @@ struct InvocationScope {
 fn validate_loop_invocation_scope(
     cwd: &str,
     run_id: &str,
+    run_dir_root: &str,
     system_prompt_path: Option<&str>,
 ) -> Result<InvocationScope, String> {
     if !crate::loop_prompts::is_safe_run_id(run_id) {
@@ -176,7 +214,7 @@ fn validate_loop_invocation_scope(
         return Err(format!("cwd is not a directory: {cwd}"));
     }
 
-    let run_dir = cwd_canon.join(".loop").join("runs").join(run_id);
+    let run_dir = cwd_canon.join(run_dir_root).join("runs").join(run_id);
     let run_dir_canon = run_dir
         .canonicalize()
         .map_err(|e| format!("invalid run directory: {e}"))?;
@@ -245,8 +283,15 @@ async fn invoke_claude(
     system_prompt_path: Option<&str>,
     user_input: &str,
     session_id: Option<&str>,
+    effort: Option<&str>,
     timeout_dur: Duration,
 ) -> Result<AgentResult, String> {
+    // v1: `claude` has no stable one-shot flag equivalent to codex's
+    // reasoning-effort tier. Log the intent and skip — the log line captures
+    // it so /loop step 3 users can see it was requested but not applied.
+    if effort.is_some() {
+        // Non-fatal: the log line below records the requested effort.
+    }
     let mut cmd = Command::new("claude");
     cmd.arg("-p")
         .arg(user_input)
@@ -268,7 +313,7 @@ async fn invoke_claude(
         cmd.arg("--append-system-prompt").arg(content);
     }
 
-    let output = run_command(cmd, cwd, "claude", timeout_dur).await?;
+    let output = run_command(cmd, cwd, "claude", effort, timeout_dur).await?;
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     // claude returns the structured JSON error (404 model, throttling, etc.)
@@ -375,6 +420,7 @@ async fn invoke_codex(
     system_prompt_path: Option<&str>,
     user_input: &str,
     session_id: Option<&str>,
+    effort: Option<&str>,
     timeout_dur: Duration,
 ) -> Result<AgentResult, String> {
     // Temp file for the last message. We open it within the run scope so it
@@ -404,6 +450,11 @@ async fn invoke_codex(
     };
 
     let mut cmd = Command::new("codex");
+    // codex accepts top-level config overrides via `-c key=value` before the
+    // subcommand. Reasoning-effort tier is exposed as `model_reasoning_effort`.
+    if let Some(level) = effort {
+        cmd.arg("-c").arg(format!("model_reasoning_effort={level}"));
+    }
     cmd.arg("exec");
     if let Some(sid) = session_id {
         // `codex exec resume [OPTIONS] <SESSION_ID> <PROMPT>` — subcommand.
@@ -426,7 +477,7 @@ async fn invoke_codex(
             .arg(&full_input);
     }
 
-    let output = run_command(cmd, cwd, "codex", timeout_dur).await?;
+    let output = run_command(cmd, cwd, "codex", effort, timeout_dur).await?;
 
     if !output.status.success() {
         return Ok(AgentResult::empty_with_error(format!(
@@ -519,8 +570,12 @@ async fn invoke_opencode(
     system_prompt_path: Option<&str>,
     user_input: &str,
     session_id: Option<&str>,
+    effort: Option<&str>,
     timeout_dur: Duration,
 ) -> Result<AgentResult, String> {
+    // v1: opencode's provider-dependent effort mapping is out of scope. The
+    // requested value flows to the log line so users can see it wasn't applied.
+    let _ = effort;
     // In resume mode the session already has the system prompt from the first turn.
     let full_input = if session_id.is_some() {
         user_input.to_string()
@@ -548,7 +603,7 @@ async fn invoke_opencode(
     cmd.arg("--");
     cmd.arg(&full_input);
 
-    let output = run_command(cmd, cwd, "opencode", timeout_dur).await?;
+    let output = run_command(cmd, cwd, "opencode", effort, timeout_dur).await?;
 
     if !output.status.success() {
         return Ok(AgentResult::empty_with_error(format!(
@@ -563,12 +618,23 @@ async fn invoke_opencode(
 }
 
 fn parse_opencode_stream(raw: &str) -> Result<AgentResult, String> {
-    let mut last_text: Option<String> = None;
+    // Opencode's real JSONL shape (verified against `opencode run --format json`
+    // at the current CLI version):
+    //   {"type":"step_start", "sessionID": "...", "part": {...}}
+    //   {"type":"text", "sessionID": "...", "part": {"type":"text", "text": "…the agent's answer…"}}
+    //   {"type":"step_finish", "sessionID": "...", "part": {"tokens": {"input": 12860, "output": 17, ...}, "cost": 0.0182}}
+    //
+    // We concatenate every `type=text` part in order (the agent may emit its
+    // reply across multiple text events) and pull tokens/cost from the last
+    // `step_finish`. Older shapes (`role=assistant`, `usage.input_tokens`) are
+    // still accepted as a fallback so downgrades don't silently break.
+    let mut text_parts: Vec<String> = Vec::new();
     let mut tokens_in: Option<u64> = None;
     let mut tokens_out: Option<u64> = None;
     let mut cost_usd: Option<f64> = None;
     let mut session_id: Option<String> = None;
     let mut saw_any = false;
+    let mut fallback_last_assistant: Option<String> = None;
 
     for line in raw.lines() {
         let trimmed = line.trim();
@@ -580,51 +646,75 @@ fn parse_opencode_stream(raw: &str) -> Result<AgentResult, String> {
         };
         saw_any = true;
 
-        // The last assistant message is the agent output. The exact shape
-        // varies per version: we try `role=assistant` with `content` as
-        // string or as an array of parts with `text`.
-        let role = value
-            .get("role")
-            .or_else(|| value.pointer("/message/role"))
-            .and_then(|v| v.as_str());
-        if matches!(role, Some("assistant")) {
-            if let Some(text) = extract_opencode_text(&value) {
-                last_text = Some(text);
+        let event_type = value.get("type").and_then(|v| v.as_str());
+
+        if event_type == Some("text") {
+            if let Some(text) = value
+                .pointer("/part/text")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+            {
+                text_parts.push(text.to_string());
             }
         }
 
+        if event_type == Some("step_finish") {
+            if let Some(tokens) = value.pointer("/part/tokens") {
+                if let Some(v) = tokens.get("input").and_then(|v| v.as_u64()) {
+                    tokens_in = Some(v);
+                }
+                if let Some(v) = tokens.get("output").and_then(|v| v.as_u64()) {
+                    tokens_out = Some(v);
+                }
+            }
+            if let Some(c) = value.pointer("/part/cost").and_then(|v| v.as_f64()) {
+                cost_usd = Some(c);
+            }
+        }
+
+        // Session id: opencode emits `sessionID` at the root of every event.
         if let Some(sid) = value
-            .get("session_id")
+            .get("sessionID")
+            .or_else(|| value.get("session_id"))
             .or_else(|| value.pointer("/session/id"))
             .and_then(|v| v.as_str())
         {
             session_id = Some(sid.to_string());
         }
 
-        let usage = value
-            .get("usage")
-            .or_else(|| value.pointer("/message/usage"));
-        if let Some(u) = usage {
-            if let Some(v) = u.get("input_tokens").and_then(|v| v.as_u64()) {
-                tokens_in = Some(v);
-            }
-            if let Some(v) = u.get("output_tokens").and_then(|v| v.as_u64()) {
-                tokens_out = Some(v);
+        // Legacy fallback shape (kept so older CLI versions don't regress).
+        let role = value
+            .get("role")
+            .or_else(|| value.pointer("/message/role"))
+            .and_then(|v| v.as_str());
+        if matches!(role, Some("assistant")) {
+            if let Some(text) = extract_opencode_text(&value) {
+                fallback_last_assistant = Some(text);
             }
         }
-
+        if let Some(u) = value
+            .get("usage")
+            .or_else(|| value.pointer("/message/usage"))
+        {
+            if let Some(v) = u.get("input_tokens").and_then(|v| v.as_u64()) {
+                tokens_in.get_or_insert(v);
+            }
+            if let Some(v) = u.get("output_tokens").and_then(|v| v.as_u64()) {
+                tokens_out.get_or_insert(v);
+            }
+        }
         if let Some(c) = value
             .get("cost_usd")
             .or_else(|| value.get("total_cost_usd"))
             .and_then(|v| v.as_f64())
         {
-            cost_usd = Some(c);
+            cost_usd.get_or_insert(c);
         }
     }
 
     if !saw_any {
-        // It was not JSONL — opencode may have emitted plain text (fallback).
-        // We treat the whole stdout as the agent message.
+        // Not JSONL — opencode may have emitted plain text. Treat stdout as the
+        // agent message so the caller has *something* to parse.
         return Ok(AgentResult {
             text: raw.trim().to_string(),
             tokens_in: None,
@@ -635,8 +725,14 @@ fn parse_opencode_stream(raw: &str) -> Result<AgentResult, String> {
         });
     }
 
+    let text = if !text_parts.is_empty() {
+        text_parts.join("")
+    } else {
+        fallback_last_assistant.unwrap_or_default()
+    };
+
     Ok(AgentResult {
-        text: last_text.unwrap_or_default(),
+        text,
         tokens_in,
         tokens_out,
         cost_usd,
@@ -691,6 +787,7 @@ async fn run_command(
     mut cmd: Command,
     cwd: &str,
     cli_name: &str,
+    effort: Option<&str>,
     timeout_dur: Duration,
 ) -> Result<std::process::Output, String> {
     cmd.current_dir(cwd)
@@ -707,7 +804,7 @@ async fn run_command(
             let elapsed_ms = started_at.elapsed().as_millis();
             let io_result: std::io::Result<std::process::Output> =
                 Err(std::io::Error::new(e.kind(), e.to_string()));
-            log_cli_invocation(cli_name, cwd, elapsed_ms, &io_result);
+            log_cli_invocation(cli_name, cwd, effort, elapsed_ms, &io_result);
             return Err(match e.kind() {
                 std::io::ErrorKind::NotFound => {
                     format!("CLI '{cli_name}' not found in PATH. Install it and reopen the app.")
@@ -724,7 +821,7 @@ async fn run_command(
         Ok(Ok(output)) => {
             let elapsed_ms = started_at.elapsed().as_millis();
             let io_result: std::io::Result<std::process::Output> = Ok(output);
-            log_cli_invocation(cli_name, cwd, elapsed_ms, &io_result);
+            log_cli_invocation(cli_name, cwd, effort, elapsed_ms, &io_result);
             // io_result is Ok, so unwrap is safe.
             io_result.map_err(|e| format!("error waiting on {cli_name}: {e}"))
         }
@@ -732,7 +829,7 @@ async fn run_command(
             let elapsed_ms = started_at.elapsed().as_millis();
             let io_result: std::io::Result<std::process::Output> =
                 Err(std::io::Error::new(e.kind(), e.to_string()));
-            log_cli_invocation(cli_name, cwd, elapsed_ms, &io_result);
+            log_cli_invocation(cli_name, cwd, effort, elapsed_ms, &io_result);
             Err(format!("error waiting on {cli_name}: {e}"))
         }
         Err(_elapsed) => {
@@ -744,7 +841,7 @@ async fn run_command(
                 std::io::ErrorKind::TimedOut,
                 format!("timeout after {}s", timeout_dur.as_secs()),
             ));
-            log_cli_invocation(cli_name, cwd, elapsed_ms, &io_result);
+            log_cli_invocation(cli_name, cwd, effort, elapsed_ms, &io_result);
             Err(format!(
                 "timeout after {}s invoking {cli_name}",
                 timeout_dur.as_secs()
@@ -765,6 +862,7 @@ fn cli_log_path() -> PathBuf {
 fn log_cli_invocation(
     cli_name: &str,
     cwd: &str,
+    effort: Option<&str>,
     elapsed_ms: u128,
     result: &std::io::Result<std::process::Output>,
 ) {
@@ -773,16 +871,17 @@ fn log_cli_invocation(
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0);
+    let effort_field = effort.unwrap_or("-");
 
     let line = match result {
         Ok(out) => format!(
-            "[{now}] cli={cli_name} cwd={cwd} elapsed_ms={elapsed_ms} exit={} stdout_bytes={} stderr_bytes={}\n",
+            "[{now}] cli={cli_name} cwd={cwd} effort={effort_field} elapsed_ms={elapsed_ms} exit={} stdout_bytes={} stderr_bytes={}\n",
             out.status.code().map(|c| c.to_string()).unwrap_or_else(|| "signal".to_string()),
             out.stdout.len(),
             out.stderr.len(),
         ),
         Err(e) => format!(
-            "[{now}] cli={cli_name} cwd={cwd} elapsed_ms={elapsed_ms} error={e}\n"
+            "[{now}] cli={cli_name} cwd={cwd} effort={effort_field} elapsed_ms={elapsed_ms} error={e}\n"
         ),
     };
 
@@ -847,6 +946,38 @@ mod tests {
     }
 
     #[test]
+    fn parses_opencode_current_shape_text_and_step_finish() {
+        // Real shape captured from `opencode run --format json` (2026-07).
+        let stream = concat!(
+            r#"{"type":"step_start","sessionID":"ses_x","part":{"type":"step-start"}}"#,
+            "\n",
+            r#"{"type":"text","sessionID":"ses_x","part":{"type":"text","text":"```json\n{\"pass\":\"critic\"}\n```"}}"#,
+            "\n",
+            r#"{"type":"step_finish","sessionID":"ses_x","part":{"type":"step-finish","tokens":{"input":12860,"output":17,"reasoning":28},"cost":0.0182}}"#,
+            "\n"
+        );
+        let parsed = parse_opencode_stream(stream).unwrap();
+        assert!(parsed.text.contains("```json"));
+        assert!(parsed.text.contains("\"pass\":\"critic\""));
+        assert_eq!(parsed.tokens_in, Some(12860));
+        assert_eq!(parsed.tokens_out, Some(17));
+        assert!((parsed.cost_usd.unwrap() - 0.0182).abs() < 1e-9);
+        assert_eq!(parsed.session_id.as_deref(), Some("ses_x"));
+    }
+
+    #[test]
+    fn concatenates_multiple_text_parts_in_order() {
+        let stream = concat!(
+            r#"{"type":"text","part":{"type":"text","text":"first "}}"#,
+            "\n",
+            r#"{"type":"text","part":{"type":"text","text":"second"}}"#,
+            "\n"
+        );
+        let parsed = parse_opencode_stream(stream).unwrap();
+        assert_eq!(parsed.text, "first second");
+    }
+
+    #[test]
     fn parses_opencode_stream_with_assistant_message() {
         let stream = r#"{"role":"user","content":"hi"}
 {"role":"assistant","content":"hello from opencode","usage":{"input_tokens":4,"output_tokens":6}}
@@ -882,6 +1013,7 @@ mod tests {
         let scope = validate_loop_invocation_scope(
             tmp.path().to_str().unwrap(),
             "run-1",
+            ".loop",
             Some(prompt.to_str().unwrap()),
         )
         .unwrap();
@@ -903,6 +1035,7 @@ mod tests {
         let err = validate_loop_invocation_scope(
             tmp.path().to_str().unwrap(),
             "run-1",
+            ".loop",
             Some(prompt.to_str().unwrap()),
         )
         .unwrap_err();
@@ -914,7 +1047,48 @@ mod tests {
     fn invocation_scope_rejects_unsafe_run_id() {
         let tmp = tempfile::tempdir().unwrap();
         let err =
-            validate_loop_invocation_scope(tmp.path().to_str().unwrap(), "../x", None).unwrap_err();
+            validate_loop_invocation_scope(tmp.path().to_str().unwrap(), "../x", ".loop", None)
+                .unwrap_err();
         assert!(err.contains("invalid run_id"));
+    }
+
+    #[test]
+    fn invocation_scope_accepts_adversarial_root() {
+        let tmp = tempfile::tempdir().unwrap();
+        let run_prompts = tmp.path().join(".adversarial/runs/run-x/prompts");
+        std::fs::create_dir_all(&run_prompts).unwrap();
+        let prompt = run_prompts.join("adversarial-critic.md");
+        std::fs::write(&prompt, "prompt").unwrap();
+
+        let scope = validate_loop_invocation_scope(
+            tmp.path().to_str().unwrap(),
+            "run-x",
+            ".adversarial",
+            Some(prompt.to_str().unwrap()),
+        )
+        .unwrap();
+
+        assert_eq!(scope.cwd, tmp.path().canonicalize().unwrap());
+        assert!(scope.system_prompt_path.is_some());
+    }
+
+    #[test]
+    fn allowed_run_dir_roots() {
+        assert!(is_allowed_run_dir_root(".loop"));
+        assert!(is_allowed_run_dir_root(".adversarial"));
+        assert!(!is_allowed_run_dir_root(".."));
+        assert!(!is_allowed_run_dir_root("/etc"));
+        assert!(!is_allowed_run_dir_root("loop"));
+    }
+
+    #[test]
+    fn normalizes_effort_values() {
+        assert_eq!(normalize_effort(Some("high")).as_deref(), Some("high"));
+        assert_eq!(normalize_effort(Some("HIGH")).as_deref(), Some("high"));
+        assert_eq!(normalize_effort(Some("xhigh")).as_deref(), Some("xhigh"));
+        assert_eq!(normalize_effort(Some("default")), None);
+        assert_eq!(normalize_effort(Some("")), None);
+        assert_eq!(normalize_effort(Some("nonsense")), None);
+        assert_eq!(normalize_effort(None), None);
     }
 }
