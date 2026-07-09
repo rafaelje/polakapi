@@ -1,6 +1,8 @@
 // Step 3 UI: verdict banner + rendered report + open-in-editor/explorer.
 
 import { invoke } from "@tauri-apps/api/core";
+import { stringifyError } from "../../../shared/errors";
+import { showToast } from "../../../shared/ui/toast";
 import { computeVerdict, renderReport } from "../core/report";
 import { buildRunFilePath, type DebateState } from "../types";
 
@@ -42,24 +44,39 @@ export function mountStep3Report(slot: HTMLElement, config: Step3Config): { disp
 
   const actions = document.createElement("div");
   actions.className = "adv-actions";
+  const reportPath = buildRunFilePath(
+    state.settings.projectPath,
+    state.settings.runId,
+    "report.md",
+  );
+  const runDir = buildRunFilePath(state.settings.projectPath, state.settings.runId, "").replace(
+    /[/\\]$/,
+    "",
+  );
+
   const openEditor = document.createElement("button");
   openEditor.type = "button";
   openEditor.className = "adv-btn";
   openEditor.textContent = "open report in editor";
+  openEditor.title = reportPath;
   openEditor.addEventListener("click", () => {
-    void invoke("open_file_in_editor", {
-      path: buildRunFilePath(state.settings.projectPath, state.settings.runId, "report.md"),
-    }).catch((err) => console.error("open report failed", err));
+    void invoke("open_file_in_editor", { path: reportPath }).catch((err) => {
+      const msg = stringifyError(err);
+      console.error("open report failed", err);
+      showToast(`could not open ${reportPath}: ${msg}`, "error");
+    });
   });
   const openFolder = document.createElement("button");
   openFolder.type = "button";
   openFolder.className = "adv-btn";
   openFolder.textContent = "open run folder";
+  openFolder.title = runDir;
   openFolder.addEventListener("click", () => {
-    const runDir = buildRunFilePath(state.settings.projectPath, state.settings.runId, "");
-    void invoke("open_in_explorer", { path: runDir.replace(/\/$/, "") }).catch((err) =>
-      console.error("open folder failed", err),
-    );
+    void invoke("open_in_explorer", { path: runDir }).catch((err) => {
+      const msg = stringifyError(err);
+      console.error("open folder failed", err);
+      showToast(`could not open ${runDir}: ${msg}`, "error");
+    });
   });
   const newReview = document.createElement("button");
   newReview.type = "button";
