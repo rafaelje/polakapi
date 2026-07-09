@@ -102,6 +102,13 @@ pub fn open_in_editor(path: String, editor: Option<String>) -> Result<(), String
     crate::open::open_in_editor(&path, editor.as_deref())
 }
 
+/// Launches an external Ghostty terminal window with `path` as the working
+/// directory. Returns an error on Windows where Ghostty is unavailable.
+#[tauri::command]
+pub fn open_in_shell(path: String) -> Result<(), String> {
+    crate::open::open_in_shell(&path)
+}
+
 /// Opens a single file `path` in an editor. Same resolver as
 /// [`open_in_editor`], but accepts files (not directories).
 #[tauri::command]

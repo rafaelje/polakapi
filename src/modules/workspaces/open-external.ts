@@ -22,3 +22,8 @@ export function openInEditor(path: string, editor?: string): Promise<void> {
     { errorMessage: "Failed to open editor" },
   );
 }
+
+/** Launches an external Ghostty terminal window at `path` as cwd. */
+export function openInShell(path: string): Promise<void> {
+  return invoke<void>("open_in_shell", { path }, { errorMessage: "Failed to open shell" });
+}

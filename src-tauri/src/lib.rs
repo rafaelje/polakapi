@@ -16,8 +16,8 @@ use tauri::Manager;
 use crate::db::Db;
 
 use crate::commands::{
-    app_exit, fs_validate_path, open_file_in_editor, open_in_editor, open_in_explorer, pty_kill,
-    pty_resize, pty_spawn, pty_write,
+    app_exit, fs_validate_path, open_file_in_editor, open_in_editor, open_in_explorer,
+    open_in_shell, pty_kill, pty_resize, pty_spawn, pty_write,
 };
 use crate::db::{
     prompt_delete_sessions, prompt_get, prompt_install_hooks, prompt_list_by_session,
@@ -123,6 +123,7 @@ pub fn run() {
             fs_validate_path,
             open_in_explorer,
             open_in_editor,
+            open_in_shell,
             open_file_in_editor,
             run_loop_agent,
             loop_ensure_prompts_dir,

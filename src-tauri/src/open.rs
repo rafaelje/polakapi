@@ -101,6 +101,32 @@ pub fn open_in_editor(path: &str, editor: Option<&str>) -> Result<(), String> {
     Ok(())
 }
 
+/// Launches an external terminal emulator at `path` as the working directory.
+/// The frontend is only ever allowed to launch `ghostty` (fixed binary, no
+/// arbitrary arguments), so there is no allowlist maintenance burden like with
+/// editors — and no risk of confusing this surface with a shell command runner.
+///
+/// On macOS/Unix `ghostty --working-directory=<path>` spawns a detached window.
+/// On Windows Ghostty is not available; the command returns an error so the
+/// frontend can show a toast rather than silently no-op'ing.
+pub fn open_in_shell(path: &str) -> Result<(), String> {
+    validate_path(path).map_err(|err| err.as_contract_string())?;
+
+    #[cfg(unix)]
+    {
+        Command::new("ghostty")
+            .arg(format!("--working-directory={path}"))
+            .spawn()
+            .map_err(|e| format!("failed to launch ghostty: {e}"))?;
+    }
+    #[cfg(windows)]
+    {
+        let _ = path;
+        return Err("ghostty is not available on Windows".to_string());
+    }
+    Ok(())
+}
+
 /// Opens a single file `path` in an editor. Same resolver/allowlist as
 /// [`open_in_editor`], but accepts files (not directories). Used by `/loop`
 /// step 1 to open `<run>/prompts/problem-intake.md` for editing.
@@ -152,6 +178,12 @@ mod tests {
         let manifest = env!("CARGO_MANIFEST_DIR");
         let file = format!("{manifest}/Cargo.toml");
         let result = open_in_editor(&file, Some("code"));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn open_in_shell_rejects_nonexistent_path() {
+        let result = open_in_shell("/nonexistent/does-not-exist-12345");
         assert!(result.is_err());
     }
 }

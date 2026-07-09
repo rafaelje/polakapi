@@ -10,6 +10,7 @@ export interface ProjectPaneCallbacks {
   onRunInAll(): void;
   onRevealFolder(path: string): void;
   onOpenInEditor(path: string): void;
+  onOpenInShell(path: string): void;
   onSetActiveCli(cliId: string): void;
 }
 
@@ -101,9 +102,14 @@ export function mountProjectPane(opts: ProjectPaneOptions): ProjectPaneHandle {
   editorBtn.title = "Open in IDE";
   editorBtn.textContent = "Open in IDE";
 
+  const shellBtn = document.createElement("button");
+  shellBtn.type = "button";
+  shellBtn.title = "Open in external terminal";
+  shellBtn.textContent = "Shell";
+
   const externalGroup = document.createElement("div");
   externalGroup.className = "project-pane-external";
-  externalGroup.append(revealBtn, editorBtn);
+  externalGroup.append(revealBtn, editorBtn, shellBtn);
 
   const runAllBtn = document.createElement("button");
   runAllBtn.type = "button";
@@ -132,6 +138,7 @@ export function mountProjectPane(opts: ProjectPaneOptions): ProjectPaneHandle {
   runAllBtn.disabled = true;
   revealBtn.disabled = true;
   editorBtn.disabled = true;
+  shellBtn.disabled = true;
   chipRow.setDisabled(true);
 
   const onAdd = (): void => callbacks.onAddTerminal();
@@ -144,11 +151,16 @@ export function mountProjectPane(opts: ProjectPaneOptions): ProjectPaneHandle {
     const path = currentProject?.path;
     if (path) callbacks.onOpenInEditor(path);
   };
+  const onShell = (): void => {
+    const path = currentProject?.path;
+    if (path) callbacks.onOpenInShell(path);
+  };
 
   addBtn.addEventListener("click", onAdd);
   runAllBtn.addEventListener("click", onRunAll);
   revealBtn.addEventListener("click", onReveal);
   editorBtn.addEventListener("click", onEditor);
+  shellBtn.addEventListener("click", onShell);
 
   return {
     setActiveProject(project: Project | null): void {
@@ -159,6 +171,7 @@ export function mountProjectPane(opts: ProjectPaneOptions): ProjectPaneHandle {
       runAllBtn.disabled = !active;
       revealBtn.disabled = project === null || !project.path;
       editorBtn.disabled = project === null || !project.path;
+      shellBtn.disabled = project === null || !project.path;
       chipRow.setDisabled(!active);
       if (active && emptyState) {
         emptyState.dispose();
@@ -176,6 +189,7 @@ export function mountProjectPane(opts: ProjectPaneOptions): ProjectPaneHandle {
       runAllBtn.removeEventListener("click", onRunAll);
       revealBtn.removeEventListener("click", onReveal);
       editorBtn.removeEventListener("click", onEditor);
+      shellBtn.removeEventListener("click", onShell);
       chipRow.dispose();
       emptyState?.dispose();
       emptyState = null;

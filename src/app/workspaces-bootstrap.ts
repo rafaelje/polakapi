@@ -1,7 +1,7 @@
 import { promptModal } from "../shared/ui/modal";
 import { ptyWrite } from "../modules/terminal/pty-client";
 import { attachTerminalDrop, type TerminalDropHandle } from "../modules/terminal/terminal-drop";
-import { openInEditor, revealFolder } from "../modules/workspaces/open-external";
+import { openInEditor, openInShell, revealFolder } from "../modules/workspaces/open-external";
 import { WorkspacesController } from "../modules/workspaces/state/workspaces-controller";
 import {
   mountWorkspacesPanel,
@@ -142,6 +142,9 @@ export async function bootstrapWorkspaces(
       },
       onOpenInEditor: (path) => {
         void openInEditor(path);
+      },
+      onOpenInShell: (path) => {
+        void openInShell(path);
       },
       onSetActiveCli: (cliId) => {
         const active = controller.getActiveProject();
