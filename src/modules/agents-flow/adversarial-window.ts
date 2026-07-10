@@ -25,8 +25,8 @@ export async function openAdversarialWindow(): Promise<void> {
     const popup = new WebviewWindow(ADV_LABEL, {
       url: "adversarial.html",
       title: "/adversarial review",
-      width: 820,
-      height: 620,
+      width: 1066,
+      height: 806,
       minWidth: 480,
       minHeight: 360,
       decorations: true,

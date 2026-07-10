@@ -21,6 +21,14 @@ export function mountAdversarialChrome(root: HTMLElement, router: AdvRouter): Ad
   let currentScheduler: DebateScheduler | null = null;
   let finalState: DebateState | null = null;
 
+  // Track what's currently mounted so we can skip a remount when the router
+  // emits the same slot (e.g. window-focus events). Remounting step 1 on
+  // every focus change destroys any in-progress form state — including the
+  // scope input the user just populated via the folder picker.
+  let mountedKind: "gate" | 1 | 2 | 3 | null = null;
+  let mountedProjectPath: string | null = null;
+  let mountedRunId: string | null = null;
+
   const disposeStep = (): void => {
     currentDispose?.();
     currentDispose = null;
@@ -69,27 +77,51 @@ export function mountAdversarialChrome(root: HTMLElement, router: AdvRouter): Ad
   };
 
   const rerender = (state: AdvRouterState): void => {
-    disposeStep();
-
     if (state.status === "loading") {
-      root.replaceChildren(renderGate("loading…", null));
+      if (mountedKind !== "gate") {
+        disposeStep();
+        root.replaceChildren(renderGate("loading…", null));
+        mountedKind = "gate";
+        mountedProjectPath = null;
+        mountedRunId = null;
+      }
       return;
     }
     if (state.status === "no-project") {
-      root.replaceChildren(
-        renderGate(
-          "Pick a project first",
-          "/adversarial review operates on the workspace's active project. Open the main window and select one to start.",
-        ),
-      );
+      if (mountedKind !== "gate") {
+        disposeStep();
+        root.replaceChildren(
+          renderGate(
+            "Pick a project first",
+            "/adversarial review operates on the workspace's active project. Open the main window and select one to start.",
+          ),
+        );
+        mountedKind = "gate";
+        mountedProjectPath = null;
+        mountedRunId = null;
+      }
       return;
     }
     if (state.status === "invalid-path") {
+      disposeStep();
       root.replaceChildren(renderErrorGate("Invalid path", state.project.name, state.project.path));
+      mountedKind = "gate";
+      mountedProjectPath = null;
+      mountedRunId = null;
       return;
     }
 
-    // active
+    // active — skip a full remount if the router emits the same {step,
+    // runId, projectPath}. Otherwise a window-focus event would wipe the
+    // step's in-flight state.
+    const same =
+      mountedKind === state.step &&
+      mountedProjectPath === state.project.path &&
+      mountedRunId === state.runId;
+    if (same) return;
+
+    disposeStep();
+
     const shell = document.createElement("div");
     shell.className = "adv-shell";
     shell.appendChild(renderHeader(state));
@@ -102,6 +134,10 @@ export function mountAdversarialChrome(root: HTMLElement, router: AdvRouter): Ad
     slot.style.flexDirection = "column";
     shell.appendChild(slot);
     root.replaceChildren(shell);
+
+    mountedKind = state.step;
+    mountedProjectPath = state.project.path;
+    mountedRunId = state.runId;
 
     if (state.step === 1) {
       abortScheduler();
@@ -120,7 +156,6 @@ export function mountAdversarialChrome(root: HTMLElement, router: AdvRouter): Ad
 
     if (state.step === 2) {
       if (!currentScheduler) {
-        // Fallback: the user reloaded the page mid-run — send them back to step 1.
         router.setStep(1);
         return;
       }

@@ -284,6 +284,18 @@ export class DebateScheduler {
       lastHeartbeat: this.deps.now(),
     };
     this.commit(next);
+    // Also emit report.md + findings.json on error — the on-screen report is
+    // rendered from state either way, so the user should have the same file
+    // on disk (labeled with whatever findings survived up to the failure).
+    void this.writeReport(next);
+    void this.deps.invokers
+      .writeRunFile(
+        state.settings.projectPath,
+        state.settings.runId,
+        "findings.json",
+        JSON.stringify(next.findings, null, 2),
+      )
+      .catch((err) => console.error("adversarial: error-path findings.json write failed", err));
     void this.persist();
     return next;
   }
@@ -298,17 +310,20 @@ export class DebateScheduler {
       lastHeartbeat: this.deps.now(),
     };
     this.commit(next);
-    if (status === "completed") {
-      void this.writeReport(next);
-      void this.deps.invokers
-        .writeRunFile(
-          state.settings.projectPath,
-          state.settings.runId,
-          "findings.json",
-          JSON.stringify(findings, null, 2),
-        )
-        .catch((err) => console.error("adversarial: finalize write failed", err));
-    }
+    // Write the report and findings.json for BOTH completed and aborted runs —
+    // the UI already renders the same report from in-memory state, so having
+    // it on disk lets the user open/share it regardless of how the run ended.
+    // Only `completed` runs get the `finalizeLedger` pass (turn lingering
+    // findings into `disputed`).
+    void this.writeReport(next);
+    void this.deps.invokers
+      .writeRunFile(
+        state.settings.projectPath,
+        state.settings.runId,
+        "findings.json",
+        JSON.stringify(findings, null, 2),
+      )
+      .catch((err) => console.error("adversarial: finalize write failed", err));
     void this.persist();
     return next;
   }

@@ -1,5 +1,7 @@
-// Step 1 UI: pick base ref, both slots, rounds, blocking severity, then "▶ Run".
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
 
+import { showToast } from "../../../shared/ui/toast";
+import { stringifyError } from "../../../shared/errors";
 import type { LoopCli } from "../../loop/types";
 import { invokers, type BranchDiff, type CliValidation } from "../scheduler/invokers";
 import {
@@ -71,7 +73,14 @@ export function mountStep1Setup(slot: HTMLElement, config: Step1Config): { dispo
   const render = (): void => {
     root.replaceChildren(
       renderProjectCard(config, state),
-      renderBaseCard(state, onBaseChange, onScopeChange, onModeChange, onRefreshDiff),
+      renderBaseCard(
+        state,
+        onBaseChange,
+        onScopeChange,
+        onModeChange,
+        onRefreshDiff,
+        () => void onBrowseScope(),
+      ),
       renderSlotsCard(state, onSlotChange),
       renderRunSettings(state, onSettingChange),
       renderActions(state, onRun),
@@ -143,6 +152,43 @@ export function mountStep1Setup(slot: HTMLElement, config: Step1Config): { dispo
     void fetchDiff();
   };
   const onRefreshDiff = (): void => {
+    void fetchDiff();
+  };
+
+  const onBrowseScope = async (): Promise<void> => {
+    let picked: string | string[] | null;
+    try {
+      picked = await openDialog({
+        directory: true,
+        multiple: true,
+        defaultPath: config.projectPath,
+        title: "Choose folders to include in the review",
+      });
+    } catch (err) {
+      showToast(`could not open folder picker: ${stringifyError(err)}`, "error");
+      return;
+    }
+    if (picked === null) return;
+    const paths = Array.isArray(picked) ? picked : [picked];
+    if (paths.length === 0) return;
+    const relatives: string[] = [];
+    for (const abs of paths) {
+      const rel = toRelativePath(config.projectPath, abs);
+      if (rel === null) {
+        showToast(`path is outside the project: ${abs}`, "error");
+        continue;
+      }
+      if (rel.length === 0) {
+        state.scopeRaw = "";
+        render();
+        void fetchDiff();
+        return;
+      }
+      relatives.push(rel);
+    }
+    if (relatives.length === 0) return;
+    state.scopeRaw = mergeScope(state.scopeRaw, relatives);
+    render();
     void fetchDiff();
   };
 
@@ -226,6 +272,7 @@ function renderBaseCard(
   onScopeChange: (v: string) => void,
   onModeChange: (v: DiffMode) => void,
   onRefresh: () => void,
+  onBrowseScope: () => void,
 ): HTMLElement {
   const card = document.createElement("section");
   card.className = "adv-card";
@@ -265,6 +312,12 @@ function renderBaseCard(
   input.value = state.baseRef;
   input.placeholder = "main / origin/main / …";
   input.disabled = state.diffMode === "working";
+  // Disable the webview's smart-text features — refs and paths must be
+  // preserved exactly as typed, no auto-capitalization or autocorrect.
+  input.autocapitalize = "off";
+  input.autocomplete = "off";
+  input.spellcheck = false;
+  input.setAttribute("autocorrect", "off");
   // input event updates state but does NOT re-render — that would kill focus
   // on every keystroke. Blur triggers the refresh.
   input.addEventListener("input", (e) => onBaseChange((e.target as HTMLInputElement).value));
@@ -287,13 +340,33 @@ function renderBaseCard(
   scopeField.className = "adv-field";
   const scopeLabel = document.createElement("label");
   scopeLabel.textContent = "Scope (optional): repo-relative paths, comma-separated";
+
+  const scopeInputRow = document.createElement("div");
+  scopeInputRow.className = "adv-row";
+
   const scopeInput = document.createElement("input");
   scopeInput.className = "adv-input";
+  scopeInput.style.flex = "1 1 auto";
   scopeInput.value = state.scopeRaw;
   scopeInput.placeholder = "e.g. app/Services/Payment, resources/js/Pages/Entries";
+  scopeInput.autocapitalize = "off";
+  scopeInput.autocomplete = "off";
+  scopeInput.spellcheck = false;
+  scopeInput.setAttribute("autocorrect", "off");
   scopeInput.addEventListener("input", (e) => onScopeChange((e.target as HTMLInputElement).value));
   scopeInput.addEventListener("blur", () => onRefresh());
-  scopeField.append(scopeLabel, scopeInput);
+
+  const browseBtn = document.createElement("button");
+  browseBtn.type = "button";
+  browseBtn.className = "adv-btn";
+  browseBtn.textContent = "📁 browse";
+  browseBtn.title = "Pick folders from the project (multi-select)";
+  browseBtn.addEventListener("click", () => {
+    void onBrowseScope();
+  });
+
+  scopeInputRow.append(scopeInput, browseBtn);
+  scopeField.append(scopeLabel, scopeInputRow);
 
   const summary = document.createElement("div");
   summary.className = "adv-diff-summary";
@@ -343,6 +416,69 @@ function parseScopeInput(raw: string): string[] {
     .split(",")
     .map((s) => s.trim())
     .filter((s) => s.length > 0);
+}
+
+/**
+ * Turn an absolute path returned by the folder picker into a repo-relative
+ * one anchored at `projectPath`. Both paths are normalized to forward
+ * slashes so the result is portable across Windows and Unix.
+ *
+ * On macOS, `/Users` is a symlink to `/System/Volumes/Data/Users`; Tauri's
+ * picker sometimes returns the "real" (Data/Users) form while the stored
+ * projectPath is the friendly one, or vice versa. We try both canonical
+ * forms before giving up so the picker doesn't silently drop good folders.
+ *
+ * Returns `""` when `abs` IS the project root, and `null` when it lies
+ * outside the project (which the caller reports as a toast).
+ */
+export function toRelativePath(projectPath: string, abs: string): string | null {
+  const projectVariants = macCanonicalVariants(normalize(projectPath));
+  const absVariants = macCanonicalVariants(normalize(abs));
+  for (const p of projectVariants) {
+    for (const a of absVariants) {
+      if (a === p) return "";
+      if (a.startsWith(p + "/")) return a.slice(p.length + 1);
+    }
+  }
+  return null;
+}
+
+function normalize(path: string): string {
+  return path.replace(/\\/g, "/").replace(/\/+$/, "");
+}
+
+/**
+ * Return the input path plus its macOS canonical equivalent — with or without
+ * the `/System/Volumes/Data` prefix that Catalina+ uses for the read-write
+ * data volume. No-op on other platforms.
+ */
+function macCanonicalVariants(path: string): string[] {
+  const out: string[] = [path];
+  const DATA_PREFIX = "/System/Volumes/Data";
+  if (path.startsWith(DATA_PREFIX + "/")) {
+    out.push(path.slice(DATA_PREFIX.length));
+  } else if (path.startsWith("/Users/") || path.startsWith("/private/")) {
+    out.push(DATA_PREFIX + path);
+  }
+  return out;
+}
+
+/**
+ * Merge existing scope text with newly picked relative paths, deduping
+ * (case-sensitive) and keeping the existing order. Empty existing values
+ * are skipped so we don't emit a leading comma.
+ */
+export function mergeScope(existing: string, added: string[]): string {
+  const existingPaths = parseScopeInput(existing);
+  const seen = new Set(existingPaths);
+  const combined = [...existingPaths];
+  for (const p of added) {
+    if (!seen.has(p)) {
+      seen.add(p);
+      combined.push(p);
+    }
+  }
+  return combined.join(", ");
 }
 
 function renderSlotsCard(
