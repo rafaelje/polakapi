@@ -14,7 +14,7 @@ import { applyPass, finalizeLedger } from "../core/findings";
 import { buildDebateInput } from "../core/debate-input";
 import { parsePassOutput } from "../core/parse";
 import { renderReport } from "../core/report";
-import type { DebateSettings, DebateState, PassRecord, PassRole } from "../types";
+import type { DebateSettings, DebateState, DiffMeta, PassRecord, PassRole } from "../types";
 import type { DebateInvokers } from "./invokers";
 import { PersistenceQueue } from "./persistence";
 import { DebateStore } from "./store";
@@ -40,7 +40,7 @@ export class DebateScheduler {
     this.store = new DebateStore(initial);
   }
 
-  static seedState(settings: DebateSettings, _diff: string, diffTruncated: boolean): DebateState {
+  static seedState(settings: DebateSettings, _diff: string, meta: DiffMeta): DebateState {
     return {
       status: "idle",
       settings,
@@ -48,7 +48,9 @@ export class DebateScheduler {
       findings: { findings: [], appliedPasses: [] },
       totals: { tokensIn: 0, tokensOut: 0, costUsd: 0 },
       lastHeartbeat: 0,
-      diffTruncated,
+      diffTruncated: meta.truncated,
+      diffFilesExcluded: meta.filesExcluded,
+      diffFilesTruncated: meta.filesTruncated,
     };
   }
 
@@ -129,15 +131,21 @@ export class DebateScheduler {
     }
 
     const promptPath = buildPromptPath(settings.projectPath, settings.runId, promptName);
-    const input = buildDebateInput({
+    const built = buildDebateInput({
       round,
       role,
       rounds: settings.rounds,
       diff: diffContent,
       ledger: state.findings,
     });
+    const input = built.text;
+    const presentedIds = new Set(built.presentedIds);
+    if (built.trimmedCount > 0) {
+      console.warn(
+        `adversarial: round ${round} ${role} — ${built.trimmedCount} finding(s) trimmed by ledger cap; their status is preserved.`,
+      );
+    }
 
-    let retries = 0;
     let parseError = "unknown";
     let sessionUsage = { tokensIn: 0, tokensOut: 0, costUsd: 0 };
 
@@ -166,7 +174,9 @@ export class DebateScheduler {
       sessionUsage = accumulate(sessionUsage, result);
       const raw = result.text;
       if (result.error) {
-        return this.markPassError(round, role, result.error, retries + attempt);
+        // `p.retries` was already bumped by the intermediate retry commit
+        // between attempts, so markPassError just uses it as-is.
+        return this.markPassError(round, role, result.error);
       }
       const parseRes = parsePassOutput(raw);
       if (parseRes.ok && parseRes.parsed.pass === role) {
@@ -182,7 +192,9 @@ export class DebateScheduler {
         } catch (err) {
           console.error("adversarial: failed to persist raw pass output", err);
         }
-        const { ledger, warnings } = applyPass(state.findings, round, parseRes.parsed);
+        const { ledger, warnings } = applyPass(state.findings, round, parseRes.parsed, {
+          presentedIds,
+        });
         for (const w of warnings) {
           console.warn(`adversarial: round ${round} ${role} — ${w.code}: ${w.message}`);
         }
@@ -194,7 +206,6 @@ export class DebateScheduler {
                 tokensIn: p.tokensIn + sessionUsage.tokensIn,
                 tokensOut: p.tokensOut + sessionUsage.tokensOut,
                 costUsd: p.costUsd + sessionUsage.costUsd,
-                retries: p.retries + retries + attempt,
                 endedAt: this.deps.now(),
                 message: warnings.length ? `${warnings.length} warning(s)` : undefined,
               }
@@ -223,7 +234,6 @@ export class DebateScheduler {
         return next;
       }
       parseError = parseRes.ok ? `pass field mismatch: ${parseRes.parsed.pass}` : parseRes.error;
-      retries += 1;
 
       // Persist the failed output so post-mortem debugging doesn't lose it —
       // and update the pass record so the UI stops looking hung.
@@ -238,6 +248,8 @@ export class DebateScheduler {
         console.error("adversarial: failed to persist raw pass output", err);
       }
       if (attempt === 0) {
+        // Bump retries once here — the final commit (success or error) reads
+        // it as-is, so this is the sole place retries is incremented.
         const passesRetrying = this.store.get().passes.map((p) =>
           p.round === round && p.role === role
             ? {
@@ -260,18 +272,16 @@ export class DebateScheduler {
       round,
       role,
       `could not parse output after retry: ${parseError}. Raw output persisted at round-${round}-${role}.md for inspection.`,
-      retries,
     );
   }
 
-  private markPassError(round: number, role: PassRole, message: string, retries = 0): DebateState {
+  private markPassError(round: number, role: PassRole, message: string): DebateState {
     const state = this.store.get();
     const passes = state.passes.map((p) =>
       p.round === round && p.role === role
         ? {
             ...p,
             status: "error" as const,
-            retries: p.retries + retries,
             message,
             endedAt: this.deps.now(),
           }

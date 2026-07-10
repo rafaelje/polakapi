@@ -14,6 +14,7 @@ import {
   defaultModelForCli,
   type DebateSettings,
   type DebateSlot,
+  type DiffMeta,
   type DiffMode,
   type Effort,
   type Severity,
@@ -23,7 +24,7 @@ export interface Step1Config {
   projectPath: string;
   projectName: string;
   runId: string;
-  onExecute(settings: DebateSettings, diff: string, diffTruncated: boolean): void;
+  onExecute(settings: DebateSettings, diff: string, meta: DiffMeta): void;
 }
 
 const CLIS: LoopCli[] = ["claude", "codex", "opencode"];
@@ -243,7 +244,11 @@ export function mountStep1Setup(slot: HTMLElement, config: Step1Config): { dispo
       scopePaths: state.diff.paths,
       diffMode: state.diff.mode,
     };
-    config.onExecute(settings, state.diff.diff, state.diff.truncated);
+    config.onExecute(settings, state.diff.diff, {
+      truncated: state.diff.truncated,
+      filesExcluded: state.diff.filesExcluded,
+      filesTruncated: state.diff.filesTruncated,
+    });
   };
 
   render();
@@ -386,10 +391,26 @@ function renderBaseCard(
       hint.textContent = `  (auto-detected · merge-base ${short(state.diff.mergeBase)})`;
       summary.appendChild(hint);
     }
+    const excluded = state.diff.filesExcluded;
+    const partial = state.diff.filesTruncated;
+    if (excluded.length > 0) {
+      const info = document.createElement("div");
+      info.className = "adv-help";
+      info.textContent = `ℹ️ auto-excluded ${excluded.length} generated file${excluded.length === 1 ? "" : "s"} (${describeSample(excluded)}). Add the path to the scope input above to include it anyway.`;
+      summary.appendChild(info);
+    }
     if (state.diff.truncated) {
       const warn = document.createElement("div");
       warn.className = "adv-warn";
-      warn.textContent = "⚠️ diff was truncated at 150 KB — expect blind spots past the cutoff.";
+      const bits: string[] = [];
+      if (partial.length > 0) {
+        bits.push(`${partial.length} file${partial.length === 1 ? "" : "s"} trimmed at 40 KB (${describeSample(partial)})`);
+      }
+      // If truncated=true but no per-file entries, the total cap kicked in.
+      if (partial.length === 0 || state.diff.diff.includes("diff truncated at")) {
+        bits.push("total diff capped at 400 KB");
+      }
+      warn.textContent = `⚠️ ${bits.join(" · ")} — expect blind spots past the cutoff.`;
       summary.appendChild(warn);
     }
   } else {
@@ -692,4 +713,10 @@ function canRun(state: State): boolean {
 
 function short(sha: string): string {
   return sha.length > 8 ? sha.slice(0, 8) : sha;
+}
+
+function describeSample(files: string[], max = 3): string {
+  if (files.length <= max) return files.join(", ");
+  const head = files.slice(0, max).join(", ");
+  return `${head}, +${files.length - max} more`;
 }

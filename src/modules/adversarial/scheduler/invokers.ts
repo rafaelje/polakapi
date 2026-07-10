@@ -40,6 +40,8 @@ export interface BranchDiff {
   deletions: number;
   truncated: boolean;
   paths: string[];
+  filesExcluded: string[];
+  filesTruncated: string[];
   mode: DiffMode;
 }
 

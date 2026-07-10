@@ -143,7 +143,7 @@ describe("renderReport", () => {
     expect(md).not.toMatch(/Merge base/);
   });
 
-  it("flags a truncated diff", () => {
+  it("flags a truncated diff at the total cap", () => {
     const state: DebateState = {
       status: "completed",
       settings: {
@@ -166,6 +166,67 @@ describe("renderReport", () => {
       lastHeartbeat: 0,
       diffTruncated: true,
     };
-    expect(renderReport(state)).toMatch(/Diff was truncated/);
+    expect(renderReport(state)).toMatch(/Diff was cut before review/);
+    expect(renderReport(state)).toMatch(/total size cap/);
+  });
+
+  it("flags per-file trimming and lists the trimmed files", () => {
+    const state: DebateState = {
+      status: "completed",
+      settings: {
+        projectPath: "/x",
+        runId: "r",
+        baseRef: "main",
+        mergeBase: "a",
+        headSha: "b",
+        rounds: 1,
+        critic: { cli: "claude", model: "c", effort: "default" },
+        defender: { cli: "codex", model: "g", effort: "default" },
+        blockingSeverity: "major",
+        timeoutSecs: 600,
+        scopePaths: [],
+        diffMode: "committed",
+      },
+      passes: [],
+      findings: ledger([]),
+      totals: { tokensIn: 0, tokensOut: 0, costUsd: 0 },
+      lastHeartbeat: 0,
+      diffTruncated: true,
+      diffFilesTruncated: ["src/huge.ts", "src/other-huge.ts"],
+    };
+    const md = renderReport(state);
+    expect(md).toMatch(/2 files trimmed at the per-file cap/);
+    expect(md).toMatch(/`src\/huge\.ts`/);
+    expect(md).toMatch(/`src\/other-huge\.ts`/);
+  });
+
+  it("lists auto-excluded generated files without treating it as a warning", () => {
+    const state: DebateState = {
+      status: "completed",
+      settings: {
+        projectPath: "/x",
+        runId: "r",
+        baseRef: "main",
+        mergeBase: "a",
+        headSha: "b",
+        rounds: 1,
+        critic: { cli: "claude", model: "c", effort: "default" },
+        defender: { cli: "codex", model: "g", effort: "default" },
+        blockingSeverity: "major",
+        timeoutSecs: 600,
+        scopePaths: [],
+        diffMode: "committed",
+      },
+      passes: [],
+      findings: ledger([]),
+      totals: { tokensIn: 0, tokensOut: 0, costUsd: 0 },
+      lastHeartbeat: 0,
+      diffTruncated: false,
+      diffFilesExcluded: ["yarn.lock", "dist/main.js"],
+    };
+    const md = renderReport(state);
+    expect(md).toMatch(/Auto-excluded 2 generated files/);
+    expect(md).toMatch(/`yarn\.lock`/);
+    expect(md).not.toMatch(/Diff was cut before review/);
   });
 });

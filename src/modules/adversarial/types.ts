@@ -107,6 +107,19 @@ export interface DebateState {
   };
   lastHeartbeat: number;
   diffTruncated: boolean;
+  // Files auto-dropped by the generated-file filter (lockfiles, dist/, minified,
+  // …). Optional so state.json written before the filter existed still loads.
+  diffFilesExcluded?: string[];
+  // Files whose per-file body exceeded the cap and was cut at a line boundary.
+  diffFilesTruncated?: string[];
+}
+
+/// Signal returned by the branch-diff command so the frontend can render a
+/// meaningful warning without re-fetching or re-parsing the diff.
+export interface DiffMeta {
+  truncated: boolean;
+  filesExcluded: string[];
+  filesTruncated: string[];
 }
 
 // Must stay in sync with the Rust `is_adversarial_prompt` allowlist.

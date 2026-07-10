@@ -19,7 +19,18 @@ export interface DebateInputArgs {
 
 const DEFAULT_MAX = 30;
 
-export function buildDebateInput(args: DebateInputArgs): string {
+export interface DebateInputResult {
+  text: string;
+  // Ids of findings shown to the model this pass. The scheduler forwards
+  // these to `applyPass` so the silence rule only affects presented findings
+  // — anything trimmed by the ledger cap keeps its prior status.
+  presentedIds: string[];
+  // Number of active findings dropped by the cap this pass (0 when no
+  // trimming happened). Surfaced so the scheduler can log/warn.
+  trimmedCount: number;
+}
+
+export function buildDebateInput(args: DebateInputArgs): DebateInputResult {
   const { round, role, rounds, diff, ledger } = args;
   const cap = args.maxFindingsInLedger ?? DEFAULT_MAX;
 
@@ -34,11 +45,17 @@ export function buildDebateInput(args: DebateInputArgs): string {
   parts.push(diff.trimEnd());
   parts.push("```");
 
+  let presentedIds: string[] = [];
+  let trimmedCount = 0;
+
   if (!(round === 1 && role === "critic")) {
+    const summarized = summarizeLedger(ledger, cap);
+    presentedIds = summarized.presented.map((f) => f.id);
+    trimmedCount = summarized.trimmed;
     parts.push("");
     parts.push("## Findings ledger (JSON — do not modify existing ids)");
     parts.push("```json");
-    parts.push(JSON.stringify(summarizeLedger(ledger, cap), null, 2));
+    parts.push(JSON.stringify(summarized.presented, null, 2));
     parts.push("```");
     parts.push("");
     parts.push(`## Your turn (${role}, round ${round})`);
@@ -66,7 +83,7 @@ export function buildDebateInput(args: DebateInputArgs): string {
   parts.push(exampleFor(role, round));
   parts.push("```");
 
-  return parts.join("\n");
+  return { text: parts.join("\n"), presentedIds, trimmedCount };
 }
 
 function exampleFor(role: PassRole, round: number): string {
@@ -110,21 +127,23 @@ function exampleFor(role: PassRole, round: number): string {
   );
 }
 
+type LedgerRow = Pick<Finding, "id" | "file" | "line" | "severity" | "claim" | "status"> & {
+  lastArgument?: string;
+  lastRole?: string;
+};
+
 // Trim the ledger to the fields the model needs, capped to avoid blowing up
 // on huge ledgers. Terminal findings are excluded — nothing to argue about.
+// Returns both the presented rows and the count of active findings dropped
+// by the cap so the caller can inform the reducer / warn the user.
 function summarizeLedger(
   ledger: FindingLedger,
   cap: number,
-): Array<
-  Pick<Finding, "id" | "file" | "line" | "severity" | "claim" | "status"> & {
-    lastArgument?: string;
-    lastRole?: string;
-  }
-> {
+): { presented: LedgerRow[]; trimmed: number } {
   const active = ledger.findings.filter(
     (f) => f.status !== "confirmed" && f.status !== "withdrawn" && f.status !== "disputed",
   );
-  return active.slice(0, cap).map((f) => {
+  const presented = active.slice(0, cap).map((f): LedgerRow => {
     const last = f.history[f.history.length - 1];
     return {
       id: f.id,
@@ -137,4 +156,5 @@ function summarizeLedger(
       lastRole: last?.role,
     };
   });
+  return { presented, trimmed: Math.max(0, active.length - presented.length) };
 }

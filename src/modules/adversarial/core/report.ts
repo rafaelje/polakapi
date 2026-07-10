@@ -45,6 +45,8 @@ export function computeVerdict(ledger: FindingLedger, blockingSeverity: Severity
 
 export function renderReport(state: DebateState): string {
   const { settings, findings, totals, diffTruncated } = state;
+  const filesExcluded = state.diffFilesExcluded ?? [];
+  const filesTruncated = state.diffFilesTruncated ?? [];
   const summary = computeVerdict(findings, settings.blockingSeverity);
   const projectName = deriveProjectName(settings.projectPath);
 
@@ -70,10 +72,25 @@ export function renderReport(state: DebateState): string {
   lines.push(
     `**Tokens:** in ${totals.tokensIn.toLocaleString()} / out ${totals.tokensOut.toLocaleString()}  |  **Cost:** ${formatUsd(totals.costUsd)}`,
   );
-  if (diffTruncated) {
+  if (filesExcluded.length > 0) {
     lines.push("");
     lines.push(
-      "> ⚠️ Diff was truncated because it exceeded the size guard (150 KB). Some hunks were omitted; findings may miss context past the cutoff.",
+      `> ℹ️ Auto-excluded ${filesExcluded.length} generated file${filesExcluded.length === 1 ? "" : "s"} from review: ${formatPathList(filesExcluded)}. Re-scope explicitly to include them.`,
+    );
+  }
+  if (diffTruncated) {
+    lines.push("");
+    const bits: string[] = [];
+    if (filesTruncated.length > 0) {
+      bits.push(
+        `${filesTruncated.length} file${filesTruncated.length === 1 ? "" : "s"} trimmed at the per-file cap (${formatPathList(filesTruncated)})`,
+      );
+    }
+    if (filesTruncated.length === 0) {
+      bits.push("diff exceeded the total size cap");
+    }
+    lines.push(
+      `> ⚠️ Diff was cut before review — ${bits.join("; ")}. Findings may miss context past the cutoff.`,
     );
   }
 
@@ -191,4 +208,11 @@ function formatUsd(usd: number): string {
 function deriveProjectName(path: string): string {
   const parts = path.split(/[/\\]/).filter(Boolean);
   return parts[parts.length - 1] ?? path;
+}
+
+function formatPathList(files: string[], max = 5): string {
+  const quoted = (f: string): string => `\`${f}\``;
+  if (files.length <= max) return files.map(quoted).join(", ");
+  const head = files.slice(0, max).map(quoted).join(", ");
+  return `${head}, +${files.length - max} more`;
 }

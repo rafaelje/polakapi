@@ -69,8 +69,21 @@ export function nextFindingId(ledger: FindingLedger): string {
   return `F${max + 1}`;
 }
 
+export interface ApplyPassOptions {
+  // Ids of findings that were actually presented to the model in this pass.
+  // The silence rule (implicit concede / withdraw) only fires for these.
+  // If omitted, silence applies to every active finding (legacy behavior,
+  // safe when the caller shows the whole ledger — e.g. tests).
+  presentedIds?: ReadonlySet<string>;
+}
+
 // The core reducer. Never mutates its inputs.
-export function applyPass(ledger: FindingLedger, round: number, parsed: ParsedPass): ReducerResult {
+export function applyPass(
+  ledger: FindingLedger,
+  round: number,
+  parsed: ParsedPass,
+  opts: ApplyPassOptions = {},
+): ReducerResult {
   const warnings: ReducerWarning[] = [];
   if (isPassApplied(ledger, round, parsed.pass)) {
     return {
@@ -172,10 +185,13 @@ export function applyPass(ledger: FindingLedger, round: number, parsed: ParsedPa
   }
 
   // Silence rule: for every non-terminal finding NOT addressed this pass,
-  // record the implicit action defined in the state machine.
+  // record the implicit action defined in the state machine. Only applies
+  // to findings the model actually saw — otherwise a ledger cap would
+  // silently resolve every finding past the cap.
   for (const f of findings) {
     if (touchedIds.has(f.id)) continue;
     if (isTerminal(f.status)) continue;
+    if (opts.presentedIds && !opts.presentedIds.has(f.id)) continue;
 
     if (parsed.pass === "defender") {
       const inPlay = f.status === "open" || f.status === "contested";

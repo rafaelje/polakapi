@@ -10,7 +10,7 @@ import { invokers } from "./scheduler/invokers";
 import { mountStep1Setup } from "./step1-setup/view";
 import { mountStep2Run } from "./step2-run/view";
 import { mountStep3Report } from "./step3-report/view";
-import type { DebateSettings, DebateState } from "./types";
+import type { DebateSettings, DebateState, DiffMeta } from "./types";
 
 export interface AdvChromeHandle {
   dispose(): void;
@@ -43,7 +43,7 @@ export function mountAdversarialChrome(root: HTMLElement, router: AdvRouter): Ad
   const startDebate = async (
     settings: DebateSettings,
     diff: string,
-    diffTruncated: boolean,
+    meta: DiffMeta,
   ): Promise<void> => {
     try {
       await invokers.createRun(settings.projectPath, settings.runId).catch((err) => {
@@ -58,7 +58,7 @@ export function mountAdversarialChrome(root: HTMLElement, router: AdvRouter): Ad
       return;
     }
 
-    const initial = DebateScheduler.seedState(settings, diff, diffTruncated);
+    const initial = DebateScheduler.seedState(settings, diff, meta);
     const scheduler = new DebateScheduler(initial, { invokers, now: () => Date.now() });
     currentScheduler = scheduler;
     finalState = null;
@@ -146,8 +146,8 @@ export function mountAdversarialChrome(root: HTMLElement, router: AdvRouter): Ad
         projectPath: state.project.path,
         projectName: state.project.name,
         runId: state.runId,
-        onExecute: (settings, diff, truncated) => {
-          void startDebate(settings, diff, truncated);
+        onExecute: (settings, diff, meta) => {
+          void startDebate(settings, diff, meta);
         },
       });
       currentDispose = () => handle.dispose();
