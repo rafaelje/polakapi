@@ -128,34 +128,101 @@
   <body>
     <h1>/adversarial review · arquitectura</h1>
     <p class="lead">
-      Revisión adversarial multi-ronda entre dos slots CLI×modelo×effort independientes
-      (<em>critic</em> y <em>defender</em>) sobre el diff de la rama actual contra su base
-      (estilo PR). El matchup es libre: claude vs claude, claude vs codex, codex vs opencode… —
-      cada lado con su propio modelo y effort. Solo produce un reporte — ningún agente toca el
-      working tree. Complementa el plan detallado en <code>docs/adversarial-review-plan.md</code>.
+      Revisión adversarial multi-ronda entre dos slots CLI×modelo×effort independientes (<em
+        >critic</em
+      >
+      y <em>defender</em>) sobre el diff de la rama actual contra su base (estilo PR). El matchup es
+      libre: claude vs claude, claude vs codex, codex vs opencode… — cada lado con su propio modelo
+      y effort. Solo produce un reporte — ningún agente toca el working tree. Complementa el plan
+      detallado en <code>docs/adversarial-review-plan.md</code>.
     </p>
 
     <h2>1 · Vista por capas</h2>
     <figure>
-      <svg viewBox="0 0 1120 742" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Diagrama de arquitectura por capas del feature adversarial review">
+      <svg
+        viewBox="0 0 1120 742"
+        xmlns="http://www.w3.org/2000/svg"
+        role="img"
+        aria-label="Diagrama de arquitectura por capas del feature adversarial review"
+      >
         <defs>
-          <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <marker
+            id="arr"
+            viewBox="0 0 10 10"
+            refX="9"
+            refY="5"
+            markerWidth="7"
+            markerHeight="7"
+            orient="auto-start-reverse"
+          >
             <path d="M0 0 L10 5 L0 10 z" fill="#8a93a6" />
           </marker>
-          <marker id="arrA" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <marker
+            id="arrA"
+            viewBox="0 0 10 10"
+            refX="9"
+            refY="5"
+            markerWidth="7"
+            markerHeight="7"
+            orient="auto-start-reverse"
+          >
             <path d="M0 0 L10 5 L0 10 z" fill="#7aa2ff" />
           </marker>
         </defs>
         <style>
-          .box { fill: #1d2230; stroke: #3a4358; rx: 8; }
-          .zone { fill: #161922; stroke: #2a3041; }
-          .t { fill: #e6e8ee; font: 12px ui-sans-serif, system-ui, sans-serif; }
-          .ts { fill: #e6e8ee; font: 11px ui-sans-serif, system-ui, sans-serif; }
-          .tm { fill: #8a93a6; font: 11px ui-sans-serif, system-ui, sans-serif; }
-          .tt { fill: #8a93a6; font: 600 10px ui-sans-serif, system-ui, sans-serif; letter-spacing: .08em; }
-          .mono { font-family: ui-monospace, Menlo, monospace; }
-          .edge { stroke: #8a93a6; stroke-width: 1.2; fill: none; marker-end: url(#arr); }
-          .edgeA { stroke: #7aa2ff; stroke-width: 1.4; fill: none; marker-end: url(#arrA); }
+          .box {
+            fill: #1d2230;
+            stroke: #3a4358;
+            rx: 8;
+          }
+          .zone {
+            fill: #161922;
+            stroke: #2a3041;
+          }
+          .t {
+            fill: #e6e8ee;
+            font:
+              12px ui-sans-serif,
+              system-ui,
+              sans-serif;
+          }
+          .ts {
+            fill: #e6e8ee;
+            font:
+              11px ui-sans-serif,
+              system-ui,
+              sans-serif;
+          }
+          .tm {
+            fill: #8a93a6;
+            font:
+              11px ui-sans-serif,
+              system-ui,
+              sans-serif;
+          }
+          .tt {
+            fill: #8a93a6;
+            font:
+              600 10px ui-sans-serif,
+              system-ui,
+              sans-serif;
+            letter-spacing: 0.08em;
+          }
+          .mono {
+            font-family: ui-monospace, Menlo, monospace;
+          }
+          .edge {
+            stroke: #8a93a6;
+            stroke-width: 1.2;
+            fill: none;
+            marker-end: url(#arr);
+          }
+          .edgeA {
+            stroke: #7aa2ff;
+            stroke-width: 1.4;
+            fill: none;
+            marker-end: url(#arrA);
+          }
         </style>
 
         <!-- ── main window ─────────────────────────────────────────── -->
@@ -171,11 +238,15 @@
         <text class="ts mono" x="578" y="70" fill="#7aa2ff">/adversarial review</text>
 
         <path class="edgeA" d="M652 88 L652 136" />
-        <text class="tm mono" x="664" y="118">new WebviewWindow("adversarial-review", { url: "adversarial.html" })</text>
+        <text class="tm mono" x="664" y="118">
+          new WebviewWindow("adversarial-review", { url: "adversarial.html" })
+        </text>
 
         <!-- ── adversarial window (frontend) ────────────────────────── -->
         <rect class="zone" x="56" y="140" width="1008" height="308" rx="12" />
-        <text class="tt" x="72" y="162">VENTANA /ADVERSARIAL REVIEW · src/modules/adversarial/</text>
+        <text class="tt" x="72" y="162">
+          VENTANA /ADVERSARIAL REVIEW · src/modules/adversarial/
+        </text>
 
         <rect class="box" x="86" y="176" width="290" height="64" rx="8" />
         <text class="t" x="100" y="197">Step 1 · setup</text>
@@ -194,7 +265,16 @@
         <path class="edge" d="M706 204 L740 204" />
 
         <!-- core puro -->
-        <rect x="86" y="252" width="646" height="176" rx="10" fill="none" stroke="#3a4358" stroke-dasharray="5 4" />
+        <rect
+          x="86"
+          y="252"
+          width="646"
+          height="176"
+          rx="10"
+          fill="none"
+          stroke="#3a4358"
+          stroke-dasharray="5 4"
+        />
         <text class="tt" x="100" y="272">CORE (PURO · SIN TAURI · TESTEABLE)</text>
 
         <rect class="box" x="104" y="284" width="142" height="46" rx="7" />
@@ -215,7 +295,9 @@
 
         <rect class="box" x="104" y="352" width="604" height="56" rx="7" />
         <text class="ts mono" x="118" y="373">core/scheduler · debate-scheduler.ts</text>
-        <text class="tm" x="118" y="389">loop de rondas · retries · store.ts · persistence.ts (resume desde state.json)</text>
+        <text class="tm" x="118" y="389">
+          loop de rondas · retries · store.ts · persistence.ts (resume desde state.json)
+        </text>
 
         <!-- invokers -->
         <rect class="box" x="762" y="300" width="274" height="108" rx="8" />
@@ -229,7 +311,15 @@
         <path class="edge" d="M708 380 L756 380" />
 
         <!-- ── IPC boundary ─────────────────────────────────────────── -->
-        <line x1="56" y1="474" x2="1064" y2="474" stroke="#3a4358" stroke-width="1.4" stroke-dasharray="8 6" />
+        <line
+          x1="56"
+          y1="474"
+          x2="1064"
+          y2="474"
+          stroke="#3a4358"
+          stroke-width="1.4"
+          stroke-dasharray="8 6"
+        />
         <text class="tt" x="56" y="466">FRONTEND (WEBVIEW)</text>
         <text class="tt" x="948" y="466">TAURI IPC · invoke()</text>
         <text class="tt" x="56" y="496">BACKEND (RUST · src-tauri/src/)</text>
@@ -294,8 +384,8 @@
         El frontend nuevo vive en <code>src/modules/adversarial/</code> espejando la estructura de
         <code>loop/</code>; todo el core del debate es puro (sin Tauri) para poder testearlo con
         Vitest. Solo <code>invokers.ts</code> cruza el límite IPC. En Rust se reutilizan
-        <code>loop_cli.rs</code> y <code>loop_prompts.rs</code>; lo único nuevo son los comandos
-        git de diff contra base y el storage <code>adv_*</code>.
+        <code>loop_cli.rs</code> y <code>loop_prompts.rs</code>; lo único nuevo son los comandos git
+        de diff contra base y el storage <code>adv_*</code>.
       </figcaption>
     </figure>
     <div class="legend">
@@ -307,25 +397,86 @@
 
     <h2>2 · Protocolo de debate y ciclo de vida de un hallazgo</h2>
     <figure>
-      <svg viewBox="0 0 1120 584" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Secuencia de pases del debate y máquina de estados de un hallazgo">
+      <svg
+        viewBox="0 0 1120 584"
+        xmlns="http://www.w3.org/2000/svg"
+        role="img"
+        aria-label="Secuencia de pases del debate y máquina de estados de un hallazgo"
+      >
         <defs>
-          <marker id="arr2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <marker
+            id="arr2"
+            viewBox="0 0 10 10"
+            refX="9"
+            refY="5"
+            markerWidth="7"
+            markerHeight="7"
+            orient="auto-start-reverse"
+          >
             <path d="M0 0 L10 5 L0 10 z" fill="#8a93a6" />
           </marker>
-          <marker id="arrOk" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <marker
+            id="arrOk"
+            viewBox="0 0 10 10"
+            refX="9"
+            refY="5"
+            markerWidth="7"
+            markerHeight="7"
+            orient="auto-start-reverse"
+          >
             <path d="M0 0 L10 5 L0 10 z" fill="#6fcf97" />
           </marker>
-          <marker id="arrWarn" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <marker
+            id="arrWarn"
+            viewBox="0 0 10 10"
+            refX="9"
+            refY="5"
+            markerWidth="7"
+            markerHeight="7"
+            orient="auto-start-reverse"
+          >
             <path d="M0 0 L10 5 L0 10 z" fill="#f2c94c" />
           </marker>
         </defs>
         <style>
-          .t2 { fill: #e6e8ee; font: 12px ui-sans-serif, system-ui, sans-serif; }
-          .ts2 { fill: #e6e8ee; font: 11px ui-sans-serif, system-ui, sans-serif; }
-          .tm2 { fill: #8a93a6; font: 11px ui-sans-serif, system-ui, sans-serif; }
-          .tt2 { fill: #8a93a6; font: 600 10px ui-sans-serif, system-ui, sans-serif; letter-spacing: .08em; }
-          .mono2 { font-family: ui-monospace, Menlo, monospace; }
-          .e2 { stroke: #8a93a6; stroke-width: 1.2; fill: none; marker-end: url(#arr2); }
+          .t2 {
+            fill: #e6e8ee;
+            font:
+              12px ui-sans-serif,
+              system-ui,
+              sans-serif;
+          }
+          .ts2 {
+            fill: #e6e8ee;
+            font:
+              11px ui-sans-serif,
+              system-ui,
+              sans-serif;
+          }
+          .tm2 {
+            fill: #8a93a6;
+            font:
+              11px ui-sans-serif,
+              system-ui,
+              sans-serif;
+          }
+          .tt2 {
+            fill: #8a93a6;
+            font:
+              600 10px ui-sans-serif,
+              system-ui,
+              sans-serif;
+            letter-spacing: 0.08em;
+          }
+          .mono2 {
+            font-family: ui-monospace, Menlo, monospace;
+          }
+          .e2 {
+            stroke: #8a93a6;
+            stroke-width: 1.2;
+            fill: none;
+            marker-end: url(#arr2);
+          }
         </style>
 
         <!-- ── sequence of passes ───────────────────────────────────── -->
@@ -362,7 +513,9 @@
         <!-- ledger -->
         <rect x="306" y="176" width="430" height="64" rx="8" fill="#1d2230" stroke="#3a4358" />
         <text class="ts2 mono2" x="322" y="200">findings.json · ledger</text>
-        <text class="tm2" x="322" y="218">reducer puro tras cada pase — fuente de verdad del reporte</text>
+        <text class="tm2" x="322" y="218">
+          reducer puro tras cada pase — fuente de verdad del reporte
+        </text>
 
         <path class="e2" d="M308 116 L400 170" />
         <path class="e2" d="M544 116 L500 170" />
@@ -373,7 +526,13 @@
         <text class="ts2 mono2" x="852" y="196">report.md + veredicto</text>
         <text class="tm2" x="852" y="212">render determinista en TS (sin LLM)</text>
         <text class="tm2" x="852" y="228">bloquea: confirmed ≥ umbral (def. major)</text>
-        <path d="M736 208 L830 208" stroke="#6fcf97" stroke-width="1.4" fill="none" marker-end="url(#arrOk)" />
+        <path
+          d="M736 208 L830 208"
+          stroke="#6fcf97"
+          stroke-width="1.4"
+          fill="none"
+          marker-end="url(#arrOk)"
+        />
 
         <!-- ── finding state machine ────────────────────────────────── -->
         <text class="tt2" x="30" y="308">MÁQUINA DE ESTADOS DE UN HALLAZGO (core/findings.ts)</text>
@@ -400,7 +559,13 @@
         <path class="e2" d="M150 401 L314 401" />
         <text class="tm2 mono2" x="168" y="392">defender: refute</text>
 
-        <path d="M120 422 C 180 480, 240 512, 314 521" stroke="#6fcf97" stroke-width="1.2" fill="none" marker-end="url(#arrOk)" />
+        <path
+          d="M120 422 C 180 480, 240 512, 314 521"
+          stroke="#6fcf97"
+          stroke-width="1.2"
+          fill="none"
+          marker-end="url(#arrOk)"
+        />
         <text class="tm2 mono2" x="130" y="474" fill="#6fcf97">defender: concede</text>
 
         <path class="e2" d="M470 401 L634 401" />
@@ -409,14 +574,29 @@
         <path class="e2" d="M456 422 L640 512" />
         <text class="tm2 mono2" x="472" y="452">critic: withdraw</text>
 
-        <path d="M680 380 C 620 330, 480 330, 420 378" stroke="#8a93a6" stroke-width="1.2" fill="none" marker-end="url(#arr2)" />
+        <path
+          d="M680 380 C 620 330, 480 330, 420 378"
+          stroke="#8a93a6"
+          stroke-width="1.2"
+          fill="none"
+          marker-end="url(#arr2)"
+        />
         <text class="tm2" x="470" y="340">siguiente pase del defender</text>
 
-        <path d="M780 401 L944 401" stroke="#f2c94c" stroke-width="1.2" fill="none" marker-end="url(#arrWarn)" />
+        <path
+          d="M780 401 L944 401"
+          stroke="#f2c94c"
+          stroke-width="1.2"
+          fill="none"
+          marker-end="url(#arrWarn)"
+        />
         <text class="tm2" x="798" y="392" fill="#f2c94c">rondas agotadas</text>
 
         <!-- terminal note -->
-        <text class="tm2" x="30" y="566">Estados terminales: confirmed y withdrawn salen del debate de inmediato; disputed se reporta con los argumentos finales de ambos lados.</text>
+        <text class="tm2" x="30" y="566">
+          Estados terminales: confirmed y withdrawn salen del debate de inmediato; disputed se
+          reporta con los argumentos finales de ambos lados.
+        </text>
       </svg>
       <figcaption>
         Cada pase termina en un bloque JSON fenced que el parser valida (un retry automático de
@@ -434,11 +614,12 @@
 
     <h2>3 · Artefactos por run</h2>
     <p class="muted">
-      Todo run deja un rastro reproducible bajo el proyecto revisado; <code>state.json</code> +
-      la regla «pase comprometido ⇔ existe <code>round-N-role.md</code> y su paso en el ledger»
+      Todo run deja un rastro reproducible bajo el proyecto revisado; <code>state.json</code> + la
+      regla «pase comprometido ⇔ existe <code>round-N-role.md</code> y su paso en el ledger»
       habilitan el resume, igual que el invariante md+diff de /loop.
     </p>
-    <pre>.adversarial/runs/&lt;runId&gt;/
+    <pre>
+.adversarial/runs/&lt;runId&gt;/
   prompts/adversarial-critic.md     # copia por-run, sembrada lazy desde el global
   prompts/adversarial-defender.md
   diff.patch                        # diff de entrada congelado (reporte reproducible)
@@ -447,7 +628,8 @@
   round-2-critic.md …
   findings.json                     # ledger tras cada paso del reducer
   state.json                        # estado del scheduler (resume)
-  report.md                         # reporte final determinista</pre>
+  report.md                         # reporte final determinista</pre
+    >
 
     <p class="muted" style="margin-top: 28px">
       Plan detallado, milestones y riesgos: <code>docs/adversarial-review-plan.md</code>.

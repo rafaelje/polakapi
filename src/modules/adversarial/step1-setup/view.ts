@@ -310,8 +310,7 @@ function renderBaseCard(
   const field = document.createElement("div");
   field.className = "adv-field";
   const baseLabel = document.createElement("label");
-  baseLabel.textContent =
-    state.diffMode === "working" ? "Base ref (informational)" : "Base ref";
+  baseLabel.textContent = state.diffMode === "working" ? "Base ref (informational)" : "Base ref";
   const input = document.createElement("input");
   input.className = "adv-input";
   input.value = state.baseRef;
@@ -384,7 +383,8 @@ function renderBaseCard(
     const scopeSuffix =
       state.diff.paths.length > 0 ? ` · scoped to ${state.diff.paths.join(", ")}` : "";
     const modeHint = state.diff.mode === "working" ? "working tree · " : "";
-    summary.textContent = modeHint + (state.diff.stat || "diff loaded (no shortstat)") + scopeSuffix;
+    summary.textContent =
+      modeHint + (state.diff.stat || "diff loaded (no shortstat)") + scopeSuffix;
     if (state.baseAutoDetected && state.diff.mode === "committed") {
       const hint = document.createElement("span");
       hint.className = "adv-help";
@@ -404,7 +404,9 @@ function renderBaseCard(
       warn.className = "adv-warn";
       const bits: string[] = [];
       if (partial.length > 0) {
-        bits.push(`${partial.length} file${partial.length === 1 ? "" : "s"} trimmed at 40 KB (${describeSample(partial)})`);
+        bits.push(
+          `${partial.length} file${partial.length === 1 ? "" : "s"} trimmed at 40 KB (${describeSample(partial)})`,
+        );
       }
       // If truncated=true but no per-file entries, the total cap kicked in.
       if (partial.length === 0 || state.diff.diff.includes("diff truncated at")) {
@@ -422,9 +424,7 @@ function renderBaseCard(
 }
 
 function labelFor(mode: DiffMode): string {
-  return mode === "committed"
-    ? "Committed vs base"
-    : "Uncommitted (working tree vs HEAD)";
+  return mode === "committed" ? "Committed vs base" : "Uncommitted (working tree vs HEAD)";
 }
 
 /**

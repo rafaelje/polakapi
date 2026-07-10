@@ -491,10 +491,10 @@ fn parse_diff_git_path(block: &str) -> Option<String> {
     // Quoted paths ("core.quotePath" is on by default for non-ASCII) look like
     // `"a/…" "b/…"`. We do not decode the escapes — matching still works on
     // the visible bytes, which cover the common patterns (dist/, *.lock, …).
-    let (a_path, b_path) = if rest.starts_with('"') {
-        let a_end = find_unescaped_quote(&rest[1..])? + 1;
-        let a = &rest[1..a_end];
-        let after_a = rest[a_end + 1..].trim_start();
+    let (a_path, b_path) = if let Some(after_quote) = rest.strip_prefix('"') {
+        let a_end = find_unescaped_quote(after_quote)?;
+        let a = &after_quote[..a_end];
+        let after_a = after_quote[a_end + 1..].trim_start();
         let after_a = after_a.strip_prefix('"')?;
         let b_end = find_unescaped_quote(after_a)?;
         let b = &after_a[..b_end];

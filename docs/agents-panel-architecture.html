@@ -526,25 +526,49 @@
   <body>
     <h1>/agents · biblioteca de agentes insertables</h1>
     <p class="lead">
-      Cuarto botón del panel <em>agents flow</em>. Abre un <strong>modal dentro de la ventana
-      principal</strong> (patrón command-palette, no ventana Tauri aparte) con una biblioteca de
-      agentes reutilizables — cada agente agrupa uno o varios archivos markdown. Un click inserta el
-      contenido compuesto en la terminal seleccionada vía <code>ptyWrite</code> con
-      <em>bracketed paste</em>, sin Enter final. CRUD completo: crear, editar, eliminar y buscar.
-      Plan detallado en <code>docs/agents-panel-plan.md</code>.
+      Cuarto botón del panel <em>agents flow</em>. Abre un
+      <strong>modal dentro de la ventana principal</strong> (patrón command-palette, no ventana
+      Tauri aparte) con una biblioteca de agentes reutilizables — cada agente agrupa uno o varios
+      archivos markdown. Un click inserta el contenido compuesto en la terminal seleccionada vía
+      <code>ptyWrite</code> con <em>bracketed paste</em>, sin Enter final. CRUD completo: crear,
+      editar, eliminar y buscar. Plan detallado en <code>docs/agents-panel-plan.md</code>.
     </p>
 
     <h2>1 · Arquitectura</h2>
     <div class="diagram">
       <svg viewBox="0 0 980 560" width="980" height="560">
         <defs>
-          <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <marker
+            id="arr"
+            viewBox="0 0 10 10"
+            refX="9"
+            refY="5"
+            markerWidth="7"
+            markerHeight="7"
+            orient="auto-start-reverse"
+          >
             <path d="M0 0 L10 5 L0 10 z" fill="#8a93a6" />
           </marker>
-          <marker id="arr-hi" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <marker
+            id="arr-hi"
+            viewBox="0 0 10 10"
+            refX="9"
+            refY="5"
+            markerWidth="7"
+            markerHeight="7"
+            orient="auto-start-reverse"
+          >
             <path d="M0 0 L10 5 L0 10 z" fill="#7aa2ff" />
           </marker>
-          <marker id="arr-ok" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <marker
+            id="arr-ok"
+            viewBox="0 0 10 10"
+            refX="9"
+            refY="5"
+            markerWidth="7"
+            markerHeight="7"
+            orient="auto-start-reverse"
+          >
             <path d="M0 0 L10 5 L0 10 z" fill="#6fcf97" />
           </marker>
         </defs>
@@ -559,7 +583,7 @@
         <text x="52" y="100" class="mono muted small">/loop · /prompts</text>
         <text x="52" y="115" class="mono muted small">/adversarial review</text>
         <rect x="48" y="128" width="156" height="26" rx="6" fill="none" stroke="#7aa2ff" />
-        <text x="60" y="145" class="mono" fill="#7aa2ff">#open-agents  /agents</text>
+        <text x="60" y="145" class="mono" fill="#7aa2ff">#open-agents /agents</text>
 
         <!-- agents modal -->
         <rect class="box box-accent" x="300" y="56" width="200" height="128" />
@@ -609,7 +633,7 @@
         <rect class="box box-warn" x="716" y="296" width="228" height="108" />
         <text x="732" y="320">agents-store.ts → agents.json</text>
         <text x="732" y="340" class="mono muted small">{ agents: AgentDef[],</text>
-        <text x="732" y="355" class="mono muted small">  schemaVersion: 1 }</text>
+        <text x="732" y="355" class="mono muted small">schemaVersion: 1 }</text>
         <text x="732" y="375" class="mono muted small">AgentDef.files: 1..n archivos</text>
         <text x="732" y="390" class="mono muted small">{ title, content } markdown</text>
 
@@ -641,11 +665,26 @@
         <text x="508" y="342" class="small muted">snapshot 250ms</text>
 
         <!-- legend -->
-        <text x="36" y="470" class="small muted">decisión clave: /agents NO abre WebviewWindow como /loop//prompts — necesita saber qué pane está</text>
-        <text x="36" y="486" class="small muted">enfocado en la ventana principal en el momento del click, así que es un overlay in-app (precedente:</text>
-        <text x="36" y="502" class="small muted">src/modules/workspaces/command-palette). El ptyId destino se captura ANTES de que el modal robe el foco.</text>
-        <text x="36" y="530" class="small muted">bracketed paste: el contenido multilinea llega al CLI como UN solo bloque pegado (no envía línea por línea)</text>
-        <text x="36" y="546" class="small muted">y sin Enter final — misma convención que terminal-drop.ts: el usuario revisa y envía él mismo.</text>
+        <text x="36" y="470" class="small muted">
+          decisión clave: /agents NO abre WebviewWindow como /loop//prompts — necesita saber qué
+          pane está
+        </text>
+        <text x="36" y="486" class="small muted">
+          enfocado en la ventana principal en el momento del click, así que es un overlay in-app
+          (precedente:
+        </text>
+        <text x="36" y="502" class="small muted">
+          src/modules/workspaces/command-palette). El ptyId destino se captura ANTES de que el modal
+          robe el foco.
+        </text>
+        <text x="36" y="530" class="small muted">
+          bracketed paste: el contenido multilinea llega al CLI como UN solo bloque pegado (no envía
+          línea por línea)
+        </text>
+        <text x="36" y="546" class="small muted">
+          y sin Enter final — misma convención que terminal-drop.ts: el usuario revisa y envía él
+          mismo.
+        </text>
       </svg>
     </div>
     <p class="caption">
@@ -674,7 +713,9 @@
         <text x="90" y="52" class="small muted">click</text>
 
         <path class="arrow arrow-ok" d="M240 92 H422" />
-        <text x="250" y="84" class="small muted">resolveInsertTarget() → { ptyId, "pane 2 · claude" }</text>
+        <text x="250" y="84" class="small muted">
+          resolveInsertTarget() → { ptyId, "pane 2 · claude" }
+        </text>
 
         <path class="arrow" d="M430 124 H617" />
         <text x="445" y="116" class="small muted">getState() → agentes</text>
@@ -683,16 +724,22 @@
         <text x="445" y="140" class="small muted">lista ordenada por updatedAt</text>
 
         <path class="arrow" d="M70 180 H422" />
-        <text x="90" y="172" class="small muted">escribe "front", ↑↓, Enter (o click en "frontend reviewer")</text>
+        <text x="90" y="172" class="small muted">
+          escribe "front", ↑↓, Enter (o click en "frontend reviewer")
+        </text>
 
         <path class="arrow arrow-hi" d="M430 212 H787" />
-        <text x="445" y="204" class="small muted">ptyWrite(ptyId, ESC[200~ composeAgentText(agent) ESC[201~)</text>
+        <text x="445" y="204" class="small muted">
+          ptyWrite(ptyId, ESC[200~ composeAgentText(agent) ESC[201~)
+        </text>
 
         <path class="arrow arrow-ok" d="M795 244 H922" />
         <text x="805" y="236" class="small muted">paste 1 bloque</text>
 
         <path class="arrow" d="M430 276 H78" />
-        <text x="95" y="268" class="small muted">cierra modal + refocus terminal + toast "inserted into pane 2"</text>
+        <text x="95" y="268" class="small muted">
+          cierra modal + refocus terminal + toast "inserted into pane 2"
+        </text>
 
         <path class="arrow" d="M930 276 H938" style="opacity: 0" />
         <text x="838" y="296" class="small muted">usuario revisa y</text>
@@ -719,7 +766,9 @@
               <span class="muted">On branch feat-entries…</span>
             </div>
             <div class="mock-pane focused">
-              <span class="pane-tag" style="color: #7aa2ff; border-color: #7aa2ff">pane 2 · claude ● focused</span>
+              <span class="pane-tag" style="color: #7aa2ff; border-color: #7aa2ff"
+                >pane 2 · claude ● focused</span
+              >
               <span class="claude">✳ claude</span><br />
               <span class="muted">esperando prompt…</span>
             </div>
@@ -736,7 +785,9 @@
           <div class="mock-overlay">
             <div class="mock-modal">
               <div class="mock-modal-head">
-                <div class="mock-search">front<span class="cursor" style="height: 11px"></span></div>
+                <div class="mock-search">
+                  front<span class="cursor" style="height: 11px"></span>
+                </div>
                 <span class="target-badge">→ pane 2 · claude</span>
                 <button class="btn-mini primary">+ new agent</button>
               </div>
@@ -758,13 +809,12 @@
                     <span class="chip on">review-checklist.md</span>
                     <span class="chip on">css-conventions.md</span>
                   </div>
-                  <div class="preview-box">&lt;!-- review-checklist.md --&gt;
-You are a senior frontend reviewer. Review the current
-diff focusing on: component boundaries, hook deps,
-re-render cost, accessibility…
-
-&lt;!-- css-conventions.md --&gt;
-Tailwind first; no new Bootstrap. Prefer shadcn/ui…</div>
+                  <div class="preview-box">
+                    &lt;!-- review-checklist.md --&gt; You are a senior frontend reviewer. Review
+                    the current diff focusing on: component boundaries, hook deps, re-render cost,
+                    accessibility… &lt;!-- css-conventions.md --&gt; Tailwind first; no new
+                    Bootstrap. Prefer shadcn/ui…
+                  </div>
                   <div class="preview-actions">
                     <button class="btn-mini danger">delete</button>
                     <button class="btn-mini">edit</button>
@@ -799,14 +849,16 @@ Tailwind first; no new Bootstrap. Prefer shadcn/ui…</div>
       <div class="mock-app" style="min-height: 300px">
         <div class="mock-terminals" style="grid-template-columns: 1fr">
           <div class="mock-pane focused">
-            <span class="pane-tag" style="color: #7aa2ff; border-color: #7aa2ff">pane 2 · claude</span>
+            <span class="pane-tag" style="color: #7aa2ff; border-color: #7aa2ff"
+              >pane 2 · claude</span
+            >
             <span class="claude">✳ claude</span><br />
-            <span class="pasted">&lt;!-- review-checklist.md --&gt;
-You are a senior frontend reviewer. Review the current diff focusing on:
-component boundaries, hook deps, re-render cost, accessibility…
-
-&lt;!-- css-conventions.md --&gt;
-Tailwind first; no new Bootstrap. Prefer shadcn/ui components…<span class="cursor"></span></span>
+            <span class="pasted"
+              >&lt;!-- review-checklist.md --&gt; You are a senior frontend reviewer. Review the
+              current diff focusing on: component boundaries, hook deps, re-render cost,
+              accessibility… &lt;!-- css-conventions.md --&gt; Tailwind first; no new Bootstrap.
+              Prefer shadcn/ui components…<span class="cursor"></span
+            ></span>
             <span class="muted" style="font-size: 10.5px">[pasted text — press Enter to send]</span>
           </div>
         </div>
@@ -857,14 +909,18 @@ Tailwind first; no new Bootstrap. Prefer shadcn/ui components…<span class="cur
                     <input value="review-checklist.md" readonly />
                     <button class="btn-mini danger">remove</button>
                   </div>
-                  <textarea readonly>You are a senior frontend reviewer. Review the current diff focusing on: component boundaries, hook deps…</textarea>
+                  <textarea readonly>
+You are a senior frontend reviewer. Review the current diff focusing on: component boundaries, hook deps…</textarea
+                  >
                 </div>
                 <div class="file-block" style="margin-top: 8px">
                   <div class="file-block-head">
                     <input value="css-conventions.md" readonly />
                     <button class="btn-mini danger">remove</button>
                   </div>
-                  <textarea readonly>Tailwind first; no new Bootstrap. Prefer shadcn/ui components…</textarea>
+                  <textarea readonly>
+Tailwind first; no new Bootstrap. Prefer shadcn/ui components…</textarea
+                  >
                 </div>
                 <button class="btn-mini" style="margin-top: 8px">+ add file</button>
               </div>
@@ -885,9 +941,9 @@ Tailwind first; no new Bootstrap. Prefer shadcn/ui components…<span class="cur
     <p>
       <strong>F1</strong> tipos + compose + store + controller (con tests) ·
       <strong>F2</strong> modal lista/búsqueda/insert + botón en el panel ·
-      <strong>F3</strong> editor CRUD + delete con confirmación ·
-      <strong>F4</strong> polish (badge destino, toasts, ⌘N, empty states).
-      Detalle completo y contratos de código en <code>docs/agents-panel-plan.md</code>.
+      <strong>F3</strong> editor CRUD + delete con confirmación · <strong>F4</strong> polish (badge
+      destino, toasts, ⌘N, empty states). Detalle completo y contratos de código en
+      <code>docs/agents-panel-plan.md</code>.
     </p>
   </body>
 </html>
