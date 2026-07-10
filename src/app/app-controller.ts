@@ -28,6 +28,15 @@ import {
   mountAdversarialButton,
   type AdversarialButtonHandle,
 } from "../modules/agents-flow/adversarial-window";
+import {
+  mountAgentsButton,
+  type AgentsButtonHandle,
+} from "../modules/agents-library/agents-button";
+import {
+  createAgentsController,
+  type AgentsController,
+} from "../modules/agents-library/agents-controller";
+import { flushSaveAgents } from "../shared/persistence/agents-store";
 import { bootstrapWorkspaces, type WorkspacesBootstrapHandle } from "./workspaces-bootstrap";
 import { wireWindowLifecycle } from "./lifecycle";
 import { wireQuitConfirm } from "./quit-confirm";
@@ -42,6 +51,8 @@ export class AppController {
   private loopButton: LoopButtonHandle | null = null;
   private promptsButton: PromptsButtonHandle | null = null;
   private adversarialButton: AdversarialButtonHandle | null = null;
+  private agentsButton: AgentsButtonHandle | null = null;
+  private agentsController: AgentsController | null = null;
   private unwireShortcuts: (() => void) | null = null;
   private unwireWindowLifecycle: (() => void) | null = null;
   private unwireQuitConfirm: (() => void) | null = null;
@@ -75,6 +86,16 @@ export class AppController {
     this.loopButton = mountLoopButton();
     this.promptsButton = mountPromptsButton();
     this.adversarialButton = mountAdversarialButton();
+    // Eager boot — same pattern as workspaces/loop profiles — so the first
+    // /agents open never flashes an empty list while agents.json loads.
+    this.agentsController = await createAgentsController();
+    this.agentsButton = mountAgentsButton({
+      router: this.router,
+      controller: this.agentsController,
+      onAfterInsert: (target) => {
+        this.router.findPaneById(target.ptyId)?.manager.setFocus(target.ptyId, true);
+      },
+    });
     await this.wirePtyEvents();
     this.wireGutters();
     this.wirePanelToggles();
@@ -146,6 +167,17 @@ export class AppController {
     this.adversarialButton?.dispose();
     this.adversarialButton = null;
 
+    this.agentsButton?.dispose();
+    this.agentsButton = null;
+
+    const agentsController = this.agentsController;
+    this.agentsController = null;
+    if (agentsController) {
+      void agentsController.dispose().catch((error) => {
+        console.error("Failed to dispose agents controller", error);
+      });
+    }
+
     const workspaces = this.workspaces;
     this.workspaces = null;
     if (workspaces) {
@@ -180,6 +212,7 @@ export class AppController {
       workspaces.notesPanel.dispose();
       await workspaces.controller.dispose();
     }
+    await flushSaveAgents();
     await flushSave();
   }
 
