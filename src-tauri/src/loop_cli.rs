@@ -1002,8 +1002,7 @@ mod tests {
 
     #[test]
     fn extracts_codex_error_from_item_completed_error() {
-        let stdout =
-            r#"{"type":"item.completed","item":{"id":"item_0","type":"error","message":"Model metadata for `gpt-5` not found."}}"#;
+        let stdout = r#"{"type":"item.completed","item":{"id":"item_0","type":"error","message":"Model metadata for `gpt-5` not found."}}"#;
         let err = extract_codex_error(stdout).unwrap();
         assert_eq!(err, "Model metadata for `gpt-5` not found.");
     }

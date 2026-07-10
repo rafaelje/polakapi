@@ -509,7 +509,11 @@ fn parse_diff_git_path(block: &str) -> Option<String> {
     let b = b_path.strip_prefix("b/").unwrap_or(&b_path);
     // Deletions show `+++ /dev/null`; use the `a` side for those.
     let is_deletion = block.contains("\n+++ /dev/null");
-    Some(if is_deletion { a.to_string() } else { b.to_string() })
+    Some(if is_deletion {
+        a.to_string()
+    } else {
+        b.to_string()
+    })
 }
 
 fn split_ab(rest: &str) -> Option<(&str, &str)> {
@@ -586,30 +590,10 @@ fn is_generated_path(rel: &str) -> bool {
     ) || {
         // Suffix-based patterns.
         let suffix_hits = [
-            ".min.js",
-            ".min.css",
-            ".min.mjs",
-            ".min.map",
-            ".map",
-            ".snap",
+            ".min.js", ".min.css", ".min.mjs", ".min.map", ".map", ".snap",
             // Binary / vector assets.
-            ".png",
-            ".jpg",
-            ".jpeg",
-            ".gif",
-            ".ico",
-            ".webp",
-            ".avif",
-            ".bmp",
-            ".tiff",
-            ".pdf",
-            ".woff",
-            ".woff2",
-            ".ttf",
-            ".otf",
-            ".eot",
-            ".wasm",
-            ".parquet",
+            ".png", ".jpg", ".jpeg", ".gif", ".ico", ".webp", ".avif", ".bmp", ".tiff", ".pdf",
+            ".woff", ".woff2", ".ttf", ".otf", ".eot", ".wasm", ".parquet",
         ];
         suffix_hits.iter().any(|s| name_l.ends_with(s))
     }
@@ -635,15 +619,20 @@ fn apply_budgets(
     let mut files_truncated: Vec<String> = Vec::new();
 
     for (path, block) in blocks {
-        let should_exclude =
-            !path.is_empty() && is_generated_path(&path) && !path_explicitly_scoped(&path, scope_paths);
+        let should_exclude = !path.is_empty()
+            && is_generated_path(&path)
+            && !path_explicitly_scoped(&path, scope_paths);
         if should_exclude {
             files_excluded.push(path);
             continue;
         }
         if block.len() > max_file_bytes {
             let mut cut = truncate_at_line(&block, max_file_bytes);
-            let label = if path.is_empty() { "diff block" } else { path.as_str() };
+            let label = if path.is_empty() {
+                "diff block"
+            } else {
+                path.as_str()
+            };
             cut.push_str(&format!(
                 "\n# ---\n# {label}: truncated at {max_file_bytes} bytes (original size: {} bytes)\n",
                 block.len()
@@ -792,11 +781,11 @@ mod tests {
         assert!(normalize_scope_paths(tmp.path(), &["/etc/passwd".to_string()]).is_err());
         assert!(normalize_scope_paths(tmp.path(), &["app/../../etc".to_string()]).is_err());
         // Windows-style drive-letter absolutes must be caught in both forms.
-        let err_bs = normalize_scope_paths(tmp.path(), &["C:\\Windows\\System32".to_string()])
-            .unwrap_err();
+        let err_bs =
+            normalize_scope_paths(tmp.path(), &["C:\\Windows\\System32".to_string()]).unwrap_err();
         assert!(err_bs.contains("must be relative"), "got: {err_bs}");
-        let err_fs = normalize_scope_paths(tmp.path(), &["C:/Windows/System32".to_string()])
-            .unwrap_err();
+        let err_fs =
+            normalize_scope_paths(tmp.path(), &["C:/Windows/System32".to_string()]).unwrap_err();
         assert!(err_fs.contains("must be relative"), "got: {err_fs}");
     }
 
@@ -841,14 +830,20 @@ mod tests {
             "diff --git a/{path} b/{path}\nindex aaa..bbb 100644\n--- a/{path}\n+++ b/{path}\n@@ -1,{body_lines} +1,{body_lines} @@\n",
         );
         for i in 0..body_lines {
-            s.push_str(&format!("+line {i} — padding padding padding padding padding\n"));
+            s.push_str(&format!(
+                "+line {i} — padding padding padding padding padding\n"
+            ));
         }
         s
     }
 
     #[test]
     fn splits_diff_by_file_header() {
-        let d = format!("{}{}", make_file_block("src/a.ts", 2), make_file_block("src/b.ts", 3));
+        let d = format!(
+            "{}{}",
+            make_file_block("src/a.ts", 2),
+            make_file_block("src/b.ts", 3)
+        );
         let parts = split_diff_by_file(&d);
         assert_eq!(parts.len(), 2);
         assert_eq!(parts[0].0, "src/a.ts");
@@ -886,7 +881,9 @@ mod tests {
 
         assert!(!is_generated_path("src/foo.ts"));
         assert!(!is_generated_path("app/Http/Controller.php"));
-        assert!(!is_generated_path("database/migrations/2026_01_01_add_x.php"));
+        assert!(!is_generated_path(
+            "database/migrations/2026_01_01_add_x.php"
+        ));
     }
 
     #[test]
@@ -915,7 +912,10 @@ mod tests {
 
         let out = apply_budgets(&diff, &scope, 100_000, 100_000);
 
-        assert!(out.files_excluded.is_empty(), "explicit scope must override the noise filter");
+        assert!(
+            out.files_excluded.is_empty(),
+            "explicit scope must override the noise filter"
+        );
         assert!(out.diff.contains("yarn.lock"));
     }
 
