@@ -1,10 +1,12 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod adv_review;
 pub mod capture;
 mod commands;
 pub mod db;
 mod fs;
+mod git_review;
 mod loop_cli;
 mod loop_prompts;
 mod open;
@@ -14,15 +16,21 @@ use std::sync::{Arc, Mutex};
 use tauri::Manager;
 
 use crate::db::Db;
+use crate::open::ShellRegistry;
 
+use crate::adv_review::{
+    adv_create_run, adv_ensure_run_prompt, adv_read_run_file, adv_read_run_prompt,
+    adv_read_state_file, adv_write_run_file, adv_write_run_prompt, adv_write_state_file,
+};
 use crate::commands::{
-    app_exit, fs_validate_path, open_file_in_editor, open_in_editor, open_in_explorer, pty_kill,
-    pty_resize, pty_spawn, pty_write,
+    app_exit, fs_validate_path, open_file_in_editor, open_in_editor, open_in_explorer,
+    open_in_shell, pty_kill, pty_resize, pty_spawn, pty_write,
 };
 use crate::db::{
     prompt_delete_sessions, prompt_get, prompt_install_hooks, prompt_list_by_session,
     prompt_list_sessions, prompt_search,
 };
+use crate::git_review::{git_branch_diff, git_detect_base_ref};
 use crate::loop_cli::run_loop_agent;
 use crate::loop_prompts::{
     loop_archive_run, loop_create_phase_dir, loop_create_run, loop_delete_phase_dir,
@@ -82,6 +90,7 @@ pub fn run() {
             let store = store.clone();
             move |app| {
                 app.manage(store);
+                app.manage(ShellRegistry::default());
                 // Open the prompts history DB at <app_config_dir>/polakapi.db
                 // and register it as `State<Mutex<Db>>` for the read commands.
                 // If opening fails we still boot the app — the read commands
@@ -123,6 +132,7 @@ pub fn run() {
             fs_validate_path,
             open_in_explorer,
             open_in_editor,
+            open_in_shell,
             open_file_in_editor,
             run_loop_agent,
             loop_ensure_prompts_dir,
@@ -158,7 +168,17 @@ pub fn run() {
             prompt_get,
             prompt_search,
             prompt_delete_sessions,
-            prompt_install_hooks
+            prompt_install_hooks,
+            git_detect_base_ref,
+            git_branch_diff,
+            adv_create_run,
+            adv_read_run_file,
+            adv_write_run_file,
+            adv_read_state_file,
+            adv_write_state_file,
+            adv_ensure_run_prompt,
+            adv_read_run_prompt,
+            adv_write_run_prompt
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

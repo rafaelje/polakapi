@@ -86,6 +86,7 @@ export interface SchedulerInvokers {
     cli: string;
     model: string;
     cwd: string;
+    runId: string;
     systemPromptPath: string | null;
     userInput: string;
     timeoutSecs: number;

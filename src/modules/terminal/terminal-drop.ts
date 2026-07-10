@@ -201,6 +201,16 @@ function readDroppedText(dt: DataTransfer): string {
     if (urls.length > 0) return `${urls.join(" ")} `;
   }
   const plain = dt.getData("text/plain") || dt.getData("text");
-  if (plain) return plain;
+  if (plain) return formatPlainTextForShell(plain);
   return "";
+}
+
+function formatPlainTextForShell(text: string): string {
+  const flattened = text
+    .replace(/\0/g, "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .join(" ");
+  return flattened ? `${flattened} ` : "";
 }

@@ -90,9 +90,9 @@ export function defaultModelFor(cli: LoopCli): string {
     case "claude":
       return "claude-opus-4-7";
     case "codex":
-      return "gpt-5";
+      return "gpt-5.5";
     case "opencode":
-      return "anthropic/claude-sonnet-4-5";
+      return "opencode-go/glm-5.2";
   }
 }
 

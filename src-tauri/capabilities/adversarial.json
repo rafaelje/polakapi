@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "adversarial-review",
+  "description": "Capability for the floating /adversarial review popup window. Lists plugin permissions for store/dialog/notification; custom commands such as git_detect_base_ref, git_branch_diff, adv_* helpers and run_loop_agent reach this window via the global invoke_handler registration in lib.rs (matching the pattern used by the main window's default capability).",
+  "windows": ["adversarial-review"],
+  "permissions": ["core:default", "store:default", "dialog:default", "notification:default"]
+}

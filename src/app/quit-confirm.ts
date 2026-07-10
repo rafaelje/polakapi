@@ -13,6 +13,7 @@ export interface QuitConfirmOptions {
   router: TerminalRouter;
   /** Resolves the live workspaces snapshot for the project-name lookup. */
   getState: () => WorkspacesState;
+  beforeQuit?: () => Promise<void>;
 }
 
 /**
@@ -28,7 +29,7 @@ export interface QuitConfirmOptions {
  *     still fires after a Tauri `destroy()`.
  */
 export function wireQuitConfirm(opts: QuitConfirmOptions): () => void {
-  const { router, getState } = opts;
+  const { router, getState, beforeQuit } = opts;
   let closing = false;
   let unlistenClose: (() => void) | null = null;
   const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
@@ -67,6 +68,11 @@ export function wireQuitConfirm(opts: QuitConfirmOptions): () => void {
       const ok = await askToQuit();
       if (!ok) return;
       closing = true;
+      try {
+        await beforeQuit?.();
+      } catch (error) {
+        console.error("Failed to flush app state before quit", error);
+      }
       void router.disposeAll().catch((error) => {
         console.error("Failed to dispose terminals before quit", error);
       });

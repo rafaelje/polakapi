@@ -1,0 +1,638 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>/adversarial review · arquitectura</title>
+    <style>
+      :root {
+        --bg: #0f1115;
+        --bg-2: #161922;
+        --bg-3: #1d2230;
+        --border: #2a3041;
+        --border-hi: #3a4358;
+        --text: #e6e8ee;
+        --muted: #8a93a6;
+        --accent: #7aa2ff;
+        --accent-2: #b48cff;
+        --ok: #6fcf97;
+        --warn: #f2c94c;
+        --danger: #eb5757;
+        --code-bg: #0b0d12;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font:
+          14px/1.55 ui-sans-serif,
+          system-ui,
+          -apple-system,
+          sans-serif;
+      }
+      body {
+        padding: 32px 28px 80px;
+        max-width: 1180px;
+        margin: 0 auto;
+      }
+      h1 {
+        font-size: 22px;
+        margin: 0 0 4px;
+        letter-spacing: -0.01em;
+      }
+      h2 {
+        font-size: 17px;
+        margin: 36px 0 12px;
+        padding-top: 18px;
+        border-top: 1px solid var(--border);
+        letter-spacing: -0.01em;
+      }
+      p.lead {
+        color: var(--muted);
+        margin: 0 0 24px;
+        max-width: 860px;
+      }
+      p {
+        max-width: 860px;
+      }
+      .muted {
+        color: var(--muted);
+      }
+      figure {
+        margin: 16px 0 8px;
+        background: var(--bg-2);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 18px;
+        overflow-x: auto;
+      }
+      figure svg {
+        display: block;
+        min-width: 900px;
+        width: 100%;
+        height: auto;
+      }
+      figcaption {
+        color: var(--muted);
+        font-size: 12.5px;
+        margin-top: 10px;
+      }
+      code {
+        background: var(--code-bg);
+        border: 1px solid var(--border);
+        border-radius: 5px;
+        padding: 1px 5px;
+        font:
+          12.5px/1.5 ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          monospace;
+      }
+      pre {
+        background: var(--code-bg);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 14px 16px;
+        overflow-x: auto;
+        font:
+          12.5px/1.6 ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          monospace;
+        max-width: 860px;
+      }
+      .legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 14px;
+        margin: 10px 0 0;
+        font-size: 12.5px;
+        color: var(--muted);
+      }
+      .legend span::before {
+        content: "";
+        display: inline-block;
+        width: 10px;
+        height: 10px;
+        border-radius: 3px;
+        margin-right: 6px;
+        vertical-align: -1px;
+        background: var(--chip, var(--border));
+      }
+    </style>
+  </head>
+  <body>
+    <h1>/adversarial review · arquitectura</h1>
+    <p class="lead">
+      Revisión adversarial multi-ronda entre dos slots CLI×modelo×effort independientes (<em
+        >critic</em
+      >
+      y <em>defender</em>) sobre el diff de la rama actual contra su base (estilo PR). El matchup es
+      libre: claude vs claude, claude vs codex, codex vs opencode… — cada lado con su propio modelo
+      y effort. Solo produce un reporte — ningún agente toca el working tree. Complementa el plan
+      detallado en <code>docs/adversarial-review-plan.md</code>.
+    </p>
+
+    <h2>1 · Vista por capas</h2>
+    <figure>
+      <svg
+        viewBox="0 0 1120 742"
+        xmlns="http://www.w3.org/2000/svg"
+        role="img"
+        aria-label="Diagrama de arquitectura por capas del feature adversarial review"
+      >
+        <defs>
+          <marker
+            id="arr"
+            viewBox="0 0 10 10"
+            refX="9"
+            refY="5"
+            markerWidth="7"
+            markerHeight="7"
+            orient="auto-start-reverse"
+          >
+            <path d="M0 0 L10 5 L0 10 z" fill="#8a93a6" />
+          </marker>
+          <marker
+            id="arrA"
+            viewBox="0 0 10 10"
+            refX="9"
+            refY="5"
+            markerWidth="7"
+            markerHeight="7"
+            orient="auto-start-reverse"
+          >
+            <path d="M0 0 L10 5 L0 10 z" fill="#7aa2ff" />
+          </marker>
+        </defs>
+        <style>
+          .box {
+            fill: #1d2230;
+            stroke: #3a4358;
+            rx: 8;
+          }
+          .zone {
+            fill: #161922;
+            stroke: #2a3041;
+          }
+          .t {
+            fill: #e6e8ee;
+            font:
+              12px ui-sans-serif,
+              system-ui,
+              sans-serif;
+          }
+          .ts {
+            fill: #e6e8ee;
+            font:
+              11px ui-sans-serif,
+              system-ui,
+              sans-serif;
+          }
+          .tm {
+            fill: #8a93a6;
+            font:
+              11px ui-sans-serif,
+              system-ui,
+              sans-serif;
+          }
+          .tt {
+            fill: #8a93a6;
+            font:
+              600 10px ui-sans-serif,
+              system-ui,
+              sans-serif;
+            letter-spacing: 0.08em;
+          }
+          .mono {
+            font-family: ui-monospace, Menlo, monospace;
+          }
+          .edge {
+            stroke: #8a93a6;
+            stroke-width: 1.2;
+            fill: none;
+            marker-end: url(#arr);
+          }
+          .edgeA {
+            stroke: #7aa2ff;
+            stroke-width: 1.4;
+            fill: none;
+            marker-end: url(#arrA);
+          }
+        </style>
+
+        <!-- ── main window ─────────────────────────────────────────── -->
+        <rect class="zone" x="270" y="14" width="580" height="88" rx="10" />
+        <text class="tt" x="286" y="34">VENTANA PRINCIPAL · index.html</text>
+        <rect x="286" y="44" width="548" height="44" rx="7" fill="#0b0d12" stroke="#2a3041" />
+        <text class="tm" x="300" y="70">agents flow</text>
+        <rect x="390" y="52" width="66" height="28" rx="6" fill="#1d2230" stroke="#3a4358" />
+        <text class="ts mono" x="404" y="70">/loop</text>
+        <rect x="466" y="52" width="88" height="28" rx="6" fill="#1d2230" stroke="#3a4358" />
+        <text class="ts mono" x="479" y="70">/prompts</text>
+        <rect x="564" y="52" width="176" height="28" rx="6" fill="#1d2230" stroke="#7aa2ff" />
+        <text class="ts mono" x="578" y="70" fill="#7aa2ff">/adversarial review</text>
+
+        <path class="edgeA" d="M652 88 L652 136" />
+        <text class="tm mono" x="664" y="118">
+          new WebviewWindow("adversarial-review", { url: "adversarial.html" })
+        </text>
+
+        <!-- ── adversarial window (frontend) ────────────────────────── -->
+        <rect class="zone" x="56" y="140" width="1008" height="308" rx="12" />
+        <text class="tt" x="72" y="162">
+          VENTANA /ADVERSARIAL REVIEW · src/modules/adversarial/
+        </text>
+
+        <rect class="box" x="86" y="176" width="290" height="64" rx="8" />
+        <text class="t" x="100" y="197">Step 1 · setup</text>
+        <text class="tm" x="100" y="213">base ref · rondas · matchup libre de slots:</text>
+        <text class="tm mono" x="100" y="229">CLI×modelo×effort por lado, repetibles</text>
+
+        <rect class="box" x="416" y="176" width="290" height="64" rx="8" />
+        <text class="t" x="430" y="197">Step 2 · run (live)</text>
+        <text class="tm" x="430" y="213">timeline de pases · tokens/costo · abort</text>
+
+        <rect class="box" x="746" y="176" width="290" height="64" rx="8" />
+        <text class="t" x="760" y="197">Step 3 · report</text>
+        <text class="tm" x="760" y="213">hallazgos + veredicto · abrir en editor</text>
+
+        <path class="edge" d="M376 204 L410 204" />
+        <path class="edge" d="M706 204 L740 204" />
+
+        <!-- core puro -->
+        <rect
+          x="86"
+          y="252"
+          width="646"
+          height="176"
+          rx="10"
+          fill="none"
+          stroke="#3a4358"
+          stroke-dasharray="5 4"
+        />
+        <text class="tt" x="100" y="272">CORE (PURO · SIN TAURI · TESTEABLE)</text>
+
+        <rect class="box" x="104" y="284" width="142" height="46" rx="7" />
+        <text class="ts mono" x="116" y="303">findings.ts</text>
+        <text class="tm" x="116" y="318">reducer del ledger</text>
+
+        <rect class="box" x="262" y="284" width="132" height="46" rx="7" />
+        <text class="ts mono" x="274" y="303">parse.ts</text>
+        <text class="tm" x="274" y="318">JSON fenced</text>
+
+        <rect class="box" x="410" y="284" width="150" height="46" rx="7" />
+        <text class="ts mono" x="422" y="303">debate-input.ts</text>
+        <text class="tm" x="422" y="318">input por pase</text>
+
+        <rect class="box" x="576" y="284" width="132" height="46" rx="7" />
+        <text class="ts mono" x="588" y="303">report.ts</text>
+        <text class="tm" x="588" y="318">render report.md</text>
+
+        <rect class="box" x="104" y="352" width="604" height="56" rx="7" />
+        <text class="ts mono" x="118" y="373">core/scheduler · debate-scheduler.ts</text>
+        <text class="tm" x="118" y="389">
+          loop de rondas · retries · store.ts · persistence.ts (resume desde state.json)
+        </text>
+
+        <!-- invokers -->
+        <rect class="box" x="762" y="300" width="274" height="108" rx="8" />
+        <text class="ts mono" x="776" y="322">scheduler/invokers.ts</text>
+        <text class="tm" x="776" y="340">bindings a Tauri invoke():</text>
+        <text class="tm mono" x="776" y="357">run_loop_agent (+effort)</text>
+        <text class="tm mono" x="776" y="372">git_detect_base_ref · git_branch_diff</text>
+        <text class="tm mono" x="776" y="387">adv_read/write_run_file · state</text>
+        <text class="tm mono" x="776" y="402">adv_ensure_run_prompt</text>
+
+        <path class="edge" d="M708 380 L756 380" />
+
+        <!-- ── IPC boundary ─────────────────────────────────────────── -->
+        <line
+          x1="56"
+          y1="474"
+          x2="1064"
+          y2="474"
+          stroke="#3a4358"
+          stroke-width="1.4"
+          stroke-dasharray="8 6"
+        />
+        <text class="tt" x="56" y="466">FRONTEND (WEBVIEW)</text>
+        <text class="tt" x="948" y="466">TAURI IPC · invoke()</text>
+        <text class="tt" x="56" y="496">BACKEND (RUST · src-tauri/src/)</text>
+
+        <path class="edgeA" d="M830 408 L830 474 L186 474 L186 502" opacity="0.55" />
+        <path class="edgeA" d="M860 408 L860 502" opacity="0.55" />
+        <path class="edgeA" d="M890 408 L890 474 L700 474 L700 502" opacity="0.55" />
+        <path class="edgeA" d="M920 408 L920 474 L942 474 L942 502" opacity="0.55" />
+
+        <!-- ── rust commands ────────────────────────────────────────── -->
+        <rect class="box" x="70" y="506" width="232" height="92" rx="8" />
+        <text class="ts mono" x="84" y="528">git_review.rs (nuevo)</text>
+        <text class="tm mono" x="84" y="546">git_detect_base_ref</text>
+        <text class="tm mono" x="84" y="561">git_branch_diff</text>
+        <text class="tm" x="84" y="578">merge-base…HEAD + --stat</text>
+
+        <rect class="box" x="322" y="506" width="250" height="92" rx="8" />
+        <text class="ts mono" x="336" y="528">loop_cli.rs (extendido)</text>
+        <text class="tm mono" x="336" y="546">run_loop_agent + effort?</text>
+        <text class="tm" x="336" y="561">codex: -c model_reasoning_effort</text>
+        <text class="tm" x="336" y="578">claude: spike M1 · opencode: n/a</text>
+
+        <rect class="box" x="592" y="506" width="218" height="92" rx="8" />
+        <text class="ts mono" x="606" y="528">loop_prompts.rs</text>
+        <text class="tm mono" x="606" y="546">PROMPT_NAMES: 7 → 9</text>
+        <text class="tm mono" x="606" y="561">adversarial-critic.md</text>
+        <text class="tm mono" x="606" y="576">adversarial-defender.md</text>
+
+        <rect class="box" x="830" y="506" width="224" height="92" rx="8" />
+        <text class="ts mono" x="844" y="528">adv_* storage (nuevo)</text>
+        <text class="tm" x="844" y="546">read/write run files · state</text>
+        <text class="tm" x="844" y="561">escritura atómica (helpers</text>
+        <text class="tm" x="844" y="576">compartidos con /loop)</text>
+
+        <!-- ── externals ────────────────────────────────────────────── -->
+        <path class="edge" d="M186 598 L186 638" />
+        <path class="edge" d="M447 598 L447 638" />
+        <path class="edge" d="M701 598 L701 638" />
+        <path class="edge" d="M942 598 L942 638" />
+
+        <rect class="box" x="70" y="642" width="232" height="72" rx="8" fill="#161922" />
+        <text class="ts" x="84" y="664">repo git del proyecto</text>
+        <text class="tm" x="84" y="681">rama actual vs base</text>
+        <text class="tm" x="84" y="696">(solo lectura)</text>
+
+        <rect class="box" x="322" y="642" width="250" height="72" rx="8" fill="#161922" />
+        <text class="ts" x="336" y="664">procesos CLI one-shot</text>
+        <text class="tm mono" x="336" y="681">claude · codex · opencode</text>
+        <text class="tm" x="336" y="696">log en polakapi-loop-cli.log</text>
+
+        <rect class="box" x="592" y="642" width="218" height="72" rx="8" fill="#161922" />
+        <text class="ts" x="606" y="664">prompts globales</text>
+        <text class="tm mono" x="606" y="681">&lt;app-config&gt;/prompts/</text>
+        <text class="tm" x="606" y="696">editables desde /prompts</text>
+
+        <rect class="box" x="830" y="642" width="224" height="72" rx="8" fill="#161922" />
+        <text class="ts" x="844" y="664">artefactos del run</text>
+        <text class="tm mono" x="844" y="681">.adversarial/runs/&lt;runId&gt;/</text>
+        <text class="tm" x="844" y="696">diff · pases · ledger · report</text>
+      </svg>
+      <figcaption>
+        El frontend nuevo vive en <code>src/modules/adversarial/</code> espejando la estructura de
+        <code>loop/</code>; todo el core del debate es puro (sin Tauri) para poder testearlo con
+        Vitest. Solo <code>invokers.ts</code> cruza el límite IPC. En Rust se reutilizan
+        <code>loop_cli.rs</code> y <code>loop_prompts.rs</code>; lo único nuevo son los comandos git
+        de diff contra base y el storage <code>adv_*</code>.
+      </figcaption>
+    </figure>
+    <div class="legend">
+      <span style="--chip: #7aa2ff">flujo de invocación (IPC)</span>
+      <span style="--chip: #8a93a6">flujo interno / efectos</span>
+      <span style="--chip: #1d2230">módulo</span>
+      <span style="--chip: #161922">recurso externo</span>
+    </div>
+
+    <h2>2 · Protocolo de debate y ciclo de vida de un hallazgo</h2>
+    <figure>
+      <svg
+        viewBox="0 0 1120 584"
+        xmlns="http://www.w3.org/2000/svg"
+        role="img"
+        aria-label="Secuencia de pases del debate y máquina de estados de un hallazgo"
+      >
+        <defs>
+          <marker
+            id="arr2"
+            viewBox="0 0 10 10"
+            refX="9"
+            refY="5"
+            markerWidth="7"
+            markerHeight="7"
+            orient="auto-start-reverse"
+          >
+            <path d="M0 0 L10 5 L0 10 z" fill="#8a93a6" />
+          </marker>
+          <marker
+            id="arrOk"
+            viewBox="0 0 10 10"
+            refX="9"
+            refY="5"
+            markerWidth="7"
+            markerHeight="7"
+            orient="auto-start-reverse"
+          >
+            <path d="M0 0 L10 5 L0 10 z" fill="#6fcf97" />
+          </marker>
+          <marker
+            id="arrWarn"
+            viewBox="0 0 10 10"
+            refX="9"
+            refY="5"
+            markerWidth="7"
+            markerHeight="7"
+            orient="auto-start-reverse"
+          >
+            <path d="M0 0 L10 5 L0 10 z" fill="#f2c94c" />
+          </marker>
+        </defs>
+        <style>
+          .t2 {
+            fill: #e6e8ee;
+            font:
+              12px ui-sans-serif,
+              system-ui,
+              sans-serif;
+          }
+          .ts2 {
+            fill: #e6e8ee;
+            font:
+              11px ui-sans-serif,
+              system-ui,
+              sans-serif;
+          }
+          .tm2 {
+            fill: #8a93a6;
+            font:
+              11px ui-sans-serif,
+              system-ui,
+              sans-serif;
+          }
+          .tt2 {
+            fill: #8a93a6;
+            font:
+              600 10px ui-sans-serif,
+              system-ui,
+              sans-serif;
+            letter-spacing: 0.08em;
+          }
+          .mono2 {
+            font-family: ui-monospace, Menlo, monospace;
+          }
+          .e2 {
+            stroke: #8a93a6;
+            stroke-width: 1.2;
+            fill: none;
+            marker-end: url(#arr2);
+          }
+        </style>
+
+        <!-- ── sequence of passes ───────────────────────────────────── -->
+        <rect x="30" y="44" width="140" height="64" rx="8" fill="#161922" stroke="#3a4358" />
+        <text class="ts2 mono2" x="44" y="70">diff.patch</text>
+        <text class="tm2" x="44" y="88">rama vs merge-base</text>
+
+        <rect x="210" y="36" width="196" height="80" rx="8" fill="#1d2230" stroke="#7aa2ff" />
+        <text class="t2" x="224" y="58" fill="#7aa2ff">R1 · critic</text>
+        <text class="tm2" x="224" y="76">encuentra F1…Fn</text>
+        <text class="tm2" x="224" y="91">único pase que puede</text>
+        <text class="tm2" x="224" y="105">crear hallazgos nuevos</text>
+
+        <rect x="446" y="36" width="196" height="80" rx="8" fill="#1d2230" stroke="#b48cff" />
+        <text class="t2" x="460" y="58" fill="#b48cff">R1 · defender</text>
+        <text class="tm2" x="460" y="76">por cada hallazgo:</text>
+        <text class="tm2 mono2" x="460" y="92">refute · concede · dispute</text>
+
+        <rect x="682" y="36" width="196" height="80" rx="8" fill="#1d2230" stroke="#7aa2ff" />
+        <text class="t2" x="696" y="58" fill="#7aa2ff">R2 · critic</text>
+        <text class="tm2" x="696" y="76">réplica:</text>
+        <text class="tm2 mono2" x="696" y="92">maintain · withdraw</text>
+
+        <rect x="918" y="36" width="180" height="80" rx="8" fill="#1d2230" stroke="#b48cff" />
+        <text class="t2" x="932" y="58" fill="#b48cff">R2 · defender</text>
+        <text class="tm2" x="932" y="76">última refutación</text>
+        <text class="tm2" x="932" y="92">(rondas: 1–3, default 2)</text>
+
+        <path class="e2" d="M170 76 L204 76" />
+        <path class="e2" d="M406 76 L440 76" />
+        <path class="e2" d="M642 76 L676 76" />
+        <path class="e2" d="M878 76 L912 76" />
+
+        <!-- ledger -->
+        <rect x="306" y="176" width="430" height="64" rx="8" fill="#1d2230" stroke="#3a4358" />
+        <text class="ts2 mono2" x="322" y="200">findings.json · ledger</text>
+        <text class="tm2" x="322" y="218">
+          reducer puro tras cada pase — fuente de verdad del reporte
+        </text>
+
+        <path class="e2" d="M308 116 L400 170" />
+        <path class="e2" d="M544 116 L500 170" />
+        <path class="e2" d="M780 116 L620 170" />
+        <path class="e2" d="M1008 116 L720 172" />
+
+        <rect x="836" y="176" width="262" height="64" rx="8" fill="#1d2230" stroke="#6fcf97" />
+        <text class="ts2 mono2" x="852" y="196">report.md + veredicto</text>
+        <text class="tm2" x="852" y="212">render determinista en TS (sin LLM)</text>
+        <text class="tm2" x="852" y="228">bloquea: confirmed ≥ umbral (def. major)</text>
+        <path
+          d="M736 208 L830 208"
+          stroke="#6fcf97"
+          stroke-width="1.4"
+          fill="none"
+          marker-end="url(#arrOk)"
+        />
+
+        <!-- ── finding state machine ────────────────────────────────── -->
+        <text class="tt2" x="30" y="308">MÁQUINA DE ESTADOS DE UN HALLAZGO (core/findings.ts)</text>
+
+        <rect x="30" y="380" width="120" height="42" rx="8" fill="#1d2230" stroke="#3a4358" />
+        <text class="ts2 mono2" x="58" y="406">open</text>
+
+        <rect x="320" y="380" width="150" height="42" rx="8" fill="#1d2230" stroke="#3a4358" />
+        <text class="ts2 mono2" x="352" y="406">challenged</text>
+
+        <rect x="640" y="380" width="140" height="42" rx="8" fill="#1d2230" stroke="#3a4358" />
+        <text class="ts2 mono2" x="670" y="406">contested</text>
+
+        <rect x="950" y="380" width="140" height="42" rx="8" fill="#1d2230" stroke="#f2c94c" />
+        <text class="ts2 mono2" x="982" y="406" fill="#f2c94c">disputed</text>
+
+        <rect x="320" y="500" width="150" height="42" rx="8" fill="#1d2230" stroke="#6fcf97" />
+        <text class="ts2 mono2" x="350" y="526" fill="#6fcf97">confirmed</text>
+
+        <rect x="640" y="500" width="140" height="42" rx="8" fill="#1d2230" stroke="#2a3041" />
+        <text class="ts2 mono2" x="666" y="526" fill="#8a93a6">withdrawn</text>
+
+        <!-- edges -->
+        <path class="e2" d="M150 401 L314 401" />
+        <text class="tm2 mono2" x="168" y="392">defender: refute</text>
+
+        <path
+          d="M120 422 C 180 480, 240 512, 314 521"
+          stroke="#6fcf97"
+          stroke-width="1.2"
+          fill="none"
+          marker-end="url(#arrOk)"
+        />
+        <text class="tm2 mono2" x="130" y="474" fill="#6fcf97">defender: concede</text>
+
+        <path class="e2" d="M470 401 L634 401" />
+        <text class="tm2 mono2" x="486" y="392">critic: maintain</text>
+
+        <path class="e2" d="M456 422 L640 512" />
+        <text class="tm2 mono2" x="472" y="452">critic: withdraw</text>
+
+        <path
+          d="M680 380 C 620 330, 480 330, 420 378"
+          stroke="#8a93a6"
+          stroke-width="1.2"
+          fill="none"
+          marker-end="url(#arr2)"
+        />
+        <text class="tm2" x="470" y="340">siguiente pase del defender</text>
+
+        <path
+          d="M780 401 L944 401"
+          stroke="#f2c94c"
+          stroke-width="1.2"
+          fill="none"
+          marker-end="url(#arrWarn)"
+        />
+        <text class="tm2" x="798" y="392" fill="#f2c94c">rondas agotadas</text>
+
+        <!-- terminal note -->
+        <text class="tm2" x="30" y="566">
+          Estados terminales: confirmed y withdrawn salen del debate de inmediato; disputed se
+          reporta con los argumentos finales de ambos lados.
+        </text>
+      </svg>
+      <figcaption>
+        Cada pase termina en un bloque JSON fenced que el parser valida (un retry automático de
+        formato); el reducer aplica las acciones al ledger. Los hallazgos nuevos solo se admiten en
+        el primer pase del critic, y <code>confirmed</code>/<code>withdrawn</code> abandonan el
+        debate — las dos reglas que garantizan convergencia.
+      </figcaption>
+    </figure>
+    <div class="legend">
+      <span style="--chip: #7aa2ff">critic (slot A)</span>
+      <span style="--chip: #b48cff">defender (slot B)</span>
+      <span style="--chip: #6fcf97">salida aprobatoria / determinista</span>
+      <span style="--chip: #f2c94c">disputado (se reporta, no bloquea)</span>
+    </div>
+
+    <h2>3 · Artefactos por run</h2>
+    <p class="muted">
+      Todo run deja un rastro reproducible bajo el proyecto revisado; <code>state.json</code> + la
+      regla «pase comprometido ⇔ existe <code>round-N-role.md</code> y su paso en el ledger»
+      habilitan el resume, igual que el invariante md+diff de /loop.
+    </p>
+    <pre>
+.adversarial/runs/&lt;runId&gt;/
+  prompts/adversarial-critic.md     # copia por-run, sembrada lazy desde el global
+  prompts/adversarial-defender.md
+  diff.patch                        # diff de entrada congelado (reporte reproducible)
+  round-1-critic.md                 # salida cruda de cada pase
+  round-1-defender.md
+  round-2-critic.md …
+  findings.json                     # ledger tras cada paso del reducer
+  state.json                        # estado del scheduler (resume)
+  report.md                         # reporte final determinista</pre
+    >
+
+    <p class="muted" style="margin-top: 28px">
+      Plan detallado, milestones y riesgos: <code>docs/adversarial-review-plan.md</code>.
+    </p>
+  </body>
+</html>

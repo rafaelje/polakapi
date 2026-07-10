@@ -102,6 +102,7 @@ export class IntegratorRunner {
         cli: slot.cli,
         model: slot.model,
         cwd: settings.projectPath,
+        runId: settings.runId,
         systemPromptPath,
         userInput,
         timeoutSecs: settings.agentTimeoutSecs,

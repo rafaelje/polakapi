@@ -61,6 +61,7 @@ export function confirmModal(opts: ConfirmDialogOptions): Promise<boolean> {
         cleanup(false);
       } else if (e.key === "Enter") {
         e.preventDefault();
+        if (opts.danger) return;
         cleanup(true);
       }
     };
@@ -74,7 +75,7 @@ export function confirmModal(opts: ConfirmDialogOptions): Promise<boolean> {
 
     requestAnimationFrame(() => {
       backdrop.classList.add("visible");
-      confirmBtn.focus();
+      (opts.danger ? cancelBtn : confirmBtn).focus();
     });
   });
 }

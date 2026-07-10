@@ -174,6 +174,7 @@ export class PhaseRunner {
       cli: slot.cli,
       model: slot.model,
       cwd: settings.projectPath,
+      runId: settings.runId,
       systemPromptPath,
       userInput,
       timeoutSecs: settings.agentTimeoutSecs,
@@ -273,6 +274,7 @@ export class PhaseRunner {
     cli: string;
     model: string;
     cwd: string;
+    runId: string;
     systemPromptPath: string;
     userInput: string;
     timeoutSecs: number;

@@ -230,6 +230,7 @@ export function mountStep1Chat(slot: HTMLElement, ctx: Step1Context): Step1Handl
         // configured later in step 3 setup.
         model: defaultModelFor(state.cli),
         cwd: ctx.projectPath,
+        runId: ctx.runId,
         systemPromptPath,
         userInput: prompt,
         timeoutSecs: 180,
@@ -300,6 +301,7 @@ export function mountStep1Chat(slot: HTMLElement, ctx: Step1Context): Step1Handl
         cli: state.cli,
         model: defaultModelFor(state.cli),
         cwd: ctx.projectPath,
+        runId: ctx.runId,
         systemPromptPath,
         userInput: prompt,
         timeoutSecs: 180,

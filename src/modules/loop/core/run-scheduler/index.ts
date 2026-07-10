@@ -151,6 +151,10 @@ export class RunScheduler {
   }
 
   async start(): Promise<void> {
+    if (this.cycle) {
+      await this.cycle;
+      return;
+    }
     const state = this.store.getState();
     if (state.status === "running") return;
     // From a terminal state, a fresh attempt must call initialize() first —
@@ -169,14 +173,19 @@ export class RunScheduler {
     this.pauseRequested = false;
     this.abortRequested = false;
     this.store.commit({ ...state, status: "running", message: null });
-    this.cycle = this.runCycle().catch((err: unknown) => {
-      this.store.commit({
-        ...this.store.getState(),
-        status: "error",
-        message: `unexpected error: ${stringifyError(err)}`,
+    const cycle = this.runCycle()
+      .catch((err: unknown) => {
+        this.store.commit({
+          ...this.store.getState(),
+          status: "error",
+          message: `unexpected error: ${stringifyError(err)}`,
+        });
+      })
+      .finally(() => {
+        if (this.cycle === cycle) this.cycle = null;
       });
-    });
-    await this.cycle;
+    this.cycle = cycle;
+    await cycle;
   }
 
   pause(): void {

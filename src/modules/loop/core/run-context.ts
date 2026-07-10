@@ -123,7 +123,8 @@ export class LoopRouter {
   // phases/state.
   adoptRunId(runId: string, step: LoopStep = 1): void {
     if (this.state.status !== "active") return;
-    if (!runId || runId === this.currentRunId) return;
+    if (!runId) return;
+    if (runId === this.currentRunId && step === this.currentStep) return;
     this.currentRunId = runId;
     this.currentStep = step;
     this.commit({

@@ -24,6 +24,10 @@ import {
   mountPromptsButton,
   type PromptsButtonHandle,
 } from "../modules/agents-flow/prompts-window";
+import {
+  mountAdversarialButton,
+  type AdversarialButtonHandle,
+} from "../modules/agents-flow/adversarial-window";
 import { bootstrapWorkspaces, type WorkspacesBootstrapHandle } from "./workspaces-bootstrap";
 import { wireWindowLifecycle } from "./lifecycle";
 import { wireQuitConfirm } from "./quit-confirm";
@@ -37,6 +41,7 @@ export class AppController {
   private bottomPanel: BottomPanelHandle | null = null;
   private loopButton: LoopButtonHandle | null = null;
   private promptsButton: PromptsButtonHandle | null = null;
+  private adversarialButton: AdversarialButtonHandle | null = null;
   private unwireShortcuts: (() => void) | null = null;
   private unwireWindowLifecycle: (() => void) | null = null;
   private unwireQuitConfirm: (() => void) | null = null;
@@ -69,6 +74,7 @@ export class AppController {
     });
     this.loopButton = mountLoopButton();
     this.promptsButton = mountPromptsButton();
+    this.adversarialButton = mountAdversarialButton();
     await this.wirePtyEvents();
     this.wireGutters();
     this.wirePanelToggles();
@@ -99,6 +105,7 @@ export class AppController {
     this.unwireQuitConfirm = wireQuitConfirm({
       router: this.router,
       getState: () => workspaces.controller.getState(),
+      beforeQuit: () => this.flushBeforeQuit(),
     });
   }
 
@@ -136,6 +143,9 @@ export class AppController {
     this.promptsButton?.dispose();
     this.promptsButton = null;
 
+    this.adversarialButton?.dispose();
+    this.adversarialButton = null;
+
     const workspaces = this.workspaces;
     this.workspaces = null;
     if (workspaces) {
@@ -164,6 +174,15 @@ export class AppController {
     void flushSave().catch((error) => console.error("Failed to flush layout before unload", error));
   }
 
+  private async flushBeforeQuit(): Promise<void> {
+    const workspaces = this.workspaces;
+    if (workspaces) {
+      workspaces.notesPanel.dispose();
+      await workspaces.controller.dispose();
+    }
+    await flushSave();
+  }
+
   private async wirePtyEvents(): Promise<void> {
     this.unlistenData = await onPtyData(({ id, data }) => {
       if (this.bottomPanel?.handlePtyData(id, data)) return;
@@ -171,7 +190,10 @@ export class AppController {
     });
     this.unlistenExit = await onPtyExit(({ id }) => {
       if (this.bottomPanel?.handlePtyExit(id)) return;
-      this.router.findPaneById(id)?.pane.markExited();
+      const found = this.router.findPaneById(id);
+      if (!found) return;
+      found.pane.markExited();
+      found.manager.markExited(id);
     });
   }
 
