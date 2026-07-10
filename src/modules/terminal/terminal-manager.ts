@@ -169,6 +169,17 @@ export class TerminalManager {
     return this.panes.get(id);
   }
 
+  /**
+   * True when `id` corresponds to a spawned, non-exited PTY session — false
+   * for failed spawns (synthetic `failed-*` ids with no backend session)
+   * and for panes whose process already exited. Callers that write to the
+   * PTY (e.g. /agents insert) must check this so they don't fire an
+   * "unknown pty" error against a dead pane.
+   */
+  isLive(id: string): boolean {
+    return this.liveIds.has(id);
+  }
+
   refit(): void {
     for (const pane of this.panes.values()) pane.fit();
   }
