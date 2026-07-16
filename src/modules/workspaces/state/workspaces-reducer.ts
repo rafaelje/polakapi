@@ -273,6 +273,7 @@ export {
   removeTerminalSpec,
   replaceTerminalSpecs,
   setProjectActiveCli,
+  setProjectTerminalLayout,
   updateTerminalSpec,
 } from "./workspaces-reducer-terminals";
 

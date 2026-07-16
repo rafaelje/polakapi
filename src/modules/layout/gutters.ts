@@ -4,10 +4,14 @@ const MIN_PANE_PX = 80;
 const MIN_SIDEBAR_PX = 120;
 const MAX_SIDEBAR_PX = 600;
 
-export function makeFlexGutter(orientation: "h" | "v", onResize: () => void): HTMLElement {
+export function makeFlexGutter(
+  orientation: "h" | "v",
+  onResize: () => void,
+  onCommit?: (firstRatio: number) => void,
+): HTMLElement {
   const g = document.createElement("div");
   g.className = `gutter gutter-${orientation}`;
-  g.addEventListener("mousedown", (e) => startFlexDrag(e, g, orientation, onResize));
+  g.addEventListener("mousedown", (e) => startFlexDrag(e, g, orientation, onResize, onCommit));
   return g;
 }
 
@@ -16,6 +20,7 @@ export function startFlexDrag(
   gutter: HTMLElement,
   orientation: "h" | "v",
   onResize: () => void,
+  onCommit?: (firstRatio: number) => void,
 ): void {
   e.preventDefault();
   const prev = gutter.previousElementSibling as HTMLElement | null;
@@ -27,6 +32,7 @@ export function startFlexDrag(
   const startSize = horiz ? rectPrev.width : rectPrev.height;
   const sumSize = startSize + (horiz ? rectNext.width : rectNext.height);
   const startPos = horiz ? e.clientX : e.clientY;
+  let finalPrev = startSize;
   gutter.classList.add("dragging");
   document.body.style.cursor = horiz ? "col-resize" : "row-resize";
   document.body.style.userSelect = "none";
@@ -35,6 +41,7 @@ export function startFlexDrag(
     const delta = (horiz ? ev.clientX : ev.clientY) - startPos;
     let newPrev = startSize + delta;
     newPrev = Math.max(MIN_PANE_PX, Math.min(sumSize - MIN_PANE_PX, newPrev));
+    finalPrev = newPrev;
     const newNext = sumSize - newPrev;
     prev.style.flex = `0 0 ${newPrev}px`;
     next.style.flex = `0 0 ${newNext}px`;
@@ -47,6 +54,7 @@ export function startFlexDrag(
     document.body.style.cursor = "";
     document.body.style.userSelect = "";
     onResize();
+    if (sumSize > 0) onCommit?.(finalPrev / sumSize);
   };
   window.addEventListener("mousemove", onMove);
   window.addEventListener("mouseup", onUp);

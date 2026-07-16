@@ -1,10 +1,25 @@
 import type { ProjectId } from "../workspaces/state/types";
 import { confirmModal } from "../workspaces/forms/confirm-delete";
 import { resolveProfile } from "./cli-registry";
-import { layoutTerminalGrid } from "./terminal-grid-layout";
+import { attachTerminalDocking, type TerminalDockingHandle } from "./terminal-docking";
+import {
+  appendTerminalPane,
+  createDefaultTerminalLayout,
+  dockTerminalPane,
+  dockTerminalPaneAtRoot,
+  removeTerminalPane,
+  repairTerminalLayout,
+  replaceTerminalPaneId,
+  terminalLayoutPaneIds,
+  updateTerminalSplitRatio,
+  type TerminalDockPosition,
+  type TerminalLayoutNode,
+  type TerminalLayoutPath,
+} from "./terminal-layout";
 import { TerminalPane } from "./terminal-pane";
 import { ptyWrite } from "./pty-client";
 import { registerBellNotification, type BellNotificationHandle } from "./terminal-notifications";
+import { layoutTerminalSplits } from "./terminal-split-layout";
 import { type TerminalSpec } from "./types";
 
 /**
@@ -42,8 +57,7 @@ export interface TerminalManagerOptions {
   projectId: ProjectId;
   /** project.path applied when a spec omits cwd. */
   defaultCwd: string;
-  /** Initial number of columns per row. Must be >= 1. */
-  gridCols: number;
+  layout?: TerminalLayoutNode;
   /**
    * Default CLI id for new panes. Undefined falls back to "shell". Persisted
    * by the bootstrap so chip selection survives restart.
@@ -56,6 +70,7 @@ export interface TerminalManagerOptions {
 export type TerminalManagerEvent =
   | { type: "count-changed"; projectId: ProjectId; count: number }
   | { type: "spec-changed"; projectId: ProjectId; specs: TerminalSpec[] }
+  | { type: "layout-changed"; projectId: ProjectId; layout: TerminalLayoutNode | null }
   | { type: "bell-pending"; projectId: ProjectId; paneId: string; pending: boolean };
 
 export type TerminalManagerListener = (event: TerminalManagerEvent) => void;
@@ -73,13 +88,15 @@ export class TerminalManager {
   private readonly specsById = new Map<string, TerminalSpec>();
   private focusedId: string | null = null;
   private readonly grid: HTMLElement;
-  private cols: number;
+  private layout: TerminalLayoutNode | null = null;
+  private initialLayout: TerminalLayoutNode | null;
   private defaultCwd: string;
   private readonly listeners = new Set<TerminalManagerListener>();
-  private suppressSpecEvent = false;
+  private suppressPersistenceEvents = false;
   private notificationContext: NotificationContext | null;
   /** Per-pane bell handles, disposed on close() / dispose(). */
   private readonly bellHandles = new Map<string, BellNotificationHandle>();
+  private readonly dockingHandles = new Map<string, TerminalDockingHandle>();
   /**
    * Guards `respawnPane` against re-entry — a double click on the badge menu
    * (or two close-together IPC events) would otherwise spawn two replacement
@@ -93,7 +110,7 @@ export class TerminalManager {
   constructor(opts: TerminalManagerOptions) {
     this.projectId = opts.projectId;
     this.defaultCwd = opts.defaultCwd;
-    this.cols = Math.max(1, Math.floor(opts.gridCols));
+    this.initialLayout = opts.layout ?? null;
     this.activeCliId = opts.activeCliId && opts.activeCliId.length > 0 ? opts.activeCliId : "shell";
     this.notificationContext = opts.notificationContext ?? null;
     const grid = document.createElement("div");
@@ -141,6 +158,10 @@ export class TerminalManager {
 
   get focusedPaneId(): string | null {
     return this.focusedId;
+  }
+
+  get layoutSnapshot(): TerminalLayoutNode | null {
+    return this.layout;
   }
 
   setActiveCli(cliId: string): void {
@@ -198,6 +219,7 @@ export class TerminalManager {
     opts?: { silent?: boolean },
   ): Promise<TerminalPane | null> {
     const pane = new TerminalPane();
+    const anchorId = this.focusedId;
     pane.el.style.visibility = "hidden";
 
     const cwd = spec?.cwd ?? this.defaultCwd;
@@ -231,6 +253,7 @@ export class TerminalManager {
     };
     this.panes.set(ptyId, pane);
     this.order.push(ptyId);
+    this.layout = appendTerminalPane(this.layout, ptyId, anchorId);
     if (!spawnError) this.liveIds.add(ptyId);
     this.specsById.set(ptyId, finalSpec);
     pane.el.dataset.ptyId = ptyId;
@@ -248,6 +271,7 @@ export class TerminalManager {
       this.relayout();
       this.emitCount();
       this.emitSpecs();
+      this.emitLayout();
     }
 
     if (!spawnError) {
@@ -270,6 +294,17 @@ export class TerminalManager {
         void this.requestRespawn(ptyId, cliId);
       },
     });
+    pane.setDockMenuCallbacks({
+      canDock: () => this.order.length > 1,
+      onDockAtEdge: (position) => this.dockAtRoot(ptyId, position),
+    });
+    const dockingHandle = attachTerminalDocking({
+      handle: pane.headerEl,
+      grid: this.grid,
+      paneId: ptyId,
+      onDock: (sourceId, targetId, position) => this.dock(sourceId, targetId, position),
+    });
+    this.dockingHandles.set(ptyId, dockingHandle);
     pane.el.addEventListener("mousedown", () => this.setFocus(ptyId));
     pane.bodyEl.addEventListener("focusin", () => this.setFocus(ptyId));
     pane.closeBtn.addEventListener("click", (e) => {
@@ -358,6 +393,7 @@ export class TerminalManager {
     this.respawning.add(ptyId);
     try {
       const targetIdx = this.order.indexOf(ptyId);
+      const preservedLayout = this.layout;
       const preserved: Partial<TerminalSpec> = {
         title: current.title,
         cwd: current.cwd,
@@ -379,11 +415,14 @@ export class TerminalManager {
           this.order.splice(fromIdx, 1);
           this.order.splice(targetIdx, 0, newId);
         }
+        this.layout = replaceTerminalPaneId(preservedLayout, ptyId, newId);
+        this.syncOrderToLayout();
         this.setFocus(newId);
       }
       this.relayout();
       this.emitCount();
       this.emitSpecs();
+      this.emitLayout();
     } finally {
       this.respawning.delete(ptyId);
     }
@@ -402,6 +441,9 @@ export class TerminalManager {
     const wasLive = this.liveIds.delete(ptyId);
     this.bellHandles.get(ptyId)?.dispose();
     this.bellHandles.delete(ptyId);
+    this.dockingHandles.get(ptyId)?.dispose();
+    this.dockingHandles.delete(ptyId);
+    this.layout = removeTerminalPane(this.layout, ptyId);
     const idx = this.order.indexOf(ptyId);
     if (idx >= 0) this.order.splice(idx, 1);
     if (this.focusedId === ptyId) {
@@ -417,6 +459,7 @@ export class TerminalManager {
       this.relayout();
       if (wasLive) this.emitCount();
       this.emitSpecs();
+      this.emitLayout();
     }
   }
 
@@ -431,8 +474,8 @@ export class TerminalManager {
 
   setFocus(ptyId: string, focusTerm = false): void {
     this.focusedId = ptyId;
-    for (const pane of this.panes.values()) {
-      pane.el.classList.toggle("focused", pane.ptyId === ptyId);
+    for (const [id, pane] of this.panes) {
+      pane.el.classList.toggle("focused", id === ptyId);
     }
     if (focusTerm) this.panes.get(ptyId)?.focus();
   }
@@ -454,11 +497,14 @@ export class TerminalManager {
     this.listeners.clear();
     for (const handle of this.bellHandles.values()) handle.dispose();
     this.bellHandles.clear();
+    for (const handle of this.dockingHandles.values()) handle.dispose();
+    this.dockingHandles.clear();
     const toClose = [...this.panes.values()];
     this.panes.clear();
     this.liveIds.clear();
     this.specsById.clear();
     this.order.splice(0);
+    this.layout = null;
     this.focusedId = null;
     await Promise.all(toClose.map((p) => p.dispose().catch(() => undefined)));
     this.grid.remove();
@@ -471,19 +517,57 @@ export class TerminalManager {
    */
   async restoreSpecs(specs: TerminalSpec[]): Promise<void> {
     if (specs.length === 0) return;
-    this.suppressSpecEvent = true;
+    const idMap = new Map<string, string>();
+    this.suppressPersistenceEvents = true;
     try {
       for (const spec of specs) {
-        await this.addPane(spec);
+        const pane = await this.addPane(spec);
+        const restoredId = pane?.el.dataset.ptyId;
+        if (restoredId) idMap.set(spec.id, restoredId);
       }
     } finally {
-      this.suppressSpecEvent = false;
+      this.suppressPersistenceEvents = false;
     }
+    this.layout = this.initialLayout
+      ? repairTerminalLayout(this.initialLayout, this.order, idMap)
+      : createDefaultTerminalLayout(this.order);
+    this.initialLayout = null;
+    this.syncOrderToLayout();
+    this.relayout();
     this.emitSpecs();
+    this.emitLayout();
   }
 
   private relayout(): void {
-    layoutTerminalGrid(this.grid, this.order, this.panes, this.cols, () => this.refit());
+    layoutTerminalSplits(this.grid, this.layout, this.panes, {
+      refit: () => this.refit(),
+      onRatioChange: (path, ratio) => this.updateSplitRatio(path, ratio),
+    });
+  }
+
+  dock(sourceId: string, targetId: string, position: TerminalDockPosition): void {
+    this.applyLayout(dockTerminalPane(this.layout, sourceId, targetId, position));
+  }
+
+  dockAtRoot(sourceId: string, position: TerminalDockPosition): void {
+    this.applyLayout(dockTerminalPaneAtRoot(this.layout, sourceId, position));
+  }
+
+  private updateSplitRatio(path: TerminalLayoutPath, ratio: number): void {
+    this.applyLayout(updateTerminalSplitRatio(this.layout, path, ratio));
+  }
+
+  private applyLayout(next: TerminalLayoutNode | null, rerender = true): void {
+    if (next === this.layout) return;
+    this.layout = next;
+    this.syncOrderToLayout();
+    if (rerender) this.relayout();
+    this.emitLayout();
+  }
+
+  private syncOrderToLayout(): void {
+    const nextOrder = terminalLayoutPaneIds(this.layout).filter((id) => this.panes.has(id));
+    this.order.splice(0, this.order.length, ...nextOrder);
   }
 
   private emitCount(): void {
@@ -495,12 +579,17 @@ export class TerminalManager {
   }
 
   private emitSpecs(): void {
-    if (this.suppressSpecEvent) return;
+    if (this.suppressPersistenceEvents) return;
     this.emit({
       type: "spec-changed",
       projectId: this.projectId,
       specs: this.specs(),
     });
+  }
+
+  private emitLayout(): void {
+    if (this.suppressPersistenceEvents) return;
+    this.emit({ type: "layout-changed", projectId: this.projectId, layout: this.layout });
   }
 
   private emit(event: TerminalManagerEvent): void {

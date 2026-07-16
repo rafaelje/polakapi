@@ -121,4 +121,15 @@ describe("WorkspacesController", () => {
     expect(projectsVisibleDuringHook).toEqual([2, 2]);
     expect(controller.getState().workspaces).toEqual([]);
   });
+
+  it("persists terminal layout updates through the controller", async () => {
+    persistence.loadWorkspaces.mockResolvedValueOnce(seededState());
+    const controller = await WorkspacesController.load();
+    const layout = { type: "pane" as const, paneId: "pty-1" };
+
+    controller.setProjectTerminalLayout(pid("p1"), layout);
+
+    expect(controller.getActiveProject()?.terminalLayout).toEqual(layout);
+    expect(persistence.queueSaveWorkspaces).toHaveBeenCalledOnce();
+  });
 });

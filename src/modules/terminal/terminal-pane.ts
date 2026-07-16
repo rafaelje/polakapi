@@ -6,7 +6,11 @@ import { ptySpawn, ptyWrite, ptyResize, ptyKill } from "./pty-client";
 import { terminalTheme } from "./terminal-theme";
 import { attachTerminalClipboard } from "./terminal-clipboard";
 import { openPaneMenu, openCliRespawnMenu } from "./terminal-pane-menu";
-import type { CliRespawnCallbacks, StartupCmdEditCallbacks } from "./terminal-pane-types";
+import type {
+  CliRespawnCallbacks,
+  DockMenuCallbacks,
+  StartupCmdEditCallbacks,
+} from "./terminal-pane-types";
 import { type PaneCreateOptions } from "./types";
 
 export type { StartupCmdEditCallbacks };
@@ -20,6 +24,7 @@ export class TerminalPane {
    */
   hasOutput = false;
   readonly el: HTMLElement;
+  readonly headerEl: HTMLElement;
   readonly bodyEl: HTMLElement;
   readonly titleEl: HTMLElement;
   readonly badgeEl: HTMLButtonElement;
@@ -30,6 +35,7 @@ export class TerminalPane {
   private readonly disposables: Array<{ dispose(): void }> = [];
   private startupCmdCallbacks: StartupCmdEditCallbacks | null = null;
   private cliRespawnCallbacks: CliRespawnCallbacks | null = null;
+  private dockMenuCallbacks: DockMenuCallbacks | null = null;
   private spawnFailed = false;
 
   constructor() {
@@ -37,8 +43,8 @@ export class TerminalPane {
     this.el.className = "pane";
     this.el.style.flex = "1 1 0";
 
-    const header = document.createElement("div");
-    header.className = "pane-header";
+    this.headerEl = document.createElement("div");
+    this.headerEl.className = "pane-header";
     this.badgeEl = document.createElement("button");
     this.badgeEl.type = "button";
     this.badgeEl.className = "pane-badge pane-badge--shell";
@@ -55,7 +61,7 @@ export class TerminalPane {
     this.closeBtn = document.createElement("button");
     this.closeBtn.textContent = "×";
     this.closeBtn.title = "Close terminal";
-    header.append(this.badgeEl, this.titleEl, this.menuBtn, this.closeBtn);
+    this.headerEl.append(this.badgeEl, this.titleEl, this.menuBtn, this.closeBtn);
     this.menuBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       this.openPaneMenu();
@@ -67,7 +73,7 @@ export class TerminalPane {
 
     this.bodyEl = document.createElement("div");
     this.bodyEl.className = "pane-body";
-    this.el.append(header, this.bodyEl);
+    this.el.append(this.headerEl, this.bodyEl);
 
     this.term = new Terminal({
       fontFamily: 'ui-monospace, "SF Mono", Menlo, Consolas, monospace',
@@ -182,6 +188,10 @@ export class TerminalPane {
     this.cliRespawnCallbacks = callbacks;
   }
 
+  setDockMenuCallbacks(callbacks: DockMenuCallbacks | null): void {
+    this.dockMenuCallbacks = callbacks;
+  }
+
   private openPaneMenu(): void {
     const callbacks = this.startupCmdCallbacks;
     if (!callbacks) return;
@@ -189,6 +199,8 @@ export class TerminalPane {
       trigger: this.menuBtn,
       getStartupCmd: () => callbacks.getStartupCmd(),
       onChangeStartupCmd: (next) => callbacks.onChange(next),
+      canDock: () => this.dockMenuCallbacks?.canDock() ?? false,
+      onDockAtEdge: (position) => this.dockMenuCallbacks?.onDockAtEdge(position),
     });
   }
 

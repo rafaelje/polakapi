@@ -1,5 +1,6 @@
 import { promptModal } from "../../shared/ui/modal";
 import { ALL_PROFILES, type CliProfile } from "./cli-registry";
+import type { TerminalDockPosition } from "./terminal-layout";
 import type { StartupCmdEditCallbacks } from "./terminal-pane-types";
 
 /**
@@ -12,6 +13,8 @@ export interface PaneMenuOptions {
   trigger: HTMLElement;
   getStartupCmd(): string | undefined;
   onChangeStartupCmd(next: string | undefined): void;
+  canDock(): boolean;
+  onDockAtEdge(position: TerminalDockPosition): void;
 }
 
 export interface PaneMenuHandle {
@@ -35,6 +38,24 @@ export function openPaneMenu(opts: PaneMenuOptions): PaneMenuHandle {
   editItem.className = "pane-menu-item";
   editItem.textContent = "Edit startup command…";
   popover.append(editItem);
+
+  const separator = document.createElement("div");
+  separator.className = "pane-menu-separator";
+  popover.append(separator);
+  const canDock = opts.canDock();
+  for (const [position, label] of DOCK_MENU_ITEMS) {
+    const item = document.createElement("button");
+    item.type = "button";
+    item.className = "pane-menu-item";
+    item.textContent = label;
+    item.disabled = !canDock;
+    item.dataset.dockPosition = position;
+    item.addEventListener("click", () => {
+      dispose();
+      opts.onDockAtEdge(position);
+    });
+    popover.append(item);
+  }
 
   let disposed = false;
   const dispose = (): void => {
@@ -156,3 +177,10 @@ function createRespawnItem(
 }
 
 export type { StartupCmdEditCallbacks };
+
+const DOCK_MENU_ITEMS: ReadonlyArray<readonly [TerminalDockPosition, string]> = [
+  ["top", "Dock at top"],
+  ["right", "Dock at right"],
+  ["bottom", "Dock at bottom"],
+  ["left", "Dock at left"],
+];

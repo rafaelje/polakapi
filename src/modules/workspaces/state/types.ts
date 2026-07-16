@@ -1,6 +1,8 @@
 import type { TerminalSpec } from "../../terminal/types";
+import type { TerminalLayoutNode } from "../../terminal/terminal-layout";
 
 export type { TerminalSpec };
+export type { TerminalLayoutNode };
 
 // Branded IDs to keep workspace/project identifiers from being mixed up at the
 // type level. They are still plain strings at runtime (crypto.randomUUID()).
@@ -31,6 +33,7 @@ export interface Project {
    * Optional/additive — projects created before F2 simply have no field.
    */
   terminals?: TerminalSpec[];
+  terminalLayout?: TerminalLayoutNode;
   /**
    * Per-project default CLI for new panes (chip row selection). Undefined is
    * treated as "shell". Persisted so the chip selection survives restart.

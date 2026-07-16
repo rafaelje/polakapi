@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { ProjectId } from "../workspaces/state/types";
+import { terminalLayoutPaneIds, type TerminalLayoutNode } from "./terminal-layout";
 import type { PaneCreateOptions, TerminalSpec } from "./types";
 
 const fake = vi.hoisted(() => {
@@ -22,6 +23,7 @@ vi.mock("./terminal-pane", () => {
   class FakeTerminalPane {
     ptyId = "";
     readonly el: HTMLElement = document.createElement("div");
+    readonly headerEl: HTMLElement = document.createElement("div");
     readonly bodyEl: HTMLElement = document.createElement("div");
     readonly titleEl: HTMLElement = document.createElement("div");
     readonly closeBtn: HTMLButtonElement = document.createElement("button");
@@ -41,6 +43,7 @@ vi.mock("./terminal-pane", () => {
     markSpawnFailed(): void {}
     setStartupCmdCallbacks(): void {}
     setCliRespawnCallbacks(): void {}
+    setDockMenuCallbacks(): void {}
     onBell(): { dispose(): void } {
       return { dispose: () => undefined };
     }
@@ -63,8 +66,12 @@ vi.mock("./terminal-notifications", () => ({
   registerBellNotification: vi.fn(() => ({ dispose: () => undefined })),
 }));
 
-vi.mock("./terminal-grid-layout", () => ({
-  layoutTerminalGrid: vi.fn(),
+vi.mock("./terminal-docking", () => ({
+  attachTerminalDocking: vi.fn(() => ({ dispose: () => undefined })),
+}));
+
+vi.mock("./terminal-split-layout", () => ({
+  layoutTerminalSplits: vi.fn(),
 }));
 
 import { TerminalManager } from "./terminal-manager";
@@ -73,12 +80,15 @@ function pid(id: string): ProjectId {
   return id as ProjectId;
 }
 
-function makeManager(opts?: { activeCliId?: string }): TerminalManager {
+function makeManager(opts?: {
+  activeCliId?: string;
+  layout?: TerminalLayoutNode;
+}): TerminalManager {
   return new TerminalManager({
     projectId: pid("p1"),
     defaultCwd: "/tmp/project",
-    gridCols: 2,
     activeCliId: opts?.activeCliId,
+    layout: opts?.layout,
   });
 }
 
@@ -228,5 +238,77 @@ describe("TerminalManager CLI wiring", () => {
     expect(after[1]).not.toBe(targetId);
     expect(manager.specs()[1]?.cliId).toBe("claude");
     expect(manager.specs()[1]?.title).toBe("b");
+    expect(terminalLayoutPaneIds(manager.layoutSnapshot)).toEqual(after);
+  });
+
+  it("docks live panes without attaching replacements", async () => {
+    const manager = makeManager();
+    await manager.addPane({ title: "a" });
+    await manager.addPane({ title: "b" });
+    const [firstId, secondId] = manager.ids();
+    if (!firstId || !secondId) throw new Error("expected two panes");
+
+    manager.dock(secondId, firstId, "bottom");
+
+    expect(fake.attachCalls).toHaveLength(2);
+    expect(manager.ids()).toEqual([firstId, secondId]);
+    expect(manager.layoutSnapshot).toMatchObject({
+      type: "split",
+      axis: "column",
+      first: { paneId: firstId },
+      second: { paneId: secondId },
+    });
+  });
+
+  it("collapses the layout after a pane closes", async () => {
+    const manager = makeManager();
+    await manager.addPane({ title: "a" });
+    await manager.addPane({ title: "b" });
+    const [firstId, secondId] = manager.ids();
+    if (!firstId || !secondId) throw new Error("expected two panes");
+
+    await manager.close(firstId);
+
+    expect(manager.layoutSnapshot).toEqual({ type: "pane", paneId: secondId });
+  });
+
+  it("restores a persisted split by remapping regenerated PTY ids", async () => {
+    const persistedLayout: TerminalLayoutNode = {
+      type: "split",
+      axis: "column",
+      ratio: 0.7,
+      first: { type: "pane", paneId: "old-a" },
+      second: { type: "pane", paneId: "old-b" },
+    };
+    const manager = makeManager({ layout: persistedLayout });
+
+    await manager.restoreSpecs([
+      { id: "old-a", title: "a" },
+      { id: "old-b", title: "b" },
+    ]);
+
+    expect(manager.ids()).toEqual(["pty-1", "pty-2"]);
+    expect(manager.layoutSnapshot).toEqual({
+      type: "split",
+      axis: "column",
+      ratio: 0.7,
+      first: { type: "pane", paneId: "pty-1" },
+      second: { type: "pane", paneId: "pty-2" },
+    });
+  });
+
+  it("repairs a partial restored layout and includes each pane once", async () => {
+    const partial = {
+      type: "split",
+      axis: "row",
+      ratio: 0.5,
+      first: { type: "pane", paneId: "old-a" },
+      second: { type: "pane", paneId: "missing" },
+    } as TerminalLayoutNode;
+    const manager = makeManager({ layout: partial });
+
+    await manager.restoreSpecs([{ id: "old-a" }, { id: "old-b" }]);
+
+    expect(terminalLayoutPaneIds(manager.layoutSnapshot)).toEqual(["pty-1", "pty-2"]);
   });
 });

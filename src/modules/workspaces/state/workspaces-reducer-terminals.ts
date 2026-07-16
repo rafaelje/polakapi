@@ -1,4 +1,5 @@
-import type { ProjectId, TerminalSpec, WorkspacesState } from "./types";
+import { terminalLayoutsEqual } from "../../terminal/terminal-layout";
+import type { ProjectId, TerminalLayoutNode, TerminalSpec, WorkspacesState } from "./types";
 import { mapProjectInWorkspace, mapWorkspaces } from "./workspaces-reducer-helpers";
 
 // ---------------------------------------------------------------------------
@@ -94,6 +95,21 @@ export function setProjectActiveCli(
   return mapWorkspaces(state, (w) =>
     mapProjectInWorkspace(w, projectId, (p) =>
       p.activeCliId === normalized ? p : { ...p, activeCliId: normalized },
+    ),
+  );
+}
+
+export function setProjectTerminalLayout(
+  state: WorkspacesState,
+  projectId: ProjectId,
+  layout: TerminalLayoutNode | null,
+): WorkspacesState {
+  const normalized = layout ?? undefined;
+  return mapWorkspaces(state, (workspace) =>
+    mapProjectInWorkspace(workspace, projectId, (project) =>
+      terminalLayoutsEqual(project.terminalLayout, normalized)
+        ? project
+        : { ...project, terminalLayout: normalized },
     ),
   );
 }

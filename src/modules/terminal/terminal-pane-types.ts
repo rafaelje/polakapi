@@ -18,3 +18,9 @@ export interface CliRespawnCallbacks {
   getCurrentCliId(): string;
   onRespawnRequest(cliId: string): void;
 }
+
+export interface DockMenuCallbacks {
+  canDock(): boolean;
+  onDockAtEdge(position: TerminalDockPosition): void;
+}
+import type { TerminalDockPosition } from "./terminal-layout";

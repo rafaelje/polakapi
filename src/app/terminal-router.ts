@@ -4,6 +4,7 @@ import {
   type TerminalManagerEvent,
 } from "../modules/terminal/terminal-manager";
 import type { TerminalPane } from "../modules/terminal/terminal-pane";
+import type { TerminalLayoutNode } from "../modules/terminal/terminal-layout";
 import type { TerminalSpec } from "../modules/terminal/types";
 import { ptyKill } from "../modules/terminal/pty-client";
 import type { Project, ProjectId } from "../modules/workspaces/state/types";
@@ -16,9 +17,8 @@ export type TerminalRouterListener = (event: TerminalRouterEvent) => void;
 
 export interface TerminalRouterOptions {
   onPersistSpecs(projectId: ProjectId, specs: TerminalSpec[]): void;
+  onPersistLayout(projectId: ProjectId, layout: TerminalLayoutNode | null): void;
 }
-
-const DEFAULT_GRID_COLS = 2;
 
 /**
  * Owns one TerminalManager per ProjectId. Manages mount/unmount via DOM
@@ -57,7 +57,7 @@ export class TerminalRouter {
     const manager = new TerminalManager({
       projectId: project.id,
       defaultCwd: project.path,
-      gridCols: DEFAULT_GRID_COLS,
+      layout: project.terminalLayout,
       activeCliId: project.activeCliId,
       notificationContext: this.notificationContext ?? undefined,
     });
@@ -193,6 +193,8 @@ export class TerminalRouter {
       this.emitCounts();
     } else if (event.type === "spec-changed") {
       this.opts.onPersistSpecs(event.projectId, event.specs);
+    } else if (event.type === "layout-changed") {
+      this.opts.onPersistLayout(event.projectId, event.layout);
     } else if (event.type === "bell-pending") {
       this.emit({
         type: "bell-pending",

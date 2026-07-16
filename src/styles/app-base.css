@@ -329,10 +329,7 @@ body {
   overflow-y: auto;
 }
 
-/* Per-project container that TerminalManager mounts inside `#grid`. Must be a
- * flex column that fills its parent so the `.grid-row` children (flex: 1 1 0)
- * actually receive height — without this it collapses to content-height and
- * panes only render as tall as their last xterm output. */
+/* Per-project container that TerminalManager mounts inside `#grid`. */
 .terminal-grid {
   display: flex;
   flex-direction: column;
@@ -341,12 +338,23 @@ body {
   min-width: 0;
 }
 
-.grid-row {
+.terminal-split {
   display: flex;
-  flex-direction: row;
   flex: 1 1 0;
   min-height: 0;
   min-width: 0;
+}
+
+.terminal-split--row {
+  flex-direction: row;
+}
+
+.terminal-split--column {
+  flex-direction: column;
+}
+
+.terminal-pane-missing {
+  display: none;
 }
 
 .pane {
@@ -372,6 +380,15 @@ body {
   color: #8a8a8a;
   border-bottom: 1px solid var(--border);
   user-select: none;
+}
+
+.pane-header.terminal-drag-handle {
+  cursor: grab;
+}
+
+.pane-header.terminal-drag-handle--active,
+.terminal-pane-dragging .pane-header.terminal-drag-handle {
+  cursor: grabbing;
 }
 
 .pane-header .title {
@@ -424,6 +441,120 @@ body {
 
 .pane-menu-item:hover {
   background: var(--border);
+}
+
+.pane-menu-item:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.pane-menu-item:disabled:hover {
+  background: transparent;
+}
+
+.pane-menu-separator {
+  height: 1px;
+  margin: 4px;
+  background: var(--border);
+}
+
+.terminal-pane-dragging {
+  cursor: grabbing;
+  user-select: none;
+}
+
+.terminal-dock-overlay {
+  position: fixed;
+  z-index: 1800;
+  pointer-events: none;
+  border: 1px solid color-mix(in srgb, var(--accent) 70%, transparent);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.terminal-dock-preview {
+  position: absolute;
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+  border: 2px solid var(--accent);
+  box-sizing: border-box;
+}
+
+.terminal-dock-preview--top,
+.terminal-dock-preview--bottom {
+  left: 0;
+  width: 100%;
+  height: 50%;
+}
+
+.terminal-dock-preview--top {
+  top: 0;
+}
+
+.terminal-dock-preview--bottom {
+  bottom: 0;
+}
+
+.terminal-dock-preview--left,
+.terminal-dock-preview--right {
+  top: 0;
+  width: 50%;
+  height: 100%;
+}
+
+.terminal-dock-preview--left {
+  left: 0;
+}
+
+.terminal-dock-preview--right {
+  right: 0;
+}
+
+.terminal-dock-zone {
+  position: absolute;
+  width: 34px;
+  height: 34px;
+  border: 1px solid color-mix(in srgb, var(--text) 24%, transparent);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--panel) 88%, transparent);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  display: grid;
+  place-items: center;
+  color: var(--text);
+  font-size: 19px;
+  font-weight: 600;
+}
+
+.terminal-dock-zone.is-active {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 55%, var(--panel));
+}
+
+.terminal-dock-zone--top,
+.terminal-dock-zone--bottom {
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.terminal-dock-zone--top {
+  top: 12px;
+}
+
+.terminal-dock-zone--bottom {
+  bottom: 12px;
+}
+
+.terminal-dock-zone--left,
+.terminal-dock-zone--right {
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.terminal-dock-zone--left {
+  left: 12px;
+}
+
+.terminal-dock-zone--right {
+  right: 12px;
 }
 
 .pane-body {

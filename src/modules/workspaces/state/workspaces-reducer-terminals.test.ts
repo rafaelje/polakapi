@@ -9,6 +9,7 @@ import {
   findProject,
   replaceTerminalSpecs,
   setProjectActiveCli,
+  setProjectTerminalLayout,
   updateTerminalSpec,
 } from "./workspaces-reducer";
 
@@ -131,5 +132,34 @@ describe("addTerminalSpec / replaceTerminalSpecs preserve cliId", () => {
     expect(terminals?.[0].cliId).toBe("shell");
     expect(terminals?.[1].cliId).toBe("claude");
     expect(terminals?.[2].cliId).toBeUndefined();
+  });
+});
+
+describe("setProjectTerminalLayout", () => {
+  it("stores and clears a project layout", () => {
+    const { state, pid } = seed();
+    const layout = {
+      type: "split" as const,
+      axis: "column" as const,
+      ratio: 0.6,
+      first: { type: "pane" as const, paneId: "a" },
+      second: { type: "pane" as const, paneId: "b" },
+    };
+
+    const stored = setProjectTerminalLayout(state, pid, layout);
+    expect(findProject(stored, pid)?.project.terminalLayout).toEqual(layout);
+    const cleared = setProjectTerminalLayout(stored, pid, null);
+    expect(findProject(cleared, pid)?.project.terminalLayout).toBeUndefined();
+  });
+
+  it("preserves project identity for an equivalent layout", () => {
+    const { state, pid } = seed();
+    const layout = { type: "pane" as const, paneId: "a" };
+    const stored = setProjectTerminalLayout(state, pid, layout);
+    const project = findProject(stored, pid)!.project;
+
+    const unchanged = setProjectTerminalLayout(stored, pid, { ...layout });
+
+    expect(findProject(unchanged, pid)!.project).toBe(project);
   });
 });

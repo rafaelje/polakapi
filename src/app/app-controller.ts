@@ -73,6 +73,9 @@ export class AppController {
       onPersistSpecs: (projectId, specs) => {
         this.workspaces?.controller.replaceTerminalSpecs(projectId, specs);
       },
+      onPersistLayout: (projectId, layout) => {
+        this.workspaces?.controller.setProjectTerminalLayout(projectId, layout);
+      },
     });
   }
 

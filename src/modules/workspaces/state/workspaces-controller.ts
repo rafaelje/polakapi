@@ -12,6 +12,7 @@ import type {
   ColorToken,
   Project,
   ProjectId,
+  TerminalLayoutNode,
   TerminalSpec,
   Workspace,
   WorkspaceId,
@@ -38,6 +39,7 @@ import {
   resetAlphabeticalOrder,
   setActiveProject,
   setProjectActiveCli,
+  setProjectTerminalLayout,
   setProjectColor,
   setProjectNotes,
   setProjectPathInvalid,
@@ -200,6 +202,8 @@ export class WorkspacesController {
     this.commit(replaceTerminalSpecs(this.state, projectId, specs));
   setProjectActiveCli = (projectId: ProjectId, cliId: string): void =>
     this.commit(setProjectActiveCli(this.state, projectId, cliId));
+  setProjectTerminalLayout = (projectId: ProjectId, layout: TerminalLayoutNode | null): void =>
+    this.commit(setProjectTerminalLayout(this.state, projectId, layout));
 
   // F3: per-project notes. The debounce lives in the notes panel (400ms), so
   // each call here is already coalesced — we just commit and let the existing
