@@ -133,7 +133,7 @@ pub fn spawn_session(
     } else if let Some(dir) = default_working_dir() {
         cmd.cwd(dir);
     }
-    cmd.env("TERM", "xterm-256color");
+    configure_terminal_environment(&mut cmd);
 
     // If this session spawns an AI CLI directly (claude / codex / opencode),
     // inject env vars that let the polakapi-capture hooks (registered by the
@@ -202,6 +202,12 @@ pub fn spawn_session(
     });
 
     Ok(id)
+}
+
+fn configure_terminal_environment(cmd: &mut CommandBuilder) {
+    cmd.env("TERM", "xterm-256color");
+    cmd.env("COLORTERM", "truecolor");
+    cmd.env_remove("NO_COLOR");
 }
 
 fn resolve_command(command: Option<String>) -> Result<String, String> {
@@ -495,6 +501,24 @@ mod tests {
     fn resolve_command_accepts_ai_cli() {
         let resolved = resolve_command(Some("claude".to_string())).unwrap();
         assert_eq!(resolved, "claude");
+    }
+
+    #[test]
+    fn terminal_environment_enables_color_output() {
+        let mut cmd = CommandBuilder::new("zsh");
+        cmd.env("NO_COLOR", "1");
+
+        configure_terminal_environment(&mut cmd);
+
+        assert_eq!(
+            cmd.get_env("TERM"),
+            Some(std::ffi::OsStr::new("xterm-256color"))
+        );
+        assert_eq!(
+            cmd.get_env("COLORTERM"),
+            Some(std::ffi::OsStr::new("truecolor"))
+        );
+        assert_eq!(cmd.get_env("NO_COLOR"), None);
     }
 
     #[test]

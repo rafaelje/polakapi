@@ -5,6 +5,7 @@ import { resolveProfile } from "./cli-registry";
 import { ptySpawn, ptyWrite, ptyResize, ptyKill } from "./pty-client";
 import { terminalTheme } from "./terminal-theme";
 import { attachTerminalClipboard } from "./terminal-clipboard";
+import { attachTerminalKeybindings } from "./terminal-keybindings";
 import { openPaneMenu, openCliRespawnMenu } from "./terminal-pane-menu";
 import type {
   CliRespawnCallbacks,
@@ -92,6 +93,12 @@ export class TerminalPane {
     host.append(this.el);
     this.term.open(this.bodyEl);
     this.disposables.push(attachTerminalClipboard(this.term));
+    this.disposables.push(
+      attachTerminalKeybindings(this.term, (data) => {
+        if (this.spawnFailed || !this.ptyId) return;
+        void ptyWrite(this.ptyId, data);
+      }),
+    );
     this.safeFit();
     this.updateCliBadge(opts?.cliId);
 
