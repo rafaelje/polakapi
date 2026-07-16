@@ -4,6 +4,7 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import { resolveProfile } from "./cli-registry";
 import { ptySpawn, ptyWrite, ptyResize, ptyKill } from "./pty-client";
 import { terminalTheme } from "./terminal-theme";
+import { attachTerminalClipboard } from "./terminal-clipboard";
 import { openPaneMenu, openCliRespawnMenu } from "./terminal-pane-menu";
 import type { CliRespawnCallbacks, StartupCmdEditCallbacks } from "./terminal-pane-types";
 import { type PaneCreateOptions } from "./types";
@@ -84,6 +85,7 @@ export class TerminalPane {
   async attach(host: HTMLElement, opts?: PaneCreateOptions): Promise<void> {
     host.append(this.el);
     this.term.open(this.bodyEl);
+    this.disposables.push(attachTerminalClipboard(this.term));
     this.safeFit();
     this.updateCliBadge(opts?.cliId);
 

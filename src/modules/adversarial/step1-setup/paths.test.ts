@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { mergeScope, toRelativePath } from "./view";
+import { mergeScope, toRelativePath } from "./view-sections";
 
 describe("toRelativePath", () => {
   it("returns a repo-relative path when the absolute lives under the project", () => {

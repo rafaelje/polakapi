@@ -32,21 +32,33 @@ impl ShellRegistry {
             }
         }
 
-        #[cfg(unix)]
-        {
-            let child = Command::new("ghostty")
-                .arg(format!("--working-directory={path}"))
-                .spawn()
-                .map_err(|e| format!("failed to launch ghostty: {e}"))?;
-            map.insert(canonical, child);
-        }
-        #[cfg(windows)]
-        {
-            let _ = path;
-            return Err("ghostty is not available on Windows".to_string());
-        }
+        let child = shell_command(path)?
+            .spawn()
+            .map_err(|e| format!("failed to launch Ghostty: {e}"))?;
+        map.insert(canonical, child);
         Ok(())
     }
+}
+
+#[cfg(target_os = "macos")]
+fn shell_command(path: &str) -> Result<Command, String> {
+    let mut command = Command::new("open");
+    command
+        .args(["-na", "Ghostty.app", "--args"])
+        .arg(format!("--working-directory={path}"));
+    Ok(command)
+}
+
+#[cfg(target_os = "linux")]
+fn shell_command(path: &str) -> Result<Command, String> {
+    let mut command = Command::new("ghostty");
+    command.arg(format!("--working-directory={path}"));
+    Ok(command)
+}
+
+#[cfg(target_os = "windows")]
+fn shell_command(_path: &str) -> Result<Command, String> {
+    Err("Ghostty is not available on Windows".to_string())
 }
 
 /// Closed set of editor binaries the frontend is allowed to invoke. The
@@ -215,5 +227,24 @@ mod tests {
         let registry = ShellRegistry::default();
         let result = open_in_shell(&registry, "/nonexistent/does-not-exist-12345");
         assert!(result.is_err());
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn shell_command_uses_macos_app_launcher() {
+        let command = shell_command("/tmp/project").unwrap();
+        assert_eq!(command.get_program(), "open");
+        assert_eq!(
+            command
+                .get_args()
+                .map(|arg| arg.to_string_lossy().into_owned())
+                .collect::<Vec<_>>(),
+            [
+                "-na",
+                "Ghostty.app",
+                "--args",
+                "--working-directory=/tmp/project"
+            ]
+        );
     }
 }

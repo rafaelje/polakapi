@@ -1,0 +1,311 @@
+/* ─────────── Step 1: problem intake chat ─────────── */
+
+/*
+ * When the slot mounts the step 1 chat, the slot's flexbox layout
+ * (center / center) doesn't fit — we need a 3-row grid:
+ * step header + turn list (scroll) + composer pinned at the bottom.
+ */
+.loop-step-slot.loop-step1 {
+  display: block;
+  align-items: stretch;
+  justify-content: stretch;
+  padding: 0;
+}
+
+.loop-step1-root {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  height: 100%;
+  min-height: 0;
+}
+
+.loop-step1-header {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 18px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+}
+
+.loop-step1-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.loop-step1-edit-prompt {
+  font-size: 12px;
+}
+
+.loop-step1-header-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.loop-step1-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 24px 16px;
+  background: var(--panel-elev);
+  border-bottom: 1px solid var(--border);
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.loop-step1-picker-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.loop-step1-picker-empty {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.loop-step1-picker-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.loop-step1-picker-item {
+  margin: 0;
+}
+
+.loop-step1-picker-item-main {
+  width: 100%;
+  text-align: left;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  cursor: pointer;
+  color: var(--text);
+}
+
+.loop-step1-picker-item-main:hover {
+  background: color-mix(in srgb, var(--accent) 10%, var(--panel));
+  border-color: var(--accent);
+}
+
+.loop-step1-picker-item-preview {
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.loop-step1-picker-item-meta {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.loop-step1-resume-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 24px;
+  background: color-mix(in srgb, var(--accent) 12%, var(--panel));
+  border-bottom: 1px solid var(--border);
+}
+
+.loop-step1-resume-banner-text {
+  font-size: 13px;
+  color: var(--text);
+}
+
+.loop-step1-turns {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 18px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.loop-step1-empty {
+  margin: auto;
+  max-width: 480px;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.5;
+  text-align: center;
+}
+
+.loop-step1-turn {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+}
+
+.loop-step1-turn:last-child {
+  border-bottom: none;
+}
+
+.loop-step1-row {
+  display: grid;
+  grid-template-columns: 56px 1fr;
+  gap: 12px;
+  align-items: start;
+}
+
+.loop-step1-rolelabel {
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  font-size: 11px;
+  color: var(--text-muted);
+  text-transform: lowercase;
+  padding-top: 2px;
+}
+
+.loop-step1-row-user .loop-step1-rolelabel {
+  color: var(--accent);
+}
+
+.loop-step1-msg {
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text);
+}
+
+.loop-step1-msg-pending {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.loop-step1-msg-empty {
+  color: var(--text-muted);
+}
+
+.loop-step1-turn-error {
+  margin: 0 0 0 68px;
+  font-size: 12px;
+  color: var(--danger);
+}
+
+.loop-step1-turn-meta {
+  margin: 0 0 0 68px;
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: ui-monospace, SFMono-Regular, monospace;
+}
+
+.loop-step1-composer {
+  flex: 0 0 auto;
+  border-top: 1px solid var(--border);
+  background: var(--panel);
+  padding: 12px 18px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.loop-step1-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.loop-step1-cli-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.loop-step1-cli-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.loop-step1-cli-select {
+  background: var(--panel-elev);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 4px 8px;
+  font: inherit;
+  font-size: 12px;
+}
+
+.loop-step1-cli-select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.loop-step1-toolbar-spacer {
+  flex: 1 1 0;
+}
+
+.loop-step1-consolidate {
+  margin-top: 0;
+  align-self: auto;
+}
+
+.loop-step1-consolidate:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.loop-step1-consolidate-error {
+  margin: 0;
+  font-size: 12px;
+  color: var(--danger);
+}
+
+.loop-step1-input-row {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+}
+
+.loop-step1-input {
+  flex: 1 1 0;
+  resize: vertical;
+  min-height: 64px;
+  max-height: 320px;
+  background: var(--panel-elev);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.loop-step1-input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.loop-step1-input:disabled {
+  opacity: 0.6;
+}
+
+.loop-step1-send {
+  margin-top: 0;
+  align-self: stretch;
+}
+
+.loop-step1-send:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

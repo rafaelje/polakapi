@@ -1,0 +1,107 @@
+/* ----------------------------------------------------------------------
+ * Project pane (wraps #grid + per-project sub-toolbar)
+ * ---------------------------------------------------------------------- */
+
+.project-pane {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.project-pane-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+}
+
+.project-pane-toolbar button {
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 10px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.project-pane-toolbar button:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.project-pane-toolbar button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.project-pane-toolbar button:disabled:hover {
+  border-color: var(--border);
+  color: var(--text);
+}
+
+.project-pane-external {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.project-pane.inactive .project-pane-toolbar,
+.project-pane.inactive #grid {
+  display: none;
+}
+
+.cli-chips {
+  display: inline-flex;
+  gap: 2px;
+}
+
+.cli-chip {
+  --cli-color: var(--cli-shell);
+  padding: 4px 10px;
+  font: inherit;
+  color: #6a6a6a;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.cli-chip:hover:not(:disabled) {
+  color: var(--cli-color);
+  border-color: var(--cli-color);
+}
+
+.cli-chip.is-active {
+  color: var(--text);
+  background: color-mix(in srgb, var(--cli-color) 22%, transparent);
+  border-color: var(--cli-color);
+}
+
+.cli-chip:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.cli-chip--shell {
+  --cli-color: var(--cli-shell);
+}
+
+.cli-chip--claude {
+  --cli-color: var(--cli-claude);
+}
+
+.cli-chip--codex {
+  --cli-color: var(--cli-codex);
+}
+
+.cli-chip--opencode {
+  --cli-color: var(--cli-opencode);
+}
