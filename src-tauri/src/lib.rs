@@ -2,6 +2,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod adv_review;
+mod awake;
 pub mod capture;
 mod commands;
 pub mod db;
@@ -18,6 +19,8 @@ use tauri::Manager;
 
 use crate::db::Db;
 use crate::open::ShellRegistry;
+
+use crate::awake::{keep_awake_set, AwakeState};
 
 use crate::adv_review::{
     adv_create_run, adv_ensure_run_prompt, adv_read_run_file, adv_read_run_prompt,
@@ -93,6 +96,7 @@ pub fn run() {
             move |app| {
                 app.manage(store);
                 app.manage(ShellRegistry::default());
+                app.manage(AwakeState::default());
                 // Open the prompts history DB at <app_config_dir>/polakapi.db
                 // and register it as `State<Mutex<Db>>` for the read commands.
                 // If opening fails we still boot the app — the read commands
@@ -131,6 +135,7 @@ pub fn run() {
             pty_resize,
             pty_kill,
             pty_memory_stats,
+            keep_awake_set,
             app_exit,
             fs_validate_path,
             open_in_explorer,

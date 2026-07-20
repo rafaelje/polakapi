@@ -6,6 +6,7 @@ import {
   type PersistedLayout,
 } from "../shared/persistence/store";
 import { wireShortcuts } from "../shared/keyboard/shortcuts";
+import { invoke } from "../shared/tauri/invoke";
 import { showToast } from "../shared/ui/toast";
 import { onPtyData, onPtyExit, ptyKill } from "../modules/terminal/pty-client";
 import {
@@ -111,6 +112,7 @@ export class AppController {
     await this.wirePtyEvents();
     this.wireGutters();
     this.wirePanelToggles();
+    this.wireKeepAwakeToggle(layout.keepAwakeEnabled === true);
     this.wireKeyboardShortcuts();
     this.wireWindowFocus();
     this.unwireWindowLifecycle = wireWindowLifecycle({
@@ -354,6 +356,27 @@ export class AppController {
         },
       });
     });
+  }
+
+  private wireKeepAwakeToggle(initial: boolean): void {
+    const btn = document.getElementById("toggle-awake");
+    if (!btn) return;
+    const apply = async (enabled: boolean, showFeedback: boolean): Promise<void> => {
+      try {
+        const active = await invoke<boolean>("keep_awake_set", { enabled });
+        btn.classList.toggle("active", active);
+        queueSave({ keepAwakeEnabled: active });
+        if (showFeedback) {
+          showToast(active ? "System sleep inhibited" : "System sleep restored", "info");
+        }
+      } catch {
+        // invoke() already surfaced the error toast
+      }
+    };
+    btn.addEventListener("click", () => {
+      void apply(!btn.classList.contains("active"), true);
+    });
+    if (initial) void apply(true, false);
   }
 
   private persistSidebarWidths(): void {
