@@ -1,9 +1,12 @@
+import { promptModal } from "../../../shared/ui/modal";
+import { showToast } from "../../../shared/ui/toast";
 import { deterministicColor } from "../appearance-defaults";
 import { openAppearancePicker } from "../forms/appearance-picker";
-import { createProjectRow, type ProjectRowHandle } from "./project-row";
+import { createProjectRow, createShortcutHint, type ProjectRowHandle } from "./project-row";
 import { filterProjects } from "../project-filter";
 import { openRowMenu } from "../forms/row-menu";
 import { startInlineRename } from "../forms/rename-inline";
+import { normalizeShortcutKey } from "../state/workspaces-reducer-shortcuts";
 import type { SelectionStore } from "../state/selection";
 import type { Project, ProjectId, Workspace } from "../state/types";
 import type { WorkspacesController } from "../state/workspaces-controller";
@@ -84,7 +87,9 @@ export function createWorkspaceRow(opts: WorkspaceRowOptions): WorkspaceRowHandl
   menuBtn.title = "Workspace actions";
   menuBtn.textContent = "⋮";
 
-  header.append(chevron, name, addBtn, menuBtn);
+  header.append(chevron, name);
+  if (workspace.shortcut) header.append(createShortcutHint(workspace.shortcut));
+  header.append(addBtn, menuBtn);
   wrapper.append(header);
 
   const projectsList = document.createElement("div");
@@ -170,6 +175,12 @@ export function createWorkspaceRow(opts: WorkspaceRowOptions): WorkspaceRowHandl
           onSelect: () => openAppearance(),
         },
         {
+          label: workspace.shortcut
+            ? `Shortcut… (Ctrl+Alt+${workspace.shortcut.toUpperCase()})`
+            : "Shortcut…",
+          onSelect: () => void runAssignShortcut(),
+        },
+        {
           label: "Delete workspace",
           danger: true,
           onSelect: () => void controller.deleteWorkspace(workspace.id),
@@ -187,6 +198,28 @@ export function createWorkspaceRow(opts: WorkspaceRowOptions): WorkspaceRowHandl
     if (next && next !== workspace.name) {
       controller.renameWorkspace(workspace.id, next);
     }
+  }
+
+  async function runAssignShortcut(): Promise<void> {
+    const next = await promptModal({
+      title: "Assign shortcut",
+      message:
+        "One letter or digit — Ctrl+Alt+<key> activates this workspace's first project. Empty clears.",
+      placeholder: "e.g. w",
+      initialValue: workspace.shortcut ?? "",
+      confirmLabel: "Assign",
+    });
+    if (next === null) return;
+    if (!next.trim()) {
+      controller.setWorkspaceShortcut(workspace.id, undefined);
+      return;
+    }
+    const key = normalizeShortcutKey(next);
+    if (!key) {
+      showToast("Shortcut must be a single letter or digit", "error");
+      return;
+    }
+    controller.setWorkspaceShortcut(workspace.id, key);
   }
 
   // Track the currently open appearance picker so we can tear it down on row

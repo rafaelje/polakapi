@@ -38,12 +38,17 @@
   --cli-color: var(--cli-opencode);
 }
 
+.pane-badge--cursor {
+  --cli-color: var(--cli-cursor);
+}
+
 /* Respawn menu items reuse .pane-menu-item; the cli-color tint comes from
  * the matching .pane-badge--<id> class added in terminal-pane-menu.ts. */
 .pane-menu-item.pane-badge--shell,
 .pane-menu-item.pane-badge--claude,
 .pane-menu-item.pane-badge--codex,
-.pane-menu-item.pane-badge--opencode {
+.pane-menu-item.pane-badge--opencode,
+.pane-menu-item.pane-badge--cursor {
   background: transparent;
   color: var(--text);
   border-left: 3px solid var(--cli-color);
@@ -56,7 +61,8 @@
 .pane-menu-item.pane-badge--shell.is-active,
 .pane-menu-item.pane-badge--claude.is-active,
 .pane-menu-item.pane-badge--codex.is-active,
-.pane-menu-item.pane-badge--opencode.is-active {
+.pane-menu-item.pane-badge--opencode.is-active,
+.pane-menu-item.pane-badge--cursor.is-active {
   background: color-mix(in srgb, var(--cli-color) 18%, transparent);
 }
 

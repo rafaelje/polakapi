@@ -1,7 +1,10 @@
+import { promptModal } from "../../../shared/ui/modal";
+import { showToast } from "../../../shared/ui/toast";
 import { deterministicColor } from "../appearance-defaults";
 import { openAppearancePicker } from "../forms/appearance-picker";
 import { openRowMenu } from "../forms/row-menu";
 import { startInlineRename } from "../forms/rename-inline";
+import { normalizeShortcutKey } from "../state/workspaces-reducer-shortcuts";
 import type { SelectionStore } from "../state/selection";
 import type { Project, ProjectId, Workspace, WorkspaceId } from "../state/types";
 import type { WorkspacesController } from "../state/workspaces-controller";
@@ -82,6 +85,9 @@ export function createProjectRow(opts: ProjectRowOptions): ProjectRowHandle {
   pathTag.title = project.path;
 
   nameLine.append(name);
+  if (project.shortcut) {
+    nameLine.append(createShortcutHint(project.shortcut));
+  }
   labelCol.append(nameLine, pathTag);
 
   const badge = document.createElement("span");
@@ -172,6 +178,12 @@ export function createProjectRow(opts: ProjectRowOptions): ProjectRowHandle {
           onSelect: () => openAppearance(),
         },
         {
+          label: project.shortcut
+            ? `Shortcut… (Ctrl+Alt+${project.shortcut.toUpperCase()})`
+            : "Shortcut…",
+          onSelect: () => void runAssignShortcut(),
+        },
+        {
           label: "Delete",
           danger: true,
           onSelect: () => void runDelete(),
@@ -224,6 +236,27 @@ export function createProjectRow(opts: ProjectRowOptions): ProjectRowHandle {
     }
   }
 
+  async function runAssignShortcut(): Promise<void> {
+    const next = await promptModal({
+      title: "Assign shortcut",
+      message: "One letter or digit — activates this project with Ctrl+Alt+<key>. Empty clears.",
+      placeholder: "e.g. 1",
+      initialValue: project.shortcut ?? "",
+      confirmLabel: "Assign",
+    });
+    if (next === null) return;
+    if (!next.trim()) {
+      controller.setProjectShortcut(project.id, undefined);
+      return;
+    }
+    const key = normalizeShortcutKey(next);
+    if (!key) {
+      showToast("Shortcut must be a single letter or digit", "error");
+      return;
+    }
+    controller.setProjectShortcut(project.id, key);
+  }
+
   // Apply initial selected state (survives re-renders since the selection
   // store lives at the panel level), then subscribe for live updates.
   if (selection.has(project.id)) row.classList.add("selected");
@@ -259,6 +292,14 @@ export function createProjectRow(opts: ProjectRowOptions): ProjectRowHandle {
       row.remove();
     },
   };
+}
+
+export function createShortcutHint(shortcut: string): HTMLElement {
+  const hint = document.createElement("kbd");
+  hint.className = "ws-shortcut-hint";
+  hint.textContent = shortcut.toUpperCase();
+  hint.title = `Ctrl+Alt+${shortcut.toUpperCase()}`;
+  return hint;
 }
 
 function readOrderedProjectIds(listEl: HTMLElement | null): ProjectId[] {

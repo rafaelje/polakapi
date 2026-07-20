@@ -45,6 +45,11 @@ export interface Project {
    * have no field, which readers must treat as the empty string.
    */
   notes?: string;
+  /**
+   * Single lowercase character bound to Ctrl+Alt+<key> for direct activation.
+   * Unique across all projects and workspaces; optional/additive.
+   */
+  shortcut?: string;
 }
 
 export interface Workspace {
@@ -54,12 +59,43 @@ export interface Workspace {
   collapsed?: boolean;
   /** If undefined, the workspace is sorted alphabetically by name. */
   order?: number;
+  /** Same contract as Project.shortcut — activates the workspace's first project. */
+  shortcut?: string;
   projects: Project[];
+}
+
+/**
+ * Template-local terminal spec: everything a pane needs except `cwd` — a
+ * template is path-agnostic and always spawns into the target project's path.
+ * `id` is referenced by the template's layout tree paneIds.
+ */
+export interface LayoutTemplateSpec {
+  id: string;
+  title?: string;
+  startupCmd?: string;
+  cliId?: string;
+}
+
+/**
+ * Named, reusable snapshot of a project's terminal arrangement: which CLIs,
+ * how many panes, and the split tree (ratios included). Global — applicable
+ * to any project.
+ */
+export interface LayoutTemplate {
+  id: string;
+  name: string;
+  specs: LayoutTemplateSpec[];
+  layout: TerminalLayoutNode;
 }
 
 export interface WorkspacesState {
   workspaces: Workspace[];
   activeProjectId: ProjectId | null;
+  /**
+   * Saved layout templates. Optional/additive — states persisted before this
+   * feature simply have no field, which readers must treat as an empty list.
+   */
+  layoutTemplates?: LayoutTemplate[];
   schemaVersion: 1;
 }
 

@@ -299,6 +299,7 @@ export class AppController {
       focusByIndex: (idx) => this.router.getActive()?.focusByIndex(idx),
       focusPrev: () => this.router.getActive()?.focusRelative(-1),
       focusNext: () => this.router.getActive()?.focusRelative(1),
+      focusDirection: (direction) => this.router.getActive()?.focusDirection(direction),
       // Resolved lazily so the keybinding is harmless before bootstrap mounts.
       togglePalette: () => this.palette?.toggle(),
     });

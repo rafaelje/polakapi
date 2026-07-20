@@ -1,6 +1,12 @@
-import type { ProjectId } from "../workspaces/state/types";
+import type { LayoutTemplate, ProjectId } from "../workspaces/state/types";
 import { confirmModal } from "../workspaces/forms/confirm-delete";
 import { resolveProfile } from "./cli-registry";
+import { planTemplateApplication } from "./layout-templates";
+import {
+  paneBoxes,
+  resolveDirectionalFocus,
+  type FocusDirection,
+} from "./terminal-focus-navigation";
 import { attachTerminalDocking, type TerminalDockingHandle } from "./terminal-docking";
 import {
   appendTerminalPane,
@@ -492,6 +498,13 @@ export class TerminalManager {
     this.focusByIndex(next);
   }
 
+  /** Moves focus to the nearest pane in the given screen direction. */
+  focusDirection(direction: FocusDirection): void {
+    const boxes = paneBoxes(this.order, (id) => this.panes.get(id)?.el);
+    const next = resolveDirectionalFocus(boxes, this.focusedId, direction);
+    if (next && next !== this.focusedId) this.setFocus(next, true);
+  }
+
   /** Tears down every PTY + xterm and removes gridEl from any parent. */
   async dispose(): Promise<void> {
     this.listeners.clear();
@@ -534,6 +547,38 @@ export class TerminalManager {
     this.initialLayout = null;
     this.syncOrderToLayout();
     this.relayout();
+    this.emitSpecs();
+    this.emitLayout();
+  }
+
+  /**
+   * Applies a saved layout template: reuses live panes by matching cliId,
+   * spawns the missing ones (cwd omitted → this project's defaultCwd), then
+   * adopts the template's split tree. Unconsumed panes stay open —
+   * repairTerminalLayout appends them after the template tree.
+   */
+  async applyTemplate(template: LayoutTemplate): Promise<void> {
+    const live = this.order.map((id) => ({ id, cliId: this.specsById.get(id)?.cliId }));
+    const steps = planTemplateApplication(template.specs, live);
+    const idMap = new Map<string, string>();
+    for (const step of steps) {
+      if (step.action === "reuse") {
+        idMap.set(step.specId, step.paneId);
+        continue;
+      }
+      // Silent spawns emit nothing; one focus/relayout/persist batch below.
+      const pane = await this.addPane(
+        { title: step.spec.title, startupCmd: step.spec.startupCmd, cliId: step.spec.cliId },
+        { silent: true },
+      );
+      const spawnedId = pane?.el.dataset.ptyId;
+      if (spawnedId) idMap.set(step.specId, spawnedId);
+    }
+    this.layout = repairTerminalLayout(template.layout, this.order, idMap);
+    this.syncOrderToLayout();
+    if (!this.focusedId && this.order.length > 0) this.setFocus(this.order[0]);
+    this.relayout();
+    this.emitCount();
     this.emitSpecs();
     this.emitLayout();
   }

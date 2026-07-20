@@ -16,6 +16,7 @@
   --cli-claude: #d97757;
   --cli-codex: #10a37f;
   --cli-opencode: #7cc4ff;
+  --cli-cursor: #e0e0e0;
 }
 
 * {
@@ -456,6 +457,37 @@ body {
   height: 1px;
   margin: 4px;
   background: var(--border);
+}
+
+/* Layouts dropdown: template rows pair an apply button with a delete "×". */
+.layout-template-row {
+  display: flex;
+  align-items: stretch;
+}
+
+.layout-template-apply {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.layout-template-delete {
+  flex: 0 0 auto;
+  padding: 6px 8px;
+  color: #8a8a8a;
+}
+
+.layout-template-delete:hover {
+  color: #ff6b6b;
+}
+
+.layout-template-empty {
+  padding: 6px 10px;
+  font-size: 12px;
+  color: #6a6a6a;
+  font-style: italic;
 }
 
 .terminal-pane-dragging {

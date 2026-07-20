@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { ProjectId } from "../workspaces/state/types";
+import type { LayoutTemplate, ProjectId } from "../workspaces/state/types";
 import { terminalLayoutPaneIds, type TerminalLayoutNode } from "./terminal-layout";
 import type { PaneCreateOptions, TerminalSpec } from "./types";
 
@@ -310,5 +310,74 @@ describe("TerminalManager CLI wiring", () => {
     await manager.restoreSpecs([{ id: "old-a" }, { id: "old-b" }]);
 
     expect(terminalLayoutPaneIds(manager.layoutSnapshot)).toEqual(["pty-1", "pty-2"]);
+  });
+});
+
+describe("TerminalManager applyTemplate", () => {
+  beforeEach(() => {
+    fake.reset();
+  });
+
+  const template: LayoutTemplate = {
+    id: "tpl",
+    name: "claude + shell",
+    specs: [
+      { id: "tpl-a", cliId: "claude" },
+      { id: "tpl-b", cliId: "shell", startupCmd: "pnpm dev" },
+    ],
+    layout: {
+      type: "split",
+      axis: "column",
+      ratio: 0.6,
+      first: { type: "pane", paneId: "tpl-a" },
+      second: { type: "pane", paneId: "tpl-b" },
+    },
+  };
+
+  it("spawns every spec into defaultCwd when no panes exist", async () => {
+    const manager = makeManager();
+
+    await manager.applyTemplate(template);
+
+    expect(fake.attachCalls).toHaveLength(2);
+    expect(fake.attachCalls.map((c) => c.opts?.cwd)).toEqual(["/tmp/project", "/tmp/project"]);
+    expect(fake.attachCalls[0]?.opts?.command).toBe("claude");
+    expect(manager.layoutSnapshot).toEqual({
+      type: "split",
+      axis: "column",
+      ratio: 0.6,
+      first: { type: "pane", paneId: "pty-1" },
+      second: { type: "pane", paneId: "pty-2" },
+    });
+    const specs = manager.specs();
+    expect(specs.map((s) => s.cliId)).toEqual(["claude", "shell"]);
+    expect(specs[1]?.startupCmd).toBe("pnpm dev");
+  });
+
+  it("reuses an existing pane with a matching cliId and only spawns the rest", async () => {
+    const manager = makeManager();
+    await manager.addPane({ cliId: "claude" });
+
+    await manager.applyTemplate(template);
+
+    // 1 initial claude pane + 1 spawned shell pane; the claude one is reused.
+    expect(fake.attachCalls).toHaveLength(2);
+    expect(manager.layoutSnapshot).toEqual({
+      type: "split",
+      axis: "column",
+      ratio: 0.6,
+      first: { type: "pane", paneId: "pty-1" },
+      second: { type: "pane", paneId: "pty-2" },
+    });
+  });
+
+  it("keeps panes the template does not consume, appended after the tree", async () => {
+    const manager = makeManager();
+    await manager.addPane({ cliId: "codex" });
+
+    await manager.applyTemplate(template);
+
+    expect(terminalLayoutPaneIds(manager.layoutSnapshot)).toEqual(["pty-2", "pty-3", "pty-1"]);
+    expect(manager.specs().map((s) => s.cliId)).toEqual(["claude", "shell", "codex"]);
   });
 });

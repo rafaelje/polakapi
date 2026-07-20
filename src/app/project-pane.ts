@@ -7,6 +7,7 @@ import { ALL_PROFILES, type CliProfile } from "../modules/terminal/cli-registry"
 
 export interface ProjectPaneCallbacks {
   onAddTerminal(): void;
+  onOpenLayoutsMenu(anchor: HTMLElement): void;
   onRunInAll(): void;
   onRevealFolder(path: string): void;
   onOpenInEditor(path: string): void;
@@ -92,6 +93,12 @@ export function mountProjectPane(opts: ProjectPaneOptions): ProjectPaneHandle {
   addBtn.id = "add-pane";
   addBtn.textContent = "+ Terminal";
 
+  const layoutsBtn = document.createElement("button");
+  layoutsBtn.type = "button";
+  layoutsBtn.id = "layouts-menu";
+  layoutsBtn.title = "Apply or save a layout template";
+  layoutsBtn.textContent = "Layouts";
+
   const revealBtn = document.createElement("button");
   revealBtn.type = "button";
   revealBtn.title = "Reveal in file manager";
@@ -122,7 +129,7 @@ export function mountProjectPane(opts: ProjectPaneOptions): ProjectPaneHandle {
   });
   chipRow.setActive("shell");
 
-  subToolbar.append(chipRow.element, addBtn, runAllBtn, externalGroup);
+  subToolbar.append(chipRow.element, addBtn, layoutsBtn, runAllBtn, externalGroup);
 
   let emptyState: EmptyStateHandle | null = createProjectEmptyState();
   let currentProject: Project | null = null;
@@ -135,6 +142,7 @@ export function mountProjectPane(opts: ProjectPaneOptions): ProjectPaneHandle {
   // Start disabled — setActiveProject(project) flips them on once the
   // bootstrap layer wires the router to an active project.
   addBtn.disabled = true;
+  layoutsBtn.disabled = true;
   runAllBtn.disabled = true;
   revealBtn.disabled = true;
   editorBtn.disabled = true;
@@ -142,6 +150,7 @@ export function mountProjectPane(opts: ProjectPaneOptions): ProjectPaneHandle {
   chipRow.setDisabled(true);
 
   const onAdd = (): void => callbacks.onAddTerminal();
+  const onLayouts = (): void => callbacks.onOpenLayoutsMenu(layoutsBtn);
   const onRunAll = (): void => callbacks.onRunInAll();
   const onReveal = (): void => {
     const path = currentProject?.path;
@@ -157,6 +166,7 @@ export function mountProjectPane(opts: ProjectPaneOptions): ProjectPaneHandle {
   };
 
   addBtn.addEventListener("click", onAdd);
+  layoutsBtn.addEventListener("click", onLayouts);
   runAllBtn.addEventListener("click", onRunAll);
   revealBtn.addEventListener("click", onReveal);
   editorBtn.addEventListener("click", onEditor);
@@ -168,6 +178,7 @@ export function mountProjectPane(opts: ProjectPaneOptions): ProjectPaneHandle {
       const active = project !== null;
       host.classList.toggle("inactive", !active);
       addBtn.disabled = !active;
+      layoutsBtn.disabled = !active;
       runAllBtn.disabled = !active;
       revealBtn.disabled = project === null || !project.path;
       editorBtn.disabled = project === null || !project.path;
@@ -186,6 +197,7 @@ export function mountProjectPane(opts: ProjectPaneOptions): ProjectPaneHandle {
     },
     dispose(): void {
       addBtn.removeEventListener("click", onAdd);
+      layoutsBtn.removeEventListener("click", onLayouts);
       runAllBtn.removeEventListener("click", onRunAll);
       revealBtn.removeEventListener("click", onReveal);
       editorBtn.removeEventListener("click", onEditor);

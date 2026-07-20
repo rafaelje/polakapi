@@ -17,6 +17,7 @@ export const AI_CLI_PROFILES: CliProfile[] = [
   { id: "claude", label: "Claude", command: "claude", kind: "ai-cli" },
   { id: "codex", label: "Codex", command: "codex", kind: "ai-cli" },
   { id: "opencode", label: "Opencode", command: "opencode", kind: "ai-cli" },
+  { id: "cursor", label: "Cursor", command: "cursor-agent", kind: "ai-cli" },
 ];
 
 export const ALL_PROFILES: CliProfile[] = [SHELL_PROFILE, ...AI_CLI_PROFILES];
