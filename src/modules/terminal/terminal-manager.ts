@@ -1,6 +1,6 @@
 import type { ProjectId } from "../workspaces/state/types";
-import { confirmModal } from "../workspaces/forms/confirm-delete";
 import { resolveProfile } from "./cli-registry";
+import { confirmRespawn } from "./terminal-pane-menu";
 import { attachTerminalDocking, type TerminalDockingHandle } from "./terminal-docking";
 import {
   appendTerminalPane,
@@ -17,7 +17,7 @@ import {
   type TerminalLayoutPath,
 } from "./terminal-layout";
 import { TerminalPane } from "./terminal-pane";
-import { ptyWrite } from "./pty-client";
+import { ptyKill, ptyWrite } from "./pty-client";
 import { registerBellNotification, type BellNotificationHandle } from "./terminal-notifications";
 import { layoutTerminalSplits } from "./terminal-split-layout";
 import { type TerminalSpec } from "./types";
@@ -140,7 +140,8 @@ export class TerminalManager {
       next.title === current.title &&
       next.cwd === current.cwd &&
       next.startupCmd === current.startupCmd &&
-      next.cliId === current.cliId
+      next.cliId === current.cliId &&
+      next.suspended === current.suspended
     ) {
       return;
     }
@@ -216,7 +217,7 @@ export class TerminalManager {
    */
   async addPane(
     spec?: Partial<TerminalSpec>,
-    opts?: { silent?: boolean },
+    opts?: { silent?: boolean; extraArgs?: string[]; skipStartupCmd?: boolean },
   ): Promise<TerminalPane | null> {
     const pane = new TerminalPane();
     const anchorId = this.focusedId;
@@ -231,7 +232,7 @@ export class TerminalManager {
       await pane.attach(this.grid, {
         cwd,
         command,
-        args: profile.args,
+        args: opts?.extraArgs ? [...(profile.args ?? []), ...opts.extraArgs] : profile.args,
         cliId: profile.id,
       });
     } catch (error) {
@@ -274,7 +275,7 @@ export class TerminalManager {
       this.emitLayout();
     }
 
-    if (!spawnError) {
+    if (!spawnError && !opts?.skipStartupCmd) {
       this.scheduleStartupCmd(ptyId, finalSpec.startupCmd);
     }
     return pane;
@@ -297,6 +298,12 @@ export class TerminalManager {
     pane.setDockMenuCallbacks({
       canDock: () => this.order.length > 1,
       onDockAtEdge: (position) => this.dockAtRoot(ptyId, position),
+    });
+    pane.setSuspendCallbacks({
+      isLive: () => this.isLive(ptyId),
+      isSuspended: () => this.specsById.get(ptyId)?.suspended === true,
+      onSuspendRequest: () => this.suspendPane(ptyId),
+      onResumeRequest: () => void this.resumePane(ptyId),
     });
     const dockingHandle = attachTerminalDocking({
       handle: pane.headerEl,
@@ -359,25 +366,11 @@ export class TerminalManager {
     }, STARTUP_CMD_DELAY_MS);
   }
 
-  /**
-   * Confirm-and-respawn. Skips the modal for empty panes (no output received
-   * yet) so the very common "spawned the wrong CLI, swap right away" case is
-   * frictionless. Otherwise prompts the user since respawn kills the live
-   * process.
-   */
+  /** Confirm-and-respawn; the modal is skipped for panes with no output yet. */
   private async requestRespawn(ptyId: string, cliId: string): Promise<void> {
     const pane = this.panes.get(ptyId);
     if (!pane) return;
-    if (pane.hasOutput) {
-      const profile = resolveProfile(cliId);
-      const ok = await confirmModal({
-        title: `Respawn terminal with ${profile.label}?`,
-        message: "The current process will be killed and a new one started. Output will be lost.",
-        confirmLabel: "Respawn",
-        danger: true,
-      });
-      if (!ok) return;
-    }
+    if (pane.hasOutput && !(await confirmRespawn(cliId))) return;
     await this.respawnPane(ptyId, cliId);
   }
 
@@ -387,21 +380,56 @@ export class TerminalManager {
    * ptyId changes — external holders of the old id must invalidate.
    */
   async respawnPane(ptyId: string, cliId: string): Promise<void> {
-    if (this.respawning.has(ptyId)) return;
     const current = this.specsById.get(ptyId);
     if (!current) return;
-    this.respawning.add(ptyId);
+    await this.replacePane(ptyId, {
+      title: current.title,
+      cwd: current.cwd,
+      startupCmd: current.startupCmd,
+      cliId,
+    });
+  }
+
+  /** Kills the process to free RAM; the pane stays as a resume placeholder. */
+  suspendPane(ptyId: string): void {
+    const pane = this.panes.get(ptyId);
+    if (!pane || !this.isLive(ptyId)) return;
+    this.updateSpec(ptyId, { suspended: true });
+    pane.markSuspended();
+    void ptyKill(ptyId);
+  }
+
+  suspendAll(): void {
+    for (const id of [...this.liveIds]) this.suspendPane(id);
+  }
+
+  /** Respawns a suspended pane in its slot. AI CLIs restart with resumeArgs;
+   * their startupCmd is skipped, not typed into the recovered session. */
+  async resumePane(paneId: string): Promise<void> {
+    const current = this.specsById.get(paneId);
+    if (!current?.suspended || this.isLive(paneId)) return;
+    const resumeArgs = resolveProfile(current.cliId).resumeArgs;
+    const { title, cwd, startupCmd, cliId } = current;
+    await this.replacePane(
+      paneId,
+      { title, cwd, startupCmd, cliId },
+      { extraArgs: resumeArgs, skipStartupCmd: resumeArgs !== undefined },
+    );
+  }
+
+  /** Close-then-spawn shared by respawn and resume; preserves the grid slot. */
+  private async replacePane(
+    paneId: string,
+    spec: Partial<TerminalSpec>,
+    opts?: { extraArgs?: string[]; skipStartupCmd?: boolean },
+  ): Promise<void> {
+    if (this.respawning.has(paneId)) return;
+    this.respawning.add(paneId);
     try {
-      const targetIdx = this.order.indexOf(ptyId);
+      const targetIdx = this.order.indexOf(paneId);
       const preservedLayout = this.layout;
-      const preserved: Partial<TerminalSpec> = {
-        title: current.title,
-        cwd: current.cwd,
-        startupCmd: current.startupCmd,
-        cliId,
-      };
-      await this.close(ptyId, { silent: true });
-      const pane = await this.addPane(preserved, { silent: true });
+      await this.close(paneId, { silent: true });
+      const pane = await this.addPane(spec, { silent: true, ...opts });
       if (!pane) {
         this.relayout();
         this.emitCount();
@@ -415,7 +443,7 @@ export class TerminalManager {
           this.order.splice(fromIdx, 1);
           this.order.splice(targetIdx, 0, newId);
         }
-        this.layout = replaceTerminalPaneId(preservedLayout, ptyId, newId);
+        this.layout = replaceTerminalPaneId(preservedLayout, paneId, newId);
         this.syncOrderToLayout();
         this.setFocus(newId);
       }
@@ -424,13 +452,8 @@ export class TerminalManager {
       this.emitSpecs();
       this.emitLayout();
     } finally {
-      this.respawning.delete(ptyId);
+      this.respawning.delete(paneId);
     }
-  }
-
-  /** Backward-compat alias used by code paths that have not migrated yet. */
-  create(): Promise<TerminalPane | null> {
-    return this.addPane();
   }
 
   async close(ptyId: string, opts?: { silent?: boolean }): Promise<void> {
@@ -466,6 +489,23 @@ export class TerminalManager {
   markExited(ptyId: string): void {
     if (!this.liveIds.delete(ptyId)) return;
     this.emitCount();
+  }
+
+  /** Mounts a suspended spec as a process-less placeholder pane. */
+  private addSuspendedPane(spec: TerminalSpec): void {
+    const pane = new TerminalPane();
+    const profile = resolveProfile(spec.cliId);
+    pane.attachPlaceholder(this.grid, {
+      cliId: profile.id,
+      command: profile.command || undefined,
+    });
+    const paneId = spec.id;
+    this.panes.set(paneId, pane);
+    this.order.push(paneId);
+    this.layout = appendTerminalPane(this.layout, paneId);
+    this.specsById.set(paneId, { ...spec, cliId: profile.id });
+    pane.el.dataset.ptyId = paneId;
+    this.wirePaneCallbacks(pane, paneId);
   }
 
   closeFocused(): void {
@@ -521,6 +561,11 @@ export class TerminalManager {
     this.suppressPersistenceEvents = true;
     try {
       for (const spec of specs) {
+        if (spec.suspended) {
+          this.addSuspendedPane(spec);
+          idMap.set(spec.id, spec.id);
+          continue;
+        }
         const pane = await this.addPane(spec);
         const restoredId = pane?.el.dataset.ptyId;
         if (restoredId) idMap.set(spec.id, restoredId);

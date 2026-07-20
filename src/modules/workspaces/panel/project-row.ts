@@ -28,6 +28,8 @@ export interface ProjectRowOptions {
    * mutate it; rows subscribe to apply the `.selected` visual.
    */
   selection: SelectionStore;
+  /** Optional. Row menu "Suspend terminals" — kills this project's PTYs to free RAM. */
+  onSuspendProject?: (projectId: ProjectId) => void;
 }
 
 export interface ProjectRowHandle {
@@ -166,6 +168,15 @@ export function createProjectRow(opts: ProjectRowOptions): ProjectRowHandle {
           onSelect: () => void controller.changeProjectPathInteractive(project.id),
         },
         { label: "Duplicate", onSelect: () => controller.duplicateProject(project.id) },
+        ...(opts.onSuspendProject
+          ? [
+              {
+                label: "Suspend terminals",
+                disabled: (opts.getLiveCount?.() ?? 0) === 0,
+                onSelect: () => opts.onSuspendProject?.(project.id),
+              },
+            ]
+          : []),
         ...buildMoveSubmenuItems(controller, project.id, workspaceId),
         {
           label: "Appearance…",

@@ -7,6 +7,7 @@ import { ALL_PROFILES, type CliProfile } from "../modules/terminal/cli-registry"
 
 export interface ProjectPaneCallbacks {
   onAddTerminal(): void;
+  onSuspendAll(): void;
   onRunInAll(): void;
   onRevealFolder(path: string): void;
   onOpenInEditor(path: string): void;
@@ -116,13 +117,19 @@ export function mountProjectPane(opts: ProjectPaneOptions): ProjectPaneHandle {
   runAllBtn.id = "run-all";
   runAllBtn.textContent = "Run command in all…";
 
+  const suspendBtn = document.createElement("button");
+  suspendBtn.type = "button";
+  suspendBtn.id = "suspend-all";
+  suspendBtn.title = "Kill this project's terminal processes to free RAM; panes stay to resume";
+  suspendBtn.textContent = "⏸ Suspend all";
+
   const chipRow = createChipRow((cliId) => {
     chipRow.setActive(cliId);
     callbacks.onSetActiveCli(cliId);
   });
   chipRow.setActive("shell");
 
-  subToolbar.append(chipRow.element, addBtn, runAllBtn, externalGroup);
+  subToolbar.append(chipRow.element, addBtn, runAllBtn, suspendBtn, externalGroup);
 
   let emptyState: EmptyStateHandle | null = createProjectEmptyState();
   let currentProject: Project | null = null;
@@ -136,12 +143,14 @@ export function mountProjectPane(opts: ProjectPaneOptions): ProjectPaneHandle {
   // bootstrap layer wires the router to an active project.
   addBtn.disabled = true;
   runAllBtn.disabled = true;
+  suspendBtn.disabled = true;
   revealBtn.disabled = true;
   editorBtn.disabled = true;
   shellBtn.disabled = true;
   chipRow.setDisabled(true);
 
   const onAdd = (): void => callbacks.onAddTerminal();
+  const onSuspendAll = (): void => callbacks.onSuspendAll();
   const onRunAll = (): void => callbacks.onRunInAll();
   const onReveal = (): void => {
     const path = currentProject?.path;
@@ -157,6 +166,7 @@ export function mountProjectPane(opts: ProjectPaneOptions): ProjectPaneHandle {
   };
 
   addBtn.addEventListener("click", onAdd);
+  suspendBtn.addEventListener("click", onSuspendAll);
   runAllBtn.addEventListener("click", onRunAll);
   revealBtn.addEventListener("click", onReveal);
   editorBtn.addEventListener("click", onEditor);
@@ -169,6 +179,7 @@ export function mountProjectPane(opts: ProjectPaneOptions): ProjectPaneHandle {
       host.classList.toggle("inactive", !active);
       addBtn.disabled = !active;
       runAllBtn.disabled = !active;
+      suspendBtn.disabled = !active;
       revealBtn.disabled = project === null || !project.path;
       editorBtn.disabled = project === null || !project.path;
       shellBtn.disabled = project === null || !project.path;
@@ -186,6 +197,7 @@ export function mountProjectPane(opts: ProjectPaneOptions): ProjectPaneHandle {
     },
     dispose(): void {
       addBtn.removeEventListener("click", onAdd);
+      suspendBtn.removeEventListener("click", onSuspendAll);
       runAllBtn.removeEventListener("click", onRunAll);
       revealBtn.removeEventListener("click", onReveal);
       editorBtn.removeEventListener("click", onEditor);

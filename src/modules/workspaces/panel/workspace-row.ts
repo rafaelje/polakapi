@@ -25,6 +25,8 @@ export interface WorkspaceRowOptions {
   filterQuery?: string;
   /** Multi-selection store shared across all rows. */
   selection: SelectionStore;
+  /** Optional. Forwarded to project rows for the "Suspend terminals" item. */
+  onSuspendProject?: (projectId: ProjectId) => void;
 }
 
 export interface WorkspaceRowHandle {
@@ -105,6 +107,7 @@ export function createWorkspaceRow(opts: WorkspaceRowOptions): WorkspaceRowHandl
   for (const project of visibleProjects) {
     const initialCount = liveCountFor ? liveCountFor(project.id) : 0;
     const handle = createProjectRow({
+      onSuspendProject: opts.onSuspendProject,
       project,
       workspaceId: workspace.id,
       isActive: activeProjectId === project.id,

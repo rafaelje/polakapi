@@ -561,6 +561,32 @@ body {
   flex: 1;
   min-height: 0;
   padding: 4px;
+  position: relative;
+}
+
+/* Suspended pane: process killed to free RAM, xterm buffer kept behind a
+   dimmed overlay that resumes on click. */
+.pane--suspended .pane-body > .xterm {
+  opacity: 0.35;
+}
+
+.pane-suspended-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--bg) 55%, transparent);
+  border: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.pane-suspended-overlay:hover {
+  color: var(--accent);
 }
 
 .pane-body .xterm,

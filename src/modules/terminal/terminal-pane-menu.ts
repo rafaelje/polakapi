@@ -1,7 +1,7 @@
-import { promptModal } from "../../shared/ui/modal";
-import { ALL_PROFILES, type CliProfile } from "./cli-registry";
+import { confirmModal, promptModal } from "../../shared/ui/modal";
+import { ALL_PROFILES, resolveProfile, type CliProfile } from "./cli-registry";
 import type { TerminalDockPosition } from "./terminal-layout";
-import type { StartupCmdEditCallbacks } from "./terminal-pane-types";
+import type { StartupCmdEditCallbacks, SuspendCallbacks } from "./terminal-pane-types";
 
 /**
  * Pane header kebab menu. Extracted from terminal-pane.ts so the pane class
@@ -15,6 +15,8 @@ export interface PaneMenuOptions {
   onChangeStartupCmd(next: string | undefined): void;
   canDock(): boolean;
   onDockAtEdge(position: TerminalDockPosition): void;
+  /** Optional: suspend/resume items are hidden when the manager did not wire it. */
+  suspend?: SuspendCallbacks | null;
 }
 
 export interface PaneMenuHandle {
@@ -38,6 +40,22 @@ export function openPaneMenu(opts: PaneMenuOptions): PaneMenuHandle {
   editItem.className = "pane-menu-item";
   editItem.textContent = "Edit startup command…";
   popover.append(editItem);
+
+  const suspend = opts.suspend;
+  if (suspend) {
+    const suspended = suspend.isSuspended();
+    const item = document.createElement("button");
+    item.type = "button";
+    item.className = "pane-menu-item";
+    item.textContent = suspended ? "Resume" : "Suspend (free RAM)";
+    item.disabled = !suspended && !suspend.isLive();
+    item.addEventListener("click", () => {
+      dispose();
+      if (suspended) suspend.onResumeRequest();
+      else suspend.onSuspendRequest();
+    });
+    popover.append(item);
+  }
 
   const separator = document.createElement("div");
   separator.className = "pane-menu-separator";
@@ -174,6 +192,21 @@ function createRespawnItem(
     onSelect(profile.id);
   });
   return item;
+}
+
+/**
+ * Confirm dialog shown before respawning a pane that already produced output
+ * (the live process gets killed). Lives here with the rest of the pane UI so
+ * the manager keeps only the orchestration.
+ */
+export async function confirmRespawn(cliId: string): Promise<boolean> {
+  const profile = resolveProfile(cliId);
+  return confirmModal({
+    title: `Respawn terminal with ${profile.label}?`,
+    message: "The current process will be killed and a new one started. Output will be lost.",
+    confirmLabel: "Respawn",
+    danger: true,
+  });
 }
 
 export type { StartupCmdEditCallbacks };
