@@ -12,6 +12,11 @@ export interface PersistedLayout {
   notesHeight?: number;
   activeBottomTab?: BottomTab;
   /**
+   * Memory budget for terminal processes in MB. Opt-in: undefined or 0 means
+   * no limit — the guard never auto-suspends, only the indicator updates.
+   */
+  memoryLimitMb?: number;
+  /**
    * @deprecated F3: notes content is now stored per-project in workspaces.json.
    * Kept in the type so older layout.json files still load without runtime
    * narrowing errors. No code reads or writes this field after F3.

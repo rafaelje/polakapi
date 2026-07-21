@@ -6,8 +6,14 @@ import {
   type PersistedLayout,
 } from "../shared/persistence/store";
 import { wireShortcuts } from "../shared/keyboard/shortcuts";
+import { promptModal } from "../shared/ui/modal";
 import { showToast } from "../shared/ui/toast";
 import { onPtyData, onPtyExit, ptyKill } from "../modules/terminal/pty-client";
+import {
+  formatMemoryIndicator,
+  startMemoryGuard,
+  type MemoryGuardHandle,
+} from "../modules/terminal/memory-guard";
 import { startFlexDrag, wireSidebarGutters } from "../modules/layout/gutters";
 import { wireToggles } from "../modules/layout/panel-toggles";
 import { type SidebarTarget } from "../modules/layout/types";
@@ -55,6 +61,9 @@ export class AppController {
   private agentsController: AgentsController | null = null;
   private unwireShortcuts: (() => void) | null = null;
   private unwireWindowLifecycle: (() => void) | null = null;
+  private memoryGuard: MemoryGuardHandle | null = null;
+  /** 0 = guard off (the default): terminals may use whatever they want. */
+  private memoryLimitMb = 0;
   private unwireQuitConfirm: (() => void) | null = null;
   private unwireFocus: (() => void) | null = null;
   private unlistenData: UnlistenFn | null = null;
@@ -123,6 +132,8 @@ export class AppController {
     // earlier in start() is a no-op until this line runs.
     this.palette = mountCommandPalette({ controller: this.workspaces.controller });
 
+    this.wireMemoryGuard(layout);
+
     // Wire the quit hook *after* workspaces is ready so the modal can resolve
     // project names by looking the controller's state up at confirm time.
     const workspaces = this.workspaces;
@@ -149,6 +160,8 @@ export class AppController {
     this.unwireQuitConfirm = null;
     this.unwireFocus?.();
     this.unwireFocus = null;
+    this.memoryGuard?.dispose();
+    this.memoryGuard = null;
 
     this.palette?.dispose();
     this.palette = null;
@@ -302,6 +315,52 @@ export class AppController {
       // Resolved lazily so the keybinding is harmless before bootstrap mounts.
       togglePalette: () => this.palette?.toggle(),
     });
+  }
+
+  /**
+   * Memory budget for terminal process trees — OPT-IN: with no limit set the
+   * guard only feeds the toolbar indicator and never suspends anything.
+   * Above a configured limit it auto-suspends background-project panes
+   * (heaviest first) so the OS keeps headroom; the active project is never
+   * auto-suspended, only warned about.
+   */
+  private wireMemoryGuard(layout: PersistedLayout): void {
+    this.memoryLimitMb = layout.memoryLimitMb ?? 0;
+    const btn = document.getElementById("memory-indicator");
+    this.memoryGuard = startMemoryGuard({
+      getPanes: () => this.router.livePanes(),
+      getActiveProjectId: () => this.workspaces?.controller.getActiveProject()?.id ?? null,
+      getLimitMb: () => this.memoryLimitMb,
+      suspendPane: (paneId) => this.router.findPaneById(paneId)?.manager.suspendPane(paneId),
+      onStats: (stats, usedMb) => {
+        if (!btn) return;
+        btn.textContent = formatMemoryIndicator(usedMb, this.memoryLimitMb);
+        btn.title =
+          `Terminals: ${usedMb} MB · limit ${this.memoryLimitMb > 0 ? `${this.memoryLimitMb} MB` : "off"} · ` +
+          `system free: ${stats.availableMb} MB — click to change the limit`;
+      },
+    });
+    btn?.addEventListener("click", () => void this.promptMemoryLimit());
+  }
+
+  private async promptMemoryLimit(): Promise<void> {
+    const value = await promptModal({
+      title: "Terminal memory limit",
+      message:
+        "In MB. Above this, terminals of background projects are auto-suspended (resumable). 0 = no limit (default).",
+      placeholder: "e.g. 8192",
+      initialValue: String(this.memoryLimitMb),
+      confirmLabel: "Set limit",
+    });
+    if (value === null) return;
+    const parsed = Number(value.trim());
+    if (!Number.isFinite(parsed) || parsed < 0) {
+      showToast("Limit must be a number of MB (0 disables)", "error");
+      return;
+    }
+    this.memoryLimitMb = Math.round(parsed);
+    queueSave({ memoryLimitMb: this.memoryLimitMb });
+    void this.memoryGuard?.tick();
   }
 
   private persistSidebarWidths(): void {

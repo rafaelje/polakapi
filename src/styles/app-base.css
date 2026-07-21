@@ -155,6 +155,19 @@ body {
   margin-left: 8px;
 }
 
+.toolbar .memory-indicator {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: #8a8a8a;
+  border-color: transparent;
+  padding: 4px 6px;
+}
+
+.toolbar .memory-indicator:hover {
+  color: var(--text);
+  border-color: var(--border);
+}
+
 .toolbar .toggle-btn {
   padding: 4px 6px;
   display: inline-flex;
