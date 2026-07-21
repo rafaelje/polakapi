@@ -6,6 +6,7 @@ import { ptySpawn, ptyWrite, ptyResize, ptyKill } from "./pty-client";
 import { terminalTheme } from "./terminal-theme";
 import { attachTerminalClipboard } from "./terminal-clipboard";
 import { attachTerminalKeybindings } from "./terminal-keybindings";
+import { classifyLinkText, createPathLinkProvider, openLinkFromText } from "./terminal-links";
 import { openPaneMenu, openCliRespawnMenu } from "./terminal-pane-menu";
 import type {
   CliRespawnCallbacks,
@@ -87,15 +88,40 @@ export class TerminalPane {
       cursorBlink: true,
       allowProposedApi: true,
       scrollback: 5000,
+      // OSC 8 hyperlinks (claude & friends emit them). Without a handler
+      // xterm ignores clicks entirely; window.open is a no-op in the Tauri
+      // webview, so activation must route through the Rust openers.
+      linkHandler: {
+        allowNonHttpProtocols: true,
+        activate: (event, text) => {
+          event.preventDefault();
+          openLinkFromText(text);
+        },
+      },
     });
     this.fitAddon = new FitAddon();
     this.term.loadAddon(this.fitAddon);
-    this.term.loadAddon(new WebLinksAddon());
+    // Plain-text URL detection; same Rust-routed activation as above.
+    this.term.loadAddon(
+      new WebLinksAddon((event, uri) => {
+        event.preventDefault();
+        openLinkFromText(uri);
+      }),
+    );
   }
 
   async attach(host: HTMLElement, opts?: PaneCreateOptions): Promise<void> {
     host.append(this.el);
     this.term.open(this.bodyEl);
+    // Absolute paths in output become clickable (file → editor, dir → file
+    // manager). classifyLinkText re-validates before invoking Rust.
+    this.disposables.push(
+      this.term.registerLinkProvider(
+        createPathLinkProvider(this.term, (path) => {
+          if (classifyLinkText(path)) openLinkFromText(path);
+        }),
+      ),
+    );
     this.disposables.push(attachTerminalClipboard(this.term));
     this.disposables.push(
       attachTerminalKeybindings(this.term, (data) => {

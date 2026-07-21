@@ -116,3 +116,16 @@ pub fn open_in_shell(shell: State<'_, ShellRegistry>, path: String) -> Result<()
 pub fn open_file_in_editor(path: String, editor: Option<String>) -> Result<(), String> {
     crate::open::open_file_in_editor(&path, editor.as_deref())
 }
+
+/// Opens an http(s) URL in the system browser. Non-web schemes are rejected.
+#[tauri::command]
+pub fn open_url(url: String) -> Result<(), String> {
+    crate::open::open_url(&url)
+}
+
+/// Opens a local path clicked in a terminal: directories in the file manager,
+/// files in the editor.
+#[tauri::command]
+pub fn open_local_path(path: String) -> Result<(), String> {
+    crate::open::open_local_path(&path)
+}

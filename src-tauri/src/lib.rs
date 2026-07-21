@@ -28,7 +28,7 @@ use crate::adv_review::{
 };
 use crate::commands::{
     app_exit, fs_validate_path, open_file_in_editor, open_in_editor, open_in_explorer,
-    open_in_shell, pty_kill, pty_resize, pty_spawn, pty_write,
+    open_in_shell, open_local_path, open_url, pty_kill, pty_resize, pty_spawn, pty_write,
 };
 use crate::db::{
     prompt_delete_sessions, prompt_get, prompt_install_hooks, prompt_list_by_session,
@@ -142,6 +142,8 @@ pub fn run() {
             open_in_editor,
             open_in_shell,
             open_file_in_editor,
+            open_url,
+            open_local_path,
             run_loop_agent,
             loop_ensure_prompts_dir,
             loop_read_global_prompt,
