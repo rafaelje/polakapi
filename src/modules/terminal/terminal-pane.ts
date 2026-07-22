@@ -11,6 +11,7 @@ import type {
   CliRespawnCallbacks,
   DockMenuCallbacks,
   StartupCmdEditCallbacks,
+  SuspendCallbacks,
 } from "./terminal-pane-types";
 import { type PaneCreateOptions } from "./types";
 
@@ -37,7 +38,9 @@ export class TerminalPane {
   private startupCmdCallbacks: StartupCmdEditCallbacks | null = null;
   private cliRespawnCallbacks: CliRespawnCallbacks | null = null;
   private dockMenuCallbacks: DockMenuCallbacks | null = null;
+  private suspendCallbacks: SuspendCallbacks | null = null;
   private spawnFailed = false;
+  private suspended = false;
 
   constructor() {
     this.el = document.createElement("div");
@@ -132,7 +135,47 @@ export class TerminalPane {
   }
 
   markExited(): void {
+    // A user-initiated suspend also kills the PTY; the overlay already
+    // communicates the state, so the exited line would only be noise.
+    if (this.suspended) return;
     this.term.write("\r\n\x1b[90m[process exited]\x1b[0m\r\n");
+  }
+
+  get isSuspended(): boolean {
+    return this.suspended;
+  }
+
+  /**
+   * Dims the pane and overlays a resume affordance. The PTY is (or is about
+   * to be) dead; the xterm buffer stays visible behind the overlay so the
+   * user keeps the context of what the terminal was doing.
+   */
+  markSuspended(): void {
+    if (this.suspended) return;
+    this.suspended = true;
+    this.el.classList.add("pane--suspended");
+    const overlay = document.createElement("button");
+    overlay.type = "button";
+    overlay.className = "pane-suspended-overlay";
+    overlay.textContent = "⏸ Suspended — click to resume";
+    overlay.addEventListener("click", (e) => {
+      e.stopPropagation();
+      this.suspendCallbacks?.onResumeRequest();
+    });
+    this.bodyEl.append(overlay);
+  }
+
+  /**
+   * Mounts the pane UI without spawning a PTY — used to restore a suspended
+   * spec on project activation so it costs no process RAM until resumed.
+   */
+  attachPlaceholder(host: HTMLElement, opts?: Pick<PaneCreateOptions, "cliId" | "command">): void {
+    host.append(this.el);
+    this.term.open(this.bodyEl);
+    this.safeFit();
+    this.updateCliBadge(opts?.cliId);
+    this.titleEl.textContent = opts?.command ? `${opts.command} · suspended` : "shell · suspended";
+    this.markSuspended();
   }
 
   /**
@@ -199,6 +242,10 @@ export class TerminalPane {
     this.dockMenuCallbacks = callbacks;
   }
 
+  setSuspendCallbacks(callbacks: SuspendCallbacks | null): void {
+    this.suspendCallbacks = callbacks;
+  }
+
   private openPaneMenu(): void {
     const callbacks = this.startupCmdCallbacks;
     if (!callbacks) return;
@@ -208,6 +255,7 @@ export class TerminalPane {
       onChangeStartupCmd: (next) => callbacks.onChange(next),
       canDock: () => this.dockMenuCallbacks?.canDock() ?? false,
       onDockAtEdge: (position) => this.dockMenuCallbacks?.onDockAtEdge(position),
+      suspend: this.suspendCallbacks,
     });
   }
 

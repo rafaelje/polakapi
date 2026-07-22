@@ -41,3 +41,15 @@ describe("SHELL_PROFILE", () => {
     expect(SHELL_PROFILE.kind).toBe("shell");
   });
 });
+
+describe("resumeArgs", () => {
+  it("defines session-resume args for every ai-cli profile", () => {
+    expect(resolveProfile("claude").resumeArgs).toEqual(["--continue"]);
+    expect(resolveProfile("codex").resumeArgs).toEqual(["resume", "--last"]);
+    expect(resolveProfile("opencode").resumeArgs).toEqual(["--continue"]);
+  });
+
+  it("leaves the shell profile without resumeArgs (plain respawn)", () => {
+    expect(SHELL_PROFILE.resumeArgs).toBeUndefined();
+  });
+});

@@ -9,6 +9,7 @@ mod fs;
 mod git_review;
 mod loop_cli;
 mod loop_prompts;
+mod memory;
 mod open;
 mod pty;
 
@@ -31,6 +32,7 @@ use crate::db::{
     prompt_list_sessions, prompt_search,
 };
 use crate::git_review::{git_branch_diff, git_detect_base_ref};
+use crate::memory::pty_memory_stats;
 use crate::loop_cli::run_loop_agent;
 use crate::loop_prompts::{
     loop_archive_run, loop_create_phase_dir, loop_create_run, loop_delete_phase_dir,
@@ -128,6 +130,7 @@ pub fn run() {
             pty_write,
             pty_resize,
             pty_kill,
+            pty_memory_stats,
             app_exit,
             fs_validate_path,
             open_in_explorer,

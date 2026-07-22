@@ -23,4 +23,15 @@ export interface DockMenuCallbacks {
   canDock(): boolean;
   onDockAtEdge(position: TerminalDockPosition): void;
 }
+
+/**
+ * Callbacks driving the suspend/resume flow. Injected by the TerminalManager;
+ * the pane only surfaces the menu items and the resume overlay click.
+ */
+export interface SuspendCallbacks {
+  isLive(): boolean;
+  isSuspended(): boolean;
+  onSuspendRequest(): void;
+  onResumeRequest(): void;
+}
 import type { TerminalDockPosition } from "./terminal-layout";

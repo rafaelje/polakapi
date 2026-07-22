@@ -44,6 +44,50 @@ export interface BellNotificationHandle {
   dispose(): void;
 }
 
+/**
+ * F5: external state the bell wiring needs to make a focus decision. Provided
+ * by the bootstrap so the manager itself does not depend on the router or the
+ * window-focus tracker. `getProjectName` is also late-bound so renames after
+ * pane spawn still flow into the OS notification title.
+ */
+export interface NotificationContext {
+  /** Currently active project id (router-level state). */
+  getActiveProjectId(): ProjectId | null;
+  /** Whether the OS window currently holds focus. */
+  isWindowFocused(): boolean;
+  /** Resolves the current project name (rename-safe). */
+  getProjectName(projectId: ProjectId): string;
+  /** Forwards bell pendings out of the manager (badge driver). */
+  onBellPending(projectId: ProjectId, paneId: string, pending: boolean): void;
+}
+
+/**
+ * Manager-facing wrapper: derives the standard bell wiring (name lookup,
+ * active+focused suppression, badge fan-out) from the notification context.
+ */
+export function registerManagerBell(opts: {
+  pane: TerminalPane;
+  paneId: string;
+  projectId: ProjectId;
+  ctx: NotificationContext;
+  getTerminalTitle(): string;
+  onEmit(pending: boolean): void;
+}): BellNotificationHandle {
+  const { pane, paneId, projectId, ctx } = opts;
+  return registerBellNotification({
+    pane,
+    paneId,
+    projectId,
+    getProjectName: () => ctx.getProjectName(projectId),
+    getTerminalTitle: () => opts.getTerminalTitle(),
+    isActiveAndFocused: () => ctx.getActiveProjectId() === projectId && ctx.isWindowFocused(),
+    onPendingBell: (pending) => {
+      ctx.onBellPending(projectId, paneId, pending);
+      opts.onEmit(pending);
+    },
+  });
+}
+
 const DEFAULT_THROTTLE_MS = 3000;
 
 /** Cached permission state. `null` ⇒ not asked yet. */

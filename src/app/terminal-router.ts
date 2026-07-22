@@ -149,6 +149,18 @@ export class TerminalRouter {
     return ids;
   }
 
+  /** Live (spawned, non-exited) panes with their owning project — the
+   * memory guard's working set. */
+  livePanes(): Array<{ paneId: string; projectId: ProjectId }> {
+    const out: Array<{ paneId: string; projectId: ProjectId }> = [];
+    for (const [projectId, manager] of this.managers) {
+      for (const id of manager.ids()) {
+        if (manager.isLive(id)) out.push({ paneId: id, projectId });
+      }
+    }
+    return out;
+  }
+
   onProjectPathChanged(projectId: ProjectId, newPath: string): void {
     this.managers.get(projectId)?.setDefaultCwd(newPath);
   }

@@ -1,12 +1,12 @@
 import type { LayoutTemplate, ProjectId } from "../workspaces/state/types";
-import { confirmModal } from "../workspaces/forms/confirm-delete";
 import { resolveProfile } from "./cli-registry";
-import { planTemplateApplication } from "./layout-templates";
+import { executeTemplatePlan, planTemplateApplication } from "./layout-templates";
 import {
   paneBoxes,
   resolveDirectionalFocus,
   type FocusDirection,
 } from "./terminal-focus-navigation";
+import { confirmRespawn } from "./terminal-pane-menu";
 import { attachTerminalDocking, type TerminalDockingHandle } from "./terminal-docking";
 import {
   appendTerminalPane,
@@ -23,8 +23,12 @@ import {
   type TerminalLayoutPath,
 } from "./terminal-layout";
 import { TerminalPane } from "./terminal-pane";
-import { ptyWrite } from "./pty-client";
-import { registerBellNotification, type BellNotificationHandle } from "./terminal-notifications";
+import { ptyKill, ptyWrite } from "./pty-client";
+import {
+  registerManagerBell,
+  type BellNotificationHandle,
+  type NotificationContext,
+} from "./terminal-notifications";
 import { layoutTerminalSplits } from "./terminal-split-layout";
 import { type TerminalSpec } from "./types";
 
@@ -41,22 +45,7 @@ function errorMessage(error: unknown): string {
   return String(error);
 }
 
-/**
- * F5: external state the bell wiring needs to make a focus decision. Provided
- * by the bootstrap so the manager itself does not depend on the router or the
- * window-focus tracker. `getProjectName` is also late-bound so renames after
- * pane spawn still flow into the OS notification title.
- */
-export interface NotificationContext {
-  /** Currently active project id (router-level state). */
-  getActiveProjectId(): ProjectId | null;
-  /** Whether the OS window currently holds focus. */
-  isWindowFocused(): boolean;
-  /** Resolves the current project name (rename-safe). */
-  getProjectName(projectId: ProjectId): string;
-  /** Forwards bell pendings out of the manager (badge driver). */
-  onBellPending(projectId: ProjectId, paneId: string, pending: boolean): void;
-}
+export type { NotificationContext };
 
 export interface TerminalManagerOptions {
   /** Identity used for router lookup + events. */
@@ -64,10 +53,7 @@ export interface TerminalManagerOptions {
   /** project.path applied when a spec omits cwd. */
   defaultCwd: string;
   layout?: TerminalLayoutNode;
-  /**
-   * Default CLI id for new panes. Undefined falls back to "shell". Persisted
-   * by the bootstrap so chip selection survives restart.
-   */
+  /** Default CLI id for new panes; undefined falls back to "shell". */
   activeCliId?: string;
   /** Optional. When omitted, panes do not register bell notifications. */
   notificationContext?: NotificationContext;
@@ -146,7 +132,8 @@ export class TerminalManager {
       next.title === current.title &&
       next.cwd === current.cwd &&
       next.startupCmd === current.startupCmd &&
-      next.cliId === current.cliId
+      next.cliId === current.cliId &&
+      next.suspended === current.suspended
     ) {
       return;
     }
@@ -196,13 +183,8 @@ export class TerminalManager {
     return this.panes.get(id);
   }
 
-  /**
-   * True when `id` corresponds to a spawned, non-exited PTY session — false
-   * for failed spawns (synthetic `failed-*` ids with no backend session)
-   * and for panes whose process already exited. Callers that write to the
-   * PTY (e.g. /agents insert) must check this so they don't fire an
-   * "unknown pty" error against a dead pane.
-   */
+  /** True for spawned, non-exited PTY sessions — false for failed spawns
+   * (synthetic `failed-*` ids) and exited processes. Writers must check it. */
   isLive(id: string): boolean {
     return this.liveIds.has(id);
   }
@@ -222,7 +204,7 @@ export class TerminalManager {
    */
   async addPane(
     spec?: Partial<TerminalSpec>,
-    opts?: { silent?: boolean },
+    opts?: { silent?: boolean; extraArgs?: string[]; skipStartupCmd?: boolean },
   ): Promise<TerminalPane | null> {
     const pane = new TerminalPane();
     const anchorId = this.focusedId;
@@ -237,7 +219,7 @@ export class TerminalManager {
       await pane.attach(this.grid, {
         cwd,
         command,
-        args: profile.args,
+        args: opts?.extraArgs ? [...(profile.args ?? []), ...opts.extraArgs] : profile.args,
         cliId: profile.id,
       });
     } catch (error) {
@@ -275,12 +257,10 @@ export class TerminalManager {
     if (!opts?.silent) {
       this.setFocus(ptyId);
       this.relayout();
-      this.emitCount();
-      this.emitSpecs();
-      this.emitLayout();
+      this.emitAll();
     }
 
-    if (!spawnError) {
+    if (!spawnError && !opts?.skipStartupCmd) {
       this.scheduleStartupCmd(ptyId, finalSpec.startupCmd);
     }
     return pane;
@@ -304,6 +284,12 @@ export class TerminalManager {
       canDock: () => this.order.length > 1,
       onDockAtEdge: (position) => this.dockAtRoot(ptyId, position),
     });
+    pane.setSuspendCallbacks({
+      isLive: () => this.isLive(ptyId),
+      isSuspended: () => this.specsById.get(ptyId)?.suspended === true,
+      onSuspendRequest: () => this.suspendPane(ptyId),
+      onResumeRequest: () => void this.resumePane(ptyId),
+    });
     const dockingHandle = attachTerminalDocking({
       handle: pane.headerEl,
       grid: this.grid,
@@ -321,34 +307,22 @@ export class TerminalManager {
 
   /**
    * F5: wire bell notifications. The manager is the single owner of the
-   * handle and disposes it in close()/dispose(). The "active + focused"
-   * predicate is resolved at fire-time via the injected notificationContext,
-   * not captured here, so a project becoming active later (without spawning
-   * new panes) still suppresses its existing bells correctly.
+   * handle and disposes it in close()/dispose().
    */
   private registerBell(pane: TerminalPane, ptyId: string): void {
     const ctx = this.notificationContext;
     if (!ctx) return;
     const projectId = this.projectId;
-    const bellHandle = registerBellNotification({
+    const handle = registerManagerBell({
       pane,
       paneId: ptyId,
       projectId,
-      getProjectName: () => ctx.getProjectName(projectId),
+      ctx,
       getTerminalTitle: () =>
         this.specsById.get(ptyId)?.title ?? pane.titleEl.textContent ?? "terminal",
-      isActiveAndFocused: () => ctx.getActiveProjectId() === projectId && ctx.isWindowFocused(),
-      onPendingBell: (pending) => {
-        ctx.onBellPending(projectId, ptyId, pending);
-        this.emit({
-          type: "bell-pending",
-          projectId,
-          paneId: ptyId,
-          pending,
-        });
-      },
+      onEmit: (pending) => this.emit({ type: "bell-pending", projectId, paneId: ptyId, pending }),
     });
-    this.bellHandles.set(ptyId, bellHandle);
+    this.bellHandles.set(ptyId, handle);
   }
 
   private scheduleStartupCmd(ptyId: string, startupCmd: string | undefined): void {
@@ -365,53 +339,70 @@ export class TerminalManager {
     }, STARTUP_CMD_DELAY_MS);
   }
 
-  /**
-   * Confirm-and-respawn. Skips the modal for empty panes (no output received
-   * yet) so the very common "spawned the wrong CLI, swap right away" case is
-   * frictionless. Otherwise prompts the user since respawn kills the live
-   * process.
-   */
+  /** Confirm-and-respawn; the modal is skipped for panes with no output yet. */
   private async requestRespawn(ptyId: string, cliId: string): Promise<void> {
     const pane = this.panes.get(ptyId);
     if (!pane) return;
-    if (pane.hasOutput) {
-      const profile = resolveProfile(cliId);
-      const ok = await confirmModal({
-        title: `Respawn terminal with ${profile.label}?`,
-        message: "The current process will be killed and a new one started. Output will be lost.",
-        confirmLabel: "Respawn",
-        danger: true,
-      });
-      if (!ok) return;
-    }
+    if (pane.hasOutput && !(await confirmRespawn(cliId))) return;
     await this.respawnPane(ptyId, cliId);
   }
 
-  /**
-   * Kill the current PTY for a pane and spawn a new one using `cliId`.
-   * Preserves cwd / title / startupCmd and the pane's grid slot. The pane's
-   * ptyId changes — external holders of the old id must invalidate.
-   */
+  /** Kill-and-respawn with `cliId`, preserving cwd / title / startupCmd and
+   * the grid slot. The ptyId changes — external holders must invalidate. */
   async respawnPane(ptyId: string, cliId: string): Promise<void> {
-    if (this.respawning.has(ptyId)) return;
     const current = this.specsById.get(ptyId);
     if (!current) return;
-    this.respawning.add(ptyId);
+    await this.replacePane(ptyId, {
+      title: current.title,
+      cwd: current.cwd,
+      startupCmd: current.startupCmd,
+      cliId,
+    });
+  }
+
+  /** Kills the process to free RAM; the pane stays as a resume placeholder. */
+  suspendPane(ptyId: string): void {
+    const pane = this.panes.get(ptyId);
+    if (!pane || !this.isLive(ptyId)) return;
+    this.updateSpec(ptyId, { suspended: true });
+    pane.markSuspended();
+    void ptyKill(ptyId);
+  }
+
+  suspendAll(): void {
+    for (const id of [...this.liveIds]) this.suspendPane(id);
+  }
+
+  /** Respawns a suspended pane in its slot. AI CLIs restart with resumeArgs;
+   * their startupCmd is skipped, not typed into the recovered session. */
+  async resumePane(paneId: string): Promise<void> {
+    const current = this.specsById.get(paneId);
+    if (!current?.suspended || this.isLive(paneId)) return;
+    const resumeArgs = resolveProfile(current.cliId).resumeArgs;
+    const { title, cwd, startupCmd, cliId } = current;
+    await this.replacePane(
+      paneId,
+      { title, cwd, startupCmd, cliId },
+      { extraArgs: resumeArgs, skipStartupCmd: resumeArgs !== undefined },
+    );
+  }
+
+  /** Close-then-spawn shared by respawn and resume; preserves the grid slot. */
+  private async replacePane(
+    paneId: string,
+    spec: Partial<TerminalSpec>,
+    opts?: { extraArgs?: string[]; skipStartupCmd?: boolean },
+  ): Promise<void> {
+    if (this.respawning.has(paneId)) return;
+    this.respawning.add(paneId);
     try {
-      const targetIdx = this.order.indexOf(ptyId);
+      const targetIdx = this.order.indexOf(paneId);
       const preservedLayout = this.layout;
-      const preserved: Partial<TerminalSpec> = {
-        title: current.title,
-        cwd: current.cwd,
-        startupCmd: current.startupCmd,
-        cliId,
-      };
-      await this.close(ptyId, { silent: true });
-      const pane = await this.addPane(preserved, { silent: true });
+      await this.close(paneId, { silent: true });
+      const pane = await this.addPane(spec, { silent: true, ...opts });
       if (!pane) {
         this.relayout();
-        this.emitCount();
-        this.emitSpecs();
+        this.emitAll();
         return;
       }
       const newId = pane.ptyId || this.order[this.order.length - 1];
@@ -421,22 +412,15 @@ export class TerminalManager {
           this.order.splice(fromIdx, 1);
           this.order.splice(targetIdx, 0, newId);
         }
-        this.layout = replaceTerminalPaneId(preservedLayout, ptyId, newId);
+        this.layout = replaceTerminalPaneId(preservedLayout, paneId, newId);
         this.syncOrderToLayout();
         this.setFocus(newId);
       }
       this.relayout();
-      this.emitCount();
-      this.emitSpecs();
-      this.emitLayout();
+      this.emitAll();
     } finally {
-      this.respawning.delete(ptyId);
+      this.respawning.delete(paneId);
     }
-  }
-
-  /** Backward-compat alias used by code paths that have not migrated yet. */
-  create(): Promise<TerminalPane | null> {
-    return this.addPane();
   }
 
   async close(ptyId: string, opts?: { silent?: boolean }): Promise<void> {
@@ -472,6 +456,23 @@ export class TerminalManager {
   markExited(ptyId: string): void {
     if (!this.liveIds.delete(ptyId)) return;
     this.emitCount();
+  }
+
+  /** Mounts a suspended spec as a process-less placeholder pane. */
+  private addSuspendedPane(spec: TerminalSpec): void {
+    const pane = new TerminalPane();
+    const profile = resolveProfile(spec.cliId);
+    pane.attachPlaceholder(this.grid, {
+      cliId: profile.id,
+      command: profile.command || undefined,
+    });
+    const paneId = spec.id;
+    this.panes.set(paneId, pane);
+    this.order.push(paneId);
+    this.layout = appendTerminalPane(this.layout, paneId);
+    this.specsById.set(paneId, { ...spec, cliId: profile.id });
+    pane.el.dataset.ptyId = paneId;
+    this.wirePaneCallbacks(pane, paneId);
   }
 
   closeFocused(): void {
@@ -523,17 +524,19 @@ export class TerminalManager {
     this.grid.remove();
   }
 
-  /**
-   * Replays an array of specs as live panes. Suppresses per-pane spec-changed
-   * events and emits a single one at the end so persistence writes are not
-   * amplified.
-   */
+  /** Replays persisted specs as panes, emitting one batched spec-changed at
+   * the end so persistence writes are not amplified per pane. */
   async restoreSpecs(specs: TerminalSpec[]): Promise<void> {
     if (specs.length === 0) return;
     const idMap = new Map<string, string>();
     this.suppressPersistenceEvents = true;
     try {
       for (const spec of specs) {
+        if (spec.suspended) {
+          this.addSuspendedPane(spec);
+          idMap.set(spec.id, spec.id);
+          continue;
+        }
         const pane = await this.addPane(spec);
         const restoredId = pane?.el.dataset.ptyId;
         if (restoredId) idMap.set(spec.id, restoredId);
@@ -551,36 +554,27 @@ export class TerminalManager {
     this.emitLayout();
   }
 
-  /**
-   * Applies a saved layout template: reuses live panes by matching cliId,
-   * spawns the missing ones (cwd omitted → this project's defaultCwd), then
-   * adopts the template's split tree. Unconsumed panes stay open —
-   * repairTerminalLayout appends them after the template tree.
-   */
+  /** Applies a saved layout template: reuses live panes by matching cliId,
+   * spawns the missing ones into this project's defaultCwd, then adopts the
+   * template's split tree. Unconsumed panes stay open, appended after it. */
   async applyTemplate(template: LayoutTemplate): Promise<void> {
     const live = this.order.map((id) => ({ id, cliId: this.specsById.get(id)?.cliId }));
-    const steps = planTemplateApplication(template.specs, live);
-    const idMap = new Map<string, string>();
-    for (const step of steps) {
-      if (step.action === "reuse") {
-        idMap.set(step.specId, step.paneId);
-        continue;
-      }
-      // Silent spawns emit nothing; one focus/relayout/persist batch below.
-      const pane = await this.addPane(
-        { title: step.spec.title, startupCmd: step.spec.startupCmd, cliId: step.spec.cliId },
-        { silent: true },
-      );
-      const spawnedId = pane?.el.dataset.ptyId;
-      if (spawnedId) idMap.set(step.specId, spawnedId);
-    }
+    // Silent spawns emit nothing; one focus/relayout/persist batch below.
+    const idMap = await executeTemplatePlan(
+      planTemplateApplication(template.specs, live),
+      async (spec) => {
+        const pane = await this.addPane(
+          { title: spec.title, startupCmd: spec.startupCmd, cliId: spec.cliId },
+          { silent: true },
+        );
+        return pane?.el.dataset.ptyId ?? null;
+      },
+    );
     this.layout = repairTerminalLayout(template.layout, this.order, idMap);
     this.syncOrderToLayout();
     if (!this.focusedId && this.order.length > 0) this.setFocus(this.order[0]);
     this.relayout();
-    this.emitCount();
-    this.emitSpecs();
-    this.emitLayout();
+    this.emitAll();
   }
 
   private relayout(): void {
@@ -613,6 +607,12 @@ export class TerminalManager {
   private syncOrderToLayout(): void {
     const nextOrder = terminalLayoutPaneIds(this.layout).filter((id) => this.panes.has(id));
     this.order.splice(0, this.order.length, ...nextOrder);
+  }
+
+  private emitAll(): void {
+    this.emitCount();
+    this.emitSpecs();
+    this.emitLayout();
   }
 
   private emitCount(): void {

@@ -41,6 +41,27 @@ export type TemplateApplyStep =
   | { specId: string; action: "spawn"; spec: LayoutTemplateSpec };
 
 /**
+ * Runs a plan sequentially, building the template-spec-id → live-pane-id map
+ * that repairTerminalLayout needs. `spawn` returns the new pane id, or null
+ * when the spawn failed (that spec simply drops out of the map).
+ */
+export async function executeTemplatePlan(
+  steps: readonly TemplateApplyStep[],
+  spawn: (spec: LayoutTemplateSpec) => Promise<string | null>,
+): Promise<Map<string, string>> {
+  const idMap = new Map<string, string>();
+  for (const step of steps) {
+    if (step.action === "reuse") {
+      idMap.set(step.specId, step.paneId);
+      continue;
+    }
+    const spawnedId = await spawn(step.spec);
+    if (spawnedId) idMap.set(step.specId, spawnedId);
+  }
+  return idMap;
+}
+
+/**
  * Decides, per template spec, whether an existing live pane can be reused
  * (same cliId, consumed first-come in current order) or a new pane must be
  * spawned. Live panes not consumed by any spec are left untouched — the
