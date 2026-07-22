@@ -37,6 +37,13 @@ pub fn pty_memory_stats(store: State<'_, Arc<PtyStore>>) -> Result<MemoryStats, 
     let mut mem_by_pid: HashMap<u32, u64> = HashMap::new();
     let mut children: HashMap<u32, Vec<u32>> = HashMap::new();
     for (pid, process) in sys.processes() {
+        // Linux lists tasks (threads) as processes, each reporting the WHOLE
+        // process RSS with parent() set to the process — counting them would
+        // multiply every process by its thread count (observed 13x on a
+        // claude tree with ~10 threads per node child).
+        if process.thread_kind().is_some() {
+            continue;
+        }
         mem_by_pid.insert(pid.as_u32(), process.memory());
         if let Some(parent) = process.parent() {
             children.entry(parent.as_u32()).or_default().push(pid.as_u32());
