@@ -1,5 +1,6 @@
 import { invoke } from "../../shared/tauri/invoke";
 import { showToast } from "../../shared/ui/toast";
+import { resolveProfile } from "./cli-registry";
 
 export interface SessionMemory {
   id: string;
@@ -12,9 +13,14 @@ export interface MemoryStats {
   sessions: SessionMemory[];
 }
 
-export interface PaneMemory {
+export interface LivePane {
   paneId: string;
   projectId: string;
+  cliId?: string;
+  lastActivityAt: number;
+}
+
+export interface PaneMemory extends LivePane {
   rssMb: number;
 }
 
@@ -51,6 +57,22 @@ export function planMemoryRelief(
   return { suspend, usedMb };
 }
 
+/** Shells are exempt: an idle-looking shell may host a quiet dev server. */
+export function planIdleSuspensions(
+  panes: readonly LivePane[],
+  idleLimitMs: number,
+  activeProjectId: string | null,
+  now: number,
+): LivePane[] {
+  if (idleLimitMs <= 0) return [];
+  return panes.filter(
+    (pane) =>
+      pane.projectId !== activeProjectId &&
+      resolveProfile(pane.cliId).kind === "ai-cli" &&
+      now - pane.lastActivityAt >= idleLimitMs,
+  );
+}
+
 /** "RAM 3.1/9.6G" — terminal usage vs the configured limit (or "off"). */
 export function formatMemoryIndicator(usedMb: number, limitMb: number): string {
   const gb = (mb: number): string => (mb / 1024).toFixed(1);
@@ -58,10 +80,12 @@ export function formatMemoryIndicator(usedMb: number, limitMb: number): string {
 }
 
 export interface MemoryGuardDeps {
-  getPanes(): Array<{ paneId: string; projectId: string }>;
+  getPanes(): LivePane[];
   getActiveProjectId(): string | null;
   /** Current limit in MB; <= 0 disables enforcement (stats still polled). */
   getLimitMb(): number;
+  /** Idle threshold in ms; <= 0 disables idle suspension. */
+  getIdleLimitMs(): number;
   suspendPane(paneId: string): void;
   /** Fires every poll with fresh stats — drives the toolbar indicator. */
   onStats?(stats: MemoryStats, usedMb: number): void;
@@ -91,11 +115,26 @@ export function startMemoryGuard(deps: MemoryGuardDeps): MemoryGuardHandle {
       .getPanes()
       .map((pane) => ({ ...pane, rssMb: rssBySession.get(pane.paneId) ?? 0 }));
     const limitMb = deps.getLimitMb();
-    const { suspend, usedMb } = planMemoryRelief(panes, limitMb, deps.getActiveProjectId());
+    const activeProjectId = deps.getActiveProjectId();
+    const { suspend, usedMb } = planMemoryRelief(panes, limitMb, activeProjectId);
     deps.onStats?.(stats, usedMb);
 
+    const taken = new Set(suspend.map((pane) => pane.paneId));
+    const idle = planIdleSuspensions(
+      panes.filter((pane) => !taken.has(pane.paneId)),
+      deps.getIdleLimitMs(),
+      activeProjectId,
+      Date.now(),
+    );
+    for (const pane of [...suspend, ...idle]) deps.suspendPane(pane.paneId);
+
+    if (idle.length > 0) {
+      showToast(
+        `Idle: suspended ${idle.length} background AI terminal${idle.length > 1 ? "s" : ""}`,
+        "info",
+      );
+    }
     if (suspend.length > 0) {
-      for (const pane of suspend) deps.suspendPane(pane.paneId);
       const freedMb = suspend.reduce((sum, pane) => sum + pane.rssMb, 0);
       showToast(
         `Memory limit: suspended ${suspend.length} background terminal${suspend.length > 1 ? "s" : ""} (~${freedMb} MB)`,

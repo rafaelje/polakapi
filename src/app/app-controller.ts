@@ -6,7 +6,6 @@ import {
   type PersistedLayout,
 } from "../shared/persistence/store";
 import { wireShortcuts } from "../shared/keyboard/shortcuts";
-import { promptModal } from "../shared/ui/modal";
 import { showToast } from "../shared/ui/toast";
 import { onPtyData, onPtyExit, ptyKill } from "../modules/terminal/pty-client";
 import {
@@ -14,6 +13,7 @@ import {
   startMemoryGuard,
   type MemoryGuardHandle,
 } from "../modules/terminal/memory-guard";
+import { openMemorySettingsMenu } from "../modules/terminal/memory-settings-menu";
 import { startFlexDrag, wireSidebarGutters } from "../modules/layout/gutters";
 import { wireToggles } from "../modules/layout/panel-toggles";
 import { type SidebarTarget } from "../modules/layout/types";
@@ -64,6 +64,7 @@ export class AppController {
   private memoryGuard: MemoryGuardHandle | null = null;
   /** 0 = guard off (the default): terminals may use whatever they want. */
   private memoryLimitMb = 0;
+  private idleSuspendMinutes = 0;
   private unwireQuitConfirm: (() => void) | null = null;
   private unwireFocus: (() => void) | null = null;
   private unlistenData: UnlistenFn | null = null;
@@ -327,41 +328,40 @@ export class AppController {
    */
   private wireMemoryGuard(layout: PersistedLayout): void {
     this.memoryLimitMb = layout.memoryLimitMb ?? 0;
+    this.idleSuspendMinutes = layout.idleSuspendMinutes ?? 0;
     const btn = document.getElementById("memory-indicator");
     this.memoryGuard = startMemoryGuard({
       getPanes: () => this.router.livePanes(),
       getActiveProjectId: () => this.workspaces?.controller.getActiveProject()?.id ?? null,
       getLimitMb: () => this.memoryLimitMb,
+      getIdleLimitMs: () => this.idleSuspendMinutes * 60_000,
       suspendPane: (paneId) => this.router.findPaneById(paneId)?.manager.suspendPane(paneId),
       onStats: (stats, usedMb) => {
         if (!btn) return;
         btn.textContent = formatMemoryIndicator(usedMb, this.memoryLimitMb);
         btn.title =
           `Terminals: ${usedMb} MB · limit ${this.memoryLimitMb > 0 ? `${this.memoryLimitMb} MB` : "off"} · ` +
-          `system free: ${stats.availableMb} MB — click to change the limit`;
+          `idle: ${this.idleSuspendMinutes > 0 ? `${this.idleSuspendMinutes} min` : "off"} · ` +
+          `system free: ${stats.availableMb} MB — click to configure`;
       },
     });
-    btn?.addEventListener("click", () => void this.promptMemoryLimit());
-  }
-
-  private async promptMemoryLimit(): Promise<void> {
-    const value = await promptModal({
-      title: "Terminal memory limit",
-      message:
-        "In MB. Above this, terminals of background projects are auto-suspended (resumable). 0 = no limit (default).",
-      placeholder: "e.g. 8192",
-      initialValue: String(this.memoryLimitMb),
-      confirmLabel: "Set limit",
+    btn?.addEventListener("click", () => {
+      openMemorySettingsMenu({
+        trigger: btn,
+        limitMb: this.memoryLimitMb,
+        idleMinutes: this.idleSuspendMinutes,
+        onLimitChange: (mb) => {
+          this.memoryLimitMb = mb;
+          queueSave({ memoryLimitMb: mb });
+          void this.memoryGuard?.tick();
+        },
+        onIdleChange: (minutes) => {
+          this.idleSuspendMinutes = minutes;
+          queueSave({ idleSuspendMinutes: minutes });
+          void this.memoryGuard?.tick();
+        },
+      });
     });
-    if (value === null) return;
-    const parsed = Number(value.trim());
-    if (!Number.isFinite(parsed) || parsed < 0) {
-      showToast("Limit must be a number of MB (0 disables)", "error");
-      return;
-    }
-    this.memoryLimitMb = Math.round(parsed);
-    queueSave({ memoryLimitMb: this.memoryLimitMb });
-    void this.memoryGuard?.tick();
   }
 
   private persistSidebarWidths(): void {

@@ -25,6 +25,7 @@ export class TerminalPane {
    * to skip the respawn confirmation for empty panes.
    */
   hasOutput = false;
+  lastActivityAt = Date.now();
   readonly el: HTMLElement;
   readonly headerEl: HTMLElement;
   readonly bodyEl: HTMLElement;
@@ -117,9 +118,11 @@ export class TerminalPane {
       ? `${opts.command} · ${this.ptyId.slice(0, 6)}`
       : `shell · ${this.ptyId.slice(0, 6)}`;
 
+    this.lastActivityAt = Date.now();
     this.disposables.push(
       this.term.onData((data) => {
         if (this.spawnFailed) return;
+        this.lastActivityAt = Date.now();
         void ptyWrite(this.ptyId, data);
       }),
       this.term.onResize(({ cols, rows }) => {
@@ -130,7 +133,10 @@ export class TerminalPane {
   }
 
   write(data: string): void {
-    if (data.length > 0) this.hasOutput = true;
+    if (data.length > 0) {
+      this.hasOutput = true;
+      this.lastActivityAt = Date.now();
+    }
     this.term.write(data);
   }
 

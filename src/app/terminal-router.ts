@@ -149,13 +149,27 @@ export class TerminalRouter {
     return ids;
   }
 
-  /** Live (spawned, non-exited) panes with their owning project — the
-   * memory guard's working set. */
-  livePanes(): Array<{ paneId: string; projectId: ProjectId }> {
-    const out: Array<{ paneId: string; projectId: ProjectId }> = [];
+  livePanes(): Array<{
+    paneId: string;
+    projectId: ProjectId;
+    cliId?: string;
+    lastActivityAt: number;
+  }> {
+    const out: Array<{
+      paneId: string;
+      projectId: ProjectId;
+      cliId?: string;
+      lastActivityAt: number;
+    }> = [];
     for (const [projectId, manager] of this.managers) {
-      for (const id of manager.ids()) {
-        if (manager.isLive(id)) out.push({ paneId: id, projectId });
+      for (const spec of manager.specs()) {
+        if (!manager.isLive(spec.id)) continue;
+        out.push({
+          paneId: spec.id,
+          projectId,
+          cliId: spec.cliId,
+          lastActivityAt: manager.get(spec.id)?.lastActivityAt ?? 0,
+        });
       }
     }
     return out;

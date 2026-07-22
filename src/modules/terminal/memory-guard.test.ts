@@ -3,10 +3,25 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("../../shared/tauri/invoke", () => ({ invoke: vi.fn() }));
 vi.mock("../../shared/ui/toast", () => ({ showToast: vi.fn() }));
 
-import { formatMemoryIndicator, planMemoryRelief, type PaneMemory } from "./memory-guard";
+import {
+  formatMemoryIndicator,
+  planIdleSuspensions,
+  planMemoryRelief,
+  type LivePane,
+  type PaneMemory,
+} from "./memory-guard";
 
 function pane(paneId: string, projectId: string, rssMb: number): PaneMemory {
-  return { paneId, projectId, rssMb };
+  return { paneId, projectId, rssMb, lastActivityAt: 0 };
+}
+
+function livePane(
+  paneId: string,
+  projectId: string,
+  cliId: string | undefined,
+  lastActivityAt: number,
+): LivePane {
+  return { paneId, projectId, cliId, lastActivityAt };
 }
 
 describe("planMemoryRelief", () => {
@@ -43,6 +58,37 @@ describe("planMemoryRelief", () => {
     const { suspend, usedMb } = planMemoryRelief(only, 500, "p1");
     expect(suspend).toEqual([]);
     expect(usedMb).toBe(900);
+  });
+});
+
+describe("planIdleSuspensions", () => {
+  const NOW = 100 * 60_000;
+  const LIMIT = 30 * 60_000;
+  const panes = [
+    livePane("ai-idle", "p2", "claude", NOW - 31 * 60_000),
+    livePane("ai-fresh", "p2", "codex", NOW - 5 * 60_000),
+    livePane("shell-idle", "p2", "shell", NOW - 90 * 60_000),
+    livePane("shell-implicit", "p2", undefined, NOW - 90 * 60_000),
+    livePane("ai-active-project", "p1", "claude", NOW - 90 * 60_000),
+  ];
+
+  it("suspends only idle AI panes of background projects", () => {
+    const idle = planIdleSuspensions(panes, LIMIT, "p1", NOW);
+    expect(idle.map((p) => p.paneId)).toEqual(["ai-idle"]);
+  });
+
+  it("never touches shells, even long-idle ones", () => {
+    const idle = planIdleSuspensions(panes, LIMIT, null, NOW);
+    expect(idle.map((p) => p.paneId)).toEqual(["ai-idle", "ai-active-project"]);
+  });
+
+  it("is a no-op when disabled (0)", () => {
+    expect(planIdleSuspensions(panes, 0, "p1", NOW)).toEqual([]);
+  });
+
+  it("treats the threshold as inclusive", () => {
+    const exact = [livePane("a", "p2", "claude", NOW - LIMIT)];
+    expect(planIdleSuspensions(exact, LIMIT, "p1", NOW)).toHaveLength(1);
   });
 });
 
