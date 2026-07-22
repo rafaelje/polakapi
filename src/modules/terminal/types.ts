@@ -24,4 +24,5 @@ export interface TerminalSpec {
   cwd?: string;
   startupCmd?: string;
   cliId?: string;
+  suspended?: boolean;
 }

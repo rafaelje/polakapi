@@ -16,6 +16,7 @@
   --cli-claude: #d97757;
   --cli-codex: #10a37f;
   --cli-opencode: #7cc4ff;
+  --cli-cursor: #e0e0e0;
 }
 
 * {
@@ -153,6 +154,19 @@ body {
   display: inline-flex;
   gap: 2px;
   margin-left: 8px;
+}
+
+.toolbar .memory-indicator {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: #8a8a8a;
+  border-color: transparent;
+  padding: 4px 6px;
+}
+
+.toolbar .memory-indicator:hover {
+  color: var(--text);
+  border-color: var(--border);
 }
 
 .toolbar .toggle-btn {
@@ -458,6 +472,36 @@ body {
   background: var(--border);
 }
 
+.layout-template-row {
+  display: flex;
+  align-items: stretch;
+}
+
+.layout-template-apply {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.layout-template-delete {
+  flex: 0 0 auto;
+  padding: 6px 8px;
+  color: #8a8a8a;
+}
+
+.layout-template-delete:hover {
+  color: #ff6b6b;
+}
+
+.layout-template-empty {
+  padding: 6px 10px;
+  font-size: 12px;
+  color: #6a6a6a;
+  font-style: italic;
+}
+
 .terminal-pane-dragging {
   cursor: grabbing;
   user-select: none;
@@ -561,6 +605,30 @@ body {
   flex: 1;
   min-height: 0;
   padding: 4px;
+  position: relative;
+}
+
+dimmed overlay that resumes on click. */ .pane--suspended .pane-body > .xterm {
+  opacity: 0.35;
+}
+
+.pane-suspended-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--bg) 55%, transparent);
+  border: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.pane-suspended-overlay:hover {
+  color: var(--accent);
 }
 
 .pane-body .xterm,

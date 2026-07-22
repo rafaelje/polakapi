@@ -11,6 +11,8 @@ export interface PersistedLayout {
   hideNotes?: boolean;
   notesHeight?: number;
   activeBottomTab?: BottomTab;
+  memoryLimitMb?: number;
+  idleSuspendMinutes?: number;
   /**
    * @deprecated F3: notes content is now stored per-project in workspaces.json.
    * Kept in the type so older layout.json files still load without runtime

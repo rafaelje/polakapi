@@ -1,16 +1,19 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { ProjectId } from "../workspaces/state/types";
+import type { LayoutTemplate, ProjectId } from "../workspaces/state/types";
 import { terminalLayoutPaneIds, type TerminalLayoutNode } from "./terminal-layout";
 import type { PaneCreateOptions, TerminalSpec } from "./types";
 
 const fake = vi.hoisted(() => {
   const attachCalls: Array<{ opts: PaneCreateOptions | undefined; ptyId: string }> = [];
+  const placeholderCalls: Array<{ cliId?: string }> = [];
   let nextId = 1;
   return {
     attachCalls,
+    placeholderCalls,
     reset(): void {
       attachCalls.length = 0;
+      placeholderCalls.length = 0;
       nextId = 1;
     },
     mintPtyId(): string {
@@ -36,14 +39,24 @@ vi.mock("./terminal-pane", () => {
     }
 
     hasOutput = false;
+    suspended = false;
     fit(): void {}
     focus(): void {}
     write(): void {}
     markExited(): void {}
     markSpawnFailed(): void {}
+    markSuspended(): void {
+      this.suspended = true;
+    }
+    attachPlaceholder(host: HTMLElement, opts?: { cliId?: string }): void {
+      fake.placeholderCalls.push({ cliId: opts?.cliId });
+      host.append(this.el);
+      this.suspended = true;
+    }
     setStartupCmdCallbacks(): void {}
     setCliRespawnCallbacks(): void {}
     setDockMenuCallbacks(): void {}
+    setSuspendCallbacks(): void {}
     onBell(): { dispose(): void } {
       return { dispose: () => undefined };
     }
@@ -310,5 +323,156 @@ describe("TerminalManager CLI wiring", () => {
     await manager.restoreSpecs([{ id: "old-a" }, { id: "old-b" }]);
 
     expect(terminalLayoutPaneIds(manager.layoutSnapshot)).toEqual(["pty-1", "pty-2"]);
+  });
+});
+
+describe("TerminalManager applyTemplate", () => {
+  beforeEach(() => {
+    fake.reset();
+  });
+
+  const template: LayoutTemplate = {
+    id: "tpl",
+    name: "claude + shell",
+    specs: [
+      { id: "tpl-a", cliId: "claude" },
+      { id: "tpl-b", cliId: "shell", startupCmd: "pnpm dev" },
+    ],
+    layout: {
+      type: "split",
+      axis: "column",
+      ratio: 0.6,
+      first: { type: "pane", paneId: "tpl-a" },
+      second: { type: "pane", paneId: "tpl-b" },
+    },
+  };
+
+  it("spawns every spec into defaultCwd when no panes exist", async () => {
+    const manager = makeManager();
+
+    await manager.applyTemplate(template);
+
+    expect(fake.attachCalls).toHaveLength(2);
+    expect(fake.attachCalls.map((c) => c.opts?.cwd)).toEqual(["/tmp/project", "/tmp/project"]);
+    expect(fake.attachCalls[0]?.opts?.command).toBe("claude");
+    expect(manager.layoutSnapshot).toEqual({
+      type: "split",
+      axis: "column",
+      ratio: 0.6,
+      first: { type: "pane", paneId: "pty-1" },
+      second: { type: "pane", paneId: "pty-2" },
+    });
+    const specs = manager.specs();
+    expect(specs.map((s) => s.cliId)).toEqual(["claude", "shell"]);
+    expect(specs[1]?.startupCmd).toBe("pnpm dev");
+  });
+
+  it("reuses an existing pane with a matching cliId and only spawns the rest", async () => {
+    const manager = makeManager();
+    await manager.addPane({ cliId: "claude" });
+
+    await manager.applyTemplate(template);
+
+    expect(fake.attachCalls).toHaveLength(2);
+    expect(manager.layoutSnapshot).toEqual({
+      type: "split",
+      axis: "column",
+      ratio: 0.6,
+      first: { type: "pane", paneId: "pty-1" },
+      second: { type: "pane", paneId: "pty-2" },
+    });
+  });
+
+  it("keeps panes the template does not consume, appended after the tree", async () => {
+    const manager = makeManager();
+    await manager.addPane({ cliId: "codex" });
+
+    await manager.applyTemplate(template);
+
+    expect(terminalLayoutPaneIds(manager.layoutSnapshot)).toEqual(["pty-2", "pty-3", "pty-1"]);
+    expect(manager.specs().map((s) => s.cliId)).toEqual(["claude", "shell", "codex"]);
+  });
+});
+
+describe("TerminalManager suspend/resume", () => {
+  beforeEach(() => {
+    fake.reset();
+  });
+
+  it("suspendPane kills the pty, flags the spec, and keeps the pane mounted", async () => {
+    const manager = makeManager();
+    await manager.addPane({ cliId: "claude" });
+    const [id] = manager.ids();
+
+    manager.suspendPane(id);
+
+    const { ptyKill } = await import("./pty-client");
+    expect(ptyKill).toHaveBeenCalledWith(id);
+    expect(manager.specs()[0]?.suspended).toBe(true);
+    expect(manager.ids()).toEqual([id]);
+    expect(manager.size).toBe(1);
+    manager.markExited(id);
+    expect(manager.size).toBe(0);
+  });
+
+  it("resumePane respawns with the profile's resumeArgs in the same slot", async () => {
+    const manager = makeManager();
+    await manager.addPane({ cliId: "shell" });
+    await manager.addPane({ cliId: "claude", startupCmd: "echo hi" });
+    await manager.addPane({ cliId: "shell" });
+    const suspendedId = manager.ids()[1];
+
+    manager.suspendPane(suspendedId);
+    manager.markExited(suspendedId);
+    await manager.resumePane(suspendedId);
+
+    const lastAttach = fake.attachCalls[fake.attachCalls.length - 1];
+    expect(lastAttach?.opts?.command).toBe("claude");
+    expect(lastAttach?.opts?.args).toEqual(["--continue"]);
+    expect(manager.ids()[1]).toBe(lastAttach?.ptyId);
+    expect(manager.specs()[1]?.suspended).toBeUndefined();
+    expect(manager.specs()[1]?.startupCmd).toBe("echo hi");
+  });
+
+  it("resumePane is a no-op for live or unknown panes", async () => {
+    const manager = makeManager();
+    await manager.addPane({ cliId: "claude" });
+    const [id] = manager.ids();
+    const before = fake.attachCalls.length;
+
+    await manager.resumePane(id);
+    await manager.resumePane("ghost");
+
+    expect(fake.attachCalls.length).toBe(before);
+  });
+
+  it("suspendAll only touches live panes", async () => {
+    const manager = makeManager();
+    await manager.addPane({ cliId: "claude" });
+    await manager.addPane({ cliId: "codex" });
+    const [a, b] = manager.ids();
+    manager.suspendPane(a);
+    manager.markExited(a);
+
+    manager.suspendAll();
+
+    expect(manager.specs().map((s) => s.suspended)).toEqual([true, true]);
+    manager.markExited(b);
+    expect(manager.size).toBe(0);
+  });
+
+  it("restoreSpecs mounts suspended specs as placeholders without spawning", async () => {
+    const manager = makeManager();
+
+    await manager.restoreSpecs([
+      { id: "old-live", cliId: "shell" },
+      { id: "old-suspended", cliId: "claude", suspended: true },
+    ]);
+
+    expect(fake.attachCalls).toHaveLength(1);
+    expect(fake.placeholderCalls).toEqual([{ cliId: "claude" }]);
+    expect(manager.ids()).toEqual(["pty-1", "old-suspended"]);
+    expect(manager.size).toBe(1);
+    expect(terminalLayoutPaneIds(manager.layoutSnapshot)).toContain("old-suspended");
   });
 });

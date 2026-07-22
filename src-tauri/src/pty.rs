@@ -21,7 +21,7 @@ const ALLOWED_SHELL_BASENAMES: &[&str] = &[
 const ALLOWED_SHELL_BASENAMES: &[&str] =
     &["sh", "bash", "zsh", "fish", "dash", "ksh", "tcsh", "csh"];
 
-const ALLOWED_AI_CLI_BASENAMES: &[&str] = &["claude", "codex", "opencode"];
+const ALLOWED_AI_CLI_BASENAMES: &[&str] = &["claude", "codex", "opencode", "cursor-agent"];
 
 const MAX_ARG_LEN: usize = 4096;
 const MAX_ARGS: usize = 64;
@@ -55,6 +55,20 @@ impl PtyStore {
         if let Some(session) = self.remove_session(id) {
             kill_and_wait(session);
         }
+    }
+
+    pub fn session_pids(&self) -> Vec<(String, u32)> {
+        self.sessions
+            .lock()
+            .iter()
+            .filter_map(|(id, session)| {
+                session
+                    .child
+                    .lock()
+                    .process_id()
+                    .map(|pid| (id.clone(), pid))
+            })
+            .collect()
     }
 
     pub fn kill_all(&self) {
@@ -469,6 +483,7 @@ mod tests {
         assert!(is_allowed_command("claude"));
         assert!(is_allowed_command("codex"));
         assert!(is_allowed_command("opencode"));
+        assert!(is_allowed_command("cursor-agent"));
         assert!(is_allowed_command("/usr/local/bin/claude"));
         assert!(is_allowed_command("/opt/homebrew/bin/codex"));
         assert!(is_allowed_command("/usr/bin/opencode"));

@@ -45,6 +45,7 @@ export interface Project {
    * have no field, which readers must treat as the empty string.
    */
   notes?: string;
+  shortcut?: string;
 }
 
 export interface Workspace {
@@ -54,12 +55,28 @@ export interface Workspace {
   collapsed?: boolean;
   /** If undefined, the workspace is sorted alphabetically by name. */
   order?: number;
+  shortcut?: string;
   projects: Project[];
+}
+
+export interface LayoutTemplateSpec {
+  id: string;
+  title?: string;
+  startupCmd?: string;
+  cliId?: string;
+}
+
+export interface LayoutTemplate {
+  id: string;
+  name: string;
+  specs: LayoutTemplateSpec[];
+  layout: TerminalLayoutNode;
 }
 
 export interface WorkspacesState {
   workspaces: Workspace[];
   activeProjectId: ProjectId | null;
+  layoutTemplates?: LayoutTemplate[];
   schemaVersion: 1;
 }
 

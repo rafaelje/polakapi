@@ -53,6 +53,7 @@ export interface WorkspacesPanelOptions {
   liveCounts?: LiveCountSource;
   /** Optional. When provided, the panel toggles `.has-bell` on rows. */
   bellSource?: BellPendingSource;
+  onSuspendProject?: (projectId: ProjectId) => void;
 }
 
 export interface WorkspacesPanelHandle {
@@ -175,6 +176,7 @@ export function mountWorkspacesPanel(opts: WorkspacesPanelOptions): WorkspacesPa
         liveCountFor: liveCounts ? liveCountFor : undefined,
         filterQuery: activeQuery,
         selection,
+        onSuspendProject: opts.onSuspendProject,
       });
       handles.push(handle);
       body.append(handle.element);

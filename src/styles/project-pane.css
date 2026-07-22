@@ -105,3 +105,7 @@
 .cli-chip--opencode {
   --cli-color: var(--cli-opencode);
 }
+
+.cli-chip--cursor {
+  --cli-color: var(--cli-cursor);
+}

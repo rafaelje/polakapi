@@ -9,6 +9,7 @@ mod fs;
 mod git_review;
 mod loop_cli;
 mod loop_prompts;
+mod memory;
 mod open;
 mod pty;
 
@@ -42,6 +43,7 @@ use crate::loop_prompts::{
     loop_write_global_prompt, loop_write_output_file, loop_write_phase_file, loop_write_run_file,
     loop_write_run_prompt, loop_write_state_file,
 };
+use crate::memory::pty_memory_stats;
 use crate::pty::PtyStore;
 
 /// macOS launches `.app` bundles with a minimal PATH (`/usr/bin:/bin:/usr/sbin:/sbin`),
@@ -128,6 +130,7 @@ pub fn run() {
             pty_write,
             pty_resize,
             pty_kill,
+            pty_memory_stats,
             app_exit,
             fs_validate_path,
             open_in_explorer,

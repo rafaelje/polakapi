@@ -8,8 +8,17 @@ import { validatePath } from "../path-validation";
 import { openCreateProjectForm, openEditProjectPathForm } from "../forms/project-form";
 import { applyPathValidationResults, collectPathValidationResults } from "../revalidate-paths";
 import { openCreateWorkspaceForm } from "../forms/workspace-form";
+import {
+  saveLayoutTemplate as reduceSaveLayoutTemplate,
+  deleteLayoutTemplate as reduceDeleteLayoutTemplate,
+} from "./workspaces-reducer-templates";
+import {
+  setProjectShortcut as reduceSetProjectShortcut,
+  setWorkspaceShortcut as reduceSetWorkspaceShortcut,
+} from "./workspaces-reducer-shortcuts";
 import type {
   ColorToken,
+  LayoutTemplate,
   Project,
   ProjectId,
   TerminalLayoutNode,
@@ -223,6 +232,20 @@ export class WorkspacesController {
   /** Returns the project's notes, or '' when project is missing or unset. */
   getProjectNotes(projectId: ProjectId): string {
     return findProject(this.state, projectId)?.project.notes ?? "";
+  }
+
+  setProjectShortcut = (id: ProjectId, shortcut: string | undefined): void =>
+    this.commit(reduceSetProjectShortcut(this.state, id, shortcut));
+  setWorkspaceShortcut = (id: WorkspaceId, shortcut: string | undefined): void =>
+    this.commit(reduceSetWorkspaceShortcut(this.state, id, shortcut));
+
+  saveLayoutTemplate = (template: LayoutTemplate): void =>
+    this.commit(reduceSaveLayoutTemplate(this.state, template));
+  deleteLayoutTemplate = (templateId: string): void =>
+    this.commit(reduceDeleteLayoutTemplate(this.state, templateId));
+
+  getLayoutTemplates(): readonly LayoutTemplate[] {
+    return this.state.layoutTemplates ?? [];
   }
 
   duplicateProject = (id: ProjectId): void => this.commit(duplicateProject(this.state, id));

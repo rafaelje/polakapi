@@ -23,4 +23,11 @@ export interface DockMenuCallbacks {
   canDock(): boolean;
   onDockAtEdge(position: TerminalDockPosition): void;
 }
+
+export interface SuspendCallbacks {
+  isLive(): boolean;
+  isSuspended(): boolean;
+  onSuspendRequest(): void;
+  onResumeRequest(): void;
+}
 import type { TerminalDockPosition } from "./terminal-layout";

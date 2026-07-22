@@ -11,6 +11,7 @@ import type {
   CliRespawnCallbacks,
   DockMenuCallbacks,
   StartupCmdEditCallbacks,
+  SuspendCallbacks,
 } from "./terminal-pane-types";
 import { type PaneCreateOptions } from "./types";
 
@@ -24,6 +25,7 @@ export class TerminalPane {
    * to skip the respawn confirmation for empty panes.
    */
   hasOutput = false;
+  lastActivityAt = Date.now();
   readonly el: HTMLElement;
   readonly headerEl: HTMLElement;
   readonly bodyEl: HTMLElement;
@@ -37,7 +39,9 @@ export class TerminalPane {
   private startupCmdCallbacks: StartupCmdEditCallbacks | null = null;
   private cliRespawnCallbacks: CliRespawnCallbacks | null = null;
   private dockMenuCallbacks: DockMenuCallbacks | null = null;
+  private suspendCallbacks: SuspendCallbacks | null = null;
   private spawnFailed = false;
+  private suspended = false;
 
   constructor() {
     this.el = document.createElement("div");
@@ -114,9 +118,11 @@ export class TerminalPane {
       ? `${opts.command} · ${this.ptyId.slice(0, 6)}`
       : `shell · ${this.ptyId.slice(0, 6)}`;
 
+    this.lastActivityAt = Date.now();
     this.disposables.push(
       this.term.onData((data) => {
         if (this.spawnFailed) return;
+        this.lastActivityAt = Date.now();
         void ptyWrite(this.ptyId, data);
       }),
       this.term.onResize(({ cols, rows }) => {
@@ -127,12 +133,44 @@ export class TerminalPane {
   }
 
   write(data: string): void {
-    if (data.length > 0) this.hasOutput = true;
+    if (data.length > 0) {
+      this.hasOutput = true;
+      this.lastActivityAt = Date.now();
+    }
     this.term.write(data);
   }
 
   markExited(): void {
+    if (this.suspended) return;
     this.term.write("\r\n\x1b[90m[process exited]\x1b[0m\r\n");
+  }
+
+  get isSuspended(): boolean {
+    return this.suspended;
+  }
+
+  markSuspended(): void {
+    if (this.suspended) return;
+    this.suspended = true;
+    this.el.classList.add("pane--suspended");
+    const overlay = document.createElement("button");
+    overlay.type = "button";
+    overlay.className = "pane-suspended-overlay";
+    overlay.textContent = "⏸ Suspended — click to resume";
+    overlay.addEventListener("click", (e) => {
+      e.stopPropagation();
+      this.suspendCallbacks?.onResumeRequest();
+    });
+    this.bodyEl.append(overlay);
+  }
+
+  attachPlaceholder(host: HTMLElement, opts?: Pick<PaneCreateOptions, "cliId" | "command">): void {
+    host.append(this.el);
+    this.term.open(this.bodyEl);
+    this.safeFit();
+    this.updateCliBadge(opts?.cliId);
+    this.titleEl.textContent = opts?.command ? `${opts.command} · suspended` : "shell · suspended";
+    this.markSuspended();
   }
 
   /**
@@ -199,6 +237,10 @@ export class TerminalPane {
     this.dockMenuCallbacks = callbacks;
   }
 
+  setSuspendCallbacks(callbacks: SuspendCallbacks | null): void {
+    this.suspendCallbacks = callbacks;
+  }
+
   private openPaneMenu(): void {
     const callbacks = this.startupCmdCallbacks;
     if (!callbacks) return;
@@ -208,6 +250,7 @@ export class TerminalPane {
       onChangeStartupCmd: (next) => callbacks.onChange(next),
       canDock: () => this.dockMenuCallbacks?.canDock() ?? false,
       onDockAtEdge: (position) => this.dockMenuCallbacks?.onDockAtEdge(position),
+      suspend: this.suspendCallbacks,
     });
   }
 

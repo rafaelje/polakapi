@@ -149,6 +149,32 @@ export class TerminalRouter {
     return ids;
   }
 
+  livePanes(): Array<{
+    paneId: string;
+    projectId: ProjectId;
+    cliId?: string;
+    lastActivityAt: number;
+  }> {
+    const out: Array<{
+      paneId: string;
+      projectId: ProjectId;
+      cliId?: string;
+      lastActivityAt: number;
+    }> = [];
+    for (const [projectId, manager] of this.managers) {
+      for (const spec of manager.specs()) {
+        if (!manager.isLive(spec.id)) continue;
+        out.push({
+          paneId: spec.id,
+          projectId,
+          cliId: spec.cliId,
+          lastActivityAt: manager.get(spec.id)?.lastActivityAt ?? 0,
+        });
+      }
+    }
+    return out;
+  }
+
   onProjectPathChanged(projectId: ProjectId, newPath: string): void {
     this.managers.get(projectId)?.setDefaultCwd(newPath);
   }

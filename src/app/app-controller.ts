@@ -8,6 +8,12 @@ import {
 import { wireShortcuts } from "../shared/keyboard/shortcuts";
 import { showToast } from "../shared/ui/toast";
 import { onPtyData, onPtyExit, ptyKill } from "../modules/terminal/pty-client";
+import {
+  formatMemoryIndicator,
+  startMemoryGuard,
+  type MemoryGuardHandle,
+} from "../modules/terminal/memory-guard";
+import { openMemorySettingsMenu } from "../modules/terminal/memory-settings-menu";
 import { startFlexDrag, wireSidebarGutters } from "../modules/layout/gutters";
 import { wireToggles } from "../modules/layout/panel-toggles";
 import { type SidebarTarget } from "../modules/layout/types";
@@ -55,6 +61,9 @@ export class AppController {
   private agentsController: AgentsController | null = null;
   private unwireShortcuts: (() => void) | null = null;
   private unwireWindowLifecycle: (() => void) | null = null;
+  private memoryGuard: MemoryGuardHandle | null = null;
+  private memoryLimitMb = 0;
+  private idleSuspendMinutes = 0;
   private unwireQuitConfirm: (() => void) | null = null;
   private unwireFocus: (() => void) | null = null;
   private unlistenData: UnlistenFn | null = null;
@@ -123,6 +132,8 @@ export class AppController {
     // earlier in start() is a no-op until this line runs.
     this.palette = mountCommandPalette({ controller: this.workspaces.controller });
 
+    this.wireMemoryGuard(layout);
+
     // Wire the quit hook *after* workspaces is ready so the modal can resolve
     // project names by looking the controller's state up at confirm time.
     const workspaces = this.workspaces;
@@ -149,6 +160,8 @@ export class AppController {
     this.unwireQuitConfirm = null;
     this.unwireFocus?.();
     this.unwireFocus = null;
+    this.memoryGuard?.dispose();
+    this.memoryGuard = null;
 
     this.palette?.dispose();
     this.palette = null;
@@ -299,8 +312,47 @@ export class AppController {
       focusByIndex: (idx) => this.router.getActive()?.focusByIndex(idx),
       focusPrev: () => this.router.getActive()?.focusRelative(-1),
       focusNext: () => this.router.getActive()?.focusRelative(1),
+      focusDirection: (direction) => this.router.getActive()?.focusDirection(direction),
       // Resolved lazily so the keybinding is harmless before bootstrap mounts.
       togglePalette: () => this.palette?.toggle(),
+    });
+  }
+
+  private wireMemoryGuard(layout: PersistedLayout): void {
+    this.memoryLimitMb = layout.memoryLimitMb ?? 0;
+    this.idleSuspendMinutes = layout.idleSuspendMinutes ?? 0;
+    const btn = document.getElementById("memory-indicator");
+    this.memoryGuard = startMemoryGuard({
+      getPanes: () => this.router.livePanes(),
+      getActiveProjectId: () => this.workspaces?.controller.getActiveProject()?.id ?? null,
+      getLimitMb: () => this.memoryLimitMb,
+      getIdleLimitMs: () => this.idleSuspendMinutes * 60_000,
+      suspendPane: (paneId) => this.router.findPaneById(paneId)?.manager.suspendPane(paneId),
+      onStats: (stats, usedMb) => {
+        if (!btn) return;
+        btn.textContent = formatMemoryIndicator(usedMb, this.memoryLimitMb);
+        btn.title =
+          `Terminals: ${usedMb} MB · limit ${this.memoryLimitMb > 0 ? `${this.memoryLimitMb} MB` : "off"} · ` +
+          `idle: ${this.idleSuspendMinutes > 0 ? `${this.idleSuspendMinutes} min` : "off"} · ` +
+          `system free: ${stats.availableMb} MB — click to configure`;
+      },
+    });
+    btn?.addEventListener("click", () => {
+      openMemorySettingsMenu({
+        trigger: btn,
+        limitMb: this.memoryLimitMb,
+        idleMinutes: this.idleSuspendMinutes,
+        onLimitChange: (mb) => {
+          this.memoryLimitMb = mb;
+          queueSave({ memoryLimitMb: mb });
+          void this.memoryGuard?.tick();
+        },
+        onIdleChange: (minutes) => {
+          this.idleSuspendMinutes = minutes;
+          queueSave({ idleSuspendMinutes: minutes });
+          void this.memoryGuard?.tick();
+        },
+      });
     });
   }
 

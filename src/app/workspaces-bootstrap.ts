@@ -1,5 +1,9 @@
 import { promptModal } from "../shared/ui/modal";
+import { showToast } from "../shared/ui/toast";
 import { ptyWrite } from "../modules/terminal/pty-client";
+import { buildLayoutTemplate } from "../modules/terminal/layout-templates";
+import { wireActivationShortcuts } from "../modules/workspaces/activation-shortcuts";
+import { openLayoutTemplateMenu } from "../modules/terminal/layout-template-menu";
 import { attachTerminalDrop, type TerminalDropHandle } from "../modules/terminal/terminal-drop";
 import { openInEditor, openInShell, revealFolder } from "../modules/workspaces/open-external";
 import { WorkspacesController } from "../modules/workspaces/state/workspaces-controller";
@@ -113,6 +117,7 @@ export async function bootstrapWorkspaces(
     controller,
     liveCounts: router,
     bellSource,
+    onSuspendProject: (projectId) => router.getById(projectId)?.suspendAll(),
   });
 
   // Bridges native Finder drops and HTML5 URL/text drops into whichever pane
@@ -136,6 +141,29 @@ export async function bootstrapWorkspaces(
         if (!manager) return;
         void manager.addPane();
       },
+      onOpenLayoutsMenu: (anchor) => {
+        const manager = router.getActive();
+        openLayoutTemplateMenu({
+          trigger: anchor,
+          templates: controller.getLayoutTemplates(),
+          canSave: (manager?.size ?? 0) > 0,
+          onApply: (template) => {
+            const active = router.getActive();
+            if (!active) return;
+            void active.applyTemplate(template);
+          },
+          onSaveAs: (name) => {
+            const active = router.getActive();
+            if (!active) return;
+            const template = buildLayoutTemplate(name, active.specs(), active.layoutSnapshot);
+            if (!template) return;
+            controller.saveLayoutTemplate(template);
+            showToast(`Layout "${template.name}" saved`, "info");
+          },
+          onDelete: (templateId) => controller.deleteLayoutTemplate(templateId),
+        });
+      },
+      onSuspendAll: () => router.getActive()?.suspendAll(),
       onRunInAll: () => void runCommandInActivePanes(router),
       onRevealFolder: (path) => {
         void revealFolder(path);
@@ -243,7 +271,10 @@ export async function bootstrapWorkspaces(
     source: notesSource,
   });
 
+  const unwireActivation = wireActivationShortcuts(controller);
+
   const unsubscribe = (): void => {
+    unwireActivation();
     terminalDrop.detach();
     unsubscribeController();
     unwireDeleteHook();
