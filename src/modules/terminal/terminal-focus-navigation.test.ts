@@ -6,10 +6,6 @@ function box(id: string, left: number, top: number, right: number, bottom: numbe
   return { id, left, top, right, bottom };
 }
 
-// 2x2 grid with a 4px gutter:
-//   a | b
-//   --+--
-//   c | d
 const GRID: PaneBox[] = [
   box("a", 0, 0, 100, 100),
   box("b", 104, 0, 200, 100),
@@ -35,9 +31,6 @@ describe("resolveDirectionalFocus", () => {
   });
 
   it("prefers the perpendicular-overlapping pane over a nearer diagonal one", () => {
-    // Tall pane on the left, two stacked on the right; from the bottom-right
-    // pane going left, the tall pane overlaps and must win even though the
-    // top-right pane's edge is equally near.
     const layout = [
       box("tall", 0, 0, 100, 200),
       box("top", 104, 0, 200, 98),
@@ -54,7 +47,6 @@ describe("resolveDirectionalFocus", () => {
   });
 
   it("breaks edge ties by perpendicular center distance", () => {
-    // Three stacked on the right of one focused pane; middle one aligns best.
     const layout = [
       box("focused", 0, 100, 100, 200),
       box("top", 104, 0, 200, 95),

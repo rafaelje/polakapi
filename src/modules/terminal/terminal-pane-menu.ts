@@ -15,7 +15,6 @@ export interface PaneMenuOptions {
   onChangeStartupCmd(next: string | undefined): void;
   canDock(): boolean;
   onDockAtEdge(position: TerminalDockPosition): void;
-  /** Optional: suspend/resume items are hidden when the manager did not wire it. */
   suspend?: SuspendCallbacks | null;
 }
 
@@ -194,11 +193,6 @@ function createRespawnItem(
   return item;
 }
 
-/**
- * Confirm dialog shown before respawning a pane that already produced output
- * (the live process gets killed). Lives here with the rest of the pane UI so
- * the manager keeps only the orchestration.
- */
 export async function confirmRespawn(cliId: string): Promise<boolean> {
   const profile = resolveProfile(cliId);
   return confirmModal({

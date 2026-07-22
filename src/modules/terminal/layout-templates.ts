@@ -2,18 +2,6 @@ import { terminalLayoutPaneIds, type TerminalLayoutNode } from "./terminal-layou
 import type { TerminalSpec } from "./types";
 import type { LayoutTemplate, LayoutTemplateSpec } from "../workspaces/state/types";
 
-// ---------------------------------------------------------------------------
-// Pure helpers for layout templates: capture (specs + tree → template) and
-// application planning (template → reuse/spawn steps). No DOM, no I/O, so
-// both are unit-testable without a TerminalManager.
-// ---------------------------------------------------------------------------
-
-/**
- * Builds a template from a manager's live specs and layout tree. Specs are
- * stored in layout order and stripped of `cwd` — templates are path-agnostic
- * and always spawn into the target project's path. Returns null when there is
- * nothing to capture (no name, no panes, or no layout).
- */
 export function buildLayoutTemplate(
   name: string,
   specs: readonly TerminalSpec[],
@@ -40,11 +28,6 @@ export type TemplateApplyStep =
   | { specId: string; action: "reuse"; paneId: string }
   | { specId: string; action: "spawn"; spec: LayoutTemplateSpec };
 
-/**
- * Runs a plan sequentially, building the template-spec-id → live-pane-id map
- * that repairTerminalLayout needs. `spawn` returns the new pane id, or null
- * when the spawn failed (that spec simply drops out of the map).
- */
 export async function executeTemplatePlan(
   steps: readonly TemplateApplyStep[],
   spawn: (spec: LayoutTemplateSpec) => Promise<string | null>,
@@ -61,12 +44,6 @@ export async function executeTemplatePlan(
   return idMap;
 }
 
-/**
- * Decides, per template spec, whether an existing live pane can be reused
- * (same cliId, consumed first-come in current order) or a new pane must be
- * spawned. Live panes not consumed by any spec are left untouched — the
- * caller's repairTerminalLayout appends them after the template tree.
- */
 export function planTemplateApplication(
   templateSpecs: readonly LayoutTemplateSpec[],
   livePanes: readonly { id: string; cliId?: string }[],

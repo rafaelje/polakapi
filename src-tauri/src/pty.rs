@@ -57,14 +57,16 @@ impl PtyStore {
         }
     }
 
-    /// Snapshot of (session id, child pid) pairs for memory accounting.
-    /// Sessions whose child has no pid (already reaped) are skipped.
     pub fn session_pids(&self) -> Vec<(String, u32)> {
         self.sessions
             .lock()
             .iter()
             .filter_map(|(id, session)| {
-                session.child.lock().process_id().map(|pid| (id.clone(), pid))
+                session
+                    .child
+                    .lock()
+                    .process_id()
+                    .map(|pid| (id.clone(), pid))
             })
             .collect()
     }

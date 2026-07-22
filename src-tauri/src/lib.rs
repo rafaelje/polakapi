@@ -32,7 +32,6 @@ use crate::db::{
     prompt_list_sessions, prompt_search,
 };
 use crate::git_review::{git_branch_diff, git_detect_base_ref};
-use crate::memory::pty_memory_stats;
 use crate::loop_cli::run_loop_agent;
 use crate::loop_prompts::{
     loop_archive_run, loop_create_phase_dir, loop_create_run, loop_delete_phase_dir,
@@ -44,6 +43,7 @@ use crate::loop_prompts::{
     loop_write_global_prompt, loop_write_output_file, loop_write_phase_file, loop_write_run_file,
     loop_write_run_prompt, loop_write_state_file,
 };
+use crate::memory::pty_memory_stats;
 use crate::pty::PtyStore;
 
 /// macOS launches `.app` bundles with a minimal PATH (`/usr/bin:/bin:/usr/sbin:/sbin`),

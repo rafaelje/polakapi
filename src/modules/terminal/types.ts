@@ -17,9 +17,6 @@ export interface PaneCreateOptions {
  *                 (i.e. the owning project's `path`).
  * - `startupCmd` — optional one-shot command piped into the shell on spawn.
  * - `cliId`     — optional CLI profile id; undefined resolves to SHELL_PROFILE.
- * - `suspended` — true when the user suspended this pane (process killed to
- *                 free RAM, placeholder kept). Restored panes with this flag
- *                 do not spawn until resumed.
  */
 export interface TerminalSpec {
   id: string;

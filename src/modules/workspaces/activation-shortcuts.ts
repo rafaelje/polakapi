@@ -1,13 +1,6 @@
 import type { WorkspacesController } from "./state/workspaces-controller";
 import { findShortcutTarget } from "./state/workspaces-reducer-shortcuts";
 
-/**
- * Global Ctrl+Alt+<key> handler that activates the project or workspace the
- * user bound the key to. Capture phase for the same reason as wireShortcuts:
- * xterm cancels events on its textarea before they bubble. Ctrl+Alt is chosen
- * because shells barely use it (unlike plain Ctrl); caveat: on layouts where
- * AltGr types symbols, avoid binding keys the layout needs.
- */
 export function wireActivationShortcuts(controller: WorkspacesController): () => void {
   const onKey = (e: KeyboardEvent): void => {
     if (!e.ctrlKey || !e.altKey || e.metaKey || e.shiftKey) return;

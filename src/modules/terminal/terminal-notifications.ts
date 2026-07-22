@@ -61,10 +61,6 @@ export interface NotificationContext {
   onBellPending(projectId: ProjectId, paneId: string, pending: boolean): void;
 }
 
-/**
- * Manager-facing wrapper: derives the standard bell wiring (name lookup,
- * active+focused suppression, badge fan-out) from the notification context.
- */
 export function registerManagerBell(opts: {
   pane: TerminalPane;
   paneId: string;

@@ -2,15 +2,9 @@ import { confirmModal, promptModal } from "../../shared/ui/modal";
 import type { LayoutTemplate } from "../workspaces/state/types";
 import type { PaneMenuHandle } from "./terminal-pane-menu";
 
-/**
- * Toolbar "Layouts" dropdown: apply/delete saved templates and save the
- * current arrangement under a name. Mirrors `openPaneMenu`'s popover
- * lifecycle: close on outside-click, Escape, scroll, resize.
- */
 export interface LayoutTemplateMenuOptions {
   trigger: HTMLElement;
   templates: readonly LayoutTemplate[];
-  /** False when the active project has no panes to capture. */
   canSave: boolean;
   onApply(template: LayoutTemplate): void;
   onSaveAs(name: string): void;

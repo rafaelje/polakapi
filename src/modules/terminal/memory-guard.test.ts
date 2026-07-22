@@ -39,7 +39,6 @@ describe("planMemoryRelief", () => {
   it("suspends heaviest background panes first until under the limit", () => {
     const { suspend, usedMb } = planMemoryRelief(panes, 600, "p1");
     expect(usedMb).toBe(1000);
-    // 1000 - 300 (b) = 700 > 600 → also d: 700 - 200 = 500 <= 600.
     expect(suspend.map((p) => p.paneId)).toEqual(["b", "d"]);
   });
 

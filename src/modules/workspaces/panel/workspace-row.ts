@@ -28,7 +28,6 @@ export interface WorkspaceRowOptions {
   filterQuery?: string;
   /** Multi-selection store shared across all rows. */
   selection: SelectionStore;
-  /** Optional. Forwarded to project rows for the "Suspend terminals" item. */
   onSuspendProject?: (projectId: ProjectId) => void;
 }
 

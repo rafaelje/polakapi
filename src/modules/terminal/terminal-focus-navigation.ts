@@ -8,10 +8,8 @@ export interface PaneBox {
   bottom: number;
 }
 
-/** Shared-edge tolerance: split gutters leave a few px between neighbours. */
 const EDGE_TOLERANCE_PX = 2;
 
-/** Measures each pane element into the PaneBox shape the resolver consumes. */
 export function paneBoxes(
   order: readonly string[],
   getEl: (id: string) => HTMLElement | undefined,
@@ -26,15 +24,6 @@ export function paneBoxes(
   return boxes;
 }
 
-/**
- * Picks the pane the focus should travel to for a directional keypress.
- * Geometric (screen rects, not the layout tree) so it works for any split
- * arrangement: candidates strictly on the target side of the focused pane,
- * preferring those that overlap it on the perpendicular axis, then the
- * nearest edge, then the closest perpendicular center. Returns null when no
- * pane lies in that direction; falls back to the first pane when nothing is
- * focused yet.
- */
 export function resolveDirectionalFocus(
   panes: readonly PaneBox[],
   focusedId: string | null,
@@ -67,8 +56,6 @@ function isBetter(a: { overlaps: boolean; gap: number; perp: number }, b: typeof
   return a.perp < b.perp;
 }
 
-/** Distance from the focused pane's leading edge to the candidate's trailing
- * edge along the travel axis. Negative when the candidate is not on that side. */
 function axialGap(focused: PaneBox, candidate: PaneBox, direction: FocusDirection): number {
   switch (direction) {
     case "left":

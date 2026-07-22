@@ -11,12 +11,7 @@ export interface PersistedLayout {
   hideNotes?: boolean;
   notesHeight?: number;
   activeBottomTab?: BottomTab;
-  /**
-   * Memory budget for terminal processes in MB. Opt-in: undefined or 0 means
-   * no limit — the guard never auto-suspends, only the indicator updates.
-   */
   memoryLimitMb?: number;
-  /** Idle auto-suspend threshold in minutes; undefined or 0 = off. */
   idleSuspendMinutes?: number;
   /**
    * @deprecated F3: notes content is now stored per-project in workspaces.json.

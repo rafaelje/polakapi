@@ -31,7 +31,10 @@ describe("resolveAppShortcut on Linux/Windows (Ctrl+Shift)", () => {
 
   it("maps Ctrl+Shift+brackets and digits via physical key codes", () => {
     expect(
-      resolveAppShortcut(ev({ ctrlKey: true, shiftKey: true, key: "{", code: "BracketLeft" }), isMac),
+      resolveAppShortcut(
+        ev({ ctrlKey: true, shiftKey: true, key: "{", code: "BracketLeft" }),
+        isMac,
+      ),
     ).toEqual({ kind: "focus-prev" });
     expect(
       resolveAppShortcut(
@@ -59,7 +62,9 @@ describe("resolveAppShortcut on Linux/Windows (Ctrl+Shift)", () => {
   it("leaves plain Ctrl combos to the shell (kill-word, transpose, Escape…)", () => {
     expect(resolveAppShortcut(ev({ ctrlKey: true, key: "w" }), isMac)).toBeNull();
     expect(resolveAppShortcut(ev({ ctrlKey: true, key: "t" }), isMac)).toBeNull();
-    expect(resolveAppShortcut(ev({ ctrlKey: true, key: "[", code: "BracketLeft" }), isMac)).toBeNull();
+    expect(
+      resolveAppShortcut(ev({ ctrlKey: true, key: "[", code: "BracketLeft" }), isMac),
+    ).toBeNull();
     expect(resolveAppShortcut(ev({ ctrlKey: true, key: "1", code: "Digit1" }), isMac)).toBeNull();
   });
 
@@ -90,9 +95,9 @@ describe("resolveAppShortcut on macOS (Cmd)", () => {
   });
 
   it("maps Cmd+Shift+Arrow to directional focus but no other shifted combos", () => {
-    expect(resolveAppShortcut(ev({ metaKey: true, shiftKey: true, key: "ArrowUp" }), isMac)).toEqual(
-      { kind: "focus-direction", direction: "up" },
-    );
+    expect(
+      resolveAppShortcut(ev({ metaKey: true, shiftKey: true, key: "ArrowUp" }), isMac),
+    ).toEqual({ kind: "focus-direction", direction: "up" });
     expect(resolveAppShortcut(ev({ metaKey: true, shiftKey: true, key: "T" }), isMac)).toBeNull();
   });
 

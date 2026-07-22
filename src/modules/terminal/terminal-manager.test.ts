@@ -373,7 +373,6 @@ describe("TerminalManager applyTemplate", () => {
 
     await manager.applyTemplate(template);
 
-    // 1 initial claude pane + 1 spawned shell pane; the claude one is reused.
     expect(fake.attachCalls).toHaveLength(2);
     expect(manager.layoutSnapshot).toEqual({
       type: "split",
@@ -411,7 +410,6 @@ describe("TerminalManager suspend/resume", () => {
     expect(ptyKill).toHaveBeenCalledWith(id);
     expect(manager.specs()[0]?.suspended).toBe(true);
     expect(manager.ids()).toEqual([id]);
-    // The pty:exit event that follows the kill drops the live count.
     expect(manager.size).toBe(1);
     manager.markExited(id);
     expect(manager.size).toBe(0);
@@ -431,7 +429,6 @@ describe("TerminalManager suspend/resume", () => {
     const lastAttach = fake.attachCalls[fake.attachCalls.length - 1];
     expect(lastAttach?.opts?.command).toBe("claude");
     expect(lastAttach?.opts?.args).toEqual(["--continue"]);
-    // Slot preserved: the resumed pane keeps the middle position.
     expect(manager.ids()[1]).toBe(lastAttach?.ptyId);
     expect(manager.specs()[1]?.suspended).toBeUndefined();
     expect(manager.specs()[1]?.startupCmd).toBe("echo hi");

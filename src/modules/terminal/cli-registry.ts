@@ -4,10 +4,6 @@ export interface CliProfile {
   command: string;
   args?: string[];
   kind: "shell" | "ai-cli";
-  /**
-   * Extra args that make the CLI resume its previous session instead of
-   * starting fresh — used when un-suspending a pane. Absent = plain respawn.
-   */
   resumeArgs?: string[];
 }
 

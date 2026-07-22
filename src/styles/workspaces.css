@@ -397,7 +397,6 @@
   padding: 32px;
 }
 
-/* Ctrl+Alt+<key> activation-shortcut hint on workspace/project rows. */
 .ws-shortcut-hint {
   flex: 0 0 auto;
   margin-left: 6px;

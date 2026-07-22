@@ -24,9 +24,6 @@ pub struct MemoryStats {
     pub sessions: Vec<SessionMemory>,
 }
 
-/// Reports system memory plus the RSS of each PTY session's process TREE —
-/// AI CLIs spawn children (MCP servers, workers) that hold most of the
-/// memory, so counting only the direct child would badly under-report.
 #[tauri::command]
 pub fn pty_memory_stats(store: State<'_, Arc<PtyStore>>) -> Result<MemoryStats, String> {
     let session_pids = store.session_pids();
@@ -37,16 +34,17 @@ pub fn pty_memory_stats(store: State<'_, Arc<PtyStore>>) -> Result<MemoryStats, 
     let mut mem_by_pid: HashMap<u32, u64> = HashMap::new();
     let mut children: HashMap<u32, Vec<u32>> = HashMap::new();
     for (pid, process) in sys.processes() {
-        // Linux lists tasks (threads) as processes, each reporting the WHOLE
-        // process RSS with parent() set to the process — counting them would
-        // multiply every process by its thread count (observed 13x on a
-        // claude tree with ~10 threads per node child).
+        // Linux lists threads as processes, each reporting the whole process
+        // RSS, which would multiply every tree by its thread count.
         if process.thread_kind().is_some() {
             continue;
         }
         mem_by_pid.insert(pid.as_u32(), process.memory());
         if let Some(parent) = process.parent() {
-            children.entry(parent.as_u32()).or_default().push(pid.as_u32());
+            children
+                .entry(parent.as_u32())
+                .or_default()
+                .push(pid.as_u32());
         }
     }
 
@@ -65,8 +63,6 @@ pub fn pty_memory_stats(store: State<'_, Arc<PtyStore>>) -> Result<MemoryStats, 
     })
 }
 
-/// Sums memory over `root` and all its descendants. The visited set guards
-/// against cycles from pid reuse between the snapshot's reads.
 fn tree_rss(root: u32, mem_by_pid: &HashMap<u32, u64>, children: &HashMap<u32, Vec<u32>>) -> u64 {
     let mut total = 0u64;
     let mut visited: HashSet<u32> = HashSet::new();

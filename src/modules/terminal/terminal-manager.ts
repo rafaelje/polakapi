@@ -360,7 +360,6 @@ export class TerminalManager {
     });
   }
 
-  /** Kills the process to free RAM; the pane stays as a resume placeholder. */
   suspendPane(ptyId: string): void {
     const pane = this.panes.get(ptyId);
     if (!pane || !this.isLive(ptyId)) return;
@@ -373,8 +372,6 @@ export class TerminalManager {
     for (const id of [...this.liveIds]) this.suspendPane(id);
   }
 
-  /** Respawns a suspended pane in its slot. AI CLIs restart with resumeArgs;
-   * their startupCmd is skipped, not typed into the recovered session. */
   async resumePane(paneId: string): Promise<void> {
     const current = this.specsById.get(paneId);
     if (!current?.suspended || this.isLive(paneId)) return;
@@ -387,7 +384,6 @@ export class TerminalManager {
     );
   }
 
-  /** Close-then-spawn shared by respawn and resume; preserves the grid slot. */
   private async replacePane(
     paneId: string,
     spec: Partial<TerminalSpec>,
@@ -458,7 +454,6 @@ export class TerminalManager {
     this.emitCount();
   }
 
-  /** Mounts a suspended spec as a process-less placeholder pane. */
   private addSuspendedPane(spec: TerminalSpec): void {
     const pane = new TerminalPane();
     const profile = resolveProfile(spec.cliId);
@@ -499,7 +494,6 @@ export class TerminalManager {
     this.focusByIndex(next);
   }
 
-  /** Moves focus to the nearest pane in the given screen direction. */
   focusDirection(direction: FocusDirection): void {
     const boxes = paneBoxes(this.order, (id) => this.panes.get(id)?.el);
     const next = resolveDirectionalFocus(boxes, this.focusedId, direction);
@@ -554,12 +548,8 @@ export class TerminalManager {
     this.emitLayout();
   }
 
-  /** Applies a saved layout template: reuses live panes by matching cliId,
-   * spawns the missing ones into this project's defaultCwd, then adopts the
-   * template's split tree. Unconsumed panes stay open, appended after it. */
   async applyTemplate(template: LayoutTemplate): Promise<void> {
     const live = this.order.map((id) => ({ id, cliId: this.specsById.get(id)?.cliId }));
-    // Silent spawns emit nothing; one focus/relayout/persist batch below.
     const idMap = await executeTemplatePlan(
       planTemplateApplication(template.specs, live),
       async (spec) => {

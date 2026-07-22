@@ -53,7 +53,6 @@ export interface WorkspacesPanelOptions {
   liveCounts?: LiveCountSource;
   /** Optional. When provided, the panel toggles `.has-bell` on rows. */
   bellSource?: BellPendingSource;
-  /** Optional. Row menu "Suspend terminals" — kills the project's PTYs to free RAM. */
   onSuspendProject?: (projectId: ProjectId) => void;
 }
 

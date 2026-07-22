@@ -234,14 +234,11 @@ export class WorkspacesController {
     return findProject(this.state, projectId)?.project.notes ?? "";
   }
 
-  // Activation shortcuts (Ctrl+Alt+<key>): thin commit wrappers.
   setProjectShortcut = (id: ProjectId, shortcut: string | undefined): void =>
     this.commit(reduceSetProjectShortcut(this.state, id, shortcut));
   setWorkspaceShortcut = (id: WorkspaceId, shortcut: string | undefined): void =>
     this.commit(reduceSetWorkspaceShortcut(this.state, id, shortcut));
 
-  // Layout templates: thin commit wrappers, same arrow-property style as the
-  // terminal/notes setters above.
   saveLayoutTemplate = (template: LayoutTemplate): void =>
     this.commit(reduceSaveLayoutTemplate(this.state, template));
   deleteLayoutTemplate = (templateId: string): void =>

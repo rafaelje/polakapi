@@ -31,12 +31,6 @@ export function fetchMemoryStats(): Promise<MemoryStats> {
   return invoke<MemoryStats>("pty_memory_stats", {}, { toastOnError: false });
 }
 
-/**
- * Picks which panes to suspend to bring total terminal memory under
- * `limitMb`. Only panes of non-active projects are candidates — the project
- * the user is looking at is never auto-suspended — heaviest process tree
- * first so the fewest panes are touched.
- */
 export function planMemoryRelief(
   panes: readonly PaneMemory[],
   limitMb: number,
@@ -73,7 +67,6 @@ export function planIdleSuspensions(
   );
 }
 
-/** "RAM 3.1/9.6G" — terminal usage vs the configured limit (or "off"). */
 export function formatMemoryIndicator(usedMb: number, limitMb: number): string {
   const gb = (mb: number): string => (mb / 1024).toFixed(1);
   return limitMb > 0 ? `RAM ${gb(usedMb)}/${gb(limitMb)}G` : `RAM ${gb(usedMb)}G`;
@@ -82,12 +75,9 @@ export function formatMemoryIndicator(usedMb: number, limitMb: number): string {
 export interface MemoryGuardDeps {
   getPanes(): LivePane[];
   getActiveProjectId(): string | null;
-  /** Current limit in MB; <= 0 disables enforcement (stats still polled). */
   getLimitMb(): number;
-  /** Idle threshold in ms; <= 0 disables idle suspension. */
   getIdleLimitMs(): number;
   suspendPane(paneId: string): void;
-  /** Fires every poll with fresh stats — drives the toolbar indicator. */
   onStats?(stats: MemoryStats, usedMb: number): void;
 }
 
@@ -96,12 +86,6 @@ export interface MemoryGuardHandle {
   dispose(): void;
 }
 
-/**
- * Polls `pty_memory_stats` and auto-suspends background panes when the
- * terminals' summed process-tree RSS exceeds the limit. If the overage comes
- * entirely from the active project (no candidates), it warns instead —
- * rate-limited so the toast does not nag every poll.
- */
 export function startMemoryGuard(deps: MemoryGuardDeps): MemoryGuardHandle {
   let disposed = false;
   let lastWarnAt = 0;

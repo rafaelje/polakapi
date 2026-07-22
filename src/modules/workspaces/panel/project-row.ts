@@ -31,7 +31,6 @@ export interface ProjectRowOptions {
    * mutate it; rows subscribe to apply the `.selected` visual.
    */
   selection: SelectionStore;
-  /** Optional. Row menu "Suspend terminals" — kills this project's PTYs to free RAM. */
   onSuspendProject?: (projectId: ProjectId) => void;
 }
 

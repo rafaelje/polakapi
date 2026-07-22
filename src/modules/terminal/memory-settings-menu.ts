@@ -49,11 +49,13 @@ export function openMemorySettingsMenu(opts: MemorySettingsMenuOptions): PaneMen
     popover.append(item);
   };
 
-  addItem(`Memory limit… (${opts.limitMb > 0 ? `${opts.limitMb} MB` : "off"})`, () =>
-    void promptMemoryLimit(opts),
+  addItem(
+    `Memory limit… (${opts.limitMb > 0 ? `${opts.limitMb} MB` : "off"})`,
+    () => void promptMemoryLimit(opts),
   );
-  addItem(`Idle auto-suspend… (${opts.idleMinutes > 0 ? `${opts.idleMinutes} min` : "off"})`, () =>
-    void promptIdleMinutes(opts),
+  addItem(
+    `Idle auto-suspend… (${opts.idleMinutes > 0 ? `${opts.idleMinutes} min` : "off"})`,
+    () => void promptIdleMinutes(opts),
   );
 
   document.body.append(popover);

@@ -472,7 +472,6 @@ body {
   background: var(--border);
 }
 
-/* Layouts dropdown: template rows pair an apply button with a delete "×". */
 .layout-template-row {
   display: flex;
   align-items: stretch;
@@ -609,9 +608,7 @@ body {
   position: relative;
 }
 
-/* Suspended pane: process killed to free RAM, xterm buffer kept behind a
-   dimmed overlay that resumes on click. */
-.pane--suspended .pane-body > .xterm {
+dimmed overlay that resumes on click. */ .pane--suspended .pane-body > .xterm {
   opacity: 0.35;
 }
 

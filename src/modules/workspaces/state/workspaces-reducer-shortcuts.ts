@@ -1,11 +1,5 @@
 import type { Project, ProjectId, Workspace, WorkspaceId, WorkspacesState } from "./types";
 
-// ---------------------------------------------------------------------------
-// Activation shortcuts: a single character per project/workspace, bound to
-// Ctrl+Alt+<key>. Pure reducer helpers, mirroring workspaces-reducer-notes.ts.
-// ---------------------------------------------------------------------------
-
-/** Normalizes user input to the stored form; null when it is not bindable. */
 export function normalizeShortcutKey(raw: string): string | null {
   const key = raw.trim().toLowerCase();
   return /^[a-z0-9]$/.test(key) ? key : null;
@@ -15,7 +9,6 @@ export type ShortcutTarget =
   | { kind: "project"; projectId: ProjectId }
   | { kind: "workspace"; workspaceId: WorkspaceId };
 
-/** Resolves which item a pressed key activates. Projects win over workspaces. */
 export function findShortcutTarget(state: WorkspacesState, key: string): ShortcutTarget | null {
   for (const workspace of state.workspaces) {
     for (const project of workspace.projects) {
@@ -28,11 +21,6 @@ export function findShortcutTarget(state: WorkspacesState, key: string): Shortcu
   return null;
 }
 
-/**
- * Assigns (or clears, with undefined) a project's shortcut. The key is
- * unique app-wide: any other project or workspace holding it is silently
- * unassigned. Identity-preserving when nothing changes.
- */
 export function setProjectShortcut(
   state: WorkspacesState,
   projectId: ProjectId,
@@ -41,7 +29,6 @@ export function setProjectShortcut(
   return applyShortcut(state, shortcut, (p) => p.id === projectId, undefined);
 }
 
-/** Workspace counterpart of setProjectShortcut — same uniqueness contract. */
 export function setWorkspaceShortcut(
   state: WorkspacesState,
   workspaceId: WorkspaceId,
@@ -84,7 +71,6 @@ function nextShortcutFor(
   isTarget: boolean,
 ): string | undefined {
   if (isTarget) return assigned;
-  // Uniqueness: stealing the key clears it from the previous holder.
   if (assigned !== undefined && current === assigned) return undefined;
   return current;
 }

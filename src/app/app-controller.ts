@@ -62,7 +62,6 @@ export class AppController {
   private unwireShortcuts: (() => void) | null = null;
   private unwireWindowLifecycle: (() => void) | null = null;
   private memoryGuard: MemoryGuardHandle | null = null;
-  /** 0 = guard off (the default): terminals may use whatever they want. */
   private memoryLimitMb = 0;
   private idleSuspendMinutes = 0;
   private unwireQuitConfirm: (() => void) | null = null;
@@ -319,13 +318,6 @@ export class AppController {
     });
   }
 
-  /**
-   * Memory budget for terminal process trees — OPT-IN: with no limit set the
-   * guard only feeds the toolbar indicator and never suspends anything.
-   * Above a configured limit it auto-suspends background-project panes
-   * (heaviest first) so the OS keeps headroom; the active project is never
-   * auto-suspended, only warned about.
-   */
   private wireMemoryGuard(layout: PersistedLayout): void {
     this.memoryLimitMb = layout.memoryLimitMb ?? 0;
     this.idleSuspendMinutes = layout.idleSuspendMinutes ?? 0;
