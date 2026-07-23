@@ -21,6 +21,7 @@ import {
   replaceTerminalSpecs,
   resetAlphabeticalOrder,
   setActiveProject,
+  setAllCollapsed,
   setProjectPathInvalid,
   sortedProjects,
   sortedWorkspaces,
@@ -71,6 +72,21 @@ describe("workspaces-reducer", () => {
     expect(s.workspaces[0].collapsed).toBe(true);
     s = toggleCollapsed(s, wsId(s, 0));
     expect(s.workspaces[0].collapsed).toBe(false);
+  });
+
+  it("setAllCollapsed collapses and expands every workspace", () => {
+    let s = addWorkspace(createEmptyState(), "A");
+    s = addWorkspace(s, "B");
+    s = toggleCollapsed(s, wsId(s, 0));
+    s = setAllCollapsed(s, true);
+    expect(s.workspaces.map((w) => w.collapsed)).toEqual([true, true]);
+    s = setAllCollapsed(s, false);
+    expect(s.workspaces.map((w) => w.collapsed)).toEqual([false, false]);
+  });
+
+  it("setAllCollapsed is identity when nothing changes", () => {
+    const s = addWorkspace(createEmptyState(), "A");
+    expect(setAllCollapsed(s, false)).toBe(s);
   });
 
   it("addProject appends a project to the right workspace", () => {

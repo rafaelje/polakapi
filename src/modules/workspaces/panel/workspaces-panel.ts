@@ -5,6 +5,7 @@ import { matchesProject } from "../project-filter";
 import { validatePath } from "../path-validation";
 import { createSelectionStore } from "../state/selection";
 import { createWorkspaceRow, type WorkspaceRowHandle } from "./workspace-row";
+import { mountRunningSection } from "./running-projects";
 import { createSidebarEmptyState, type EmptyStateHandle } from "./workspaces-empty-state";
 import { sortedWorkspaces } from "../state/workspaces-reducer";
 import type { ProjectId } from "../state/types";
@@ -90,18 +91,36 @@ export function mountWorkspacesPanel(opts: WorkspacesPanelOptions): WorkspacesPa
   search.autocomplete = "off";
   search.spellcheck = false;
 
+  const collapseBtn = document.createElement("button");
+  collapseBtn.type = "button";
+  collapseBtn.className = "ws-panel-collapse";
+
   const addBtn = document.createElement("button");
   addBtn.type = "button";
   addBtn.className = "ws-panel-add";
   addBtn.title = "New workspace";
   addBtn.textContent = "+";
 
-  header.append(title, search, addBtn);
+  header.append(title, search, collapseBtn, addBtn);
+
+  const syncCollapseBtn = (): void => {
+    const allCollapsed = controller.areAllCollapsed();
+    collapseBtn.textContent = allCollapsed ? "⊞" : "⊟";
+    collapseBtn.title = allCollapsed ? "Expand all workspaces" : "Collapse all workspaces";
+  };
+  const onCollapseClick = (): void => {
+    controller.setAllCollapsed(!controller.areAllCollapsed());
+  };
+  collapseBtn.addEventListener("click", onCollapseClick);
+
+  const liveCountFor = (projectId: ProjectId): number => liveCounts?.getCount(projectId) ?? 0;
+
+  const running = liveCounts ? mountRunningSection({ controller, getCount: liveCountFor }) : null;
 
   const body = document.createElement("div");
   body.className = "ws-panel-body";
 
-  root.append(header, body);
+  root.append(header, ...(running ? [running.element] : []), body);
 
   const handles: WorkspaceRowHandle[] = [];
   let emptyState: EmptyStateHandle | null = null;
@@ -142,9 +161,8 @@ export function mountWorkspacesPanel(opts: WorkspacesPanelOptions): WorkspacesPa
     toast: (msg, kind) => showToast(msg, kind ?? "info"),
   });
 
-  const liveCountFor = (projectId: ProjectId): number => liveCounts?.getCount(projectId) ?? 0;
-
   const render = (): void => {
+    syncCollapseBtn();
     for (const handle of handles.splice(0)) handle.dispose();
     if (emptyState) {
       emptyState.dispose();
@@ -193,6 +211,11 @@ export function mountWorkspacesPanel(opts: WorkspacesPanelOptions): WorkspacesPa
     for (const w of event.state.workspaces) for (const p of w.projects) validIds.add(p.id);
     selection.prune(validIds);
     render();
+    running?.refresh();
+  });
+
+  const unsubscribeActive = controller.on((event) => {
+    if (event.type === "active-project-changed") running?.refresh();
   });
 
   const unsubscribeCounts =
@@ -202,6 +225,7 @@ export function mountWorkspacesPanel(opts: WorkspacesPanelOptions): WorkspacesPa
       for (const [projectId, count] of counts) {
         for (const handle of handles) handle.setLiveCount(projectId, count);
       }
+      running?.refresh();
     }) ?? null;
 
   // F5: coalesce rapid bells at the panel layer. The router emits one event
@@ -234,11 +258,13 @@ export function mountWorkspacesPanel(opts: WorkspacesPanelOptions): WorkspacesPa
   return {
     unmount(): void {
       unsubscribeController();
+      unsubscribeActive();
       unsubscribeCounts?.();
       unsubscribeBells?.();
       finderDrop.detach();
       dnd.detach();
       addBtn.removeEventListener("click", onAddClick);
+      collapseBtn.removeEventListener("click", onCollapseClick);
       search.removeEventListener("input", onSearchInput);
       root.removeEventListener("click", onPanelClick);
       selection.clear();

@@ -53,6 +53,7 @@ import {
   setProjectNotes,
   setProjectPathInvalid,
   setWorkspaceColor,
+  setAllCollapsed,
   toggleCollapsed,
   updateTerminalSpec,
 } from "./workspaces-reducer";
@@ -118,6 +119,15 @@ export class WorkspacesController {
 
   toggleCollapsed(id: WorkspaceId): void {
     this.commit(toggleCollapsed(this.state, id));
+  }
+
+  setAllCollapsed(collapsed: boolean): void {
+    this.commit(setAllCollapsed(this.state, collapsed));
+  }
+
+  areAllCollapsed(): boolean {
+    const { workspaces } = this.state;
+    return workspaces.length > 0 && workspaces.every((w) => w.collapsed === true);
   }
 
   reorderWorkspaces(ordered: WorkspaceId[]): void {

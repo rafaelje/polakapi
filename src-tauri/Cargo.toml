@@ -1,6 +1,6 @@
 [package]
 name = "polakapi"
-version = "0.1.0"
+version = "0.2.0"
 description = "A Tauri App"
 authors = ["you"]
 edition = "2021"
@@ -31,3 +31,4 @@ tokio = { version = "1", features = ["time", "rt", "macros", "process", "io-util
 tempfile = "3"
 rusqlite = { version = "0.32", features = ["bundled"] }
 sysinfo = "0.33"
+keepawake = "0.5"
