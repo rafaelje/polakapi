@@ -5,6 +5,7 @@ import { matchesProject } from "../project-filter";
 import { validatePath } from "../path-validation";
 import { createSelectionStore } from "../state/selection";
 import { createWorkspaceRow, type WorkspaceRowHandle } from "./workspace-row";
+import { mountRunningSection } from "./running-projects";
 import { createSidebarEmptyState, type EmptyStateHandle } from "./workspaces-empty-state";
 import { sortedWorkspaces } from "../state/workspaces-reducer";
 import type { ProjectId } from "../state/types";
@@ -98,10 +99,14 @@ export function mountWorkspacesPanel(opts: WorkspacesPanelOptions): WorkspacesPa
 
   header.append(title, search, addBtn);
 
+  const liveCountFor = (projectId: ProjectId): number => liveCounts?.getCount(projectId) ?? 0;
+
+  const running = liveCounts ? mountRunningSection({ controller, getCount: liveCountFor }) : null;
+
   const body = document.createElement("div");
   body.className = "ws-panel-body";
 
-  root.append(header, body);
+  root.append(header, ...(running ? [running.element] : []), body);
 
   const handles: WorkspaceRowHandle[] = [];
   let emptyState: EmptyStateHandle | null = null;
@@ -141,8 +146,6 @@ export function mountWorkspacesPanel(opts: WorkspacesPanelOptions): WorkspacesPa
     validatePath,
     toast: (msg, kind) => showToast(msg, kind ?? "info"),
   });
-
-  const liveCountFor = (projectId: ProjectId): number => liveCounts?.getCount(projectId) ?? 0;
 
   const render = (): void => {
     for (const handle of handles.splice(0)) handle.dispose();
@@ -193,6 +196,11 @@ export function mountWorkspacesPanel(opts: WorkspacesPanelOptions): WorkspacesPa
     for (const w of event.state.workspaces) for (const p of w.projects) validIds.add(p.id);
     selection.prune(validIds);
     render();
+    running?.refresh();
+  });
+
+  const unsubscribeActive = controller.on((event) => {
+    if (event.type === "active-project-changed") running?.refresh();
   });
 
   const unsubscribeCounts =
@@ -202,6 +210,7 @@ export function mountWorkspacesPanel(opts: WorkspacesPanelOptions): WorkspacesPa
       for (const [projectId, count] of counts) {
         for (const handle of handles) handle.setLiveCount(projectId, count);
       }
+      running?.refresh();
     }) ?? null;
 
   // F5: coalesce rapid bells at the panel layer. The router emits one event
@@ -234,6 +243,7 @@ export function mountWorkspacesPanel(opts: WorkspacesPanelOptions): WorkspacesPa
   return {
     unmount(): void {
       unsubscribeController();
+      unsubscribeActive();
       unsubscribeCounts?.();
       unsubscribeBells?.();
       finderDrop.detach();
