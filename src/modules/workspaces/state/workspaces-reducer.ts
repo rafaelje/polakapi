@@ -75,6 +75,11 @@ export function toggleCollapsed(state: WorkspacesState, id: WorkspaceId): Worksp
   return mapWorkspaces(state, (w) => (w.id === id ? { ...w, collapsed: !w.collapsed } : w));
 }
 
+export function setAllCollapsed(state: WorkspacesState, collapsed: boolean): WorkspacesState {
+  if (state.workspaces.every((w) => (w.collapsed ?? false) === collapsed)) return state;
+  return mapWorkspaces(state, (w) => (w.collapsed === collapsed ? w : { ...w, collapsed }));
+}
+
 export function addProject(state: WorkspacesState, input: CreateProjectInput): WorkspacesState {
   const project: Project = {
     id: newProjectId(),

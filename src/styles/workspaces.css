@@ -24,7 +24,8 @@
   color: #8a8a8a;
 }
 
-.ws-panel-add {
+.ws-panel-add,
+.ws-panel-collapse {
   background: transparent;
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -35,7 +36,8 @@
   padding: 2px 8px;
 }
 
-.ws-panel-add:hover {
+.ws-panel-add:hover,
+.ws-panel-collapse:hover {
   border-color: var(--accent);
   color: var(--accent);
 }

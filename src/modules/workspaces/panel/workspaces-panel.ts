@@ -91,13 +91,27 @@ export function mountWorkspacesPanel(opts: WorkspacesPanelOptions): WorkspacesPa
   search.autocomplete = "off";
   search.spellcheck = false;
 
+  const collapseBtn = document.createElement("button");
+  collapseBtn.type = "button";
+  collapseBtn.className = "ws-panel-collapse";
+
   const addBtn = document.createElement("button");
   addBtn.type = "button";
   addBtn.className = "ws-panel-add";
   addBtn.title = "New workspace";
   addBtn.textContent = "+";
 
-  header.append(title, search, addBtn);
+  header.append(title, search, collapseBtn, addBtn);
+
+  const syncCollapseBtn = (): void => {
+    const allCollapsed = controller.areAllCollapsed();
+    collapseBtn.textContent = allCollapsed ? "⊞" : "⊟";
+    collapseBtn.title = allCollapsed ? "Expand all workspaces" : "Collapse all workspaces";
+  };
+  const onCollapseClick = (): void => {
+    controller.setAllCollapsed(!controller.areAllCollapsed());
+  };
+  collapseBtn.addEventListener("click", onCollapseClick);
 
   const liveCountFor = (projectId: ProjectId): number => liveCounts?.getCount(projectId) ?? 0;
 
@@ -148,6 +162,7 @@ export function mountWorkspacesPanel(opts: WorkspacesPanelOptions): WorkspacesPa
   });
 
   const render = (): void => {
+    syncCollapseBtn();
     for (const handle of handles.splice(0)) handle.dispose();
     if (emptyState) {
       emptyState.dispose();
@@ -249,6 +264,7 @@ export function mountWorkspacesPanel(opts: WorkspacesPanelOptions): WorkspacesPa
       finderDrop.detach();
       dnd.detach();
       addBtn.removeEventListener("click", onAddClick);
+      collapseBtn.removeEventListener("click", onCollapseClick);
       search.removeEventListener("input", onSearchInput);
       root.removeEventListener("click", onPanelClick);
       selection.clear();
