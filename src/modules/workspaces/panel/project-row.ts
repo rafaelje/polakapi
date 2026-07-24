@@ -133,6 +133,15 @@ export function createProjectRow(opts: ProjectRowOptions): ProjectRowHandle {
     if (e.shiftKey) e.preventDefault();
   });
 
+  on(row, "contextmenu", (e) => {
+    e.preventDefault();
+    // Right-clicking an unselected row selects just it (like a file manager);
+    // right-clicking a row already in a multi-selection keeps it, so the menu
+    // surfaces the "Delete N selected" action.
+    if (!selection.has(project.id)) selection.setSingle(project.id);
+    openProjectMenu({ x: e.clientX, y: e.clientY });
+  });
+
   on(row, "click", (e) => {
     if (e.defaultPrevented) return;
     // Modifier-aware multi-select. shift = range, meta/ctrl = toggle. Both
@@ -168,9 +177,10 @@ export function createProjectRow(opts: ProjectRowOptions): ProjectRowHandle {
     openInvalidMenu();
   });
 
-  function openProjectMenu(): void {
+  function openProjectMenu(at?: { x: number; y: number }): void {
     openRowMenu({
       trigger: menuBtn,
+      at,
       items: [
         { label: "Rename", onSelect: () => void runRename() },
         {
