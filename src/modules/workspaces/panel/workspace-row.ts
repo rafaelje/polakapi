@@ -29,6 +29,7 @@ export interface WorkspaceRowOptions {
   /** Multi-selection store shared across all rows. */
   selection: SelectionStore;
   onSuspendProject?: (projectId: ProjectId) => void;
+  onDeleteSelected?: () => void;
 }
 
 export interface WorkspaceRowHandle {
@@ -112,6 +113,7 @@ export function createWorkspaceRow(opts: WorkspaceRowOptions): WorkspaceRowHandl
     const initialCount = liveCountFor ? liveCountFor(project.id) : 0;
     const handle = createProjectRow({
       onSuspendProject: opts.onSuspendProject,
+      onDeleteSelected: opts.onDeleteSelected,
       project,
       workspaceId: workspace.id,
       isActive: activeProjectId === project.id,

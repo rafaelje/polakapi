@@ -32,6 +32,7 @@ export interface ProjectRowOptions {
    */
   selection: SelectionStore;
   onSuspendProject?: (projectId: ProjectId) => void;
+  onDeleteSelected?: () => void;
 }
 
 export interface ProjectRowHandle {
@@ -193,11 +194,21 @@ export function createProjectRow(opts: ProjectRowOptions): ProjectRowHandle {
             : "Shortcut…",
           onSelect: () => void runAssignShortcut(),
         },
-        {
-          label: "Delete",
-          danger: true,
-          onSelect: () => void runDelete(),
-        },
+        ...(opts.onDeleteSelected && selection.has(project.id) && selection.getSelected().size > 1
+          ? [
+              {
+                label: `Delete ${selection.getSelected().size} selected`,
+                danger: true,
+                onSelect: () => opts.onDeleteSelected?.(),
+              },
+            ]
+          : [
+              {
+                label: "Delete",
+                danger: true,
+                onSelect: () => void runDelete(),
+              },
+            ]),
       ],
     });
   }

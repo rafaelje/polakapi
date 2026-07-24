@@ -122,6 +122,21 @@ export function setProjectPathInvalid(
   );
 }
 
+export function deleteProjects(state: WorkspacesState, ids: readonly ProjectId[]): WorkspacesState {
+  const set = new Set(ids);
+  if (set.size === 0) return state;
+  const activeProjectId =
+    state.activeProjectId && set.has(state.activeProjectId) ? null : state.activeProjectId;
+  return {
+    ...state,
+    activeProjectId,
+    workspaces: state.workspaces.map((w) => ({
+      ...w,
+      projects: w.projects.filter((p) => !set.has(p.id)),
+    })),
+  };
+}
+
 export function deleteProject(state: WorkspacesState, id: ProjectId): WorkspacesState {
   return {
     ...state,

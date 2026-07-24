@@ -3,7 +3,11 @@ import {
   loadWorkspaces,
   queueSaveWorkspaces,
 } from "../../../shared/persistence/workspaces-store";
-import { confirmDeleteProject, confirmDeleteWorkspace } from "../forms/confirm-delete";
+import {
+  confirmDeleteProject,
+  confirmDeleteProjects,
+  confirmDeleteWorkspace,
+} from "../forms/confirm-delete";
 import { validatePath } from "../path-validation";
 import { openCreateProjectForm, openEditProjectPathForm } from "../forms/project-form";
 import { applyPathValidationResults, collectPathValidationResults } from "../revalidate-paths";
@@ -34,6 +38,7 @@ import {
   addWorkspace,
   changeProjectPath,
   deleteProject as reduceDeleteProject,
+  deleteProjects as reduceDeleteProjects,
   deleteWorkspace as reduceDeleteWorkspace,
   duplicateProject,
   findProject,
@@ -197,6 +202,18 @@ export class WorkspacesController {
     if (!(await confirmDeleteProject(found.project.name, liveCount))) return false;
     await this.runDeleteProjectHooks([id], "Project delete teardown failed", onBeforeRemove);
     this.commit(reduceDeleteProject(this.state, id));
+    return true;
+  }
+
+  async deleteProjectsWithLiveCount(
+    ids: readonly ProjectId[],
+    totalLiveCount: number,
+  ): Promise<boolean> {
+    const present = ids.filter((id) => findProject(this.state, id));
+    if (present.length === 0) return false;
+    if (!(await confirmDeleteProjects(present.length, totalLiveCount))) return false;
+    await this.runDeleteProjectHooks(present, "Bulk project delete teardown failed");
+    this.commit(reduceDeleteProjects(this.state, present));
     return true;
   }
 

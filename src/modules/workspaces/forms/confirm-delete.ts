@@ -105,3 +105,16 @@ export function confirmDeleteProject(name: string, liveTerminals: number): Promi
     danger: true,
   });
 }
+
+export function confirmDeleteProjects(count: number, liveTerminals: number): Promise<boolean> {
+  const detail =
+    liveTerminals > 0
+      ? `${liveTerminals} attached terminal${liveTerminals === 1 ? "" : "s"} will be closed. This action cannot be undone.`
+      : "This action cannot be undone.";
+  return confirmModal({
+    title: `Delete ${count} projects?`,
+    message: detail,
+    confirmLabel: "Delete",
+    danger: true,
+  });
+}

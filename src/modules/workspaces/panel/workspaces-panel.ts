@@ -127,6 +127,15 @@ export function mountWorkspacesPanel(opts: WorkspacesPanelOptions): WorkspacesPa
   let query = "";
   const selection = createSelectionStore();
 
+  const deleteSelected = (): void => {
+    const ids = [...selection.getSelected()];
+    if (ids.length === 0) return;
+    const total = ids.reduce((sum, id) => sum + liveCountFor(id), 0);
+    void controller.deleteProjectsWithLiveCount(ids, total).then((ok) => {
+      if (ok) selection.clear();
+    });
+  };
+
   const onAddClick = (): void => {
     void controller.createWorkspaceInteractive();
   };
@@ -195,6 +204,7 @@ export function mountWorkspacesPanel(opts: WorkspacesPanelOptions): WorkspacesPa
         filterQuery: activeQuery,
         selection,
         onSuspendProject: opts.onSuspendProject,
+        onDeleteSelected: deleteSelected,
       });
       handles.push(handle);
       body.append(handle.element);

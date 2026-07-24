@@ -8,6 +8,7 @@ import {
   changeProjectPath,
   createEmptyState,
   deleteProject,
+  deleteProjects,
   deleteWorkspace,
   duplicateProject,
   findProject,
@@ -120,6 +121,37 @@ describe("workspaces-reducer", () => {
     s = deleteProject(s, pid);
     expect(s.workspaces[0].projects).toEqual([]);
     expect(s.activeProjectId).toBeNull();
+  });
+
+  it("deleteProjects removes several projects across workspaces at once", () => {
+    let s = addWorkspace(createEmptyState(), "A");
+    s = addWorkspace(s, "B");
+    s = addProject(s, { workspaceId: wsId(s, 0), name: "p1", path: "/p1" });
+    s = addProject(s, { workspaceId: wsId(s, 0), name: "p2", path: "/p2" });
+    s = addProject(s, { workspaceId: wsId(s, 1), name: "p3", path: "/p3" });
+    const p1 = projectId(s, 0, 0);
+    const p3 = projectId(s, 1, 0);
+    s = setActiveProject(s, p3);
+    s = deleteProjects(s, [p1, p3]);
+    expect(s.workspaces[0].projects.map((p) => p.name)).toEqual(["p2"]);
+    expect(s.workspaces[1].projects).toEqual([]);
+    expect(s.activeProjectId).toBeNull();
+  });
+
+  it("deleteProjects keeps activeProjectId when it is not in the deleted set", () => {
+    let s = addWorkspace(createEmptyState(), "A");
+    s = addProject(s, { workspaceId: wsId(s, 0), name: "p1", path: "/p1" });
+    s = addProject(s, { workspaceId: wsId(s, 0), name: "p2", path: "/p2" });
+    const p1 = projectId(s, 0, 0);
+    const p2 = projectId(s, 0, 1);
+    s = setActiveProject(s, p2);
+    s = deleteProjects(s, [p1]);
+    expect(s.activeProjectId).toBe(p2);
+  });
+
+  it("deleteProjects is identity for an empty id list", () => {
+    const s = addWorkspace(createEmptyState(), "A");
+    expect(deleteProjects(s, [])).toBe(s);
   });
 
   it("deleteWorkspace removes the workspace and clears activeProjectId if it pointed to one of its projects", () => {
