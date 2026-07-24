@@ -129,6 +129,10 @@ export function createProjectRow(opts: ProjectRowOptions): ProjectRowHandle {
     listeners.push(() => el.removeEventListener(type, handler));
   };
 
+  on(row, "mousedown", (e) => {
+    if (e.shiftKey) e.preventDefault();
+  });
+
   on(row, "click", (e) => {
     if (e.defaultPrevented) return;
     // Modifier-aware multi-select. shift = range, meta/ctrl = toggle. Both

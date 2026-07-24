@@ -156,6 +156,7 @@
   font-size: 15px;
   color: var(--text);
   cursor: pointer;
+  user-select: none;
   position: relative;
 }
 
