@@ -178,6 +178,9 @@ export function createProjectRow(opts: ProjectRowOptions): ProjectRowHandle {
   });
 
   function openProjectMenu(at?: { x: number; y: number }): void {
+    const selectedIds = [...selection.getSelected()];
+    const isBulk = selection.has(project.id) && selectedIds.length > 1;
+    const bulkTargets = isBulk ? selectedIds : [project.id];
     openRowMenu({
       trigger: menuBtn,
       at,
@@ -191,13 +194,17 @@ export function createProjectRow(opts: ProjectRowOptions): ProjectRowHandle {
         ...(opts.onSuspendProject
           ? [
               {
-                label: "Suspend terminals",
-                disabled: (opts.getLiveCount?.() ?? 0) === 0,
-                onSelect: () => opts.onSuspendProject?.(project.id),
+                label: isBulk ? `Suspend terminals (${selectedIds.length})` : "Suspend terminals",
+                disabled: !isBulk && (opts.getLiveCount?.() ?? 0) === 0,
+                onSelect: () => {
+                  for (const id of bulkTargets) opts.onSuspendProject?.(id);
+                },
               },
             ]
           : []),
-        ...buildMoveSubmenuItems(controller, project.id, workspaceId),
+        ...buildMoveSubmenuItems(controller, bulkTargets, workspaceId, isBulk, () =>
+          selection.clear(),
+        ),
         {
           label: "Appearance…",
           onSelect: () => openAppearance(),
@@ -349,17 +356,28 @@ function readOrderedProjectIds(listEl: HTMLElement | null): ProjectId[] {
 
 function buildMoveSubmenuItems(
   controller: WorkspacesController,
-  projectId: ProjectId,
+  projectIds: readonly ProjectId[],
   fromWorkspaceId: WorkspaceId,
+  isBulk: boolean,
+  onAfterBulk: () => void,
 ): Array<{ label: string; onSelect: () => void; disabled?: boolean }> {
+  // A bulk selection can span workspaces, so every workspace is a valid
+  // destination; a single project excludes its own workspace as before.
   const targets: Workspace[] = controller
     .getState()
-    .workspaces.filter((w) => w.id !== fromWorkspaceId);
+    .workspaces.filter((w) => isBulk || w.id !== fromWorkspaceId);
   if (targets.length === 0) {
     return [{ label: "Move to…", disabled: true, onSelect: () => {} }];
   }
   return targets.map((w) => ({
-    label: `Move to “${w.name}”`,
-    onSelect: () => controller.moveProject(projectId, w.id, w.projects.length),
+    label: isBulk ? `Move ${projectIds.length} selected to “${w.name}”` : `Move to “${w.name}”`,
+    onSelect: () => {
+      if (isBulk) {
+        controller.moveProjects(projectIds, w.id, w.projects.length);
+        onAfterBulk();
+      } else {
+        controller.moveProject(projectIds[0], w.id, w.projects.length);
+      }
+    },
   }));
 }
