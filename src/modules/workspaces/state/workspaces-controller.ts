@@ -4,12 +4,16 @@ import {
   queueSaveWorkspaces,
 } from "../../../shared/persistence/workspaces-store";
 import {
+  confirmDeleteFolder,
   confirmDeleteProject,
   confirmDeleteProjects,
   confirmDeleteWorkspace,
 } from "../forms/confirm-delete";
 import { validatePath } from "../path-validation";
 import { openCreateProjectForm, openEditProjectPathForm } from "../forms/project-form";
+import { invoke, InvokeError } from "../../../shared/tauri/invoke";
+import { promptModal } from "../../../shared/ui/modal";
+import { showToast } from "../../../shared/ui/toast";
 import { applyPathValidationResults, collectPathValidationResults } from "../revalidate-paths";
 import { openCreateWorkspaceForm } from "../forms/workspace-form";
 import {
@@ -22,6 +26,8 @@ import {
 } from "./workspaces-reducer-shortcuts";
 import type {
   ColorToken,
+  Folder,
+  FolderId,
   LayoutTemplate,
   Project,
   ProjectId,
@@ -33,24 +39,34 @@ import type {
   WorkspacesState,
 } from "./types";
 import {
+  addFolder,
   addProject,
   addTerminalSpec,
   addWorkspace,
   changeProjectPath,
+  deleteFolder as reduceDeleteFolder,
   deleteProject as reduceDeleteProject,
   deleteProjects as reduceDeleteProjects,
   deleteWorkspace as reduceDeleteWorkspace,
   duplicateProject,
   findProject,
+  moveFolderDown as reduceMoveFolderDown,
+  moveFolderUp as reduceMoveFolderUp,
   moveProject,
   moveProjects,
+  moveProjectToBucket as reduceMoveProjectToBucket,
+  moveProjectsToBucket as reduceMoveProjectsToBucket,
+  moveProjectToFolder as reduceMoveProjectToFolder,
   removeTerminalSpec,
+  renameFolder as reduceRenameFolder,
   renameProject,
   renameWorkspace,
   reorderProjects,
+  reorderProjectsInFolder as reduceReorderProjectsInFolder,
   reorderWorkspaces,
   replaceTerminalSpecs,
   resetAlphabeticalOrder,
+  resetAlphabeticalOrderInFolder as reduceResetAlphabeticalOrderInFolder,
   setActiveProject,
   setProjectActiveCli,
   setProjectTerminalLayout,
@@ -60,6 +76,7 @@ import {
   setWorkspaceColor,
   setAllCollapsed,
   toggleCollapsed,
+  toggleFolderCollapsed as reduceToggleFolderCollapsed,
   updateTerminalSpec,
 } from "./workspaces-reducer";
 
@@ -139,14 +156,27 @@ export class WorkspacesController {
     this.commit(reorderWorkspaces(this.state, ordered));
   }
 
-  async createProjectInteractive(workspaceId: WorkspaceId): Promise<Project | null> {
-    const result = await openCreateProjectForm();
-    if (result.kind !== "ok") return null;
-
+  async createProjectInteractive(
+    workspaceId: WorkspaceId,
+    opts?: { initialFolderId?: FolderId },
+  ): Promise<Project | null> {
     const workspace = this.state.workspaces.find((w) => w.id === workspaceId);
     if (!workspace) return null;
+    const result = await openCreateProjectForm({
+      folders: workspace.folders ?? [],
+      initialFolderId: opts?.initialFolderId,
+    });
+    if (result.kind !== "ok") return null;
+
     const before = workspace.projects.length;
-    this.commit(addProject(this.state, { workspaceId, name: result.name, path: result.path }));
+    this.commit(
+      addProject(this.state, {
+        workspaceId,
+        name: result.name,
+        path: result.path,
+        folderId: result.folderId,
+      }),
+    );
     const updated = this.state.workspaces.find((w) => w.id === workspaceId);
     const created = updated?.projects[before] ?? null;
     if (created) this.setActiveProject(created.id);
@@ -159,13 +189,59 @@ export class WorkspacesController {
    * `state-changed` event as `createProjectInteractive`, so the sidebar
    * re-renders normally.
    */
-  addProject(workspaceId: WorkspaceId, input: { name: string; path: string }): Project | null {
+  addProject(
+    workspaceId: WorkspaceId,
+    input: { name: string; path: string; color?: ColorToken; folderId?: FolderId },
+  ): Project | null {
     const workspace = this.state.workspaces.find((w) => w.id === workspaceId);
     if (!workspace) return null;
     const before = workspace.projects.length;
-    this.commit(addProject(this.state, { workspaceId, name: input.name, path: input.path }));
+    this.commit(
+      addProject(this.state, {
+        workspaceId,
+        name: input.name,
+        path: input.path,
+        color: input.color,
+        folderId: input.folderId,
+      }),
+    );
     const updated = this.state.workspaces.find((w) => w.id === workspaceId);
     return updated?.projects[before] ?? null;
+  }
+
+  /**
+   * Creates a real `git worktree add` for `branch` off the project's detected
+   * base ref, as an automatic sibling directory next to the repo, then
+   * registers it as a new Project in the same workspace pointing at that
+   * worktree path. Unlike `duplicateProject` (a same-path logical clone),
+   * this touches disk/git and can fail (branch/path collisions) — errors are
+   * surfaced via toast with git's own message, not the generic invoke toast.
+   */
+  async createProjectWorktree(id: ProjectId, branch: string): Promise<Project | null> {
+    const found = findProject(this.state, id);
+    if (!found) return null;
+    const { workspace, project } = found;
+
+    let worktreePath: string;
+    try {
+      worktreePath = await invoke<string>(
+        "git_create_worktree",
+        { projectPath: project.path, branch },
+        { toastOnError: false },
+      );
+    } catch (cause) {
+      const raw = cause instanceof InvokeError ? cause.cause : cause;
+      showToast(typeof raw === "string" ? raw : "Could not create worktree", "error");
+      return null;
+    }
+
+    const created = this.addProject(workspace.id, {
+      name: `${project.name} (${branch})`,
+      path: worktreePath,
+      color: project.color,
+    });
+    if (created) this.setActiveProject(created.id);
+    return created;
   }
 
   renameProject(id: ProjectId, name: string): void {
@@ -284,6 +360,82 @@ export class WorkspacesController {
     this.commit(reorderProjects(this.state, workspaceId, ordered));
   resetAlphabeticalOrder = (workspaceId: WorkspaceId): void =>
     this.commit(resetAlphabeticalOrder(this.state, workspaceId));
+
+  // Single-level sidebar folders. Same thin commit-wrapper style as the
+  // project/workspace setters above.
+  async createFolderInteractive(workspaceId: WorkspaceId): Promise<Folder | null> {
+    const name = await promptModal({
+      title: "New folder",
+      placeholder: "Folder name",
+      confirmLabel: "Create",
+    });
+    if (name === null) return null;
+    const trimmed = name.trim();
+    if (!trimmed) return null;
+    const workspace = this.state.workspaces.find((w) => w.id === workspaceId);
+    if (!workspace) return null;
+    const before = workspace.folders?.length ?? 0;
+    this.commit(addFolder(this.state, workspaceId, trimmed));
+    const updated = this.state.workspaces.find((w) => w.id === workspaceId);
+    return updated?.folders?.[before] ?? null;
+  }
+
+  renameFolder = (workspaceId: WorkspaceId, folderId: FolderId, name: string): void => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    this.commit(reduceRenameFolder(this.state, workspaceId, folderId, trimmed));
+  };
+
+  async deleteFolderInteractive(workspaceId: WorkspaceId, folderId: FolderId): Promise<void> {
+    const workspace = this.state.workspaces.find((w) => w.id === workspaceId);
+    const folder = workspace?.folders?.find((f) => f.id === folderId);
+    if (!workspace || !folder) return;
+    const memberCount = workspace.projects.filter((p) => p.folderId === folderId).length;
+    if (!(await confirmDeleteFolder(folder.name, memberCount))) return;
+    this.commit(reduceDeleteFolder(this.state, workspaceId, folderId));
+  }
+
+  toggleFolderCollapsed = (workspaceId: WorkspaceId, folderId: FolderId): void =>
+    this.commit(reduceToggleFolderCollapsed(this.state, workspaceId, folderId));
+  moveFolderUp = (workspaceId: WorkspaceId, folderId: FolderId): void =>
+    this.commit(reduceMoveFolderUp(this.state, workspaceId, folderId));
+  moveFolderDown = (workspaceId: WorkspaceId, folderId: FolderId): void =>
+    this.commit(reduceMoveFolderDown(this.state, workspaceId, folderId));
+  resetAlphabeticalOrderInFolder = (
+    workspaceId: WorkspaceId,
+    folderId: FolderId | undefined,
+  ): void => this.commit(reduceResetAlphabeticalOrderInFolder(this.state, workspaceId, folderId));
+
+  /** Row-menu "Move to folder" entry point — same-workspace only. */
+  moveProjectToFolder = (projectId: ProjectId, folderId: FolderId | undefined): void =>
+    this.commit(reduceMoveProjectToFolder(this.state, projectId, folderId));
+
+  /** Drag-and-drop entry point (single project, bucket-aware). */
+  moveProjectToBucket = (
+    projectId: ProjectId,
+    toWorkspaceId: WorkspaceId,
+    folderId: FolderId | undefined,
+    atIndex: number,
+  ): void =>
+    this.commit(reduceMoveProjectToBucket(this.state, projectId, toWorkspaceId, folderId, atIndex));
+
+  /** Drag-and-drop entry point (bulk, bucket-aware). */
+  moveProjectsToBucket = (
+    projectIds: readonly ProjectId[],
+    toWorkspaceId: WorkspaceId,
+    folderId: FolderId | undefined,
+    atIndex: number,
+  ): void =>
+    this.commit(
+      reduceMoveProjectsToBucket(this.state, projectIds, toWorkspaceId, folderId, atIndex),
+    );
+
+  /** Drag-and-drop entry point (same-bucket pointer reorder). */
+  reorderProjectsInFolder = (
+    workspaceId: WorkspaceId,
+    folderId: FolderId | undefined,
+    ordered: ProjectId[],
+  ): void => this.commit(reduceReorderProjectsInFolder(this.state, workspaceId, folderId, ordered));
 
   setActiveProject(id: ProjectId | null): void {
     const next = setActiveProject(this.state, id);

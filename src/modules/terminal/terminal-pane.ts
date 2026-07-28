@@ -8,9 +8,11 @@ import { attachTerminalClipboard } from "./terminal-clipboard";
 import { attachTerminalKeybindings } from "./terminal-keybindings";
 import { classifyLinkText, createPathLinkProvider, openLinkFromText } from "./terminal-links";
 import { openPaneMenu, openCliRespawnMenu } from "./terminal-pane-menu";
+import { attachShellCommandCapture } from "./terminal-shell-integration";
 import type {
   CliRespawnCallbacks,
   DockMenuCallbacks,
+  ShellCommandCallbacks,
   StartupCmdEditCallbacks,
   SuspendCallbacks,
 } from "./terminal-pane-types";
@@ -41,6 +43,7 @@ export class TerminalPane {
   private cliRespawnCallbacks: CliRespawnCallbacks | null = null;
   private dockMenuCallbacks: DockMenuCallbacks | null = null;
   private suspendCallbacks: SuspendCallbacks | null = null;
+  private shellCommandCallbacks: ShellCommandCallbacks | null = null;
   private spawnFailed = false;
   private suspended = false;
 
@@ -121,6 +124,11 @@ export class TerminalPane {
           if (classifyLinkText(path)) openLinkFromText(path);
         }),
       ),
+    );
+    this.disposables.push(
+      attachShellCommandCapture(this.term, (command) => {
+        this.shellCommandCallbacks?.onCommand(command);
+      }),
     );
     this.disposables.push(attachTerminalClipboard(this.term));
     this.disposables.push(
@@ -265,6 +273,10 @@ export class TerminalPane {
 
   setSuspendCallbacks(callbacks: SuspendCallbacks | null): void {
     this.suspendCallbacks = callbacks;
+  }
+
+  setShellCommandCallbacks(callbacks: ShellCommandCallbacks | null): void {
+    this.shellCommandCallbacks = callbacks;
   }
 
   private openPaneMenu(): void {

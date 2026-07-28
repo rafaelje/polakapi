@@ -9,6 +9,7 @@ export interface ProjectPaneCallbacks {
   onAddTerminal(): void;
   onOpenLayoutsMenu(anchor: HTMLElement): void;
   onSuspendAll(): void;
+  onResumeAll(): void;
   onRunInAll(): void;
   onRevealFolder(path: string): void;
   onOpenInEditor(path: string): void;
@@ -130,13 +131,28 @@ export function mountProjectPane(opts: ProjectPaneOptions): ProjectPaneHandle {
   suspendBtn.title = "Kill this project's terminal processes to free RAM; panes stay to resume";
   suspendBtn.textContent = "⏸ Suspend all";
 
+  const resumeBtn = document.createElement("button");
+  resumeBtn.type = "button";
+  resumeBtn.id = "resume-all";
+  resumeBtn.title =
+    "Resume every suspended terminal — shell terminals replay their last command, AI CLIs continue their session";
+  resumeBtn.textContent = "▶ Resume all";
+
   const chipRow = createChipRow((cliId) => {
     chipRow.setActive(cliId);
     callbacks.onSetActiveCli(cliId);
   });
   chipRow.setActive("shell");
 
-  subToolbar.append(chipRow.element, addBtn, layoutsBtn, runAllBtn, suspendBtn, externalGroup);
+  subToolbar.append(
+    chipRow.element,
+    addBtn,
+    layoutsBtn,
+    runAllBtn,
+    suspendBtn,
+    resumeBtn,
+    externalGroup,
+  );
 
   let emptyState: EmptyStateHandle | null = createProjectEmptyState();
   let currentProject: Project | null = null;
@@ -152,6 +168,7 @@ export function mountProjectPane(opts: ProjectPaneOptions): ProjectPaneHandle {
   layoutsBtn.disabled = true;
   runAllBtn.disabled = true;
   suspendBtn.disabled = true;
+  resumeBtn.disabled = true;
   revealBtn.disabled = true;
   editorBtn.disabled = true;
   shellBtn.disabled = true;
@@ -160,6 +177,7 @@ export function mountProjectPane(opts: ProjectPaneOptions): ProjectPaneHandle {
   const onAdd = (): void => callbacks.onAddTerminal();
   const onLayouts = (): void => callbacks.onOpenLayoutsMenu(layoutsBtn);
   const onSuspendAll = (): void => callbacks.onSuspendAll();
+  const onResumeAll = (): void => callbacks.onResumeAll();
   const onRunAll = (): void => callbacks.onRunInAll();
   const onReveal = (): void => {
     const path = currentProject?.path;
@@ -177,6 +195,7 @@ export function mountProjectPane(opts: ProjectPaneOptions): ProjectPaneHandle {
   addBtn.addEventListener("click", onAdd);
   layoutsBtn.addEventListener("click", onLayouts);
   suspendBtn.addEventListener("click", onSuspendAll);
+  resumeBtn.addEventListener("click", onResumeAll);
   runAllBtn.addEventListener("click", onRunAll);
   revealBtn.addEventListener("click", onReveal);
   editorBtn.addEventListener("click", onEditor);
@@ -191,6 +210,7 @@ export function mountProjectPane(opts: ProjectPaneOptions): ProjectPaneHandle {
       layoutsBtn.disabled = !active;
       runAllBtn.disabled = !active;
       suspendBtn.disabled = !active;
+      resumeBtn.disabled = !active;
       revealBtn.disabled = project === null || !project.path;
       editorBtn.disabled = project === null || !project.path;
       shellBtn.disabled = project === null || !project.path;
@@ -210,6 +230,7 @@ export function mountProjectPane(opts: ProjectPaneOptions): ProjectPaneHandle {
       addBtn.removeEventListener("click", onAdd);
       layoutsBtn.removeEventListener("click", onLayouts);
       suspendBtn.removeEventListener("click", onSuspendAll);
+      resumeBtn.removeEventListener("click", onResumeAll);
       runAllBtn.removeEventListener("click", onRunAll);
       revealBtn.removeEventListener("click", onReveal);
       editorBtn.removeEventListener("click", onEditor);

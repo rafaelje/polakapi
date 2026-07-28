@@ -106,6 +106,19 @@ export function confirmDeleteProject(name: string, liveTerminals: number): Promi
   });
 }
 
+export function confirmDeleteFolder(name: string, projectCount: number): Promise<boolean> {
+  const detail =
+    projectCount === 0
+      ? "This folder is empty."
+      : `${projectCount} project${projectCount === 1 ? "" : "s"} will be ungrouped, not deleted.`;
+  return confirmModal({
+    title: `Delete folder "${name}"?`,
+    message: detail,
+    confirmLabel: "Delete",
+    danger: true,
+  });
+}
+
 export function confirmDeleteProjects(count: number, liveTerminals: number): Promise<boolean> {
   const detail =
     liveTerminals > 0

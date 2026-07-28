@@ -2,15 +2,17 @@ import { promptModal } from "../../../shared/ui/modal";
 import { showToast } from "../../../shared/ui/toast";
 import { deterministicColor } from "../appearance-defaults";
 import { openAppearancePicker } from "../forms/appearance-picker";
+import { createFolderRow, type FolderRowHandle } from "./folder-row";
 import { createProjectRow, createShortcutHint, type ProjectRowHandle } from "./project-row";
-import { filterProjects } from "../project-filter";
+import { matchesProject } from "../project-filter";
 import { openRowMenu } from "../forms/row-menu";
 import { startInlineRename } from "../forms/rename-inline";
 import { normalizeShortcutKey } from "../state/workspaces-reducer-shortcuts";
 import type { SelectionStore } from "../state/selection";
-import type { Project, ProjectId, Workspace } from "../state/types";
+import type { ProjectId, Workspace } from "../state/types";
 import type { WorkspacesController } from "../state/workspaces-controller";
-import { sortedProjects } from "../state/workspaces-reducer";
+import { compareByOrderThenName } from "../state/workspaces-reducer-helpers";
+import { sortedWorkspaceEntries } from "../state/workspaces-reducer";
 
 export interface WorkspaceRowOptions {
   workspace: Workspace;
@@ -21,6 +23,8 @@ export interface WorkspaceRowOptions {
    * created rows already show the right badge before the next event fires.
    */
   liveCountFor?: (projectId: ProjectId) => number;
+  /** Resolves the suspended-terminal count; feeds "Resume terminals (N)". */
+  getSuspendedCount?: (projectId: ProjectId) => number;
   /**
    * Optional sidebar search query. When non-empty, only projects matching the
    * query are rendered. Workspaces with zero matches are hidden by the panel.
@@ -29,6 +33,7 @@ export interface WorkspaceRowOptions {
   /** Multi-selection store shared across all rows. */
   selection: SelectionStore;
   onSuspendProject?: (projectId: ProjectId) => void;
+  onResumeProject?: (projectId: ProjectId) => void;
   onDeleteSelected?: () => void;
 }
 
@@ -100,30 +105,70 @@ export function createWorkspaceRow(opts: WorkspaceRowOptions): WorkspaceRowHandl
   wrapper.append(projectsList);
 
   const projectHandles = new Map<ProjectId, ProjectRowHandle>();
+  const folderHandles: FolderRowHandle[] = [];
   const activeProjectId = controller.getState().activeProjectId;
   const liveCountFor = opts.liveCountFor;
+  const suspendedCountFor = opts.getSuspendedCount;
+  const activeQuery = opts.filterQuery ?? "";
 
-  const visibleProjects: Project[] = filterProjects(
-    opts.filterQuery ?? "",
-    workspace,
-    sortedProjects(workspace),
-  );
+  const folderCount = (workspace.folders ?? []).length;
+  const sortedFolderIds = [...(workspace.folders ?? [])]
+    .sort(compareByOrderThenName)
+    .map((f) => f.id);
 
-  for (const project of visibleProjects) {
-    const initialCount = liveCountFor ? liveCountFor(project.id) : 0;
-    const handle = createProjectRow({
-      onSuspendProject: opts.onSuspendProject,
-      onDeleteSelected: opts.onDeleteSelected,
-      project,
-      workspaceId: workspace.id,
-      isActive: activeProjectId === project.id,
-      liveTerminalsCount: initialCount,
+  for (const entry of sortedWorkspaceEntries(workspace)) {
+    if (entry.kind === "project") {
+      // Search filtering for ungrouped projects, applied per-entry (same
+      // matching rule `filterProjects` uses for the whole list).
+      if (activeQuery && !matchesProject(activeQuery, workspace.name, entry.project)) continue;
+      const project = entry.project;
+      const initialCount = liveCountFor ? liveCountFor(project.id) : 0;
+      const handle = createProjectRow({
+        onSuspendProject: opts.onSuspendProject,
+        onResumeProject: opts.onResumeProject,
+        onDeleteSelected: opts.onDeleteSelected,
+        project,
+        workspaceId: workspace.id,
+        isActive: activeProjectId === project.id,
+        liveTerminalsCount: initialCount,
+        controller,
+        getLiveCount: liveCountFor ? () => liveCountFor(project.id) : undefined,
+        getSuspendedCount: suspendedCountFor ? () => suspendedCountFor(project.id) : undefined,
+        selection: opts.selection,
+      });
+      projectHandles.set(project.id, handle);
+      projectsList.append(handle.element);
+      continue;
+    }
+
+    const folder = entry.folder;
+    const folderIdx = sortedFolderIds.indexOf(folder.id);
+    // Skip a folder entirely when a search is active and none of its
+    // projects match — same "hide empty groups" rule the panel already
+    // applies to whole workspaces.
+    if (activeQuery) {
+      const hasMatch = workspace.projects.some(
+        (p) => p.folderId === folder.id && matchesProject(activeQuery, workspace.name, p),
+      );
+      if (!hasMatch) continue;
+    }
+    const folderHandle = createFolderRow({
+      folder,
+      workspace,
       controller,
-      getLiveCount: liveCountFor ? () => liveCountFor(project.id) : undefined,
+      liveCountFor: opts.liveCountFor,
+      getSuspendedCount: opts.getSuspendedCount,
+      filterQuery: opts.filterQuery,
       selection: opts.selection,
+      onSuspendProject: opts.onSuspendProject,
+      onResumeProject: opts.onResumeProject,
+      onDeleteSelected: opts.onDeleteSelected,
+      isFirst: folderIdx === 0,
+      isLast: folderIdx === folderCount - 1,
     });
-    projectHandles.set(project.id, handle);
-    projectsList.append(handle.element);
+    folderHandles.push(folderHandle);
+    for (const [pid, handle] of folderHandle.projectHandles) projectHandles.set(pid, handle);
+    projectsList.append(folderHandle.element);
   }
 
   const listeners: Array<() => void> = [];
@@ -165,6 +210,10 @@ export function createWorkspaceRow(opts: WorkspaceRowOptions): WorkspaceRowHandl
         {
           label: "Add project…",
           onSelect: () => void controller.createProjectInteractive(workspace.id),
+        },
+        {
+          label: "New folder…",
+          onSelect: () => void controller.createFolderInteractive(workspace.id),
         },
         {
           label: workspace.collapsed ? "Expand" : "Collapse",
@@ -250,6 +299,7 @@ export function createWorkspaceRow(opts: WorkspaceRowOptions): WorkspaceRowHandl
       appearancePicker?.dispose();
       appearancePicker = null;
       for (const off of listeners.splice(0)) off();
+      for (const handle of folderHandles.splice(0)) handle.dispose();
       for (const handle of projectHandles.values()) handle.dispose();
       projectHandles.clear();
       wrapper.remove();

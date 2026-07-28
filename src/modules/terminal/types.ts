@@ -17,6 +17,11 @@ export interface PaneCreateOptions {
  *                 (i.e. the owning project's `path`).
  * - `startupCmd` — optional one-shot command piped into the shell on spawn.
  * - `cliId`     — optional CLI profile id; undefined resolves to SHELL_PROFILE.
+ * - `lastShellCommand` — captured via the shell-integration OSC hook (see
+ *   `terminal-shell-integration.ts`): the last Enter-submitted command in
+ *   this shell session. Undefined for AI-CLI panes and shells that never ran
+ *   a command. Replayed verbatim (with `\r` appended) by `resumePane`/
+ *   `resumeAll` for `cliId === "shell"` (or undefined) panes.
  */
 export interface TerminalSpec {
   id: string;
@@ -25,4 +30,5 @@ export interface TerminalSpec {
   startupCmd?: string;
   cliId?: string;
   suspended?: boolean;
+  lastShellCommand?: string;
 }

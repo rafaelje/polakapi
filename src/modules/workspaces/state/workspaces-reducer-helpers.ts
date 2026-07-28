@@ -1,4 +1,11 @@
-import type { Project, ProjectId, Workspace, WorkspaceId, WorkspacesState } from "./types";
+import type {
+  FolderId,
+  Project,
+  ProjectId,
+  Workspace,
+  WorkspaceId,
+  WorkspacesState,
+} from "./types";
 
 function uuid(): string {
   return crypto.randomUUID();
@@ -10,6 +17,10 @@ export function newWorkspaceId(): WorkspaceId {
 
 export function newProjectId(): ProjectId {
   return uuid() as ProjectId;
+}
+
+export function newFolderId(): FolderId {
+  return uuid() as FolderId;
 }
 
 /**
@@ -64,4 +75,19 @@ export function mapProjectInWorkspace(
  */
 export function reassignOrder<T extends { order?: number }>(items: T[]): T[] {
   return items.map((item, idx) => ({ ...item, order: idx }));
+}
+
+/**
+ * Like `reassignOrder`, but only stamps `order` on items where `matches`
+ * returns true, leaving every other item (and its `order`) untouched. Used to
+ * scope reordering to one folder bucket (or the ungrouped bucket) within a
+ * workspace's flat `projects` array, so reordering inside one folder never
+ * corrupts another folder's `order` values.
+ */
+export function reassignOrderWhere<T extends { order?: number }>(
+  items: T[],
+  matches: (item: T) => boolean,
+): T[] {
+  let idx = 0;
+  return items.map((item) => (matches(item) ? { ...item, order: idx++ } : item));
 }

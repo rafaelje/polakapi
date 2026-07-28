@@ -8,11 +8,13 @@ mod commands;
 pub mod db;
 mod fs;
 mod git_review;
+mod git_worktree;
 mod loop_cli;
 mod loop_prompts;
 mod memory;
 mod open;
 mod pty;
+mod shell_integration;
 
 use std::sync::{Arc, Mutex};
 use tauri::Manager;
@@ -35,6 +37,7 @@ use crate::db::{
     prompt_list_sessions, prompt_search,
 };
 use crate::git_review::{git_branch_diff, git_detect_base_ref};
+use crate::git_worktree::git_create_worktree;
 use crate::loop_cli::run_loop_agent;
 use crate::loop_prompts::{
     loop_archive_run, loop_create_phase_dir, loop_create_run, loop_delete_phase_dir,
@@ -181,6 +184,7 @@ pub fn run() {
             prompt_install_hooks,
             git_detect_base_ref,
             git_branch_diff,
+            git_create_worktree,
             adv_create_run,
             adv_read_run_file,
             adv_write_run_file,

@@ -118,6 +118,7 @@ export async function bootstrapWorkspaces(
     liveCounts: router,
     bellSource,
     onSuspendProject: (projectId) => router.getById(projectId)?.suspendAll(),
+    onResumeProject: (projectId) => router.getById(projectId)?.resumeAll(),
   });
 
   // Bridges native Finder drops and HTML5 URL/text drops into whichever pane
@@ -164,6 +165,7 @@ export async function bootstrapWorkspaces(
         });
       },
       onSuspendAll: () => router.getActive()?.suspendAll(),
+      onResumeAll: () => router.getActive()?.resumeAll(),
       onRunInAll: () => void runCommandInActivePanes(router),
       onRevealFolder: (path) => {
         void revealFolder(path);

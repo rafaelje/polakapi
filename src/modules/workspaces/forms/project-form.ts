@@ -1,8 +1,9 @@
-import { promptModal } from "../../../shared/ui/modal";
+import { promptModal, selectModal } from "../../../shared/ui/modal";
 import { showToast } from "../../../shared/ui/toast";
 import { pickProjectFolder } from "../path-picker";
 import { formatPathError, validatePath } from "../path-validation";
-import type { PathValidation, Project } from "../state/types";
+import { compareByOrderThenName } from "../state/workspaces-reducer-helpers";
+import type { Folder, FolderId, PathValidation, Project } from "../state/types";
 
 /**
  * Result of a project-form flow. The `cancelled` discriminant captures the
@@ -10,13 +11,24 @@ import type { PathValidation, Project } from "../state/types";
  * callers do not surface a toast for the regular cancel path.
  */
 export type ProjectFormResult =
-  | { kind: "ok"; name: string; path: string }
+  | { kind: "ok"; name: string; path: string; folderId?: FolderId }
   | { kind: "cancelled" }
   | { kind: "error"; validation: Extract<PathValidation, { ok: false }> };
+
+const NO_FOLDER_VALUE = "";
 
 export interface CreateProjectFormOptions {
   /** Pre-filled folder for the picker on subsequent runs (rare in create). */
   defaultPath?: string;
+  /**
+   * The target workspace's sidebar folders. When non-empty, the flow gains an
+   * extra "which folder?" step after path validation and before the name
+   * prompt. Skipped entirely when empty — no added friction for workspaces
+   * that don't use folders.
+   */
+  folders?: Folder[];
+  /** Pre-selects this folder in the picker (e.g. a folder's own "Add project…"). */
+  initialFolderId?: FolderId;
 }
 
 export interface EditProjectFormOptions {
@@ -41,6 +53,23 @@ export async function openCreateProjectForm(
     return { kind: "error", validation };
   }
 
+  let folderId: FolderId | undefined = opts?.initialFolderId;
+  if (opts?.folders && opts.folders.length > 0) {
+    const choice = await selectModal({
+      title: "Add to folder",
+      options: [
+        { value: NO_FOLDER_VALUE, label: "No folder (workspace root)" },
+        ...[...opts.folders]
+          .sort(compareByOrderThenName)
+          .map((f) => ({ value: f.id, label: f.name })),
+      ],
+      initialValue: opts.initialFolderId ?? NO_FOLDER_VALUE,
+      confirmLabel: "Next",
+    });
+    if (choice === null) return { kind: "cancelled" };
+    folderId = choice === NO_FOLDER_VALUE ? undefined : (choice as FolderId);
+  }
+
   const defaultName = basename(path);
   const name = await promptModal({
     title: "Add project",
@@ -52,7 +81,7 @@ export async function openCreateProjectForm(
   if (name === null) return { kind: "cancelled" };
   const trimmed = name.trim();
   if (!trimmed) return { kind: "cancelled" };
-  return { kind: "ok", name: trimmed, path };
+  return { kind: "ok", name: trimmed, path, folderId };
 }
 
 /**

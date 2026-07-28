@@ -5,7 +5,9 @@ use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
+
+use crate::shell_integration;
 
 #[cfg(target_os = "windows")]
 const ALLOWED_SHELL_BASENAMES: &[&str] = &[
@@ -128,6 +130,15 @@ pub fn spawn_session(
         })
         .map_err(|e| e.to_string())?;
 
+    // Captured before `command`/`args` are consumed below — a "bare shell"
+    // request (no explicit command, no explicit args) is exactly the
+    // `cliId: "shell"` spawn path from the frontend; AI CLIs and CLI-resume
+    // (`resumeArgs`) always pass at least one of the two, so this is a
+    // sufficient signal to gate shell-integration injection without needing
+    // to thread `cliId` through this Rust-side call.
+    let is_bare_shell_request = command.as_deref().map(str::trim).unwrap_or("").is_empty()
+        && args.as_ref().map(Vec::is_empty).unwrap_or(true);
+
     let shell = resolve_command(command)?;
     let validated_args = validate_args(args)?;
     let validated_cwd = validate_cwd(cwd)?;
@@ -148,6 +159,12 @@ pub fn spawn_session(
         cmd.cwd(dir);
     }
     configure_terminal_environment(&mut cmd);
+
+    if is_bare_shell_request {
+        if let Ok(config_dir) = app.path().app_config_dir() {
+            shell_integration::apply(&config_dir.join("shell-integration"), &mut cmd, &shell);
+        }
+    }
 
     // If this session spawns an AI CLI directly (claude / codex / opencode),
     // inject env vars that let the polakapi-capture hooks (registered by the

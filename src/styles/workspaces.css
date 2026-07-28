@@ -148,6 +148,51 @@
   display: none;
 }
 
+.ws-folder {
+  display: flex;
+  flex-direction: column;
+}
+
+.ws-folder-header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px 6px 18px;
+  font-size: 14px;
+  color: var(--text);
+  user-select: none;
+}
+
+.ws-folder-header:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.ws-folder-name {
+  flex: 1;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ws-folder-projects {
+  display: flex;
+  flex-direction: column;
+}
+
+.ws-folder-projects:empty {
+  min-height: 18px;
+}
+
+.ws-folder.collapsed .ws-folder-projects {
+  display: none;
+}
+
+.ws-folder-projects .ws-project-row {
+  padding-left: 44px;
+}
+
 .ws-project-row {
   display: flex;
   align-items: center;

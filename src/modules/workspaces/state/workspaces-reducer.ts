@@ -1,5 +1,7 @@
 import type {
   CreateProjectInput,
+  Folder,
+  FolderId,
   Project,
   ProjectId,
   Workspace,
@@ -31,6 +33,45 @@ export function sortedWorkspaces(state: WorkspacesState): Workspace[] {
 
 export function sortedProjects(workspace: Workspace): Project[] {
   return [...workspace.projects].sort(compareByOrderThenName);
+}
+
+export type WorkspaceEntry =
+  | { kind: "folder"; folder: Folder }
+  | { kind: "project"; project: Project };
+
+/**
+ * A workspace's top-level children as one interleaved, sorted list: its
+ * folders plus its ungrouped (`folderId` undefined) projects, ordered
+ * together via `compareByOrderThenName`. When the workspace has no folders,
+ * this produces exactly the same order as `sortedProjects` — zero visual
+ * change for workspaces that don't use folders.
+ */
+export function sortedWorkspaceEntries(workspace: Workspace): WorkspaceEntry[] {
+  const folderEntries: WorkspaceEntry[] = (workspace.folders ?? []).map((folder) => ({
+    kind: "folder",
+    folder,
+  }));
+  const projectEntries: WorkspaceEntry[] = workspace.projects
+    .filter((p) => p.folderId === undefined)
+    .map((project) => ({ kind: "project", project }));
+  return [...folderEntries, ...projectEntries].sort((a, b) =>
+    compareByOrderThenName(entryOrderable(a), entryOrderable(b)),
+  );
+}
+
+function entryOrderable(entry: WorkspaceEntry): { name: string; order?: number } {
+  return entry.kind === "folder" ? entry.folder : entry.project;
+}
+
+/**
+ * Projects assigned to `folderId` (or ungrouped, when `folderId` is
+ * undefined), sorted the same way as `sortedProjects`.
+ */
+export function sortedProjectsInFolder(
+  workspace: Workspace,
+  folderId: FolderId | undefined,
+): Project[] {
+  return workspace.projects.filter((p) => p.folderId === folderId).sort(compareByOrderThenName);
 }
 
 export function findProject(
@@ -86,6 +127,7 @@ export function addProject(state: WorkspacesState, input: CreateProjectInput): W
     name: input.name,
     path: input.path,
     color: input.color,
+    folderId: input.folderId,
   };
   return mapWorkspaces(state, (w) =>
     w.id === input.workspaceId ? { ...w, projects: [...w.projects, project] } : w,
@@ -173,7 +215,15 @@ export function moveProject(
 ): WorkspacesState {
   const found = findProject(state, id);
   if (!found) return state;
-  const moved: Project = { ...found.project, order: undefined };
+  // Folder ids are workspace-scoped: carrying one across a workspace boundary
+  // would dangle, so it's cleared (ungrouped) only when the destination is a
+  // different workspace. A same-workspace reorder preserves it untouched.
+  const crossesWorkspace = found.workspace.id !== toWorkspaceId;
+  const moved: Project = {
+    ...found.project,
+    order: undefined,
+    folderId: crossesWorkspace ? undefined : found.project.folderId,
+  };
   return mapWorkspaces(state, (w) => {
     if (w.id === found.workspace.id && w.id === toWorkspaceId) {
       const filtered = w.projects.filter((p) => p.id !== id);
@@ -213,7 +263,13 @@ export function moveProjects(
   const movingProjects: Project[] = [];
   for (const id of ids) {
     const found = findProject(state, id);
-    if (found) movingProjects.push({ ...found.project, order: undefined });
+    if (!found) continue;
+    const crossesWorkspace = found.workspace.id !== toWorkspaceId;
+    movingProjects.push({
+      ...found.project,
+      order: undefined,
+      folderId: crossesWorkspace ? undefined : found.project.folderId,
+    });
   }
   if (movingProjects.length === 0) return state;
   return mapWorkspaces(state, (w) => {
@@ -308,3 +364,19 @@ export {
   setProjectColor,
   setWorkspaceColor,
 } from "./workspaces-reducer-appearance";
+
+// Single-level sidebar folders — same re-export pattern so callers can keep
+// importing from "./workspaces-reducer".
+export {
+  addFolder,
+  renameFolder,
+  deleteFolder,
+  toggleFolderCollapsed,
+  moveFolderUp,
+  moveFolderDown,
+  resetAlphabeticalOrderInFolder,
+  moveProjectToFolder,
+  moveProjectToBucket,
+  moveProjectsToBucket,
+  reorderProjectsInFolder,
+} from "./workspaces-reducer-folders";

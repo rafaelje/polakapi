@@ -197,6 +197,23 @@ describe("workspaces store", () => {
     expect(loaded.workspaces[1].projects[0].id).toBe(proj.id);
   });
 
+  it("loads a persisted payload with no folders/folderId fields (pre-folders schema) untouched", async () => {
+    // Simulates data persisted before the folders feature shipped: no
+    // `Workspace.folders`, no `Project.folderId` at all. Purely additive
+    // optional fields — no schemaVersion bump — so this must still round-trip.
+    const legacyState: WorkspacesState = {
+      schemaVersion: 1,
+      activeProjectId: pid("p1"),
+      workspaces: [workspace("w1", "Alpha", [project("p1", "One")])],
+    };
+    mockStore.store.set("state", legacyState);
+    const { loadWorkspaces } = await freshModule();
+    const loaded = await loadWorkspaces();
+    expect(loaded).toEqual(legacyState);
+    expect(loaded.workspaces[0].folders).toBeUndefined();
+    expect(loaded.workspaces[0].projects[0].folderId).toBeUndefined();
+  });
+
   it("enforces unique IDs across workspaces and projects in a snapshot", () => {
     const state: WorkspacesState = {
       schemaVersion: 1,

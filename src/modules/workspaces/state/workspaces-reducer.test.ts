@@ -1,30 +1,42 @@
 import { describe, expect, it } from "vitest";
 
-import type { ProjectId, TerminalSpec, WorkspaceId } from "./types";
+import type { FolderId, ProjectId, TerminalSpec, WorkspaceId } from "./types";
 import {
+  addFolder,
   addProject,
   addTerminalSpec,
   addWorkspace,
   changeProjectPath,
   createEmptyState,
+  deleteFolder,
   deleteProject,
   deleteProjects,
   deleteWorkspace,
   duplicateProject,
   findProject,
+  moveFolderDown,
+  moveFolderUp,
   moveProject,
   moveProjects,
+  moveProjectsToBucket,
+  moveProjectToBucket,
+  moveProjectToFolder,
   removeTerminalSpec,
+  renameFolder,
   renameProject,
   renameWorkspace,
   reorderProjects,
+  reorderProjectsInFolder,
   reorderWorkspaces,
   replaceTerminalSpecs,
   resetAlphabeticalOrder,
+  resetAlphabeticalOrderInFolder,
   setActiveProject,
   setAllCollapsed,
   setProjectPathInvalid,
   sortedProjects,
+  sortedProjectsInFolder,
+  sortedWorkspaceEntries,
   sortedWorkspaces,
   toggleCollapsed,
   updateTerminalSpec,
@@ -40,6 +52,14 @@ function projectId(
   pIdx: number,
 ): ProjectId {
   return state.workspaces[wsIdx].projects[pIdx].id;
+}
+
+function folderIdAt(
+  state: ReturnType<typeof createEmptyState>,
+  wsIdx: number,
+  fIdx: number,
+): FolderId {
+  return state.workspaces[wsIdx].folders![fIdx].id;
 }
 
 describe("workspaces-reducer", () => {
@@ -376,5 +396,187 @@ describe("workspaces-reducer", () => {
     expect(setActiveProject(s, ghost).activeProjectId).toBeNull();
     expect(setActiveProject(s, pid).activeProjectId).toBe(pid);
     expect(setActiveProject(setActiveProject(s, pid), null).activeProjectId).toBeNull();
+  });
+
+  // ---------------------------------------------------------------------
+  // Single-level sidebar folders
+  // ---------------------------------------------------------------------
+
+  it("sortedWorkspaceEntries matches sortedProjects exactly when there are no folders", () => {
+    let s = addWorkspace(createEmptyState(), "W");
+    s = addProject(s, { workspaceId: wsId(s, 0), name: "Cee", path: "/c" });
+    s = addProject(s, { workspaceId: wsId(s, 0), name: "Aye", path: "/a" });
+    const entries = sortedWorkspaceEntries(s.workspaces[0]);
+    expect(entries.every((e) => e.kind === "project")).toBe(true);
+    expect(entries.map((e) => (e.kind === "project" ? e.project.name : ""))).toEqual([
+      "Aye",
+      "Cee",
+    ]);
+  });
+
+  it("addFolder appends a folder and sortedWorkspaceEntries interleaves it with ungrouped projects", () => {
+    let s = addWorkspace(createEmptyState(), "W");
+    s = addProject(s, { workspaceId: wsId(s, 0), name: "Zeta", path: "/z" });
+    s = addFolder(s, wsId(s, 0), "Backend");
+    expect(s.workspaces[0].folders).toHaveLength(1);
+    const entries = sortedWorkspaceEntries(s.workspaces[0]);
+    // No explicit order on either => alphabetical: "Backend" < "Zeta".
+    expect(entries.map((e) => (e.kind === "folder" ? e.folder.name : e.project.name))).toEqual([
+      "Backend",
+      "Zeta",
+    ]);
+  });
+
+  it("addProject with folderId groups the project and sortedProjectsInFolder scopes correctly", () => {
+    let s = addWorkspace(createEmptyState(), "W");
+    s = addFolder(s, wsId(s, 0), "Backend");
+    const fid = folderIdAt(s, 0, 0);
+    s = addProject(s, { workspaceId: wsId(s, 0), name: "In folder", path: "/a", folderId: fid });
+    s = addProject(s, { workspaceId: wsId(s, 0), name: "Ungrouped", path: "/b" });
+
+    expect(sortedProjectsInFolder(s.workspaces[0], fid).map((p) => p.name)).toEqual(["In folder"]);
+    expect(sortedProjectsInFolder(s.workspaces[0], undefined).map((p) => p.name)).toEqual([
+      "Ungrouped",
+    ]);
+    const entries = sortedWorkspaceEntries(s.workspaces[0]);
+    // Only the ungrouped project appears at the top level; the folder's
+    // member does not leak into the top-level entry list.
+    expect(entries.map((e) => e.kind)).toEqual(["folder", "project"]);
+  });
+
+  it("renameFolder updates only the matching folder", () => {
+    let s = addWorkspace(createEmptyState(), "W");
+    s = addFolder(s, wsId(s, 0), "Old");
+    s = addFolder(s, wsId(s, 0), "Other");
+    const fid = folderIdAt(s, 0, 0);
+    s = renameFolder(s, wsId(s, 0), fid, "New");
+    expect(s.workspaces[0].folders!.map((f) => f.name)).toEqual(["New", "Other"]);
+  });
+
+  it("deleteFolder ungroups member projects instead of deleting them", () => {
+    let s = addWorkspace(createEmptyState(), "W");
+    s = addFolder(s, wsId(s, 0), "Backend");
+    const fid = folderIdAt(s, 0, 0);
+    s = addProject(s, { workspaceId: wsId(s, 0), name: "p1", path: "/a", folderId: fid });
+    s = deleteFolder(s, wsId(s, 0), fid);
+    expect(s.workspaces[0].folders).toEqual([]);
+    expect(s.workspaces[0].projects).toHaveLength(1);
+    expect(s.workspaces[0].projects[0].folderId).toBeUndefined();
+  });
+
+  it("moveFolderUp and moveFolderDown swap adjacent folders even without explicit order", () => {
+    let s = addWorkspace(createEmptyState(), "W");
+    s = addFolder(s, wsId(s, 0), "Alpha");
+    s = addFolder(s, wsId(s, 0), "Beta");
+    s = addFolder(s, wsId(s, 0), "Gamma");
+    // Alphabetical initial order: Alpha, Beta, Gamma. Move Beta up.
+    const beta = s.workspaces[0].folders!.find((f) => f.name === "Beta")!.id;
+    s = moveFolderUp(s, wsId(s, 0), beta);
+    expect(
+      [...s.workspaces[0].folders!]
+        .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+        .map((f) => f.name),
+    ).toEqual(["Beta", "Alpha", "Gamma"]);
+    // Moving the first folder up again is a no-op (already at the top).
+    const beforeOrder = s.workspaces[0].folders!.map((f) => [f.name, f.order]);
+    s = moveFolderUp(s, wsId(s, 0), beta);
+    expect(s.workspaces[0].folders!.map((f) => [f.name, f.order])).toEqual(beforeOrder);
+    s = moveFolderDown(s, wsId(s, 0), beta);
+    expect(
+      [...s.workspaces[0].folders!]
+        .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+        .map((f) => f.name),
+    ).toEqual(["Alpha", "Beta", "Gamma"]);
+  });
+
+  it("resetAlphabeticalOrderInFolder clears order only for that bucket's projects", () => {
+    let s = addWorkspace(createEmptyState(), "W");
+    s = addFolder(s, wsId(s, 0), "Backend");
+    const fid = folderIdAt(s, 0, 0);
+    s = addProject(s, { workspaceId: wsId(s, 0), name: "A", path: "/a", folderId: fid });
+    s = addProject(s, { workspaceId: wsId(s, 0), name: "B", path: "/b" });
+    s = reorderProjectsInFolder(s, wsId(s, 0), fid, [projectId(s, 0, 0)]);
+    s = reorderProjects(s, wsId(s, 0), [projectId(s, 0, 1)]);
+    s = resetAlphabeticalOrderInFolder(s, wsId(s, 0), fid);
+    const inFolder = s.workspaces[0].projects.find((p) => p.folderId === fid)!;
+    const ungrouped = s.workspaces[0].projects.find((p) => p.folderId === undefined)!;
+    expect(inFolder.order).toBeUndefined();
+    expect(ungrouped.order).toBeDefined();
+  });
+
+  it("moveProjectToFolder reassigns folderId and clears order", () => {
+    let s = addWorkspace(createEmptyState(), "W");
+    s = addFolder(s, wsId(s, 0), "Backend");
+    const fid = folderIdAt(s, 0, 0);
+    s = addProject(s, { workspaceId: wsId(s, 0), name: "p1", path: "/a" });
+    const pid = projectId(s, 0, 0);
+    s = moveProjectToFolder(s, pid, fid);
+    expect(findProject(s, pid)?.project.folderId).toBe(fid);
+    s = moveProjectToFolder(s, pid, undefined);
+    expect(findProject(s, pid)?.project.folderId).toBeUndefined();
+  });
+
+  it("moveProject across a workspace boundary clears folderId; same-workspace reorder preserves it", () => {
+    let s = addWorkspace(createEmptyState(), "From");
+    s = addWorkspace(s, "To");
+    s = addFolder(s, wsId(s, 0), "Backend");
+    const fid = folderIdAt(s, 0, 0);
+    s = addProject(s, { workspaceId: wsId(s, 0), name: "p1", path: "/a", folderId: fid });
+    const pid = projectId(s, 0, 0);
+    s = moveProject(s, pid, wsId(s, 1), 0);
+    expect(findProject(s, pid)?.project.folderId).toBeUndefined();
+  });
+
+  it("moveProjectToBucket moves a project into a folder bucket at a specific index, leaving other buckets untouched", () => {
+    let s = addWorkspace(createEmptyState(), "W");
+    s = addFolder(s, wsId(s, 0), "Backend");
+    const fid = folderIdAt(s, 0, 0);
+    s = addProject(s, { workspaceId: wsId(s, 0), name: "In folder", path: "/a", folderId: fid });
+    s = addProject(s, { workspaceId: wsId(s, 0), name: "Ungrouped 1", path: "/b" });
+    s = addProject(s, { workspaceId: wsId(s, 0), name: "Ungrouped 2", path: "/c" });
+    const ungrouped2 = s.workspaces[0].projects.find((p) => p.name === "Ungrouped 2")!.id;
+
+    s = moveProjectToBucket(s, ungrouped2, wsId(s, 0), fid, 0);
+
+    expect(sortedProjectsInFolder(s.workspaces[0], fid).map((p) => p.name)).toEqual([
+      "Ungrouped 2",
+      "In folder",
+    ]);
+    // The other ungrouped project's bucket/order is untouched.
+    expect(sortedProjectsInFolder(s.workspaces[0], undefined).map((p) => p.name)).toEqual([
+      "Ungrouped 1",
+    ]);
+  });
+
+  it("moveProjectsToBucket moves several projects into a bucket in one commit", () => {
+    let s = addWorkspace(createEmptyState(), "W");
+    s = addProject(s, { workspaceId: wsId(s, 0), name: "A", path: "/a" });
+    s = addProject(s, { workspaceId: wsId(s, 0), name: "B", path: "/b" });
+    s = addFolder(s, wsId(s, 0), "Backend");
+    const fid = folderIdAt(s, 0, 0);
+    const a = s.workspaces[0].projects.find((p) => p.name === "A")!.id;
+    const b = s.workspaces[0].projects.find((p) => p.name === "B")!.id;
+
+    s = moveProjectsToBucket(s, [a, b], wsId(s, 0), fid, 0);
+
+    expect(sortedProjectsInFolder(s.workspaces[0], fid).map((p) => p.name)).toEqual(["A", "B"]);
+  });
+
+  it("reorderProjectsInFolder reorders one bucket without touching order values of other buckets", () => {
+    let s = addWorkspace(createEmptyState(), "W");
+    s = addFolder(s, wsId(s, 0), "Backend");
+    const fid = folderIdAt(s, 0, 0);
+    s = addProject(s, { workspaceId: wsId(s, 0), name: "A", path: "/a", folderId: fid });
+    s = addProject(s, { workspaceId: wsId(s, 0), name: "B", path: "/b", folderId: fid });
+    s = addProject(s, { workspaceId: wsId(s, 0), name: "Root", path: "/r" });
+    s = reorderProjects(s, wsId(s, 0), [projectId(s, 0, 2)]); // stamp the root project's order
+    const rootOrderBefore = s.workspaces[0].projects.find((p) => p.name === "Root")!.order;
+
+    const bId = s.workspaces[0].projects.find((p) => p.name === "B")!.id;
+    const aId = s.workspaces[0].projects.find((p) => p.name === "A")!.id;
+    s = reorderProjectsInFolder(s, wsId(s, 0), fid, [bId, aId]);
+
+    expect(sortedProjectsInFolder(s.workspaces[0], fid).map((p) => p.name)).toEqual(["B", "A"]);
+    expect(s.workspaces[0].projects.find((p) => p.name === "Root")!.order).toBe(rootOrderBefore);
   });
 });

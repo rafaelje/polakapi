@@ -11,6 +11,11 @@
 //! user input as flags — the only user-controlled value passed to a shell
 //! process is the base ref, which is first verified with `git rev-parse
 //! --verify`.
+//!
+//! `validate_repo_path` and `detect_base_ref_sync` are also `pub(crate)` and
+//! reused by `git_worktree` for the "Create worktree" action, which is the
+//! only *mutating* git command in the app — it lives in its own module rather
+//! than here to keep this file's read-only scope honest.
 
 use std::path::Path;
 use std::process::{Command, Stdio};
@@ -19,9 +24,9 @@ use serde::{Deserialize, Serialize};
 
 mod repository;
 
+pub(crate) use repository::validate_repo_path;
 use repository::{
     current_branch, is_safe_git_ref, merge_base, origin_head, ref_exists, rev_parse_verify,
-    validate_repo_path,
 };
 
 // Per-file cap: keeps one huge file (lockfile, generated dump) from eating the
@@ -107,7 +112,7 @@ pub async fn git_detect_base_ref(project_path: String) -> Result<String, String>
         .map_err(|e| format!("join error: {e}"))?
 }
 
-fn detect_base_ref_sync(project_path: &str) -> Result<String, String> {
+pub(crate) fn detect_base_ref_sync(project_path: &str) -> Result<String, String> {
     let project = validate_repo_path(project_path)?;
 
     let head_ref = current_branch(&project)?;

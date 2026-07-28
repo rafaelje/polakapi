@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
-pub(super) fn validate_repo_path(project_path: &str) -> Result<PathBuf, String> {
+pub(crate) fn validate_repo_path(project_path: &str) -> Result<PathBuf, String> {
     let project = PathBuf::from(project_path);
     if !project.is_dir() {
         return Err(format!("project_path is not a directory: {project_path}"));

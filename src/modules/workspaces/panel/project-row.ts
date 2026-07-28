@@ -5,8 +5,9 @@ import { openAppearancePicker } from "../forms/appearance-picker";
 import { openRowMenu } from "../forms/row-menu";
 import { startInlineRename } from "../forms/rename-inline";
 import { normalizeShortcutKey } from "../state/workspaces-reducer-shortcuts";
+import { compareByOrderThenName } from "../state/workspaces-reducer-helpers";
 import type { SelectionStore } from "../state/selection";
-import type { Project, ProjectId, Workspace, WorkspaceId } from "../state/types";
+import type { FolderId, Project, ProjectId, Workspace, WorkspaceId } from "../state/types";
 import type { WorkspacesController } from "../state/workspaces-controller";
 
 export interface ProjectRowOptions {
@@ -26,12 +27,15 @@ export interface ProjectRowOptions {
    * not been touched since the last render.
    */
   getLiveCount?: () => number;
+  /** Resolves the current suspended-terminal count for the "Resume terminals (N)" item. */
+  getSuspendedCount?: () => number;
   /**
    * Multi-selection store shared across all rows. Modifier-aware clicks
    * mutate it; rows subscribe to apply the `.selected` visual.
    */
   selection: SelectionStore;
   onSuspendProject?: (projectId: ProjectId) => void;
+  onResumeProject?: (projectId: ProjectId) => void;
   onDeleteSelected?: () => void;
 }
 
@@ -64,6 +68,10 @@ export function createProjectRow(opts: ProjectRowOptions): ProjectRowHandle {
   if (project.pathInvalid) row.classList.add("invalid");
   row.dataset.projectId = project.id;
   row.dataset.workspaceId = workspaceId;
+  // Read by drag-drop.ts to know which bucket (folder vs. ungrouped) this
+  // row's drag session started from. Omitted (not "") when ungrouped so
+  // `dataset.folderId` reads as `undefined`, not an empty string.
+  if (project.folderId) row.dataset.folderId = project.folderId;
   // F4: same color resolution as workspace-row — explicit override wins,
   // otherwise the deterministic palette so the row still picks up a tint.
   row.dataset.color = project.color ?? deterministicColor(project.id);
@@ -191,6 +199,7 @@ export function createProjectRow(opts: ProjectRowOptions): ProjectRowHandle {
           onSelect: () => void controller.changeProjectPathInteractive(project.id),
         },
         { label: "Duplicate", onSelect: () => controller.duplicateProject(project.id) },
+        { label: "Create worktree…", onSelect: () => void runCreateWorktree() },
         ...(opts.onSuspendProject
           ? [
               {
@@ -202,9 +211,23 @@ export function createProjectRow(opts: ProjectRowOptions): ProjectRowHandle {
               },
             ]
           : []),
+        ...(opts.onResumeProject
+          ? [
+              {
+                label: isBulk ? `Resume terminals (${selectedIds.length})` : "Resume terminals",
+                disabled: !isBulk && (opts.getSuspendedCount?.() ?? 0) === 0,
+                onSelect: () => {
+                  for (const id of bulkTargets) opts.onResumeProject?.(id);
+                },
+              },
+            ]
+          : []),
         ...buildMoveSubmenuItems(controller, bulkTargets, workspaceId, isBulk, () =>
           selection.clear(),
         ),
+        ...(isBulk
+          ? []
+          : buildMoveToFolderItems(controller, project.id, workspaceId, project.folderId)),
         {
           label: "Appearance…",
           onSelect: () => openAppearance(),
@@ -276,6 +299,22 @@ export function createProjectRow(opts: ProjectRowOptions): ProjectRowHandle {
     if (next && next !== project.name) {
       controller.renameProject(project.id, next);
     }
+  }
+
+  async function runCreateWorktree(): Promise<void> {
+    const branch = await promptModal({
+      title: "Create worktree",
+      message: "Branch name for the new worktree, created off the detected base branch.",
+      placeholder: "feature/my-branch",
+      confirmLabel: "Create",
+    });
+    if (branch === null) return;
+    const trimmed = branch.trim();
+    if (!trimmed) {
+      showToast("Branch name is required", "error");
+      return;
+    }
+    await controller.createProjectWorktree(project.id, trimmed);
   }
 
   async function runAssignShortcut(): Promise<void> {
@@ -380,4 +419,36 @@ function buildMoveSubmenuItems(
       }
     },
   }));
+}
+
+/**
+ * Same-workspace "move to folder" items, flattened into the row menu the
+ * same way `buildMoveSubmenuItems` flattens workspace targets — `openRowMenu`
+ * has no real submenu support today. Bulk selections are out of scope for v1
+ * (a single project's current folder is unambiguous; a mixed bulk selection
+ * spanning folders is not, and is deferred as a fast-follow).
+ */
+function buildMoveToFolderItems(
+  controller: WorkspacesController,
+  projectId: ProjectId,
+  workspaceId: WorkspaceId,
+  currentFolderId: FolderId | undefined,
+): Array<{ label: string; onSelect: () => void; disabled?: boolean }> {
+  const folders = [
+    ...(controller.getState().workspaces.find((w) => w.id === workspaceId)?.folders ?? []),
+  ].sort(compareByOrderThenName);
+  if (folders.length === 0) return [];
+  const items = folders
+    .filter((f) => f.id !== currentFolderId)
+    .map((f) => ({
+      label: `Move to folder “${f.name}”`,
+      onSelect: () => controller.moveProjectToFolder(projectId, f.id),
+    }));
+  if (currentFolderId !== undefined) {
+    items.push({
+      label: "Move to workspace root",
+      onSelect: () => controller.moveProjectToFolder(projectId, undefined),
+    });
+  }
+  return items;
 }

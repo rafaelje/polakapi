@@ -29,6 +29,8 @@ export interface LiveCountSource {
   getCount(projectId: ProjectId): number;
   liveCountsByProject(): ReadonlyMap<ProjectId, number>;
   on(listener: (event: LiveCountEvent) => void): () => void;
+  /** Optional — feeds the "Resume terminals (N)" row-menu item. */
+  getSuspendedCount?(projectId: ProjectId): number;
 }
 
 /**
@@ -55,6 +57,7 @@ export interface WorkspacesPanelOptions {
   /** Optional. When provided, the panel toggles `.has-bell` on rows. */
   bellSource?: BellPendingSource;
   onSuspendProject?: (projectId: ProjectId) => void;
+  onResumeProject?: (projectId: ProjectId) => void;
 }
 
 export interface WorkspacesPanelHandle {
@@ -114,6 +117,8 @@ export function mountWorkspacesPanel(opts: WorkspacesPanelOptions): WorkspacesPa
   collapseBtn.addEventListener("click", onCollapseClick);
 
   const liveCountFor = (projectId: ProjectId): number => liveCounts?.getCount(projectId) ?? 0;
+  const suspendedCountFor = (projectId: ProjectId): number =>
+    liveCounts?.getSuspendedCount?.(projectId) ?? 0;
 
   const running = liveCounts ? mountRunningSection({ controller, getCount: liveCountFor }) : null;
 
@@ -201,9 +206,11 @@ export function mountWorkspacesPanel(opts: WorkspacesPanelOptions): WorkspacesPa
         workspace,
         controller,
         liveCountFor: liveCounts ? liveCountFor : undefined,
+        getSuspendedCount: liveCounts ? suspendedCountFor : undefined,
         filterQuery: activeQuery,
         selection,
         onSuspendProject: opts.onSuspendProject,
+        onResumeProject: opts.onResumeProject,
         onDeleteSelected: deleteSelected,
       });
       handles.push(handle);

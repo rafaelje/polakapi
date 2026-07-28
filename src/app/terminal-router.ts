@@ -137,6 +137,10 @@ export class TerminalRouter {
     return this.managers.get(projectId)?.size ?? 0;
   }
 
+  getSuspendedCount(projectId: ProjectId): number {
+    return this.managers.get(projectId)?.suspendedCount ?? 0;
+  }
+
   totalLiveCount(): number {
     let total = 0;
     for (const manager of this.managers.values()) total += manager.size;
