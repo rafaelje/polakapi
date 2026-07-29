@@ -118,7 +118,7 @@ export async function bootstrapWorkspaces(
     liveCounts: router,
     bellSource,
     onSuspendProject: (projectId) => router.getById(projectId)?.suspendAll(),
-    onResumeProject: (projectId) => router.getById(projectId)?.resumeAll(),
+    onResumeProject: (projectId) => void router.getById(projectId)?.resumeAll(),
   });
 
   // Bridges native Finder drops and HTML5 URL/text drops into whichever pane
@@ -165,7 +165,7 @@ export async function bootstrapWorkspaces(
         });
       },
       onSuspendAll: () => router.getActive()?.suspendAll(),
-      onResumeAll: () => router.getActive()?.resumeAll(),
+      onResumeAll: () => void router.getActive()?.resumeAll(),
       onRunInAll: () => void runCommandInActivePanes(router),
       onRevealFolder: (path) => {
         void revealFolder(path);
@@ -186,6 +186,19 @@ export async function bootstrapWorkspaces(
   });
   const breadcrumb = mountBreadcrumb({ host: elements.breadcrumbHost });
 
+  // The live count (router.getCount) only settles once the killed PTY's exit
+  // event actually arrives — later than the `suspended` flag flip that drives
+  // most of refreshActiveContext — so this is also re-run off the router's
+  // own `counts-changed` event (see subscription below), not just controller
+  // state changes.
+  const refreshSuspendResumeToggle = (): void => {
+    const project = controller.getActiveProject();
+    projectPane.setSuspendResumeCounts(
+      project ? router.getCount(project.id) : 0,
+      project ? router.getSuspendedCount(project.id) : 0,
+    );
+  };
+
   const activateProject = async (project: Project | null): Promise<void> => {
     if (!project) {
       router.unmount();
@@ -201,19 +214,15 @@ export async function bootstrapWorkspaces(
         await manager.restoreSpecs(specs);
       }
     }
-  };
-
-  // The live count (router.getCount) only settles once the killed PTY's exit
-  // event actually arrives — later than the `suspended` flag flip that drives
-  // most of refreshActiveContext — so this is also re-run off the router's
-  // own `counts-changed` event (see subscription below), not just controller
-  // state changes.
-  const refreshSuspendResumeToggle = (): void => {
-    const project = controller.getActiveProject();
-    projectPane.setSuspendResumeCounts(
-      project ? router.getCount(project.id) : 0,
-      project ? router.getSuspendedCount(project.id) : 0,
-    );
+    // Called directly rather than relying on restoreSpecs's own spec-changed
+    // event: when every restored spec is suspended, restoreSpecs's internal
+    // loop never hits an `await`, so its whole body — including that event —
+    // runs synchronously nested inside this very call, which on first boot
+    // happens *before* AppController has assigned `this.workspaces` (it is
+    // still awaiting this function). `onPersistSpecs`'s `this.workspaces?.`
+    // guard silently no-ops that first event, so the toggle would otherwise
+    // never learn about specs restored as already-suspended.
+    refreshSuspendResumeToggle();
   };
 
   const refreshActiveContext = (): void => {

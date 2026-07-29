@@ -543,7 +543,7 @@ describe("TerminalManager resumeAll / shell command replay", () => {
     manager.suspendPane(claudeId);
     manager.markExited(claudeId);
 
-    manager.resumeAll();
+    await manager.resumeAll();
     await vi.advanceTimersByTimeAsync(1000);
 
     expect(manager.specs().every((s) => !s.suspended)).toBe(true);
@@ -555,5 +555,37 @@ describe("TerminalManager resumeAll / shell command replay", () => {
     expect(vi.mocked(ptyWrite).mock.calls).toContainEqual([expect.any(String), "npm test\r"]);
     // The still-live shell pane was never touched.
     expect(manager.ids()).toContain(liveShellId);
+  });
+
+  it("resumeAll resumes multiple suspended panes sequentially without corrupting the layout", async () => {
+    // Regression test: resumeAll used to fire every resumePane concurrently.
+    // replacePane snapshots `this.layout` at the start of each call and
+    // splices its own swap into that snapshot at the end — two overlapping
+    // calls would each work off a stale snapshot, and the second to finish
+    // would silently discard the first's swap, collapsing the grid down to
+    // whichever pane resumed last.
+    const manager = makeManager();
+    await manager.addPane({ cliId: "shell", title: "one" });
+    await manager.addPane({ cliId: "shell", title: "two" });
+    await manager.addPane({ cliId: "shell", title: "three" });
+    const [a, b, c] = manager.ids();
+
+    manager.suspendPane(a);
+    manager.markExited(a);
+    manager.suspendPane(b);
+    manager.markExited(b);
+    manager.suspendPane(c);
+    manager.markExited(c);
+
+    await manager.resumeAll();
+    await vi.advanceTimersByTimeAsync(1000);
+
+    expect(manager.specs()).toHaveLength(3);
+    expect(manager.specs().every((s) => !s.suspended)).toBe(true);
+    // All three panes must still be distinct entries in both the flat order
+    // and the layout tree — not collapsed down to just the last resumed one.
+    expect(manager.ids()).toHaveLength(3);
+    expect(new Set(manager.ids()).size).toBe(3);
+    expect(terminalLayoutPaneIds(manager.layoutSnapshot).sort()).toEqual([...manager.ids()].sort());
   });
 });

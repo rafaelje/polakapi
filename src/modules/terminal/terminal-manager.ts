@@ -367,12 +367,20 @@ export class TerminalManager {
     }
   }
 
-  /** Resumes every currently suspended pane, replaying captured shell
-   * commands where applicable. Mirrors `suspendAll`'s zero-friction, no-
-   * confirmation, fire-and-forget semantics. */
-  resumeAll(): void {
+  /**
+   * Resumes every currently suspended pane, replaying captured shell commands
+   * where applicable. Sequential, not concurrent: `replacePane` snapshots
+   * `this.layout` at the start of each call and swaps it back in at the end,
+   * so two overlapping `replacePane` calls would stomp on each other's
+   * snapshot and corrupt the grid (one pane's swap silently reverting
+   * another's). Awaiting each resume before starting the next keeps the
+   * zero-friction, no-confirmation intent of "Resume all" from the caller's
+   * perspective (it is still a single fire-and-forget call) while staying
+   * layout-safe.
+   */
+  async resumeAll(): Promise<void> {
     for (const id of [...this.order]) {
-      if (this.specsById.get(id)?.suspended) void this.resumePane(id);
+      if (this.specsById.get(id)?.suspended) await this.resumePane(id);
     }
   }
 
