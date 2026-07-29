@@ -209,14 +209,7 @@ export class WorkspacesController {
     return updated?.projects[before] ?? null;
   }
 
-  /**
-   * Creates a real `git worktree add` for `branch` off the project's detected
-   * base ref, as an automatic sibling directory next to the repo, then
-   * registers it as a new Project in the same workspace pointing at that
-   * worktree path. Unlike `duplicateProject` (a same-path logical clone),
-   * this touches disk/git and can fail (branch/path collisions) — errors are
-   * surfaced via toast with git's own message, not the generic invoke toast.
-   */
+  // Runs `git worktree add` for `branch` and registers a new Project pointing at it.
   async createProjectWorktree(id: ProjectId, branch: string): Promise<Project | null> {
     const found = findProject(this.state, id);
     if (!found) return null;

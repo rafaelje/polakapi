@@ -1,11 +1,5 @@
-//! Creates a git worktree for a new branch off the project's detected base
-//! ref (`origin/HEAD` → `main` → `master`, via `git_review::detect_base_ref_sync`).
-//!
-//! This is the only *mutating* git command in the app — read-only diffing
-//! lives in `git_review`. The worktree always lands as an automatic sibling
-//! directory next to the source repo (`<repo>-worktrees/<branch>`), never a
-//! user-chosen path, so there is no scope-path validation to do here beyond
-//! the branch name itself.
+//! Creates a git worktree for a new branch off the project's detected base ref.
+//! Lands as an automatic sibling directory next to the repo.
 
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
@@ -71,11 +65,8 @@ fn create_worktree_sync(project_path: &str, branch: &str) -> Result<String, Stri
     Ok(worktree_path_str)
 }
 
-/// `<parent-of-repo>/<repo-dir-name>-worktrees/<branch>`, with `/` in the
-/// branch name flattened to `-` so it maps to a single directory component
-/// (nesting to match the branch's own slashes would collide when both
-/// `feature` and `feature/foo` exist as branches — a directory and a file
-/// can't share a name).
+/// `<parent-of-repo>/<repo-dir-name>-worktrees/<branch>`, `/` flattened to `-`
+/// so branches like `feature` and `feature/foo` can't collide on disk.
 fn sibling_worktree_path(project: &std::path::Path, branch: &str) -> Result<PathBuf, String> {
     let repo_dir_name = project
         .file_name()
@@ -91,10 +82,8 @@ fn sibling_worktree_path(project: &std::path::Path, branch: &str) -> Result<Path
         .join(worktree_dir_name))
 }
 
-/// Stricter than `git_review`'s `is_safe_git_ref`: this validates a *new*
-/// branch name, not an existing ref, so ref-relative syntax (`^`, `@`, `{`,
-/// `}`, `~`) is dropped entirely, plus filesystem hygiene since this string
-/// also becomes a directory-name component after `/` -> `-` substitution.
+/// Stricter than `is_safe_git_ref`: validates a *new* branch name, so
+/// ref-relative syntax is dropped and filesystem hygiene is enforced.
 fn is_valid_new_branch_name(name: &str) -> bool {
     if name.is_empty() || name.len() > 200 {
         return false;

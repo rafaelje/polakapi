@@ -269,10 +269,7 @@ export class TerminalManager {
     return pane;
   }
 
-  // Delegates to terminal-pane-wiring.ts (kept out of this file purely to
-  // stay under the repo's line budget) via an adapter of bound closures over
-  // this manager's own private state — the manager remains the single owner
-  // of the spec table and every wired callback still routes back through it.
+  // Delegates to terminal-pane-wiring.ts, kept out of this file for the line budget.
   private wirePaneCallbacks(pane: TerminalPane, ptyId: string): void {
     const dockingHandle = wireTerminalPane(pane, ptyId, {
       grid: this.grid,
@@ -358,26 +355,14 @@ export class TerminalManager {
       { title, cwd, startupCmd, cliId },
       { extraArgs: resumeArgs, skipStartupCmd: resumeArgs !== undefined },
     );
-    // Shell profiles have no `resumeArgs` — resuming them just relaunches a
-    // bare shell, which doesn't restore what the user was doing. Replay the
-    // last captured command so the shell terminal is truly resumed, matching
-    // how AI CLIs already resume via `resumeArgs` (e.g. `claude --continue`).
+    // Shell profiles have no resumeArgs, so replay the captured command instead.
     if (newId && !resumeArgs && lastShellCommand && lastShellCommand.trim().length > 0) {
       this.scheduleShellReplay(newId, lastShellCommand);
     }
   }
 
-  /**
-   * Resumes every currently suspended pane, replaying captured shell commands
-   * where applicable. Sequential, not concurrent: `replacePane` snapshots
-   * `this.layout` at the start of each call and swaps it back in at the end,
-   * so two overlapping `replacePane` calls would stomp on each other's
-   * snapshot and corrupt the grid (one pane's swap silently reverting
-   * another's). Awaiting each resume before starting the next keeps the
-   * zero-friction, no-confirmation intent of "Resume all" from the caller's
-   * perspective (it is still a single fire-and-forget call) while staying
-   * layout-safe.
-   */
+  // Sequential, not concurrent: overlapping replacePane calls stomp on each
+  // other's layout snapshot and corrupt the grid.
   async resumeAll(): Promise<void> {
     for (const id of [...this.order]) {
       if (this.specsById.get(id)?.suspended) await this.resumePane(id);

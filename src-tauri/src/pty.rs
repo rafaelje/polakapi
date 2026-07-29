@@ -130,12 +130,8 @@ pub fn spawn_session(
         })
         .map_err(|e| e.to_string())?;
 
-    // Captured before `command`/`args` are consumed below — a "bare shell"
-    // request (no explicit command, no explicit args) is exactly the
-    // `cliId: "shell"` spawn path from the frontend; AI CLIs and CLI-resume
-    // (`resumeArgs`) always pass at least one of the two, so this is a
-    // sufficient signal to gate shell-integration injection without needing
-    // to thread `cliId` through this Rust-side call.
+    // Captured before command/args are consumed below — no command and no
+    // args means the frontend's plain "shell" spawn path.
     let is_bare_shell_request = command.as_deref().map(str::trim).unwrap_or("").is_empty()
         && args.as_ref().map(Vec::is_empty).unwrap_or(true);
 

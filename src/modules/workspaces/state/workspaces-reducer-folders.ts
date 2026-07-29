@@ -42,11 +42,7 @@ export function renameFolder(
   });
 }
 
-/**
- * Removes the folder and ungroups its member projects (clears their
- * `folderId`) rather than deleting them — unlike deleting a workspace, a
- * project always has a valid "no folder" fallback here.
- */
+// Ungroups member projects (clears folderId) instead of deleting them.
 export function deleteFolder(
   state: WorkspacesState,
   workspaceId: WorkspaceId,
@@ -88,9 +84,7 @@ function moveFolderBy(
     const idx = sorted.findIndex((f) => f.id === folderId);
     const swapIdx = idx + delta;
     if (idx === -1 || swapIdx < 0 || swapIdx >= sorted.length) return w;
-    // Stamp every folder with its current sorted index first, so the swap is
-    // meaningful even when some/all folders previously had no explicit order
-    // (i.e. were sorting alphabetically).
+    // Stamp current sorted index first so the swap works even with no explicit order.
     const stamped = sorted.map((f, i) => ({ ...f, order: i }));
     const a = stamped[idx];
     const b = stamped[swapIdx];
@@ -129,13 +123,7 @@ export function resetAlphabeticalOrderInFolder(
   });
 }
 
-/**
- * Row-menu entry point: assigns `projectId` to `folderId` (undefined =
- * workspace root), clearing its `order` so it falls back to alphabetical
- * position in the new bucket. Same-workspace only in v1 — folder ids are
- * workspace-scoped, so moving a project into a different workspace's folder
- * is handled by `moveProjectToBucket` instead.
- */
+// Row-menu entry point; same-workspace only. Cross-workspace moves use moveProjectToBucket.
 export function moveProjectToFolder(
   state: WorkspacesState,
   projectId: ProjectId,
@@ -146,12 +134,7 @@ export function moveProjectToFolder(
   );
 }
 
-/**
- * Drag-and-drop entry point: moves one project to `(toWorkspaceId, folderId)`
- * at `atIndex` within that destination bucket only, leaving every other
- * bucket's projects and `order` values untouched. `folderId` undefined means
- * the workspace's ungrouped root.
- */
+// Drag-and-drop entry point: moves one project into a bucket at atIndex.
 export function moveProjectToBucket(
   state: WorkspacesState,
   id: ProjectId,
@@ -197,10 +180,7 @@ export function moveProjectsToBucket(
   });
 }
 
-/**
- * Reorders projects within one bucket (folder, or ungrouped when `folderId`
- * is undefined) of one workspace, leaving other buckets' `order` untouched.
- */
+// Reorders projects within one bucket, leaving other buckets' order untouched.
 export function reorderProjectsInFolder(
   state: WorkspacesState,
   workspaceId: WorkspaceId,

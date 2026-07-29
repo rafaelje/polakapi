@@ -1,27 +1,5 @@
 //! Shell-integration script injection for bare shell (bash/zsh) PTY spawns.
-//!
-//! When a plain shell terminal is spawned (no explicit command/args — i.e.
-//! `cliId: "shell"` from the frontend, not an AI CLI or a resume with
-//! explicit `resumeArgs`), this materializes a small init script into
-//! `<app_config_dir>/shell-integration/` and points the spawned shell at it,
-//! without ever touching the user's own dotfiles:
-//!
-//! - bash: `--init-file <materialized>/integration.bash`, which sources the
-//!   user's real `~/.bashrc` itself before adding the hook.
-//! - zsh: `ZDOTDIR` is overridden to the materialized directory (which
-//!   contains a `.zshrc` wrapper), with the original `ZDOTDIR`/`HOME` passed
-//!   through as `POLAKAPI_REAL_ZDOTDIR` so the wrapper can source the real
-//!   config and restore `ZDOTDIR` before doing so — same technique VS Code's
-//!   shell integration uses.
-//!
-//! The injected hook reports each Enter-submitted command back to the app via
-//! a custom OSC escape (`\x1b]9931;<base64>\x07`, terminal-side, not IPC),
-//! which `TerminalManager` captures into `TerminalSpec.lastShellCommand` so
-//! "Resume all" can replay it after a suspend/resume cycle. Only bash and zsh
-//! are supported for v1 — other shells (fish, dash, …) are a silent no-op.
-//! Materialization failures (e.g. cannot write to app_config_dir) are also
-//! swallowed: the shell spawns exactly as it does today, just without replay
-//! capability for that terminal.
+//! Reports each submitted command via OSC so "Resume all" can replay it.
 
 use std::path::Path;
 
@@ -38,19 +16,14 @@ fn ensure_files(base_dir: &Path) -> Result<(), String> {
         .map_err(|e| format!("could not write integration.bash: {e}"))?;
     std::fs::write(base_dir.join("integration.zsh"), INTEGRATION_ZSH)
         .map_err(|e| format!("could not write integration.zsh: {e}"))?;
-    // zsh reads `$ZDOTDIR/.zshrc`, so the wrapper must be literally named
-    // `.zshrc` inside the materialized directory.
+    // zsh reads $ZDOTDIR/.zshrc, so the wrapper must be named ".zshrc".
     std::fs::write(base_dir.join(".zshrc"), ZSHRC_WRAPPER)
         .map_err(|e| format!("could not write .zshrc: {e}"))?;
     Ok(())
 }
 
-/// Injects shell-integration hooks into `cmd` when `shell`'s basename is bash
-/// or zsh, materializing the scripts under `integration_base_dir` (the
-/// caller resolves this from `app_config_dir()` — kept as a plain path here
-/// so this stays unit-testable without a Tauri `AppHandle`). Callers must
-/// only invoke this for a bare-shell spawn request (no explicit
-/// command/args) — see `spawn_session` in `pty.rs`.
+/// Injects shell-integration hooks into `cmd` for bash/zsh. Only call for a
+/// bare-shell spawn request (no explicit command/args).
 pub fn apply(integration_base_dir: &Path, cmd: &mut CommandBuilder, shell: &str) {
     let basename = Path::new(shell)
         .file_name()

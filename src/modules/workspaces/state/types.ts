@@ -47,21 +47,11 @@ export interface Project {
    */
   notes?: string;
   shortcut?: string;
-  /**
-   * Sidebar folder this project is grouped under, scoped to the containing
-   * workspace's `folders` array. Undefined = ungrouped (rendered at the
-   * workspace's top level). Purely organizational — unrelated to `path`,
-   * which stays an arbitrary absolute filesystem location. Optional/additive
-   * — projects created before this feature simply have no field.
-   */
+  // Sidebar folder this project is grouped under. Undefined = ungrouped.
   folderId?: FolderId;
 }
 
-/**
- * A single-level, purely organizational grouping of projects inside a
- * workspace. Not tied to any real directory nesting on disk — `path` on
- * `Project` remains independent.
- */
+// Single-level, purely organizational grouping of projects in a workspace.
 export interface Folder {
   id: FolderId;
   name: string;

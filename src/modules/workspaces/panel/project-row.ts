@@ -68,9 +68,7 @@ export function createProjectRow(opts: ProjectRowOptions): ProjectRowHandle {
   if (project.pathInvalid) row.classList.add("invalid");
   row.dataset.projectId = project.id;
   row.dataset.workspaceId = workspaceId;
-  // Read by drag-drop.ts to know which bucket (folder vs. ungrouped) this
-  // row's drag session started from. Omitted (not "") when ungrouped so
-  // `dataset.folderId` reads as `undefined`, not an empty string.
+  // Read by drag-drop.ts to know which bucket this row's drag started from.
   if (project.folderId) row.dataset.folderId = project.folderId;
   // F4: same color resolution as workspace-row — explicit override wins,
   // otherwise the deterministic palette so the row still picks up a tint.
@@ -421,13 +419,7 @@ function buildMoveSubmenuItems(
   }));
 }
 
-/**
- * Same-workspace "move to folder" items, flattened into the row menu the
- * same way `buildMoveSubmenuItems` flattens workspace targets — `openRowMenu`
- * has no real submenu support today. Bulk selections are out of scope for v1
- * (a single project's current folder is unambiguous; a mixed bulk selection
- * spanning folders is not, and is deferred as a fast-follow).
- */
+// Same-workspace "move to folder" items, flattened like buildMoveSubmenuItems.
 function buildMoveToFolderItems(
   controller: WorkspacesController,
   projectId: ProjectId,

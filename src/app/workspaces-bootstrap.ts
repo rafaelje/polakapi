@@ -186,11 +186,8 @@ export async function bootstrapWorkspaces(
   });
   const breadcrumb = mountBreadcrumb({ host: elements.breadcrumbHost });
 
-  // The live count (router.getCount) only settles once the killed PTY's exit
-  // event actually arrives — later than the `suspended` flag flip that drives
-  // most of refreshActiveContext — so this is also re-run off the router's
-  // own `counts-changed` event (see subscription below), not just controller
-  // state changes.
+  // Also re-run off the router's counts-changed event (see subscription
+  // below) since live count settles later than the suspended flag flip.
   const refreshSuspendResumeToggle = (): void => {
     const project = controller.getActiveProject();
     projectPane.setSuspendResumeCounts(
@@ -214,14 +211,8 @@ export async function bootstrapWorkspaces(
         await manager.restoreSpecs(specs);
       }
     }
-    // Called directly rather than relying on restoreSpecs's own spec-changed
-    // event: when every restored spec is suspended, restoreSpecs's internal
-    // loop never hits an `await`, so its whole body — including that event —
-    // runs synchronously nested inside this very call, which on first boot
-    // happens *before* AppController has assigned `this.workspaces` (it is
-    // still awaiting this function). `onPersistSpecs`'s `this.workspaces?.`
-    // guard silently no-ops that first event, so the toggle would otherwise
-    // never learn about specs restored as already-suspended.
+    // Called directly since restoreSpecs's own spec-changed event can fire
+    // before AppController has assigned `this.workspaces` on first boot.
     refreshSuspendResumeToggle();
   };
 

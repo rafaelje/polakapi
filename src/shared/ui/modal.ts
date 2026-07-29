@@ -115,11 +115,7 @@ export interface SelectModalOptions {
   cancelLabel?: string;
 }
 
-/**
- * Multi-choice modal — first reusable non-text-input primitive alongside
- * `promptModal`/`confirmModal`. Renders a native `<select>`. Resolves with the
- * selected value, or `null` on cancel/Escape.
- */
+// Multi-choice modal, native <select>. Resolves with the value or null on cancel.
 export function selectModal(opts: SelectModalOptions): Promise<string | null> {
   return new Promise((resolve) => {
     const backdrop = document.createElement("div");

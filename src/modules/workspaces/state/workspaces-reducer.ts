@@ -39,13 +39,7 @@ export type WorkspaceEntry =
   | { kind: "folder"; folder: Folder }
   | { kind: "project"; project: Project };
 
-/**
- * A workspace's top-level children as one interleaved, sorted list: its
- * folders plus its ungrouped (`folderId` undefined) projects, ordered
- * together via `compareByOrderThenName`. When the workspace has no folders,
- * this produces exactly the same order as `sortedProjects` — zero visual
- * change for workspaces that don't use folders.
- */
+// Folders + ungrouped projects, interleaved and sorted together.
 export function sortedWorkspaceEntries(workspace: Workspace): WorkspaceEntry[] {
   const folderEntries: WorkspaceEntry[] = (workspace.folders ?? []).map((folder) => ({
     kind: "folder",
@@ -63,10 +57,7 @@ function entryOrderable(entry: WorkspaceEntry): { name: string; order?: number }
   return entry.kind === "folder" ? entry.folder : entry.project;
 }
 
-/**
- * Projects assigned to `folderId` (or ungrouped, when `folderId` is
- * undefined), sorted the same way as `sortedProjects`.
- */
+// Projects assigned to folderId (or ungrouped), sorted like sortedProjects.
 export function sortedProjectsInFolder(
   workspace: Workspace,
   folderId: FolderId | undefined,
@@ -215,9 +206,7 @@ export function moveProject(
 ): WorkspacesState {
   const found = findProject(state, id);
   if (!found) return state;
-  // Folder ids are workspace-scoped: carrying one across a workspace boundary
-  // would dangle, so it's cleared (ungrouped) only when the destination is a
-  // different workspace. A same-workspace reorder preserves it untouched.
+  // Folder ids are workspace-scoped, so clear it only when crossing workspaces.
   const crossesWorkspace = found.workspace.id !== toWorkspaceId;
   const moved: Project = {
     ...found.project,

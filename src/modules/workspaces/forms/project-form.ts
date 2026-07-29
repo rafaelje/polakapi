@@ -20,14 +20,9 @@ const NO_FOLDER_VALUE = "";
 export interface CreateProjectFormOptions {
   /** Pre-filled folder for the picker on subsequent runs (rare in create). */
   defaultPath?: string;
-  /**
-   * The target workspace's sidebar folders. When non-empty, the flow gains an
-   * extra "which folder?" step after path validation and before the name
-   * prompt. Skipped entirely when empty — no added friction for workspaces
-   * that don't use folders.
-   */
+  // Non-empty adds a "which folder?" step; empty skips it entirely.
   folders?: Folder[];
-  /** Pre-selects this folder in the picker (e.g. a folder's own "Add project…"). */
+  /** Pre-selects this folder (e.g. a folder's own "Add project…"). */
   initialFolderId?: FolderId;
 }
 

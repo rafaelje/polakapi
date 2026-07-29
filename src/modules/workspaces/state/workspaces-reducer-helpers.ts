@@ -77,13 +77,8 @@ export function reassignOrder<T extends { order?: number }>(items: T[]): T[] {
   return items.map((item, idx) => ({ ...item, order: idx }));
 }
 
-/**
- * Like `reassignOrder`, but only stamps `order` on items where `matches`
- * returns true, leaving every other item (and its `order`) untouched. Used to
- * scope reordering to one folder bucket (or the ungrouped bucket) within a
- * workspace's flat `projects` array, so reordering inside one folder never
- * corrupts another folder's `order` values.
- */
+// Like reassignOrder, but only stamps items matching `matches`, so
+// reordering one folder bucket never touches another's order values.
 export function reassignOrderWhere<T extends { order?: number }>(
   items: T[],
   matches: (item: T) => boolean,

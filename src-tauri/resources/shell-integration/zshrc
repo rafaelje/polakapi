@@ -1,9 +1,5 @@
-# polakapi shell integration wrapper. Sourced as $ZDOTDIR/.zshrc because the
-# app overrides ZDOTDIR when spawning a bare zsh terminal (materialized here
-# as ".zshrc", never touching the user's real dotfiles). Restores ZDOTDIR to
-# its original value (or unsets it) BEFORE sourcing the user's real .zshrc,
-# so anything in their config that itself depends on ZDOTDIR behaves exactly
-# as it would outside the app — then adds the command-capture hook after.
+# polakapi shell integration wrapper, sourced as $ZDOTDIR/.zshrc. Restores
+# ZDOTDIR before sourcing the user's real .zshrc, then adds the capture hook.
 
 _polakapi_integration_dir="$ZDOTDIR"
 

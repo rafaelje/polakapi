@@ -4,20 +4,12 @@ import type { TerminalPane } from "./terminal-pane";
 import { ptyWrite } from "./pty-client";
 import type { TerminalSpec } from "./types";
 
-/**
- * Empirical delay before piping text (startupCmd or a replayed
- * lastShellCommand) into a freshly-spawned PTY. Long enough for zsh/bash on
- * macOS + Linux to print their first prompt; short enough to feel
- * instantaneous. Fire-and-forget — we do not parse PS1.
- */
+// Delay before piping text into a freshly-spawned PTY, long enough for the
+// shell to print its first prompt.
 const SCHEDULED_WRITE_DELAY_MS = 200;
 
-/**
- * Narrow surface `wireTerminalPane` needs from `TerminalManager`, built as a
- * small adapter object by the manager itself (bound closures over its own
- * private state) — kept in its own file purely to keep `terminal-manager.ts`
- * under the repo's line budget, not to loosen the manager's encapsulation.
- */
+// Narrow surface wireTerminalPane needs from TerminalManager, kept in its
+// own file purely for the repo's line budget.
 export interface PaneWiringHost {
   grid: HTMLElement;
   isLive(ptyId: string): boolean;
@@ -33,12 +25,7 @@ export interface PaneWiringHost {
   orderLength(): number;
 }
 
-/**
- * Wires every pane-level callback (startup-cmd edit, CLI respawn, dock menu,
- * suspend/resume, shell-command capture) plus cross-pane docking and the
- * header mousedown / body focus / close-button handlers. Returns the docking
- * handle so the caller can dispose it alongside the pane.
- */
+// Wires every pane-level callback plus docking and header/close handlers.
 export function wireTerminalPane(
   pane: TerminalPane,
   ptyId: string,
@@ -83,12 +70,7 @@ export function wireTerminalPane(
   return dockingHandle;
 }
 
-/**
- * Fire-and-forget: pipes `text\r` into `ptyId` once the shell has had time to
- * print its prompt. Used for both `startupCmd` (spawn) and a replayed
- * `lastShellCommand` (resume) — `label` only affects the error log so a
- * failure is traceable to which one it was.
- */
+// Fire-and-forget: pipes `text\r` into `ptyId` after the shell prints its prompt.
 export function scheduleTerminalWrite(
   panes: ReadonlyMap<string, TerminalPane>,
   ptyId: string,

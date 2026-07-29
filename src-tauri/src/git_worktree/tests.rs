@@ -45,9 +45,7 @@ fn run_git(dir: &std::path::Path, args: &[&str]) {
 
 #[test]
 fn creates_worktree_as_sibling_directory() {
-    // The repo lives at `root/app` (not `root` itself) so the sibling
-    // `app-worktrees` directory this test creates is also inside `root` and
-    // gets cleaned up by the same TempDir guard on drop.
+    // Repo lives at root/app so the sibling app-worktrees dir stays inside root's TempDir.
     let root = tempfile::tempdir().unwrap();
     let repo = root.path().join("app");
     std::fs::create_dir_all(&repo).unwrap();
@@ -58,9 +56,7 @@ fn creates_worktree_as_sibling_directory() {
     std::fs::write(repo.join("README.md"), "hello").unwrap();
     run_git(&repo, &["add", "README.md"]);
     run_git(&repo, &["commit", "-m", "init"]);
-    // detect_base_ref_sync errors when HEAD already *is* the only candidate
-    // base (no origin/HEAD, on `main` with no other branch) — realistic repos
-    // have the user on a feature branch with `main` as base, so switch off it.
+    // detect_base_ref_sync needs a base ref other than HEAD.
     run_git(&repo, &["checkout", "-b", "current-work"]);
 
     let worktree_path = create_worktree_sync(&repo.to_string_lossy(), "feature/x").unwrap();

@@ -198,9 +198,7 @@ describe("workspaces store", () => {
   });
 
   it("loads a persisted payload with no folders/folderId fields (pre-folders schema) untouched", async () => {
-    // Simulates data persisted before the folders feature shipped: no
-    // `Workspace.folders`, no `Project.folderId` at all. Purely additive
-    // optional fields — no schemaVersion bump — so this must still round-trip.
+    // Simulates data persisted before folders shipped — no folders/folderId fields.
     const legacyState: WorkspacesState = {
       schemaVersion: 1,
       activeProjectId: pid("p1"),

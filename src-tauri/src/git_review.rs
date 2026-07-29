@@ -12,10 +12,8 @@
 //! process is the base ref, which is first verified with `git rev-parse
 //! --verify`.
 //!
-//! `validate_repo_path` and `detect_base_ref_sync` are also `pub(crate)` and
-//! reused by `git_worktree` for the "Create worktree" action, which is the
-//! only *mutating* git command in the app — it lives in its own module rather
-//! than here to keep this file's read-only scope honest.
+//! `validate_repo_path` and `detect_base_ref_sync` are also `pub(crate)`,
+//! reused by `git_worktree` for the "Create worktree" action.
 
 use std::path::Path;
 use std::process::{Command, Stdio};

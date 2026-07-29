@@ -1,9 +1,5 @@
-# polakapi shell integration (zsh) — reports each submitted command to the
-# app via a custom OSC escape sequence so a suspended shell terminal can be
-# truly resumed later by replaying its last command ("Resume all"). Fires
-# once per Enter-press, before execution, via zsh's own preexec hook — this
-# does not overwrite any preexec the user's own .zshrc may already define,
-# since add-zsh-hook appends to a list rather than replacing the function.
+# polakapi shell integration (zsh) — reports each submitted command via OSC
+# so "Resume all" can replay it. Uses add-zsh-hook to not clobber the user's own preexec.
 
 _polakapi_report_cmd() {
   local encoded

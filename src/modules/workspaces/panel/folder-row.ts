@@ -25,16 +25,12 @@ export interface FolderRowOptions {
 
 export interface FolderRowHandle {
   element: HTMLElement;
-  /** Every ProjectRowHandle rendered under this folder, keyed by ProjectId — merged by the parent WorkspaceRow into its own flat map. */
+  // Merged by the parent WorkspaceRow into its own flat map.
   projectHandles: ReadonlyMap<ProjectId, ProjectRowHandle>;
   dispose(): void;
 }
 
-/**
- * Renders one folder header plus its own sorted project list, one indent
- * level deeper than a workspace's top-level project rows. Modeled closely on
- * `workspace-row.ts` (chevron collapse/expand, kebab menu, inline rename).
- */
+// Folder header + its own project list, modeled on workspace-row.ts.
 export function createFolderRow(opts: FolderRowOptions): FolderRowHandle {
   const { folder, workspace, controller } = opts;
 

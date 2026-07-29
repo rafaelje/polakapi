@@ -31,11 +31,7 @@ export interface SuspendCallbacks {
   onResumeRequest(): void;
 }
 
-/**
- * Reports each command captured by the pane's shell-integration OSC handler
- * (see `terminal-shell-integration.ts`) up to the TerminalManager, which
- * persists it as `TerminalSpec.lastShellCommand` for "Resume all" to replay.
- */
+// Reports each captured command up to the TerminalManager for "Resume all" to replay.
 export interface ShellCommandCallbacks {
   onCommand(command: string): void;
 }
