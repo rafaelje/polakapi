@@ -46,6 +46,10 @@
   color: var(--text);
 }
 
+.project-pane-toolbar button.hidden {
+  display: none;
+}
+
 .project-pane-external {
   margin-left: auto;
   display: flex;

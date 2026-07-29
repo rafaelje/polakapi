@@ -26,6 +26,12 @@ export interface ProjectPaneOptions {
 export interface ProjectPaneHandle {
   setActiveProject(project: Project | null): void;
   setActiveCli(cliId: string): void;
+  /**
+   * Toggles which of Suspend/Resume all is shown for the active project: when
+   * every terminal is suspended (no live ones, but at least one suspended),
+   * "Resume all" replaces "Suspend all" instead of showing both at once.
+   */
+  setSuspendResumeCounts(liveCount: number, suspendedCount: number): void;
   dispose(): void;
 }
 
@@ -169,6 +175,7 @@ export function mountProjectPane(opts: ProjectPaneOptions): ProjectPaneHandle {
   runAllBtn.disabled = true;
   suspendBtn.disabled = true;
   resumeBtn.disabled = true;
+  resumeBtn.classList.add("hidden");
   revealBtn.disabled = true;
   editorBtn.disabled = true;
   shellBtn.disabled = true;
@@ -225,6 +232,13 @@ export function mountProjectPane(opts: ProjectPaneOptions): ProjectPaneHandle {
     },
     setActiveCli(cliId: string): void {
       chipRow.setActive(cliId);
+    },
+    setSuspendResumeCounts(liveCount: number, suspendedCount: number): void {
+      // Nothing left running but at least one suspended pane: show only
+      // "Resume all" instead of both actions side by side.
+      const showResume = liveCount === 0 && suspendedCount > 0;
+      suspendBtn.classList.toggle("hidden", showResume);
+      resumeBtn.classList.toggle("hidden", !showResume);
     },
     dispose(): void {
       addBtn.removeEventListener("click", onAdd);

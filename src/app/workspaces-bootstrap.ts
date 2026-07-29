@@ -203,6 +203,19 @@ export async function bootstrapWorkspaces(
     }
   };
 
+  // The live count (router.getCount) only settles once the killed PTY's exit
+  // event actually arrives — later than the `suspended` flag flip that drives
+  // most of refreshActiveContext — so this is also re-run off the router's
+  // own `counts-changed` event (see subscription below), not just controller
+  // state changes.
+  const refreshSuspendResumeToggle = (): void => {
+    const project = controller.getActiveProject();
+    projectPane.setSuspendResumeCounts(
+      project ? router.getCount(project.id) : 0,
+      project ? router.getSuspendedCount(project.id) : 0,
+    );
+  };
+
   const refreshActiveContext = (): void => {
     const project = controller.getActiveProject();
     const workspace = project
@@ -210,9 +223,14 @@ export async function bootstrapWorkspaces(
       : null;
     breadcrumb.update(workspace, project);
     projectPane.setActiveProject(project);
+    refreshSuspendResumeToggle();
     if (project) elements.projectPaneHost.dataset.projectId = project.id;
     else delete elements.projectPaneHost.dataset.projectId;
   };
+
+  const unsubscribeRouterSuspendToggle = router.on((event: TerminalRouterEvent) => {
+    if (event.type === "counts-changed") refreshSuspendResumeToggle();
+  });
 
   // PTY teardown for project deletion. Runs after the user confirms in the
   // modal and before the reducer removes the project — this keeps sidebar
@@ -281,6 +299,7 @@ export async function bootstrapWorkspaces(
     unsubscribeController();
     unwireDeleteHook();
     unsubscribeRouterBell();
+    unsubscribeRouterSuspendToggle();
     bellListeners.clear();
     router.setNotificationContext(null);
     notesListeners.clear();
