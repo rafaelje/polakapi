@@ -56,12 +56,21 @@ export interface PathMatch {
 // which the "//host/…" part of a URL never does.
 const PATH_RE = /(?:^|[\s"'`([<=])((?:~)?\/[\w.@+~-]+(?:\/[\w.@+~-]+)*\/?(?::\d+(?::\d+)?)?)/g;
 
-/** Finds absolute-path candidates in one rendered terminal line. */
+// file:// URIs (Claude and other CLIs print these for docs/artifacts they
+// create). WebLinksAddon only matches http(s), so these need their own scan.
+const FILE_URI_RE = /(?:^|[\s"'`([<])(file:\/\/[^\s"'`)\]>]+)/gi;
+
+/** Finds absolute-path and file:// URI candidates in one rendered terminal line. */
 export function findAbsolutePaths(lineText: string): PathMatch[] {
   const out: PathMatch[] = [];
   for (const match of lineText.matchAll(PATH_RE)) {
     const text = match[1].replace(TRAILING_PUNCT, "");
     if (text.length < 2) continue;
+    out.push({ start: (match.index ?? 0) + match[0].length - match[1].length, text });
+  }
+  for (const match of lineText.matchAll(FILE_URI_RE)) {
+    const text = match[1].replace(TRAILING_PUNCT, "");
+    if (text.length <= "file://".length) continue;
     out.push({ start: (match.index ?? 0) + match[0].length - match[1].length, text });
   }
   return out;

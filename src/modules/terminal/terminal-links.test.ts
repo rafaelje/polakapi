@@ -68,4 +68,19 @@ describe("findAbsolutePaths", () => {
     const [match] = findAbsolutePaths("open ~/projects/app, please");
     expect(match?.text).toBe("~/projects/app");
   });
+
+  it("matches file:// URIs, which WebLinksAddon does not detect on its own", () => {
+    const line = "file:///home/user/docs/report.html";
+    const [match] = findAbsolutePaths(line);
+    expect(match?.text).toBe(line);
+    expect(line.slice(match.start, match.start + match.text.length)).toBe(match.text);
+  });
+
+  it("matches multiple file:// URIs on separate lines and trims trailing punctuation", () => {
+    const line = "see file:///home/user/a.md and file:///home/user/b.txt.";
+    expect(findAbsolutePaths(line).map((m) => m.text)).toEqual([
+      "file:///home/user/a.md",
+      "file:///home/user/b.txt",
+    ]);
+  });
 });
