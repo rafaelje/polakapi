@@ -23,8 +23,9 @@ export function addFolder(
   state: WorkspacesState,
   workspaceId: WorkspaceId,
   name: string,
+  path?: string,
 ): WorkspacesState {
-  const folder: Folder = { id: newFolderId(), name };
+  const folder: Folder = { id: newFolderId(), name, path };
   return mapWorkspaces(state, (w) =>
     w.id === workspaceId ? { ...w, folders: [...(w.folders ?? []), folder] } : w,
   );

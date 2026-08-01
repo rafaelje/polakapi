@@ -52,6 +52,7 @@ export function createFolderRow(opts: FolderRowOptions): FolderRowHandle {
   const name = document.createElement("span");
   name.className = "ws-folder-name";
   name.textContent = folder.name;
+  if (folder.path) name.title = folder.path;
 
   const addBtn = document.createElement("button");
   addBtn.type = "button";
@@ -127,7 +128,10 @@ export function createFolderRow(opts: FolderRowOptions): FolderRowHandle {
 
   on(addBtn, "click", (e) => {
     e.stopPropagation();
-    void controller.createProjectInteractive(workspace.id, { initialFolderId: folder.id });
+    void controller.createProjectInteractive(workspace.id, {
+      initialFolderId: folder.id,
+      defaultPath: folder.path,
+    });
   });
 
   on(menuBtn, "click", (e) => {
@@ -143,7 +147,15 @@ export function createFolderRow(opts: FolderRowOptions): FolderRowHandle {
         {
           label: "Add project…",
           onSelect: () =>
-            void controller.createProjectInteractive(workspace.id, { initialFolderId: folder.id }),
+            void controller.createProjectInteractive(workspace.id, {
+              initialFolderId: folder.id,
+              defaultPath: folder.path,
+            }),
+        },
+        {
+          label: "Clone repo here…",
+          onSelect: () =>
+            void controller.cloneRepoInteractive(workspace.id, { folderId: folder.id }),
         },
         {
           label: folder.collapsed ? "Expand" : "Collapse",

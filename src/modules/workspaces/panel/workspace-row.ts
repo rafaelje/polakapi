@@ -216,6 +216,10 @@ export function createWorkspaceRow(opts: WorkspaceRowOptions): WorkspaceRowHandl
           onSelect: () => void controller.createFolderInteractive(workspace.id),
         },
         {
+          label: "Clone repo…",
+          onSelect: () => void controller.cloneRepoInteractive(workspace.id),
+        },
+        {
           label: workspace.collapsed ? "Expand" : "Collapse",
           onSelect: () => controller.toggleCollapsed(workspace.id),
         },

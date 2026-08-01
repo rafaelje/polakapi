@@ -7,6 +7,7 @@ pub mod capture;
 mod commands;
 pub mod db;
 mod fs;
+mod git_clone;
 mod git_review;
 mod git_worktree;
 mod loop_cli;
@@ -29,13 +30,15 @@ use crate::adv_review::{
     adv_read_state_file, adv_write_run_file, adv_write_run_prompt, adv_write_state_file,
 };
 use crate::commands::{
-    app_exit, fs_validate_path, open_file_in_editor, open_in_editor, open_in_explorer,
-    open_in_shell, open_local_path, open_url, pty_kill, pty_resize, pty_spawn, pty_write,
+    app_exit, fs_create_folder, fs_validate_path, open_file_in_editor, open_in_editor,
+    open_in_explorer, open_in_shell, open_local_path, open_url, pty_kill, pty_resize, pty_spawn,
+    pty_write,
 };
 use crate::db::{
     prompt_delete_sessions, prompt_get, prompt_install_hooks, prompt_list_by_session,
     prompt_list_sessions, prompt_search,
 };
+use crate::git_clone::git_clone_repo;
 use crate::git_review::{git_branch_diff, git_detect_base_ref};
 use crate::git_worktree::git_create_worktree;
 use crate::loop_cli::run_loop_agent;
@@ -141,6 +144,7 @@ pub fn run() {
             keep_awake_set,
             app_exit,
             fs_validate_path,
+            fs_create_folder,
             open_in_explorer,
             open_in_editor,
             open_in_shell,
@@ -185,6 +189,7 @@ pub fn run() {
             git_detect_base_ref,
             git_branch_diff,
             git_create_worktree,
+            git_clone_repo,
             adv_create_run,
             adv_read_run_file,
             adv_write_run_file,

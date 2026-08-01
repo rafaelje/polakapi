@@ -113,7 +113,7 @@ export function confirmDeleteFolder(name: string, projectCount: number): Promise
       : `${projectCount} project${projectCount === 1 ? "" : "s"} will be ungrouped, not deleted.`;
   return confirmModal({
     title: `Delete folder "${name}"?`,
-    message: detail,
+    message: `${detail} The directory on disk is not touched.`,
     confirmLabel: "Delete",
     danger: true,
   });

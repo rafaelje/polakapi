@@ -90,6 +90,35 @@ pub fn fs_validate_path(path: String) -> Result<(), String> {
     validate_path(&path).map_err(|err| err.as_contract_string())
 }
 
+/// Creates `parent/name` on disk and returns the new absolute path.
+#[tauri::command]
+pub fn fs_create_folder(parent: String, name: String) -> Result<String, String> {
+    let parent_path = std::path::Path::new(&parent);
+    if !parent_path.is_dir() {
+        return Err(format!("parent is not a directory: {parent}"));
+    }
+    let name = name.trim();
+    if !is_valid_folder_name(name) {
+        return Err(format!("invalid folder name: {name}"));
+    }
+    let dest = parent_path.join(name);
+    if dest.exists() {
+        return Err(format!("already exists: {}", dest.display()));
+    }
+    std::fs::create_dir(&dest).map_err(|e| format!("could not create {}: {e}", dest.display()))?;
+    Ok(dest.to_string_lossy().to_string())
+}
+
+fn is_valid_folder_name(name: &str) -> bool {
+    !name.is_empty()
+        && name.len() <= 255
+        && name != "."
+        && name != ".."
+        && !name.contains('/')
+        && !name.contains('\\')
+        && !name.contains('\0')
+}
+
 /// Opens `path` in the OS file manager (Finder / Explorer / xdg-open).
 #[tauri::command]
 pub fn open_in_explorer(path: String) -> Result<(), String> {

@@ -51,10 +51,12 @@ export interface Project {
   folderId?: FolderId;
 }
 
-// Single-level, purely organizational grouping of projects in a workspace.
+// Single-level grouping of projects in a workspace, backed by a real directory.
 export interface Folder {
   id: FolderId;
   name: string;
+  /** Absolute path of the directory backing this folder. Optional for older data. */
+  path?: string;
   /** If undefined, sorts alphabetically among sibling entries (folders + ungrouped projects). */
   order?: number;
   collapsed?: boolean;

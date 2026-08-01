@@ -414,6 +414,15 @@ describe("workspaces-reducer", () => {
     ]);
   });
 
+  it("addFolder stores the backing disk path when provided", () => {
+    let s = addWorkspace(createEmptyState(), "W");
+    s = addFolder(s, wsId(s, 0), "Backend", "/home/user/code/backend");
+    expect(s.workspaces[0].folders?.[0]).toMatchObject({
+      name: "Backend",
+      path: "/home/user/code/backend",
+    });
+  });
+
   it("addFolder appends a folder and sortedWorkspaceEntries interleaves it with ungrouped projects", () => {
     let s = addWorkspace(createEmptyState(), "W");
     s = addProject(s, { workspaceId: wsId(s, 0), name: "Zeta", path: "/z" });
