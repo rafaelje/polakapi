@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { attachTerminalClipboard, normalizeTerminalSelection } from "./terminal-clipboard";
+import {
+  attachTerminalClipboard,
+  attachTerminalCopyPasteKeys,
+  normalizeTerminalSelection,
+  resolveCopyPasteKey,
+} from "./terminal-clipboard";
 
 describe("normalizeTerminalSelection", () => {
   it("composes accented characters without changing other Unicode text", () => {
@@ -44,5 +49,87 @@ describe("attachTerminalClipboard", () => {
 
     expect(setData).not.toHaveBeenCalled();
     expect(event.defaultPrevented).toBe(false);
+  });
+});
+
+describe("resolveCopyPasteKey", () => {
+  const keydown = (init: KeyboardEventInit): KeyboardEvent => new KeyboardEvent("keydown", init);
+
+  it("maps Ctrl+Shift+C to copy and Ctrl+Shift+V to paste", () => {
+    expect(resolveCopyPasteKey(keydown({ key: "C", ctrlKey: true, shiftKey: true }))).toBe("copy");
+    expect(resolveCopyPasteKey(keydown({ key: "V", ctrlKey: true, shiftKey: true }))).toBe("paste");
+  });
+
+  it("ignores plain Ctrl+C (SIGINT must still reach the shell)", () => {
+    expect(resolveCopyPasteKey(keydown({ key: "c", ctrlKey: true }))).toBeNull();
+    expect(resolveCopyPasteKey(keydown({ key: "v", ctrlKey: true }))).toBeNull();
+  });
+
+  it("ignores other modifiers, keys, and non-keydown events", () => {
+    expect(
+      resolveCopyPasteKey(keydown({ key: "C", ctrlKey: true, shiftKey: true, altKey: true })),
+    ).toBeNull();
+    expect(resolveCopyPasteKey(keydown({ key: "X", ctrlKey: true, shiftKey: true }))).toBeNull();
+    expect(
+      resolveCopyPasteKey(new KeyboardEvent("keyup", { key: "C", ctrlKey: true, shiftKey: true })),
+    ).toBeNull();
+  });
+});
+
+describe("attachTerminalCopyPasteKeys", () => {
+  function makeTerm(selection: string): {
+    handler: (event: KeyboardEvent) => boolean;
+    paste: ReturnType<typeof vi.fn>;
+  } {
+    let handler!: (event: KeyboardEvent) => boolean;
+    const paste = vi.fn();
+    attachTerminalCopyPasteKeys({
+      attachCustomKeyEventHandler: (h) => {
+        handler = h;
+      },
+      getSelection: () => selection,
+      paste,
+    });
+    return { handler, paste };
+  }
+
+  it("copies the selection and stops xterm from handling the key", () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+    const { handler } = makeTerm("hello");
+
+    const event = new KeyboardEvent("keydown", {
+      key: "C",
+      ctrlKey: true,
+      shiftKey: true,
+      cancelable: true,
+    });
+    const result = handler(event);
+
+    expect(result).toBe(false);
+    expect(writeText).toHaveBeenCalledWith("hello");
+    vi.unstubAllGlobals();
+  });
+
+  it("pastes clipboard text through term.paste", async () => {
+    const readText = vi.fn().mockResolvedValue("pasted");
+    vi.stubGlobal("navigator", { clipboard: { readText } });
+    const { handler, paste } = makeTerm("");
+
+    const result = handler(
+      new KeyboardEvent("keydown", { key: "V", ctrlKey: true, shiftKey: true, cancelable: true }),
+    );
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(result).toBe(false);
+    expect(paste).toHaveBeenCalledWith("pasted");
+    vi.unstubAllGlobals();
+  });
+
+  it("lets unrelated keys through to xterm", () => {
+    const { handler } = makeTerm("hello");
+    const result = handler(new KeyboardEvent("keydown", { key: "c", ctrlKey: true }));
+    expect(result).toBe(true);
   });
 });
