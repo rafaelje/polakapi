@@ -9,6 +9,7 @@ vi.mock("@tauri-apps/plugin-clipboard-manager", () => clipboardPlugin);
 
 import {
   attachTerminalClipboard,
+  attachTerminalContextMenuGuard,
   attachTerminalCopyPasteKeys,
   normalizeTerminalSelection,
   resolveCopyPasteKey,
@@ -147,5 +148,27 @@ describe("attachTerminalCopyPasteKeys", () => {
     const { handler } = makeTerm("hello");
     const result = handler(new KeyboardEvent("keydown", { key: "c", ctrlKey: true }));
     expect(result).toBe(true);
+  });
+});
+
+describe("attachTerminalContextMenuGuard", () => {
+  it("blocks the native context menu and xterm's own right-click handler", () => {
+    const body = document.createElement("div");
+    const xtermRoot = document.createElement("div");
+    body.appendChild(xtermRoot);
+    const xtermHandler = vi.fn();
+    xtermRoot.addEventListener("contextmenu", xtermHandler);
+
+    const handle = attachTerminalContextMenuGuard(body);
+    const event = new MouseEvent("contextmenu", { bubbles: true, cancelable: true });
+    xtermRoot.dispatchEvent(event);
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(xtermHandler).not.toHaveBeenCalled();
+
+    handle.dispose();
+    const after = new MouseEvent("contextmenu", { bubbles: true, cancelable: true });
+    xtermRoot.dispatchEvent(after);
+    expect(xtermHandler).toHaveBeenCalledTimes(1);
   });
 });

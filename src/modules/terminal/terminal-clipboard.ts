@@ -27,6 +27,20 @@ export function attachTerminalClipboard(source: TerminalSelectionSource): { disp
   };
 }
 
+// xterm moves its hidden textarea under the cursor on right-click so the
+// webview's native menu can act on it; in WebKitGTK that menu can activate
+// Paste on the same gesture, pasting straight into the shell. Suppress it.
+export function attachTerminalContextMenuGuard(element: HTMLElement): { dispose(): void } {
+  const onContextMenu = (event: MouseEvent): void => {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  };
+  element.addEventListener("contextmenu", onContextMenu, true);
+  return {
+    dispose: () => element.removeEventListener("contextmenu", onContextMenu, true),
+  };
+}
+
 export type CopyPasteAction = "copy" | "paste";
 
 // Terminal-convention shortcuts: Ctrl+Shift+C / Ctrl+Shift+V.

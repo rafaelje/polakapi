@@ -4,7 +4,11 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import { resolveProfile } from "./cli-registry";
 import { ptySpawn, ptyWrite, ptyResize, ptyKill } from "./pty-client";
 import { terminalTheme } from "./terminal-theme";
-import { attachTerminalClipboard, attachTerminalCopyPasteKeys } from "./terminal-clipboard";
+import {
+  attachTerminalClipboard,
+  attachTerminalContextMenuGuard,
+  attachTerminalCopyPasteKeys,
+} from "./terminal-clipboard";
 import { attachTerminalKeybindings } from "./terminal-keybindings";
 import { classifyLinkText, createPathLinkProvider, openLinkFromText } from "./terminal-links";
 import { openPaneMenu, openCliRespawnMenu } from "./terminal-pane-menu";
@@ -131,6 +135,7 @@ export class TerminalPane {
       }),
     );
     this.disposables.push(attachTerminalClipboard(this.term));
+    this.disposables.push(attachTerminalContextMenuGuard(this.bodyEl));
     attachTerminalCopyPasteKeys(this.term);
     this.disposables.push(
       attachTerminalKeybindings(this.term, (data) => {
@@ -202,6 +207,7 @@ export class TerminalPane {
   attachPlaceholder(host: HTMLElement, opts?: Pick<PaneCreateOptions, "cliId" | "command">): void {
     host.append(this.el);
     this.term.open(this.bodyEl);
+    this.disposables.push(attachTerminalContextMenuGuard(this.bodyEl));
     this.safeFit();
     this.updateCliBadge(opts?.cliId);
     this.titleEl.textContent = opts?.command ? `${opts.command} · suspended` : "shell · suspended";
