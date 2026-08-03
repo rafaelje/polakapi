@@ -8,10 +8,12 @@ import {
   attachTerminalClipboard,
   attachTerminalContextMenuGuard,
   attachTerminalCopyPasteKeys,
+  copyTerminalSelection,
+  pasteIntoTerminal,
 } from "./terminal-clipboard";
 import { attachTerminalKeybindings } from "./terminal-keybindings";
 import { classifyLinkText, createPathLinkProvider, openLinkFromText } from "./terminal-links";
-import { openPaneMenu, openCliRespawnMenu } from "./terminal-pane-menu";
+import { openPaneMenu, openCliRespawnMenu, openTerminalContextMenu } from "./terminal-pane-menu";
 import { attachShellCommandCapture } from "./terminal-shell-integration";
 import type {
   CliRespawnCallbacks,
@@ -135,7 +137,9 @@ export class TerminalPane {
       }),
     );
     this.disposables.push(attachTerminalClipboard(this.term));
-    this.disposables.push(attachTerminalContextMenuGuard(this.bodyEl));
+    this.disposables.push(
+      attachTerminalContextMenuGuard(this.bodyEl, (at) => this.openContextMenu(at)),
+    );
     attachTerminalCopyPasteKeys(this.term);
     this.disposables.push(
       attachTerminalKeybindings(this.term, (data) => {
@@ -207,7 +211,9 @@ export class TerminalPane {
   attachPlaceholder(host: HTMLElement, opts?: Pick<PaneCreateOptions, "cliId" | "command">): void {
     host.append(this.el);
     this.term.open(this.bodyEl);
-    this.disposables.push(attachTerminalContextMenuGuard(this.bodyEl));
+    this.disposables.push(
+      attachTerminalContextMenuGuard(this.bodyEl, (at) => this.openContextMenu(at)),
+    );
     this.safeFit();
     this.updateCliBadge(opts?.cliId);
     this.titleEl.textContent = opts?.command ? `${opts.command} · suspended` : "shell · suspended";
@@ -296,6 +302,15 @@ export class TerminalPane {
       canDock: () => this.dockMenuCallbacks?.canDock() ?? false,
       onDockAtEdge: (position) => this.dockMenuCallbacks?.onDockAtEdge(position),
       suspend: this.suspendCallbacks,
+    });
+  }
+
+  private openContextMenu(at: { x: number; y: number }): void {
+    openTerminalContextMenu({
+      at,
+      hasSelection: () => this.term.getSelection().length > 0,
+      onCopy: () => copyTerminalSelection(this.term),
+      onPaste: () => pasteIntoTerminal(this.term),
     });
   }
 

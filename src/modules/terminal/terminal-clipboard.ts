@@ -29,16 +29,36 @@ export function attachTerminalClipboard(source: TerminalSelectionSource): { disp
 
 // xterm moves its hidden textarea under the cursor on right-click so the
 // webview's native menu can act on it; in WebKitGTK that menu can activate
-// Paste on the same gesture, pasting straight into the shell. Suppress it.
-export function attachTerminalContextMenuGuard(element: HTMLElement): { dispose(): void } {
+// Paste on the same gesture, pasting straight into the shell. Suppress the
+// native path and let the caller open the app's own menu instead.
+export function attachTerminalContextMenuGuard(
+  element: HTMLElement,
+  onOpen?: (at: { x: number; y: number }) => void,
+): { dispose(): void } {
   const onContextMenu = (event: MouseEvent): void => {
     event.preventDefault();
     event.stopImmediatePropagation();
+    onOpen?.({ x: event.clientX, y: event.clientY });
   };
   element.addEventListener("contextmenu", onContextMenu, true);
   return {
     dispose: () => element.removeEventListener("contextmenu", onContextMenu, true),
   };
+}
+
+export function copyTerminalSelection(term: { getSelection(): string }): void {
+  const text = normalizeTerminalSelection(term.getSelection());
+  if (text) {
+    void writeText(text).catch((error) => console.error("Clipboard copy failed", error));
+  }
+}
+
+export function pasteIntoTerminal(term: { paste(data: string): void }): void {
+  void readText()
+    .then((text) => {
+      if (text) term.paste(text);
+    })
+    .catch((error) => console.error("Clipboard paste failed", error));
 }
 
 export type CopyPasteAction = "copy" | "paste";
@@ -68,18 +88,8 @@ export function attachTerminalCopyPasteKeys(term: CopyPasteTerminal): void {
     const action = resolveCopyPasteKey(event);
     if (action === null) return true;
     event.preventDefault();
-    if (action === "copy") {
-      const text = normalizeTerminalSelection(term.getSelection());
-      if (text) {
-        void writeText(text).catch((error) => console.error("Clipboard copy failed", error));
-      }
-    } else {
-      void readText()
-        .then((text) => {
-          if (text) term.paste(text);
-        })
-        .catch((error) => console.error("Clipboard paste failed", error));
-    }
+    if (action === "copy") copyTerminalSelection(term);
+    else pasteIntoTerminal(term);
     return false;
   });
 }

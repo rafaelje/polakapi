@@ -203,6 +203,70 @@ export async function confirmRespawn(cliId: string): Promise<boolean> {
   });
 }
 
+export interface TerminalContextMenuOptions {
+  at: { x: number; y: number };
+  hasSelection(): boolean;
+  onCopy(): void;
+  onPaste(): void;
+}
+
+// Right-click menu for the terminal body. Replaces the webview's native menu,
+// which in WebKitGTK can activate Paste on the same right-click gesture.
+export function openTerminalContextMenu(opts: TerminalContextMenuOptions): PaneMenuHandle {
+  document.querySelectorAll(".pane-menu-popover").forEach((node) => node.remove());
+
+  const popover = document.createElement("div");
+  popover.className = "pane-menu-popover";
+  popover.style.position = "fixed";
+  popover.style.top = `${opts.at.y + 2}px`;
+  popover.style.left = `${opts.at.x + 2}px`;
+
+  let disposed = false;
+  const dispose = (): void => {
+    if (disposed) return;
+    disposed = true;
+    popover.remove();
+    window.removeEventListener("mousedown", onOutside, true);
+    window.removeEventListener("keydown", onKey, true);
+    window.removeEventListener("resize", dispose);
+    window.removeEventListener("scroll", dispose, true);
+  };
+  const onOutside = (e: MouseEvent): void => {
+    if (!popover.contains(e.target as Node)) dispose();
+  };
+  const onKey = (e: KeyboardEvent): void => {
+    if (e.key === "Escape") dispose();
+  };
+
+  const copyItem = document.createElement("button");
+  copyItem.type = "button";
+  copyItem.className = "pane-menu-item";
+  copyItem.textContent = "Copy";
+  copyItem.disabled = !opts.hasSelection();
+  copyItem.addEventListener("click", () => {
+    dispose();
+    opts.onCopy();
+  });
+
+  const pasteItem = document.createElement("button");
+  pasteItem.type = "button";
+  pasteItem.className = "pane-menu-item";
+  pasteItem.textContent = "Paste";
+  pasteItem.addEventListener("click", () => {
+    dispose();
+    opts.onPaste();
+  });
+
+  popover.append(copyItem, pasteItem);
+  document.body.append(popover);
+  window.addEventListener("mousedown", onOutside, true);
+  window.addEventListener("keydown", onKey, true);
+  window.addEventListener("resize", dispose);
+  window.addEventListener("scroll", dispose, true);
+
+  return { dispose };
+}
+
 export type { StartupCmdEditCallbacks };
 
 const DOCK_MENU_ITEMS: ReadonlyArray<readonly [TerminalDockPosition, string]> = [

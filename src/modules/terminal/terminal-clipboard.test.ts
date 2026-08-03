@@ -152,23 +152,31 @@ describe("attachTerminalCopyPasteKeys", () => {
 });
 
 describe("attachTerminalContextMenuGuard", () => {
-  it("blocks the native context menu and xterm's own right-click handler", () => {
+  it("blocks the native menu, stops xterm's handler, and reports cursor coords", () => {
     const body = document.createElement("div");
     const xtermRoot = document.createElement("div");
     body.appendChild(xtermRoot);
     const xtermHandler = vi.fn();
     xtermRoot.addEventListener("contextmenu", xtermHandler);
+    const onOpen = vi.fn();
 
-    const handle = attachTerminalContextMenuGuard(body);
-    const event = new MouseEvent("contextmenu", { bubbles: true, cancelable: true });
+    const handle = attachTerminalContextMenuGuard(body, onOpen);
+    const event = new MouseEvent("contextmenu", {
+      bubbles: true,
+      cancelable: true,
+      clientX: 40,
+      clientY: 60,
+    });
     xtermRoot.dispatchEvent(event);
 
     expect(event.defaultPrevented).toBe(true);
     expect(xtermHandler).not.toHaveBeenCalled();
+    expect(onOpen).toHaveBeenCalledWith({ x: 40, y: 60 });
 
     handle.dispose();
     const after = new MouseEvent("contextmenu", { bubbles: true, cancelable: true });
     xtermRoot.dispatchEvent(after);
     expect(xtermHandler).toHaveBeenCalledTimes(1);
+    expect(onOpen).toHaveBeenCalledTimes(1);
   });
 });
