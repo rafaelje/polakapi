@@ -1,3 +1,5 @@
+import { readText, writeText } from "@tauri-apps/plugin-clipboard-manager";
+
 export interface TerminalSelectionSource {
   element?: HTMLElement;
   getSelection(): string;
@@ -44,7 +46,9 @@ interface CopyPasteTerminal {
 }
 
 // xterm swallows all keyboard input, so the webview never emits a native copy
-// event for Ctrl+Shift+C — these must be handled explicitly.
+// event for Ctrl+Shift+C — these must be handled explicitly. Clipboard IO
+// goes through the Tauri plugin (Rust side) because WebKitGTK's async
+// navigator.clipboard is unreliable (silent write failures, denied reads).
 export function attachTerminalCopyPasteKeys(term: CopyPasteTerminal): void {
   term.attachCustomKeyEventHandler((event) => {
     const action = resolveCopyPasteKey(event);
@@ -52,25 +56,16 @@ export function attachTerminalCopyPasteKeys(term: CopyPasteTerminal): void {
     event.preventDefault();
     if (action === "copy") {
       const text = normalizeTerminalSelection(term.getSelection());
-      if (text) copyToClipboard(text);
+      if (text) {
+        void writeText(text).catch((error) => console.error("Clipboard copy failed", error));
+      }
     } else {
-      void navigator.clipboard
-        ?.readText()
+      void readText()
         .then((text) => {
           if (text) term.paste(text);
         })
-        .catch(() => {});
+        .catch((error) => console.error("Clipboard paste failed", error));
     }
     return false;
   });
-}
-
-function copyToClipboard(text: string): void {
-  const write = navigator.clipboard?.writeText?.bind(navigator.clipboard);
-  if (write) {
-    // Fallback fires the copy event, which attachTerminalClipboard fills in.
-    void write(text).catch(() => document.execCommand("copy"));
-  } else {
-    document.execCommand("copy");
-  }
 }

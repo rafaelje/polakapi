@@ -1,4 +1,11 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const clipboardPlugin = vi.hoisted(() => ({
+  readText: vi.fn<() => Promise<string>>(),
+  writeText: vi.fn<(text: string) => Promise<void>>(),
+}));
+
+vi.mock("@tauri-apps/plugin-clipboard-manager", () => clipboardPlugin);
 
 import {
   attachTerminalClipboard,
@@ -77,6 +84,12 @@ describe("resolveCopyPasteKey", () => {
 });
 
 describe("attachTerminalCopyPasteKeys", () => {
+  beforeEach(() => {
+    clipboardPlugin.readText.mockReset();
+    clipboardPlugin.writeText.mockReset();
+    clipboardPlugin.writeText.mockResolvedValue(undefined);
+  });
+
   function makeTerm(selection: string): {
     handler: (event: KeyboardEvent) => boolean;
     paste: ReturnType<typeof vi.fn>;
@@ -93,9 +106,7 @@ describe("attachTerminalCopyPasteKeys", () => {
     return { handler, paste };
   }
 
-  it("copies the selection and stops xterm from handling the key", () => {
-    const writeText = vi.fn().mockResolvedValue(undefined);
-    vi.stubGlobal("navigator", { clipboard: { writeText } });
+  it("copies the selection through the Tauri clipboard and stops xterm handling", () => {
     const { handler } = makeTerm("hello");
 
     const event = new KeyboardEvent("keydown", {
@@ -107,13 +118,19 @@ describe("attachTerminalCopyPasteKeys", () => {
     const result = handler(event);
 
     expect(result).toBe(false);
-    expect(writeText).toHaveBeenCalledWith("hello");
-    vi.unstubAllGlobals();
+    expect(clipboardPlugin.writeText).toHaveBeenCalledWith("hello");
+  });
+
+  it("does not touch the clipboard when there is no selection", () => {
+    const { handler } = makeTerm("");
+    handler(
+      new KeyboardEvent("keydown", { key: "C", ctrlKey: true, shiftKey: true, cancelable: true }),
+    );
+    expect(clipboardPlugin.writeText).not.toHaveBeenCalled();
   });
 
   it("pastes clipboard text through term.paste", async () => {
-    const readText = vi.fn().mockResolvedValue("pasted");
-    vi.stubGlobal("navigator", { clipboard: { readText } });
+    clipboardPlugin.readText.mockResolvedValue("pasted");
     const { handler, paste } = makeTerm("");
 
     const result = handler(
@@ -124,7 +141,6 @@ describe("attachTerminalCopyPasteKeys", () => {
 
     expect(result).toBe(false);
     expect(paste).toHaveBeenCalledWith("pasted");
-    vi.unstubAllGlobals();
   });
 
   it("lets unrelated keys through to xterm", () => {
