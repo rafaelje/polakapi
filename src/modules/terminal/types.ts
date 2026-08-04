@@ -27,4 +27,6 @@ export interface TerminalSpec {
   cliId?: string;
   suspended?: boolean;
   lastShellCommand?: string;
+  /** True when the captured command resolved to a shell alias/function. */
+  lastShellCommandAlias?: boolean;
 }

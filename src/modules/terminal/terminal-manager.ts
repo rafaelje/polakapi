@@ -24,6 +24,7 @@ import {
 } from "./terminal-layout";
 import { TerminalPane } from "./terminal-pane";
 import { scheduleTerminalWrite, wireTerminalPane } from "./terminal-pane-wiring";
+import { shouldReplayShellCommand } from "./resume-whitelist";
 import { ptyKill } from "./pty-client";
 import {
   registerManagerBell,
@@ -128,7 +129,8 @@ export class TerminalManager {
       next.startupCmd === current.startupCmd &&
       next.cliId === current.cliId &&
       next.suspended === current.suspended &&
-      next.lastShellCommand === current.lastShellCommand
+      next.lastShellCommand === current.lastShellCommand &&
+      next.lastShellCommandAlias === current.lastShellCommandAlias
     ) {
       return;
     }
@@ -349,14 +351,19 @@ export class TerminalManager {
     const current = this.specsById.get(paneId);
     if (!current?.suspended || this.isLive(paneId)) return;
     const resumeArgs = resolveProfile(current.cliId).resumeArgs;
-    const { title, cwd, startupCmd, cliId, lastShellCommand } = current;
+    const { title, cwd, startupCmd, cliId, lastShellCommand, lastShellCommandAlias } = current;
     const newId = await this.replacePane(
       paneId,
       { title, cwd, startupCmd, cliId },
       { extraArgs: resumeArgs, skipStartupCmd: resumeArgs !== undefined },
     );
-    // Shell profiles have no resumeArgs, so replay the captured command instead.
-    if (newId && !resumeArgs && lastShellCommand && lastShellCommand.trim().length > 0) {
+    // Shell profiles have no resumeArgs; replay only whitelisted/alias commands.
+    if (
+      newId &&
+      !resumeArgs &&
+      lastShellCommand &&
+      shouldReplayShellCommand(lastShellCommand, lastShellCommandAlias === true)
+    ) {
       this.scheduleShellReplay(newId, lastShellCommand);
     }
   }

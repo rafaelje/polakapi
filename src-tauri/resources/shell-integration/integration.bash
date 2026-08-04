@@ -28,11 +28,16 @@ _polakapi_preexec() {
     return
   fi
   _polakapi_last_histnum="$num"
-  local last encoded
+  local last encoded first kind flag
   last=$(HISTTIMEFORMAT= builtin history 1 | sed -E '1s/^[[:space:]]*[0-9]+[[:space:]]*//')
   if [ -n "$last" ]; then
+    # Flag alias/function commands so the app can allow replaying them.
+    first=${last%%[[:space:]]*}
+    kind=$(builtin type -t -- "$first" 2>/dev/null)
+    flag=c
+    case "$kind" in alias | function) flag=a ;; esac
     encoded=$(printf '%s' "$last" | base64 | tr -d '\n')
-    printf '\033]9931;%s\007' "$encoded"
+    printf '\033]9931;%s;%s\007' "$flag" "$encoded"
   fi
 }
 _polakapi_last_histnum=$(_polakapi_histnum)

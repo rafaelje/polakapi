@@ -52,7 +52,11 @@ export function wireTerminalPane(
     onResumeRequest: () => void host.resumePane(ptyId),
   });
   pane.setShellCommandCallbacks({
-    onCommand: (command) => host.updateSpec(ptyId, { lastShellCommand: command }),
+    onCommand: (command, isAlias) =>
+      host.updateSpec(ptyId, {
+        lastShellCommand: command,
+        lastShellCommandAlias: isAlias || undefined,
+      }),
   });
 
   const dockingHandle = attachTerminalDocking({

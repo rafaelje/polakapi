@@ -7,7 +7,10 @@ import type { PaneCreateOptions, TerminalSpec } from "./types";
 const fake = vi.hoisted(() => {
   const attachCalls: Array<{ opts: PaneCreateOptions | undefined; ptyId: string }> = [];
   const placeholderCalls: Array<{ cliId?: string }> = [];
-  const panesByPtyId = new Map<string, { onCommand(command: string): void } | null>();
+  const panesByPtyId = new Map<
+    string,
+    { onCommand(command: string, isAlias: boolean): void } | null
+  >();
   let nextId = 1;
   return {
     attachCalls,
@@ -23,8 +26,8 @@ const fake = vi.hoisted(() => {
       return `pty-${nextId++}`;
     },
     /** Simulates the OSC handler firing for a shell-integration command capture. */
-    emitShellCommand(ptyId: string, command: string): void {
-      panesByPtyId.get(ptyId)?.onCommand(command);
+    emitShellCommand(ptyId: string, command: string, isAlias = false): void {
+      panesByPtyId.get(ptyId)?.onCommand(command, isAlias);
     },
   };
 });
@@ -64,7 +67,9 @@ vi.mock("./terminal-pane", () => {
     setCliRespawnCallbacks(): void {}
     setDockMenuCallbacks(): void {}
     setSuspendCallbacks(): void {}
-    setShellCommandCallbacks(callbacks: { onCommand(command: string): void } | null): void {
+    setShellCommandCallbacks(
+      callbacks: { onCommand(command: string, isAlias: boolean): void } | null,
+    ): void {
       fake.panesByPtyId.set(this.ptyId, callbacks);
     }
     onBell(): { dispose(): void } {
@@ -514,6 +519,37 @@ describe("TerminalManager resumeAll / shell command replay", () => {
 
     const { ptyWrite } = await import("./pty-client");
     expect(ptyWrite).toHaveBeenCalledWith(newId, "npm run dev\r");
+  });
+
+  it("resumePane does not replay non-whitelisted commands like git push", async () => {
+    const manager = makeManager();
+    await manager.addPane({ cliId: "shell" });
+    const [id] = manager.ids();
+    fake.emitShellCommand(id, "git push origin main");
+
+    manager.suspendPane(id);
+    manager.markExited(id);
+    await manager.resumePane(id);
+    await vi.advanceTimersByTimeAsync(1000);
+
+    const { ptyWrite } = await import("./pty-client");
+    expect(ptyWrite).not.toHaveBeenCalled();
+  });
+
+  it("resumePane replays alias commands even when not whitelisted", async () => {
+    const manager = makeManager();
+    await manager.addPane({ cliId: "shell" });
+    const [id] = manager.ids();
+    fake.emitShellCommand(id, "gpush", true);
+
+    manager.suspendPane(id);
+    manager.markExited(id);
+    await manager.resumePane(id);
+    const newId = manager.ids()[0];
+    await vi.advanceTimersByTimeAsync(1000);
+
+    const { ptyWrite } = await import("./pty-client");
+    expect(ptyWrite).toHaveBeenCalledWith(newId, "gpush\r");
   });
 
   it("resumePane does not replay anything when no command was captured", async () => {
