@@ -7,10 +7,15 @@ import type { TerminalPane } from "../modules/terminal/terminal-pane";
 import type { TerminalLayoutNode } from "../modules/terminal/terminal-layout";
 import type { TerminalSpec } from "../modules/terminal/types";
 import { ptyKill } from "../modules/terminal/pty-client";
+import {
+  ProjectActivityTracker,
+  type ProjectActivityState,
+} from "../modules/terminal/project-activity";
 import type { Project, ProjectId } from "../modules/workspaces/state/types";
 
 export type TerminalRouterEvent =
   | { type: "counts-changed"; counts: ReadonlyMap<ProjectId, number> }
+  | { type: "activity-changed"; projectId: ProjectId; state: ProjectActivityState }
   | { type: "bell-pending"; projectId: ProjectId; paneId: string; pending: boolean };
 
 export type TerminalRouterListener = (event: TerminalRouterEvent) => void;
@@ -37,8 +42,14 @@ export class TerminalRouter {
   private activeHost: HTMLElement | null = null;
   private mountToken = 0;
   private notificationContext: NotificationContext | null = null;
+  private readonly activity: ProjectActivityTracker;
 
-  constructor(private readonly opts: TerminalRouterOptions) {}
+  constructor(private readonly opts: TerminalRouterOptions) {
+    this.activity = new ProjectActivityTracker({
+      getLiveCount: (projectId) => this.getCount(projectId),
+      onChange: (projectId, state) => this.emit({ type: "activity-changed", projectId, state }),
+    });
+  }
 
   /**
    * F5: late-bind a notification context that every existing AND future
@@ -137,6 +148,15 @@ export class TerminalRouter {
     return this.managers.get(projectId)?.size ?? 0;
   }
 
+  getActivity(projectId: ProjectId): ProjectActivityState {
+    return this.activity.get(projectId);
+  }
+
+  recordActivity(ptyId: string): void {
+    const found = this.findPaneById(ptyId);
+    if (found) this.activity.record(found.manager.projectId, ptyId);
+  }
+
   getSuspendedCount(projectId: ProjectId): number {
     return this.managers.get(projectId)?.suspendedCount ?? 0;
   }
@@ -205,6 +225,7 @@ export class TerminalRouter {
     unsubscribe?.();
     this.unsubscribes.delete(projectId);
     this.managers.delete(projectId);
+    this.activity.delete(projectId);
     await manager.dispose();
     this.emitCounts();
   }
@@ -221,6 +242,7 @@ export class TerminalRouter {
   private onManagerEvent(event: TerminalManagerEvent): void {
     if (event.type === "count-changed") {
       this.emitCounts();
+      this.activity.refresh(event.projectId);
     } else if (event.type === "spec-changed") {
       this.opts.onPersistSpecs(event.projectId, event.specs);
     } else if (event.type === "layout-changed") {

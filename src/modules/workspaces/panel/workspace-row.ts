@@ -8,6 +8,7 @@ import { matchesProject } from "../project-filter";
 import { openRowMenu } from "../forms/row-menu";
 import { startInlineRename } from "../forms/rename-inline";
 import { normalizeShortcutKey } from "../state/workspaces-reducer-shortcuts";
+import type { ProjectActivityState } from "../../terminal/project-activity";
 import type { SelectionStore } from "../state/selection";
 import type { ProjectId, Workspace } from "../state/types";
 import type { WorkspacesController } from "../state/workspaces-controller";
@@ -23,6 +24,8 @@ export interface WorkspaceRowOptions {
    * created rows already show the right badge before the next event fires.
    */
   liveCountFor?: (projectId: ProjectId) => number;
+  activityFor?: (projectId: ProjectId) => ProjectActivityState;
+  bellPendingFor?: (projectId: ProjectId) => boolean;
   /** Resolves the suspended-terminal count; feeds "Resume terminals (N)". */
   getSuspendedCount?: (projectId: ProjectId) => number;
   /**
@@ -44,10 +47,8 @@ export interface WorkspaceRowHandle {
    * No-op when the project is not currently rendered under this row.
    */
   setLiveCount(projectId: ProjectId, n: number): void;
-  /**
-   * F5: forward a bell-pending toggle to the matching ProjectRow. No-op when
-   * the project is not currently rendered under this row.
-   */
+  setActivity(projectId: ProjectId, state: ProjectActivityState): void;
+  /** Forward a bell-pending toggle to the matching project row. */
   setBellPending(projectId: ProjectId, pending: boolean): void;
   dispose(): void;
 }
@@ -82,6 +83,13 @@ export function createWorkspaceRow(opts: WorkspaceRowOptions): WorkspaceRowHandl
   name.className = "ws-workspace-name";
   name.textContent = workspace.name;
 
+  const activitySummary = document.createElement("span");
+  activitySummary.className = "ws-workspace-activity";
+  const activityDot = document.createElement("span");
+  activityDot.className = "ws-workspace-activity-dot";
+  const activityLabel = document.createElement("span");
+  activitySummary.append(activityDot, activityLabel);
+
   const addBtn = document.createElement("button");
   addBtn.type = "button";
   addBtn.className = "ws-row-add";
@@ -96,7 +104,7 @@ export function createWorkspaceRow(opts: WorkspaceRowOptions): WorkspaceRowHandl
 
   header.append(chevron, name);
   if (workspace.shortcut) header.append(createShortcutHint(workspace.shortcut));
-  header.append(addBtn, menuBtn);
+  header.append(activitySummary, addBtn, menuBtn);
   wrapper.append(header);
 
   const projectsList = document.createElement("div");
@@ -111,6 +119,39 @@ export function createWorkspaceRow(opts: WorkspaceRowOptions): WorkspaceRowHandl
   const liveCountFor = opts.liveCountFor;
   const suspendedCountFor = opts.getSuspendedCount;
   const activeQuery = opts.filterQuery ?? "";
+  const projectActivities = new Map<ProjectId, ProjectActivityState>(
+    workspace.projects.map((project) => [project.id, opts.activityFor?.(project.id) ?? "idle"]),
+  );
+  const bellPendingProjects = new Set<ProjectId>(
+    workspace.projects.filter((project) => opts.bellPendingFor?.(project.id)).map((p) => p.id),
+  );
+
+  const syncActivitySummary = (): void => {
+    const attention = bellPendingProjects.size;
+    const working = [...projectActivities.values()].filter((state) => state === "working").length;
+    const ready = [...projectActivities.values()].filter((state) => state === "ready").length;
+    const recent = [...projectActivities.values()].filter((state) => state === "recent").length;
+    let state: "attention" | ProjectActivityState = "idle";
+    let text = "";
+    if (attention > 0) {
+      state = "attention";
+      text = `${attention} need${attention === 1 ? "s" : ""} attention`;
+    } else if (working > 0) {
+      state = "working";
+      text = `${working} working`;
+    } else if (ready > 0) {
+      state = "ready";
+      text = `${ready} active`;
+    } else if (recent > 0) {
+      state = "recent";
+      text = `${recent} recent`;
+    }
+    activitySummary.dataset.activity = state;
+    activitySummary.classList.toggle("hidden", state === "idle");
+    activityLabel.textContent = text;
+    activitySummary.title = text;
+  };
+  syncActivitySummary();
 
   const folderCount = (workspace.folders ?? []).length;
   const sortedFolderIds = [...(workspace.folders ?? [])]
@@ -132,6 +173,8 @@ export function createWorkspaceRow(opts: WorkspaceRowOptions): WorkspaceRowHandl
         workspaceId: workspace.id,
         isActive: activeProjectId === project.id,
         liveTerminalsCount: initialCount,
+        activityState: projectActivities.get(project.id) ?? "idle",
+        bellPending: bellPendingProjects.has(project.id),
         controller,
         getLiveCount: liveCountFor ? () => liveCountFor(project.id) : undefined,
         getSuspendedCount: suspendedCountFor ? () => suspendedCountFor(project.id) : undefined,
@@ -159,6 +202,8 @@ export function createWorkspaceRow(opts: WorkspaceRowOptions): WorkspaceRowHandl
       workspace,
       controller,
       liveCountFor: opts.liveCountFor,
+      activityFor: opts.activityFor,
+      bellPendingFor: opts.bellPendingFor,
       getSuspendedCount: opts.getSuspendedCount,
       filterQuery: opts.filterQuery,
       selection: opts.selection,
@@ -298,8 +343,18 @@ export function createWorkspaceRow(opts: WorkspaceRowOptions): WorkspaceRowHandl
     setLiveCount(projectId: ProjectId, n: number): void {
       projectHandles.get(projectId)?.setLiveCount(n);
     },
+    setActivity(projectId: ProjectId, state: ProjectActivityState): void {
+      if (!projectActivities.has(projectId)) return;
+      projectActivities.set(projectId, state);
+      projectHandles.get(projectId)?.setActivity(state);
+      syncActivitySummary();
+    },
     setBellPending(projectId: ProjectId, pending: boolean): void {
+      if (!projectActivities.has(projectId)) return;
+      if (pending) bellPendingProjects.add(projectId);
+      else bellPendingProjects.delete(projectId);
       projectHandles.get(projectId)?.setBellPending(pending);
+      syncActivitySummary();
     },
     dispose(): void {
       appearancePicker?.dispose();
@@ -309,6 +364,8 @@ export function createWorkspaceRow(opts: WorkspaceRowOptions): WorkspaceRowHandl
       for (const id of ownProjectIds) projectHandles.get(id)?.dispose();
       ownProjectIds.clear();
       projectHandles.clear();
+      projectActivities.clear();
+      bellPendingProjects.clear();
       wrapper.remove();
     },
   };

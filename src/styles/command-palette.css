@@ -114,30 +114,3 @@
 .cmd-palette-item-title {
   color: var(--text);
 }
-
-/* F5: bell-pending indicator on project rows. A small pulsing dot inside the
- * active-dot slot — placed before the label so it lines up with the existing
- * active indicator without reflowing the row. Cleared by the bootstrap when
- * the project becomes active, or by a closing pane. */
-.ws-project-row.has-bell .ws-active-dot {
-  background: #ff5d5d;
-  box-shadow: 0 0 0 3px rgba(255, 93, 93, 0.18);
-  animation: ws-bell-pulse 1.4s ease-in-out infinite;
-}
-
-.ws-project-row.has-bell.active .ws-active-dot {
-  /* When the project is active the dot is normally tinted by --ws-accent; the
-   * bell badge already lifts in workspaces-panel via setBellPending(false) on
-   * activation, but be defensive in case of a race. */
-  animation: none;
-}
-
-@keyframes ws-bell-pulse {
-  0%,
-  100% {
-    box-shadow: 0 0 0 3px rgba(255, 93, 93, 0.18);
-  }
-  50% {
-    box-shadow: 0 0 0 5px rgba(255, 93, 93, 0.06);
-  }
-}

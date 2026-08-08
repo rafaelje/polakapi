@@ -3,6 +3,7 @@ import { createProjectRow, type ProjectRowHandle } from "./project-row";
 import { filterProjects } from "../project-filter";
 import { openRowMenu } from "../forms/row-menu";
 import { startInlineRename } from "../forms/rename-inline";
+import type { ProjectActivityState } from "../../terminal/project-activity";
 import type { SelectionStore } from "../state/selection";
 import type { Folder, Project, ProjectId, Workspace } from "../state/types";
 import type { WorkspacesController } from "../state/workspaces-controller";
@@ -13,6 +14,8 @@ export interface FolderRowOptions {
   workspace: Workspace;
   controller: WorkspacesController;
   liveCountFor?: (projectId: ProjectId) => number;
+  activityFor?: (projectId: ProjectId) => ProjectActivityState;
+  bellPendingFor?: (projectId: ProjectId) => boolean;
   getSuspendedCount?: (projectId: ProjectId) => number;
   filterQuery?: string;
   selection: SelectionStore;
@@ -96,6 +99,8 @@ export function createFolderRow(opts: FolderRowOptions): FolderRowHandle {
       workspaceId: workspace.id,
       isActive: activeProjectId === project.id,
       liveTerminalsCount: initialCount,
+      activityState: opts.activityFor?.(project.id) ?? "idle",
+      bellPending: opts.bellPendingFor?.(project.id) ?? false,
       controller,
       getLiveCount: liveCountFor ? () => liveCountFor(project.id) : undefined,
       getSuspendedCount: suspendedCountFor ? () => suspendedCountFor(project.id) : undefined,

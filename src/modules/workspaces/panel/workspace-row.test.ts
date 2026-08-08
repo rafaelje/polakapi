@@ -1,0 +1,62 @@
+import { afterEach, describe, expect, it } from "vitest";
+
+import type { ProjectActivityState } from "../../terminal/project-activity";
+import { createSelectionStore } from "../state/selection";
+import type { ProjectId, Workspace, WorkspaceId } from "../state/types";
+import type { WorkspacesController } from "../state/workspaces-controller";
+import { createWorkspaceRow } from "./workspace-row";
+
+const firstId = "p1" as ProjectId;
+const secondId = "p2" as ProjectId;
+
+function workspace(): Workspace {
+  return {
+    id: "w1" as WorkspaceId,
+    name: "Products",
+    projects: [
+      { id: firstId, name: "polakapi", path: "/tmp/polakapi" },
+      { id: secondId, name: "billing", path: "/tmp/billing" },
+    ],
+  };
+}
+
+describe("workspace row activity summary", () => {
+  afterEach(() => document.body.replaceChildren());
+
+  it("summarizes project activity and gives attention priority", () => {
+    const states = new Map<ProjectId, ProjectActivityState>([
+      [firstId, "working"],
+      [secondId, "idle"],
+    ]);
+    const handle = createWorkspaceRow({
+      workspace: workspace(),
+      controller: {
+        getState: () => ({ activeProjectId: null }),
+      } as unknown as WorkspacesController,
+      activityFor: (id) => states.get(id) ?? "idle",
+      selection: createSelectionStore(),
+    });
+    document.body.append(handle.element);
+    const summary = handle.element.querySelector<HTMLElement>(".ws-workspace-activity");
+
+    expect(summary?.dataset.activity).toBe("working");
+    expect(summary?.textContent).toContain("1 working");
+
+    handle.setActivity(firstId, "ready");
+    expect(summary?.dataset.activity).toBe("ready");
+    expect(summary?.textContent).toContain("1 active");
+
+    handle.setBellPending(secondId, true);
+    expect(summary?.dataset.activity).toBe("attention");
+    expect(summary?.textContent).toContain("1 needs attention");
+
+    handle.setBellPending(secondId, false);
+    expect(summary?.dataset.activity).toBe("ready");
+
+    handle.setActivity("outside" as ProjectId, "working");
+    handle.setBellPending("outside" as ProjectId, true);
+    expect(summary?.dataset.activity).toBe("ready");
+    expect(summary?.textContent).toContain("1 active");
+    handle.dispose();
+  });
+});

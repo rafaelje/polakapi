@@ -6,6 +6,7 @@ import { openRowMenu } from "../forms/row-menu";
 import { startInlineRename } from "../forms/rename-inline";
 import { normalizeShortcutKey } from "../state/workspaces-reducer-shortcuts";
 import { compareByOrderThenName } from "../state/workspaces-reducer-helpers";
+import type { ProjectActivityState } from "../../terminal/project-activity";
 import type { SelectionStore } from "../state/selection";
 import type { FolderId, Project, ProjectId, Workspace, WorkspaceId } from "../state/types";
 import type { WorkspacesController } from "../state/workspaces-controller";
@@ -20,6 +21,8 @@ export interface ProjectRowOptions {
    * badge in place instead of re-rendering the whole row.
    */
   liveTerminalsCount: number;
+  activityState?: ProjectActivityState;
+  bellPending?: boolean;
   controller: WorkspacesController;
   /**
    * Resolves the current live count when the row triggers the delete flow —
@@ -43,11 +46,8 @@ export interface ProjectRowHandle {
   element: HTMLElement;
   /** Update the live-terminals badge without re-rendering the row. */
   setLiveCount(n: number): void;
-  /**
-   * F5: toggles `.has-bell` on the row. The class drives the unread-bell
-   * visual (small dot / red glow) defined in styles.css. Cleared by the
-   * bootstrap when the project becomes active.
-   */
+  setActivity(state: ProjectActivityState): void;
+  /** Show or clear the project's attention state. */
   setBellPending(pending: boolean): void;
   dispose(): void;
 }
@@ -76,6 +76,7 @@ export function createProjectRow(opts: ProjectRowOptions): ProjectRowHandle {
 
   const dot = document.createElement("span");
   dot.className = "ws-active-dot";
+  dot.setAttribute("role", "img");
 
   const labelCol = document.createElement("div");
   labelCol.className = "ws-project-label";
@@ -101,6 +102,29 @@ export function createProjectRow(opts: ProjectRowOptions): ProjectRowHandle {
   const badge = document.createElement("span");
   badge.className = "ws-terminals-badge";
 
+  const activityLabel = document.createElement("span");
+  activityLabel.className = "ws-activity-label";
+
+  let activityState = opts.activityState ?? "idle";
+  let bellPending = opts.bellPending ?? false;
+  const applyActivity = (): void => {
+    const state = bellPending ? "attention" : activityState;
+    const copy = {
+      working: { label: "Running", title: "Terminal activity in progress" },
+      ready: { label: "Ready", title: "Terminal active and waiting" },
+      recent: { label: "Recent", title: "Recently active" },
+      idle: { label: "", title: "No terminal activity" },
+      attention: { label: "Attention", title: "Terminal needs attention" },
+    }[state];
+    row.dataset.activity = state;
+    activityLabel.textContent = copy.label;
+    activityLabel.classList.toggle("hidden", state === "idle");
+    dot.setAttribute("aria-label", copy.title);
+    dot.title = copy.title;
+    row.classList.toggle("has-bell", bellPending);
+  };
+  applyActivity();
+
   const applyBadge = (n: number): void => {
     const safe = Math.max(0, Math.floor(n));
     badge.textContent = String(safe);
@@ -123,7 +147,7 @@ export function createProjectRow(opts: ProjectRowOptions): ProjectRowHandle {
   menuBtn.textContent = "⋮";
   menuBtn.title = "Project actions";
 
-  row.append(dot, labelCol, badge, warn, menuBtn);
+  row.append(dot, labelCol, activityLabel, badge, warn, menuBtn);
 
   const listeners: Array<() => void> = [];
   const on = <K extends keyof HTMLElementEventMap>(
@@ -360,8 +384,13 @@ export function createProjectRow(opts: ProjectRowOptions): ProjectRowHandle {
     setLiveCount(n: number): void {
       applyBadge(n);
     },
+    setActivity(state: ProjectActivityState): void {
+      activityState = state;
+      applyActivity();
+    },
     setBellPending(pending: boolean): void {
-      row.classList.toggle("has-bell", pending);
+      bellPending = pending;
+      applyActivity();
     },
     dispose(): void {
       appearancePicker?.dispose();
