@@ -1,0 +1,33 @@
+[advisories]
+unmaintained = "workspace"
+ignore = [
+  { id = "RUSTSEC-2026-0194", reason = "Blocked by plist 1.9.0 and tauri-winrt-notification 0.7.2 requiring quick-xml below 0.41; remove when upstream dependencies update" },
+  { id = "RUSTSEC-2026-0195", reason = "Blocked by plist 1.9.0 requiring quick-xml ^0.39; remove when plist supports quick-xml 0.41 or newer" },
+]
+
+[licenses]
+allow = [
+  "Apache-2.0",
+  "Apache-2.0 WITH LLVM-exception",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "BSL-1.0",
+  "ISC",
+  "MIT",
+  "MPL-2.0",
+  "Unicode-3.0",
+  "Zlib",
+]
+confidence-threshold = 0.8
+
+[licenses.private]
+ignore = true
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

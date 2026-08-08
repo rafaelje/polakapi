@@ -4,6 +4,7 @@ version = "0.3.0"
 description = "A Tauri App"
 authors = ["you"]
 edition = "2021"
+publish = false
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -16,6 +17,9 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
+
+[package.metadata.cargo-machete]
+ignored = ["tauri-build"]
 
 [dependencies]
 tauri = { version = "2", features = [] }
