@@ -15,6 +15,8 @@ import type { WorkspacesController } from "../state/workspaces-controller";
 import { compareByOrderThenName } from "../state/workspaces-reducer-helpers";
 import { sortedWorkspaceEntries } from "../state/workspaces-reducer";
 
+const WORKSPACE_CLICK_DELAY_MS = 280;
+
 export interface WorkspaceRowOptions {
   workspace: Workspace;
   controller: WorkspacesController;
@@ -82,6 +84,20 @@ export function createWorkspaceRow(opts: WorkspaceRowOptions): WorkspaceRowHandl
   const name = document.createElement("span");
   name.className = "ws-workspace-name";
   name.textContent = workspace.name;
+  const setNameInteractive = (interactive: boolean): void => {
+    if (interactive) {
+      name.tabIndex = 0;
+      name.setAttribute("role", "button");
+      name.setAttribute("aria-expanded", String(!workspace.collapsed));
+      name.title = "Click to collapse or expand. Double-click to rename.";
+      return;
+    }
+    name.removeAttribute("tabindex");
+    name.removeAttribute("role");
+    name.removeAttribute("aria-expanded");
+    name.removeAttribute("title");
+  };
+  setNameInteractive(true);
 
   const activitySummary = document.createElement("span");
   activitySummary.className = "ws-workspace-activity";
@@ -219,6 +235,12 @@ export function createWorkspaceRow(opts: WorkspaceRowOptions): WorkspaceRowHandl
   }
 
   const listeners: Array<() => void> = [];
+  let collapseTimer: ReturnType<typeof setTimeout> | null = null;
+  const clearCollapseTimer = (): void => {
+    if (collapseTimer === null) return;
+    clearTimeout(collapseTimer);
+    collapseTimer = null;
+  };
   const on = <K extends keyof HTMLElementEventMap>(
     el: HTMLElement,
     type: K,
@@ -233,10 +255,38 @@ export function createWorkspaceRow(opts: WorkspaceRowOptions): WorkspaceRowHandl
     controller.toggleCollapsed(workspace.id);
   });
 
-  on(header, "dblclick", (e) => {
-    if (e.target === addBtn || e.target === menuBtn) return;
+  on(name, "click", (e) => {
+    if (e.target !== name) return;
+    if (e.detail > 1) {
+      clearCollapseTimer();
+      return;
+    }
+    clearCollapseTimer();
+    collapseTimer = setTimeout(() => {
+      collapseTimer = null;
+      controller.toggleCollapsed(workspace.id);
+    }, WORKSPACE_CLICK_DELAY_MS);
+  });
+
+  on(name, "dblclick", (e) => {
+    if (e.target !== name) return;
     e.preventDefault();
+    e.stopPropagation();
+    clearCollapseTimer();
     void runRename();
+  });
+
+  on(name, "keydown", (e) => {
+    if (e.target !== name) return;
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      clearCollapseTimer();
+      controller.toggleCollapsed(workspace.id);
+    } else if (e.key === "F2") {
+      e.preventDefault();
+      clearCollapseTimer();
+      void runRename();
+    }
   });
 
   on(addBtn, "click", (e) => {
@@ -293,14 +343,24 @@ export function createWorkspaceRow(opts: WorkspaceRowOptions): WorkspaceRowHandl
     });
   }
 
+  let renaming = false;
   async function runRename(): Promise<void> {
-    const next = await startInlineRename({
-      target: name,
-      initialValue: workspace.name,
-      placeholder: "Workspace name",
-    });
-    if (next && next !== workspace.name) {
-      controller.renameWorkspace(workspace.id, next);
+    if (renaming) return;
+    renaming = true;
+    clearCollapseTimer();
+    setNameInteractive(false);
+    try {
+      const next = await startInlineRename({
+        target: name,
+        initialValue: workspace.name,
+        placeholder: "Workspace name",
+      });
+      if (next && next !== workspace.name) {
+        controller.renameWorkspace(workspace.id, next);
+      }
+    } finally {
+      renaming = false;
+      setNameInteractive(true);
     }
   }
 
@@ -357,6 +417,7 @@ export function createWorkspaceRow(opts: WorkspaceRowOptions): WorkspaceRowHandl
       syncActivitySummary();
     },
     dispose(): void {
+      clearCollapseTimer();
       appearancePicker?.dispose();
       appearancePicker = null;
       for (const off of listeners.splice(0)) off();

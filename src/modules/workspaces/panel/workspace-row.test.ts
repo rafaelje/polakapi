@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { ProjectActivityState } from "../../terminal/project-activity";
 import { createSelectionStore } from "../state/selection";
@@ -21,7 +21,10 @@ function workspace(): Workspace {
 }
 
 describe("workspace row activity summary", () => {
-  afterEach(() => document.body.replaceChildren());
+  afterEach(() => {
+    vi.useRealTimers();
+    document.body.replaceChildren();
+  });
 
   it("summarizes project activity and gives attention priority", () => {
     const states = new Map<ProjectId, ProjectActivityState>([
@@ -57,6 +60,57 @@ describe("workspace row activity summary", () => {
     handle.setBellPending("outside" as ProjectId, true);
     expect(summary?.dataset.activity).toBe("ready");
     expect(summary?.textContent).toContain("1 active");
+    handle.dispose();
+  });
+
+  it("collapses on a single name click", () => {
+    vi.useFakeTimers();
+    const toggleCollapsed = vi.fn();
+    const handle = createWorkspaceRow({
+      workspace: workspace(),
+      controller: {
+        getState: () => ({ activeProjectId: null }),
+        toggleCollapsed,
+      } as unknown as WorkspacesController,
+      selection: createSelectionStore(),
+    });
+    const name = handle.element.querySelector<HTMLElement>(".ws-workspace-name");
+
+    name?.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 1 }));
+    expect(toggleCollapsed).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(280);
+
+    expect(toggleCollapsed).toHaveBeenCalledExactlyOnceWith("w1");
+    handle.dispose();
+  });
+
+  it("renames on a double name click without collapsing", async () => {
+    vi.useFakeTimers();
+    const toggleCollapsed = vi.fn();
+    const renameWorkspace = vi.fn();
+    const handle = createWorkspaceRow({
+      workspace: workspace(),
+      controller: {
+        getState: () => ({ activeProjectId: null }),
+        toggleCollapsed,
+        renameWorkspace,
+      } as unknown as WorkspacesController,
+      selection: createSelectionStore(),
+    });
+    const name = handle.element.querySelector<HTMLElement>(".ws-workspace-name");
+
+    name?.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 1 }));
+    name?.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 2 }));
+    name?.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, detail: 2 }));
+    const input = name?.querySelector<HTMLInputElement>(".ws-rename-input");
+    if (input) input.value = "Platform";
+    input?.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    await Promise.resolve();
+    vi.runAllTimers();
+
+    expect(toggleCollapsed).not.toHaveBeenCalled();
+    expect(renameWorkspace).toHaveBeenCalledExactlyOnceWith("w1", "Platform");
+    expect(name?.getAttribute("role")).toBe("button");
     handle.dispose();
   });
 });
