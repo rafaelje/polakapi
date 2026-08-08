@@ -20,11 +20,14 @@ function decodeBase64Utf8(b64: string): string | null {
   }
 }
 
-// Payloads without a flag prefix (older scripts) are treated as non-alias.
-export function parseShellCommandPayload(data: string): CapturedShellCommand | null {
-  const match = /^([ac]);(.*)$/s.exec(data);
-  const isAlias = match?.[1] === "a";
-  const decoded = decodeBase64Utf8(match ? match[2] : data);
+export function parseShellCommandPayload(
+  data: string,
+  expectedToken: string,
+): CapturedShellCommand | null {
+  const match = /^([^;]+);([ac]);(.*)$/s.exec(data);
+  if (!match || match[1] !== expectedToken) return null;
+  const isAlias = match[2] === "a";
+  const decoded = decodeBase64Utf8(match[3]);
   if (decoded === null || decoded.trim().length === 0) return null;
   return { command: decoded, isAlias };
 }
@@ -32,10 +35,11 @@ export function parseShellCommandPayload(data: string): CapturedShellCommand | n
 // Registers the OSC handler reporting each submitted command in `term`.
 export function attachShellCommandCapture(
   term: Terminal,
+  expectedToken: () => string,
   onCommand: (captured: CapturedShellCommand) => void,
 ): { dispose(): void } {
   return term.parser.registerOscHandler(SHELL_COMMAND_OSC, (data) => {
-    const captured = parseShellCommandPayload(data);
+    const captured = parseShellCommandPayload(data, expectedToken());
     if (captured !== null) onCommand(captured);
     return true;
   });

@@ -41,12 +41,12 @@ export const RESUME_COMMAND_WHITELIST: ReadonlySet<string> = new Set([
   "cursor-agent",
 ]);
 
-// Aliases/functions from the user's own rc files are always allowed.
 export function shouldReplayShellCommand(command: string, isAlias: boolean): boolean {
   const trimmed = command.trim();
-  if (!trimmed) return false;
-  if (isAlias) return true;
-  const first = trimmed.split(/\s+/)[0] ?? "";
+  if (!trimmed || isAlias) return false;
+  const tokens = trimmed.split(/\s+/);
+  if (tokens.length !== 1) return false;
+  const first = tokens[0] ?? "";
   const base = first.split("/").pop() ?? first;
   return RESUME_COMMAND_WHITELIST.has(base.toLowerCase());
 }

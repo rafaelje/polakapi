@@ -1,6 +1,9 @@
 # polakapi shell integration (bash) — reports each submitted command via a
 # custom OSC sequence so a suspended shell can be replayed on resume.
 
+_polakapi_shell_token="$POLAKAPI_SHELL_TOKEN"
+unset POLAKAPI_SHELL_TOKEN
+
 if [ -f "$HOME/.bashrc" ]; then
   source "$HOME/.bashrc"
 fi
@@ -37,17 +40,34 @@ _polakapi_preexec() {
     flag=c
     case "$kind" in alias | function) flag=a ;; esac
     encoded=$(printf '%s' "$last" | base64 | tr -d '\n')
-    printf '\033]9931;%s;%s\007' "$flag" "$encoded"
+    printf '\033]9931;%s;%s;%s\007' "$_polakapi_shell_token" "$flag" "$encoded"
   fi
 }
 _polakapi_last_histnum=$(_polakapi_histnum)
-trap '_polakapi_preexec' DEBUG
+
+_polakapi_user_debug_command=""
+_polakapi_debug_definition=$(trap -p DEBUG)
+if [ -n "$_polakapi_debug_definition" ]; then
+  _polakapi_debug_definition=${_polakapi_debug_definition#trap -- }
+  _polakapi_debug_definition=${_polakapi_debug_definition% DEBUG}
+  eval "_polakapi_user_debug_command=$_polakapi_debug_definition"
+fi
+unset _polakapi_debug_definition
+_polakapi_combined_debug_command="_polakapi_preexec"
+if [ -n "$_polakapi_user_debug_command" ]; then
+  _polakapi_combined_debug_command="$_polakapi_combined_debug_command; $_polakapi_user_debug_command"
+fi
+trap "$_polakapi_combined_debug_command" DEBUG
+unset _polakapi_combined_debug_command _polakapi_user_debug_command
 
 _polakapi_precmd() {
   _polakapi_running_prompt_command=""
   _polakapi_prompt_active=1
 }
-# Trim trailing ";"/whitespace so splicing never produces ";;" (a syntax error).
-_polakapi_orig_prompt_command="$(printf '%s' "$PROMPT_COMMAND" | sed -E 's/[[:space:];]+$//')"
-PROMPT_COMMAND="_polakapi_running_prompt_command=1${_polakapi_orig_prompt_command:+; $_polakapi_orig_prompt_command}; _polakapi_precmd"
-unset _polakapi_orig_prompt_command
+if declare -p PROMPT_COMMAND 2>/dev/null | grep -q '^declare -a'; then
+  PROMPT_COMMAND=("_polakapi_running_prompt_command=1" "${PROMPT_COMMAND[@]}" "_polakapi_precmd")
+else
+  _polakapi_orig_prompt_command="$(printf '%s' "$PROMPT_COMMAND" | sed -E 's/[[:space:];]+$//')"
+  PROMPT_COMMAND="_polakapi_running_prompt_command=1${_polakapi_orig_prompt_command:+; $_polakapi_orig_prompt_command}; _polakapi_precmd"
+  unset _polakapi_orig_prompt_command
+fi

@@ -43,21 +43,24 @@ fn run_git(dir: &std::path::Path, args: &[&str]) {
     assert!(status.success(), "git {args:?} failed in {dir:?}");
 }
 
-#[test]
-fn creates_worktree_as_sibling_directory() {
-    // Repo lives at root/app so the sibling app-worktrees dir stays inside root's TempDir.
-    let root = tempfile::tempdir().unwrap();
-    let repo = root.path().join("app");
+fn init_repo(root: &std::path::Path) -> std::path::PathBuf {
+    let repo = root.join("app");
     std::fs::create_dir_all(&repo).unwrap();
-
     run_git(&repo, &["init", "-b", "main"]);
     run_git(&repo, &["config", "user.email", "test@example.com"]);
     run_git(&repo, &["config", "user.name", "Test"]);
+    run_git(&repo, &["config", "commit.gpgsign", "false"]);
     std::fs::write(repo.join("README.md"), "hello").unwrap();
     run_git(&repo, &["add", "README.md"]);
     run_git(&repo, &["commit", "-m", "init"]);
-    // detect_base_ref_sync needs a base ref other than HEAD.
     run_git(&repo, &["checkout", "-b", "current-work"]);
+    repo
+}
+
+#[test]
+fn creates_worktree_as_sibling_directory() {
+    let root = tempfile::tempdir().unwrap();
+    let repo = init_repo(root.path());
 
     let worktree_path = create_worktree_sync(&repo.to_string_lossy(), "feature/x").unwrap();
 
@@ -72,16 +75,7 @@ fn creates_worktree_as_sibling_directory() {
 #[test]
 fn rejects_duplicate_worktree_path() {
     let root = tempfile::tempdir().unwrap();
-    let repo = root.path().join("app");
-    std::fs::create_dir_all(&repo).unwrap();
-
-    run_git(&repo, &["init", "-b", "main"]);
-    run_git(&repo, &["config", "user.email", "test@example.com"]);
-    run_git(&repo, &["config", "user.name", "Test"]);
-    std::fs::write(repo.join("README.md"), "hello").unwrap();
-    run_git(&repo, &["add", "README.md"]);
-    run_git(&repo, &["commit", "-m", "init"]);
-    run_git(&repo, &["checkout", "-b", "current-work"]);
+    let repo = init_repo(root.path());
 
     create_worktree_sync(&repo.to_string_lossy(), "feature/x").unwrap();
     let err = create_worktree_sync(&repo.to_string_lossy(), "feature/x").unwrap_err();

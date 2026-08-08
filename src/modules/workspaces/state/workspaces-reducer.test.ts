@@ -250,7 +250,7 @@ describe("workspaces-reducer", () => {
     expect(s.workspaces[1].projects.map((p) => p.name)).toEqual(["X", "A", "C"]);
   });
 
-  it("moveProjects intra-workspace re-clusters the selection at the drop index", () => {
+  it("moveProjects leaves destination-resident selections unchanged", () => {
     let s = addWorkspace(createEmptyState(), "W");
     s = addProject(s, { workspaceId: wsId(s, 0), name: "A", path: "/a" });
     s = addProject(s, { workspaceId: wsId(s, 0), name: "B", path: "/b" });
@@ -258,10 +258,35 @@ describe("workspaces-reducer", () => {
     s = addProject(s, { workspaceId: wsId(s, 0), name: "D", path: "/d" });
     const a = projectId(s, 0, 0);
     const c = projectId(s, 0, 2);
-    // Move {A, C} after B+D were filtered out, dropping at index 1 of the
-    // filtered list [B, D].
     s = moveProjects(s, [a, c], wsId(s, 0), 1);
-    expect(s.workspaces[0].projects.map((p) => p.name)).toEqual(["B", "A", "C", "D"]);
+    expect(s.workspaces[0].projects.map((p) => p.name)).toEqual(["A", "B", "C", "D"]);
+  });
+
+  it("moveProjects moves only cross-workspace selections and preserves destination metadata", () => {
+    let s = addWorkspace(createEmptyState(), "From");
+    s = addWorkspace(s, "To");
+    s = addProject(s, { workspaceId: wsId(s, 0), name: "Incoming", path: "/incoming" });
+    s = addFolder(s, wsId(s, 1), "Grouped");
+    const folderId = folderIdAt(s, 1, 0);
+    s = addProject(s, {
+      workspaceId: wsId(s, 1),
+      name: "Resident",
+      path: "/resident",
+      folderId,
+    });
+    s.workspaces[1].projects[0].order = 7;
+    const incoming = projectId(s, 0, 0);
+    const resident = projectId(s, 1, 0);
+
+    s = moveProjects(s, [resident, incoming], wsId(s, 1), s.workspaces[1].projects.length);
+
+    const unchanged = s.workspaces[1].projects.find((project) => project.id === resident);
+    expect(unchanged?.folderId).toBe(folderId);
+    expect(unchanged?.order).toBe(7);
+    expect(
+      s.workspaces[1].projects.find((project) => project.id === incoming)?.folderId,
+    ).toBeUndefined();
+    expect(s.workspaces[0].projects).toEqual([]);
   });
 
   it("reorderProjects applies an explicit ordering and assigns order indexes", () => {
@@ -496,6 +521,27 @@ describe("workspaces-reducer", () => {
         .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
         .map((f) => f.name),
     ).toEqual(["Alpha", "Beta", "Gamma"]);
+  });
+
+  it("moves folders above and below ungrouped projects", () => {
+    let s = addWorkspace(createEmptyState(), "W");
+    s = addFolder(s, wsId(s, 0), "Folder");
+    s = addProject(s, { workspaceId: wsId(s, 0), name: "Project", path: "/project" });
+    const folder = folderIdAt(s, 0, 0);
+
+    s = moveFolderDown(s, wsId(s, 0), folder);
+    expect(
+      sortedWorkspaceEntries(s.workspaces[0]).map((entry) =>
+        entry.kind === "folder" ? entry.folder.name : entry.project.name,
+      ),
+    ).toEqual(["Project", "Folder"]);
+
+    s = moveFolderUp(s, wsId(s, 0), folder);
+    expect(
+      sortedWorkspaceEntries(s.workspaces[0]).map((entry) =>
+        entry.kind === "folder" ? entry.folder.name : entry.project.name,
+      ),
+    ).toEqual(["Folder", "Project"]);
   });
 
   it("resetAlphabeticalOrderInFolder clears order only for that bucket's projects", () => {

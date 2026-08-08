@@ -3,12 +3,10 @@ import { describe, expect, it } from "vitest";
 import { shouldReplayShellCommand } from "./resume-whitelist";
 
 describe("shouldReplayShellCommand", () => {
-  it("allows session-like whitelisted programs", () => {
+  it("allows whitelisted programs without arguments", () => {
     expect(shouldReplayShellCommand("lazygit", false)).toBe(true);
-    expect(shouldReplayShellCommand("npm run dev", false)).toBe(true);
-    expect(shouldReplayShellCommand("php artisan serve", false)).toBe(true);
-    expect(shouldReplayShellCommand("tail -f /var/log/syslog", false)).toBe(true);
-    expect(shouldReplayShellCommand("claude --continue", false)).toBe(true);
+    expect(shouldReplayShellCommand("nvim", false)).toBe(true);
+    expect(shouldReplayShellCommand("python", false)).toBe(true);
   });
 
   it("rejects one-shot mutating commands like git push", () => {
@@ -18,9 +16,12 @@ describe("shouldReplayShellCommand", () => {
     expect(shouldReplayShellCommand("rm -rf build", false)).toBe(false);
   });
 
-  it("always allows alias/function commands from the user's rc files", () => {
-    expect(shouldReplayShellCommand("gpush", true)).toBe(true);
-    expect(shouldReplayShellCommand("dev", true)).toBe(true);
+  it("rejects arguments and aliases that can hide mutating behavior", () => {
+    expect(shouldReplayShellCommand("npm run deploy:prod", false)).toBe(false);
+    expect(shouldReplayShellCommand("node scripts/drop-database.js", false)).toBe(false);
+    expect(shouldReplayShellCommand("php artisan migrate:fresh", false)).toBe(false);
+    expect(shouldReplayShellCommand("ssh production", false)).toBe(false);
+    expect(shouldReplayShellCommand("gpush", true)).toBe(false);
   });
 
   it("matches by basename and case-insensitively", () => {

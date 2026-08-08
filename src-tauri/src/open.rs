@@ -217,12 +217,18 @@ pub fn open_local_path(path: &str) -> Result<(), String> {
 }
 
 fn expand_home(path: &str) -> String {
-    let home = || std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE"));
+    let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .ok();
+    expand_home_with(path, home.as_deref())
+}
+
+fn expand_home_with(path: &str, home: Option<&str>) -> String {
     if path == "~" {
-        return home().unwrap_or_else(|_| path.to_string());
+        return home.unwrap_or(path).to_string();
     }
     if let Some(rest) = path.strip_prefix("~/") {
-        if let Ok(dir) = home() {
+        if let Some(dir) = home {
             return format!("{dir}/{rest}");
         }
     }
@@ -273,12 +279,15 @@ mod tests {
 
     #[test]
     fn expand_home_handles_tilde_prefix() {
-        std::env::set_var("HOME", "/home/tester");
-        assert_eq!(expand_home("~"), "/home/tester");
-        assert_eq!(expand_home("~/repo/file.rs"), "/home/tester/repo/file.rs");
-        assert_eq!(expand_home("/absolute/path"), "/absolute/path");
-        // "~user" style is not expanded — passed through untouched.
-        assert_eq!(expand_home("~other/x"), "~other/x");
+        let home = Some("/home/tester");
+        assert_eq!(expand_home_with("~", home), "/home/tester");
+        assert_eq!(
+            expand_home_with("~/repo/file.rs", home),
+            "/home/tester/repo/file.rs"
+        );
+        assert_eq!(expand_home_with("/absolute/path", home), "/absolute/path");
+        assert_eq!(expand_home_with("~other/x", home), "~other/x");
+        assert_eq!(expand_home_with("~", None), "~");
     }
 
     #[test]

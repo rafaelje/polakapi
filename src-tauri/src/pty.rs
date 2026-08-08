@@ -158,7 +158,7 @@ pub fn spawn_session(
 
     if is_bare_shell_request {
         if let Ok(config_dir) = app.path().app_config_dir() {
-            shell_integration::apply(&config_dir.join("shell-integration"), &mut cmd, &shell);
+            shell_integration::apply(&config_dir.join("shell-integration"), &mut cmd, &shell, &id);
         }
     }
 

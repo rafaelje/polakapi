@@ -136,9 +136,14 @@ export function mountWorkspacesPanel(opts: WorkspacesPanelOptions): WorkspacesPa
     const ids = [...selection.getSelected()];
     if (ids.length === 0) return;
     const total = ids.reduce((sum, id) => sum + liveCountFor(id), 0);
-    void controller.deleteProjectsWithLiveCount(ids, total).then((ok) => {
-      if (ok) selection.clear();
-    });
+    void controller
+      .deleteProjectsWithLiveCount(ids, total)
+      .then((ok) => {
+        if (ok) selection.clear();
+      })
+      .catch(() => {
+        showToast("Failed to delete the selected projects", "error");
+      });
   };
 
   const onAddClick = (): void => {

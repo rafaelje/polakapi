@@ -22,8 +22,12 @@ export function classifyLinkText(raw: string): TerminalLinkTarget | null {
     return { kind: "url", url: text.replace(TRAILING_PUNCT, "") };
   }
   if (/^file:\/\//i.test(text)) {
-    const path = decodeURIComponent(text.replace(/^file:\/\/(localhost)?/i, ""));
-    return path.startsWith("/") ? { kind: "path", path } : null;
+    try {
+      const path = decodeURIComponent(text.replace(/^file:\/\/(localhost)?/i, ""));
+      return path.startsWith("/") ? { kind: "path", path } : null;
+    } catch {
+      return null;
+    }
   }
   if (text.startsWith("/") || text === "~" || text.startsWith("~/")) {
     const path = text.replace(TRAILING_PUNCT, "").replace(LINE_COL_SUFFIX, "");
@@ -41,7 +45,11 @@ export function openLinkTarget(target: TerminalLinkTarget): Promise<void> {
 /** Classify-and-open; silently ignores text that is not an openable link. */
 export function openLinkFromText(raw: string): void {
   const target = classifyLinkText(raw);
-  if (target) void openLinkTarget(target);
+  if (target) {
+    void openLinkTarget(target).catch((error) => {
+      console.error("Failed to open terminal link", error);
+    });
+  }
 }
 
 export interface PathMatch {

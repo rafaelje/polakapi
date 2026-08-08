@@ -2,6 +2,7 @@ import type { TerminalDockPosition } from "./terminal-layout";
 import { attachTerminalDocking, type TerminalDockingHandle } from "./terminal-docking";
 import type { TerminalPane } from "./terminal-pane";
 import { ptyWrite } from "./pty-client";
+import { shouldReplayShellCommand } from "./resume-whitelist";
 import type { TerminalSpec } from "./types";
 
 // Delay before piping text into a freshly-spawned PTY, long enough for the
@@ -52,11 +53,13 @@ export function wireTerminalPane(
     onResumeRequest: () => void host.resumePane(ptyId),
   });
   pane.setShellCommandCallbacks({
-    onCommand: (command, isAlias) =>
+    onCommand: (command, isAlias) => {
+      const eligible = shouldReplayShellCommand(command, isAlias);
       host.updateSpec(ptyId, {
-        lastShellCommand: command,
-        lastShellCommandAlias: isAlias || undefined,
-      }),
+        lastShellCommand: eligible ? command : undefined,
+        lastShellCommandAlias: eligible && isAlias ? true : undefined,
+      });
+    },
   });
 
   const dockingHandle = attachTerminalDocking({

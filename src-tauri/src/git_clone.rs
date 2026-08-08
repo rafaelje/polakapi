@@ -30,11 +30,13 @@ fn clone_repo_sync(url: &str, dest_parent: &str) -> Result<String, String> {
     let dest_str = dest.to_string_lossy().to_string();
     // Batch/non-interactive env so a credential or passphrase prompt fails
     // fast instead of hanging the invoke forever.
-    let output = Command::new("git")
+    let mut command = Command::new("git");
+    command
         .args(["clone", "--", url, &dest_str])
         .env("GIT_TERMINAL_PROMPT", "0")
-        .env("GIT_SSH_COMMAND", "ssh -oBatchMode=yes")
-        .stdin(Stdio::null())
+        .env("GIT_SSH_COMMAND", ssh_command_with_batch_mode())
+        .stdin(Stdio::null());
+    let output = command
         .output()
         .map_err(|e| format!("could not run git clone: {e}"))?;
 
@@ -45,6 +47,29 @@ fn clone_repo_sync(url: &str, dest_parent: &str) -> Result<String, String> {
         ));
     }
     Ok(dest_str)
+}
+
+fn ssh_command_with_batch_mode() -> String {
+    let configured = std::env::var("GIT_SSH_COMMAND")
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .or_else(|| {
+            Command::new("git")
+                .args(["config", "--get", "core.sshCommand"])
+                .stdin(Stdio::null())
+                .output()
+                .ok()
+                .filter(|output| output.status.success())
+                .and_then(|output| String::from_utf8(output.stdout).ok())
+                .map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty())
+        })
+        .filter(|value| !value.is_empty());
+    append_batch_mode(configured.as_deref())
+}
+
+fn append_batch_mode(configured: Option<&str>) -> String {
+    format!("{} -oBatchMode=yes", configured.unwrap_or("ssh").trim())
 }
 
 fn is_valid_git_url(url: &str) -> bool {
@@ -109,6 +134,15 @@ mod tests {
             Some("repo")
         );
         assert_eq!(repo_dir_name("git@github.com:"), None);
+    }
+
+    #[test]
+    fn preserves_configured_ssh_command_when_enabling_batch_mode() {
+        assert_eq!(
+            append_batch_mode(Some("ssh -i ~/.ssh/work -p 2222")),
+            "ssh -i ~/.ssh/work -p 2222 -oBatchMode=yes"
+        );
+        assert_eq!(append_batch_mode(None), "ssh -oBatchMode=yes");
     }
 
     #[test]

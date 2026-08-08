@@ -131,4 +131,25 @@ describe("openTerminalContextMenu", () => {
     expect(onCopy).not.toHaveBeenCalled();
     expect(onPaste).not.toHaveBeenCalled();
   });
+
+  it("disposes the previous menu before opening another one", () => {
+    const remove = vi.spyOn(window, "removeEventListener");
+    openTerminalContextMenu({
+      at: { x: 0, y: 0 },
+      hasSelection: () => false,
+      onCopy: vi.fn(),
+      onPaste: vi.fn(),
+    });
+
+    openTerminalContextMenu({
+      at: { x: 20, y: 20 },
+      hasSelection: () => false,
+      onCopy: vi.fn(),
+      onPaste: vi.fn(),
+    });
+
+    expect(document.querySelectorAll(".pane-menu-popover")).toHaveLength(1);
+    expect(remove).toHaveBeenCalledWith("mousedown", expect.any(Function), true);
+    remove.mockRestore();
+  });
 });

@@ -248,26 +248,23 @@ export function moveProjects(
   atIndex: number,
 ): WorkspacesState {
   if (ids.length === 0) return state;
-  const movingSet = new Set<ProjectId>(ids);
+  const movingSet = new Set<ProjectId>();
   const movingProjects: Project[] = [];
   for (const id of ids) {
     const found = findProject(state, id);
     if (!found) continue;
     const crossesWorkspace = found.workspace.id !== toWorkspaceId;
-    movingProjects.push({
-      ...found.project,
-      order: undefined,
-      folderId: crossesWorkspace ? undefined : found.project.folderId,
-    });
+    if (!crossesWorkspace) continue;
+    movingSet.add(id);
+    movingProjects.push({ ...found.project, order: undefined, folderId: undefined });
   }
   if (movingProjects.length === 0) return state;
   return mapWorkspaces(state, (w) => {
     if (w.id === toWorkspaceId) {
-      const filtered = w.projects.filter((p) => !movingSet.has(p.id));
-      const clamped = Math.max(0, Math.min(atIndex, filtered.length));
-      const next = [...filtered];
+      const clamped = Math.max(0, Math.min(atIndex, w.projects.length));
+      const next = [...w.projects];
       next.splice(clamped, 0, ...movingProjects);
-      return { ...w, projects: reassignOrder(next) };
+      return { ...w, projects: next };
     }
     const hadAny = w.projects.some((p) => movingSet.has(p.id));
     if (!hadAny) return w;

@@ -7,6 +7,7 @@ use portable_pty::CommandBuilder;
 
 const INTEGRATION_BASH: &str = include_str!("../resources/shell-integration/integration.bash");
 const INTEGRATION_ZSH: &str = include_str!("../resources/shell-integration/integration.zsh");
+const ZSHENV_WRAPPER: &str = include_str!("../resources/shell-integration/zshenv");
 const ZSHRC_WRAPPER: &str = include_str!("../resources/shell-integration/zshrc");
 
 fn ensure_files(base_dir: &Path) -> Result<(), String> {
@@ -16,7 +17,8 @@ fn ensure_files(base_dir: &Path) -> Result<(), String> {
         .map_err(|e| format!("could not write integration.bash: {e}"))?;
     std::fs::write(base_dir.join("integration.zsh"), INTEGRATION_ZSH)
         .map_err(|e| format!("could not write integration.zsh: {e}"))?;
-    // zsh reads $ZDOTDIR/.zshrc, so the wrapper must be named ".zshrc".
+    std::fs::write(base_dir.join(".zshenv"), ZSHENV_WRAPPER)
+        .map_err(|e| format!("could not write .zshenv: {e}"))?;
     std::fs::write(base_dir.join(".zshrc"), ZSHRC_WRAPPER)
         .map_err(|e| format!("could not write .zshrc: {e}"))?;
     Ok(())
@@ -24,7 +26,12 @@ fn ensure_files(base_dir: &Path) -> Result<(), String> {
 
 /// Injects shell-integration hooks into `cmd` for bash/zsh. Only call for a
 /// bare-shell spawn request (no explicit command/args).
-pub fn apply(integration_base_dir: &Path, cmd: &mut CommandBuilder, shell: &str) {
+pub fn apply(
+    integration_base_dir: &Path,
+    cmd: &mut CommandBuilder,
+    shell: &str,
+    session_token: &str,
+) {
     let basename = Path::new(shell)
         .file_name()
         .and_then(|n| n.to_str())
@@ -37,6 +44,7 @@ pub fn apply(integration_base_dir: &Path, cmd: &mut CommandBuilder, shell: &str)
     if ensure_files(integration_base_dir).is_err() {
         return;
     }
+    cmd.env("POLAKAPI_SHELL_TOKEN", session_token);
 
     match basename.as_str() {
         "bash" => {

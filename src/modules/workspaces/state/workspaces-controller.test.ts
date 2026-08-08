@@ -177,7 +177,10 @@ describe("WorkspacesController", () => {
   });
 
   it("registers a new project pointing at the worktree path on success", async () => {
-    persistence.loadWorkspaces.mockResolvedValueOnce(seededState());
+    const state = seededState();
+    state.workspaces[0].folders = [{ id: "f1" as never, name: "Code" }];
+    state.workspaces[0].projects[0].folderId = "f1" as never;
+    persistence.loadWorkspaces.mockResolvedValueOnce(state);
     tauriInvoke.invoke.mockResolvedValueOnce("/tmp/project-worktrees/feature-x");
     const controller = await WorkspacesController.load();
 
@@ -190,6 +193,7 @@ describe("WorkspacesController", () => {
     );
     expect(created?.path).toBe("/tmp/project-worktrees/feature-x");
     expect(created?.name).toBe("Original (feature/x)");
+    expect(created?.folderId).toBe("f1");
     expect(controller.getState().workspaces[0].projects).toHaveLength(2);
     expect(controller.getActiveProject()?.id).toBe(created?.id);
   });
@@ -268,5 +272,21 @@ describe("WorkspacesController", () => {
 
     expect(created).toMatchObject({ name: "tool", path: "/srv/repos/tool" });
     expect(created?.folderId).toBeUndefined();
+  });
+
+  it("cloneRepoInteractive reports git failures without adding a project", async () => {
+    persistence.loadWorkspaces.mockResolvedValueOnce(seededState());
+    modal.promptModal.mockResolvedValueOnce("git@github.com:user/repo.git");
+    pathPicker.pickProjectFolder.mockResolvedValueOnce("/srv/repos");
+    tauriInvoke.invoke.mockRejectedValueOnce(
+      new tauriInvoke.InvokeError("git_clone_repo", "fatal: repository not found"),
+    );
+    const controller = await WorkspacesController.load();
+
+    const created = await controller.cloneRepoInteractive(wid("w1"));
+
+    expect(created).toBeNull();
+    expect(controller.getState().workspaces[0].projects).toHaveLength(1);
+    expect(toast.showToast).toHaveBeenCalledWith("fatal: repository not found", "error");
   });
 });

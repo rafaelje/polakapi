@@ -81,17 +81,37 @@ function moveFolderBy(
 ): WorkspacesState {
   return mapWorkspaces(state, (w) => {
     if (w.id !== workspaceId) return w;
-    const sorted = [...(w.folders ?? [])].sort(compareByOrderThenName);
-    const idx = sorted.findIndex((f) => f.id === folderId);
+    type Entry = { kind: "folder"; item: Folder } | { kind: "project"; item: Project };
+    const sorted: Entry[] = [
+      ...(w.folders ?? []).map((item): Entry => ({ kind: "folder", item })),
+      ...w.projects
+        .filter((item) => item.folderId === undefined)
+        .map((item): Entry => ({ kind: "project", item })),
+    ].sort((a, b) => compareByOrderThenName(a.item, b.item));
+    const idx = sorted.findIndex((entry) => entry.kind === "folder" && entry.item.id === folderId);
     const swapIdx = idx + delta;
     if (idx === -1 || swapIdx < 0 || swapIdx >= sorted.length) return w;
-    // Stamp current sorted index first so the swap works even with no explicit order.
-    const stamped = sorted.map((f, i) => ({ ...f, order: i }));
-    const a = stamped[idx];
-    const b = stamped[swapIdx];
-    stamped[idx] = { ...b, order: a.order };
-    stamped[swapIdx] = { ...a, order: b.order };
-    return { ...w, folders: stamped };
+    const moved = [...sorted];
+    const [entry] = moved.splice(idx, 1);
+    moved.splice(swapIdx, 0, entry);
+    const folderOrders = new Map<FolderId, number>();
+    const projectOrders = new Map<ProjectId, number>();
+    moved.forEach((current, order) => {
+      if (current.kind === "folder") folderOrders.set(current.item.id, order);
+      else projectOrders.set(current.item.id, order);
+    });
+    return {
+      ...w,
+      folders: (w.folders ?? []).map((folder) => ({
+        ...folder,
+        order: folderOrders.get(folder.id),
+      })),
+      projects: w.projects.map((project) =>
+        project.folderId === undefined
+          ? { ...project, order: projectOrders.get(project.id) }
+          : project,
+      ),
+    };
   });
 }
 

@@ -2,7 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("../../shared/tauri/invoke", () => ({ invoke: vi.fn().mockResolvedValue(undefined) }));
 
-import { classifyLinkText, findAbsolutePaths } from "./terminal-links";
+import { invoke } from "../../shared/tauri/invoke";
+import { classifyLinkText, findAbsolutePaths, openLinkFromText } from "./terminal-links";
 
 describe("classifyLinkText", () => {
   it("classifies http(s) URLs and strips trailing prose punctuation", () => {
@@ -27,6 +28,10 @@ describe("classifyLinkText", () => {
     });
   });
 
+  it("rejects malformed encoded file uris", () => {
+    expect(classifyLinkText("file:///tmp/%")).toBeNull();
+  });
+
   it("classifies absolute and ~ paths, stripping :line:col suffixes", () => {
     expect(classifyLinkText("/home/user/src/main.ts:12:5")).toEqual({
       kind: "path",
@@ -40,6 +45,21 @@ describe("classifyLinkText", () => {
     expect(classifyLinkText("ftp://host/file")).toBeNull();
     expect(classifyLinkText("src/main.ts")).toBeNull();
     expect(classifyLinkText("hola mundo")).toBeNull();
+  });
+});
+
+describe("openLinkFromText", () => {
+  it("reports activation failures without an unhandled rejection", async () => {
+    const error = new Error("open failed");
+    vi.mocked(invoke).mockRejectedValueOnce(error);
+    const report = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    openLinkFromText("https://example.com");
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(report).toHaveBeenCalledWith("Failed to open terminal link", error);
+    report.mockRestore();
   });
 });
 

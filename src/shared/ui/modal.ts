@@ -115,6 +115,8 @@ export interface SelectModalOptions {
   cancelLabel?: string;
 }
 
+let selectModalTitleSequence = 0;
+
 // Multi-choice modal, native <select>. Resolves with the value or null on cancel.
 export function selectModal(opts: SelectModalOptions): Promise<string | null> {
   return new Promise((resolve) => {
@@ -128,6 +130,7 @@ export function selectModal(opts: SelectModalOptions): Promise<string | null> {
 
     const title = document.createElement("div");
     title.className = "modal-title";
+    title.id = `select-modal-title-${++selectModalTitleSequence}`;
     title.textContent = opts.title;
     dialog.append(title);
 
@@ -140,6 +143,7 @@ export function selectModal(opts: SelectModalOptions): Promise<string | null> {
 
     const select = document.createElement("select");
     select.className = "modal-input";
+    select.setAttribute("aria-labelledby", title.id);
     for (const option of opts.options) {
       const optionEl = document.createElement("option");
       optionEl.value = option.value;

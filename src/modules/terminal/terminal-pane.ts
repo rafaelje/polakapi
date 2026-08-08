@@ -132,9 +132,13 @@ export class TerminalPane {
       ),
     );
     this.disposables.push(
-      attachShellCommandCapture(this.term, ({ command, isAlias }) => {
-        this.shellCommandCallbacks?.onCommand(command, isAlias);
-      }),
+      attachShellCommandCapture(
+        this.term,
+        () => this.ptyId,
+        ({ command, isAlias }) => {
+          this.shellCommandCallbacks?.onCommand(command, isAlias);
+        },
+      ),
     );
     this.disposables.push(attachTerminalClipboard(this.term));
     this.disposables.push(

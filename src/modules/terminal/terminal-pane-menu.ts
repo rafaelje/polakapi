@@ -210,9 +210,12 @@ export interface TerminalContextMenuOptions {
   onPaste(): void;
 }
 
+let activeTerminalMenuDispose: (() => void) | null = null;
+
 // Right-click menu for the terminal body. Replaces the webview's native menu,
 // which in WebKitGTK can activate Paste on the same right-click gesture.
 export function openTerminalContextMenu(opts: TerminalContextMenuOptions): PaneMenuHandle {
+  activeTerminalMenuDispose?.();
   document.querySelectorAll(".pane-menu-popover").forEach((node) => node.remove());
 
   const popover = document.createElement("div");
@@ -230,6 +233,7 @@ export function openTerminalContextMenu(opts: TerminalContextMenuOptions): PaneM
     window.removeEventListener("keydown", onKey, true);
     window.removeEventListener("resize", dispose);
     window.removeEventListener("scroll", dispose, true);
+    if (activeTerminalMenuDispose === dispose) activeTerminalMenuDispose = null;
   };
   const onOutside = (e: MouseEvent): void => {
     if (!popover.contains(e.target as Node)) dispose();
@@ -263,6 +267,7 @@ export function openTerminalContextMenu(opts: TerminalContextMenuOptions): PaneM
   window.addEventListener("keydown", onKey, true);
   window.addEventListener("resize", dispose);
   window.addEventListener("scroll", dispose, true);
+  activeTerminalMenuDispose = dispose;
 
   return { dispose };
 }

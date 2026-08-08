@@ -7,34 +7,34 @@ function b64(text: string): string {
 }
 
 describe("parseShellCommandPayload", () => {
+  const token = "pty-token";
+
   it("parses flagged payloads with alias detection", () => {
-    expect(parseShellCommandPayload(`c;${b64("git push")}`)).toEqual({
+    expect(parseShellCommandPayload(`${token};c;${b64("git push")}`, token)).toEqual({
       command: "git push",
       isAlias: false,
     });
-    expect(parseShellCommandPayload(`a;${b64("gpush")}`)).toEqual({
+    expect(parseShellCommandPayload(`${token};a;${b64("gpush")}`, token)).toEqual({
       command: "gpush",
       isAlias: true,
     });
   });
 
-  it("treats unflagged payloads from older scripts as non-alias", () => {
-    expect(parseShellCommandPayload(b64("npm run dev"))).toEqual({
-      command: "npm run dev",
-      isAlias: false,
-    });
+  it("rejects payloads without the current pane token", () => {
+    expect(parseShellCommandPayload(`other-token;c;${b64("lazygit")}`, token)).toBeNull();
+    expect(parseShellCommandPayload(`c;${b64("lazygit")}`, token)).toBeNull();
   });
 
   it("decodes UTF-8 command text", () => {
-    expect(parseShellCommandPayload(`c;${b64("echo ñandú 中文")}`)).toEqual({
+    expect(parseShellCommandPayload(`${token};c;${b64("echo ñandú 中文")}`, token)).toEqual({
       command: "echo ñandú 中文",
       isAlias: false,
     });
   });
 
   it("returns null for malformed or empty payloads", () => {
-    expect(parseShellCommandPayload("not-base64!!!")).toBeNull();
-    expect(parseShellCommandPayload(`c;${b64("   ")}`)).toBeNull();
-    expect(parseShellCommandPayload("")).toBeNull();
+    expect(parseShellCommandPayload(`${token};c;not-base64!!!`, token)).toBeNull();
+    expect(parseShellCommandPayload(`${token};c;${b64("   ")}`, token)).toBeNull();
+    expect(parseShellCommandPayload("", token)).toBeNull();
   });
 });

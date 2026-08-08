@@ -125,7 +125,7 @@ export function confirmDeleteProjects(count: number, liveTerminals: number): Pro
       ? `${liveTerminals} attached terminal${liveTerminals === 1 ? "" : "s"} will be closed. This action cannot be undone.`
       : "This action cannot be undone.";
   return confirmModal({
-    title: `Delete ${count} projects?`,
+    title: `Delete ${count} project${count === 1 ? "" : "s"}?`,
     message: detail,
     confirmLabel: "Delete",
     danger: true,

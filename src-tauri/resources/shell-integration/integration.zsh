@@ -10,7 +10,7 @@ _polakapi_report_cmd() {
     *": alias" | *": function") flag=a ;;
   esac
   encoded=$(printf '%s' "$1" | base64 | tr -d '\n')
-  printf '\033]9931;%s;%s\007' "$flag" "$encoded"
+  printf '\033]9931;%s;%s;%s\007' "$_polakapi_shell_token" "$flag" "$encoded"
 }
 
 autoload -Uz add-zsh-hook

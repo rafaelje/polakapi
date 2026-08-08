@@ -105,6 +105,7 @@ export function createWorkspaceRow(opts: WorkspaceRowOptions): WorkspaceRowHandl
   wrapper.append(projectsList);
 
   const projectHandles = new Map<ProjectId, ProjectRowHandle>();
+  const ownProjectIds = new Set<ProjectId>();
   const folderHandles: FolderRowHandle[] = [];
   const activeProjectId = controller.getState().activeProjectId;
   const liveCountFor = opts.liveCountFor;
@@ -137,6 +138,7 @@ export function createWorkspaceRow(opts: WorkspaceRowOptions): WorkspaceRowHandl
         selection: opts.selection,
       });
       projectHandles.set(project.id, handle);
+      ownProjectIds.add(project.id);
       projectsList.append(handle.element);
       continue;
     }
@@ -304,7 +306,8 @@ export function createWorkspaceRow(opts: WorkspaceRowOptions): WorkspaceRowHandl
       appearancePicker = null;
       for (const off of listeners.splice(0)) off();
       for (const handle of folderHandles.splice(0)) handle.dispose();
-      for (const handle of projectHandles.values()) handle.dispose();
+      for (const id of ownProjectIds) projectHandles.get(id)?.dispose();
+      ownProjectIds.clear();
       projectHandles.clear();
       wrapper.remove();
     },

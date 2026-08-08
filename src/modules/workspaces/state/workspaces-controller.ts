@@ -250,7 +250,11 @@ export class WorkspacesController {
 
     const name = path.split(/[\\/]/).filter(Boolean).pop() ?? "repo";
     const created = this.addProject(workspaceId, { name, path, folderId: folder?.id });
-    if (created) this.setActiveProject(created.id);
+    if (!created) {
+      showToast(`Cloned into ${path}, but the project could not be added`, "error");
+      return null;
+    }
+    this.setActiveProject(created.id);
     showToast(`Cloned into ${path}`, "success");
     return created;
   }
@@ -278,6 +282,7 @@ export class WorkspacesController {
       name: `${project.name} (${branch})`,
       path: worktreePath,
       color: project.color,
+      folderId: project.folderId,
     });
     if (created) this.setActiveProject(created.id);
     return created;

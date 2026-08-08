@@ -499,57 +499,61 @@ describe("TerminalManager resumeAll / shell command replay", () => {
     const { ptyWrite } = await import("./pty-client");
     vi.mocked(ptyWrite).mockClear();
   });
-
   afterEach(() => {
     vi.useRealTimers();
   });
-
   it("resumePane replays the captured lastShellCommand for a shell profile", async () => {
     const manager = makeManager();
     await manager.addPane({ cliId: "shell" });
     const [id] = manager.ids();
-    fake.emitShellCommand(id, "npm run dev");
-    expect(manager.specs()[0]?.lastShellCommand).toBe("npm run dev");
-
+    fake.emitShellCommand(id, "lazygit");
+    expect(manager.specs()[0]?.lastShellCommand).toBe("lazygit");
     manager.suspendPane(id);
     manager.markExited(id);
     await manager.resumePane(id);
     const newId = manager.ids()[0];
     await vi.advanceTimersByTimeAsync(1000);
-
     const { ptyWrite } = await import("./pty-client");
-    expect(ptyWrite).toHaveBeenCalledWith(newId, "npm run dev\r");
+    expect(ptyWrite).toHaveBeenCalledWith(newId, "lazygit\r");
   });
-
   it("resumePane does not replay non-whitelisted commands like git push", async () => {
     const manager = makeManager();
     await manager.addPane({ cliId: "shell" });
     const [id] = manager.ids();
     fake.emitShellCommand(id, "git push origin main");
-
     manager.suspendPane(id);
     manager.markExited(id);
     await manager.resumePane(id);
     await vi.advanceTimersByTimeAsync(1000);
-
     const { ptyWrite } = await import("./pty-client");
     expect(ptyWrite).not.toHaveBeenCalled();
   });
-
-  it("resumePane replays alias commands even when not whitelisted", async () => {
+  it("resumePane does not persist or replay alias commands", async () => {
     const manager = makeManager();
     await manager.addPane({ cliId: "shell" });
     const [id] = manager.ids();
     fake.emitShellCommand(id, "gpush", true);
-
     manager.suspendPane(id);
     manager.markExited(id);
     await manager.resumePane(id);
-    const newId = manager.ids()[0];
     await vi.advanceTimersByTimeAsync(1000);
-
     const { ptyWrite } = await import("./pty-client");
-    expect(ptyWrite).toHaveBeenCalledWith(newId, "gpush\r");
+    expect(manager.specs()[0]?.lastShellCommand).toBeUndefined();
+    expect(ptyWrite).not.toHaveBeenCalled();
+  });
+  it("resumePane skips startupCmd when replaying a captured command", async () => {
+    const manager = makeManager();
+    await manager.addPane({ cliId: "shell", startupCmd: "npm run dev" });
+    const [id] = manager.ids();
+    fake.emitShellCommand(id, "lazygit");
+    manager.suspendPane(id);
+    manager.markExited(id);
+    const { ptyWrite } = await import("./pty-client");
+    vi.mocked(ptyWrite).mockClear();
+    await manager.resumePane(id);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(ptyWrite).toHaveBeenCalledTimes(1);
+    expect(ptyWrite).toHaveBeenCalledWith(manager.ids()[0], "lazygit\r");
   });
 
   it("resumePane does not replay anything when no command was captured", async () => {
@@ -572,7 +576,7 @@ describe("TerminalManager resumeAll / shell command replay", () => {
     await manager.addPane({ cliId: "claude" }); // will be suspended
     await manager.addPane({ cliId: "shell" }); // stays live
     const [shellId, claudeId, liveShellId] = manager.ids();
-    fake.emitShellCommand(shellId, "npm test");
+    fake.emitShellCommand(shellId, "lazygit");
 
     manager.suspendPane(shellId);
     manager.markExited(shellId);
@@ -588,7 +592,7 @@ describe("TerminalManager resumeAll / shell command replay", () => {
       .find((c) => c.opts?.command === "claude");
     expect(lastClaudeAttach?.opts?.args).toEqual(["--continue"]);
     const { ptyWrite } = await import("./pty-client");
-    expect(vi.mocked(ptyWrite).mock.calls).toContainEqual([expect.any(String), "npm test\r"]);
+    expect(vi.mocked(ptyWrite).mock.calls).toContainEqual([expect.any(String), "lazygit\r"]);
     // The still-live shell pane was never touched.
     expect(manager.ids()).toContain(liveShellId);
   });
@@ -617,5 +621,29 @@ describe("TerminalManager resumeAll / shell command replay", () => {
     expect(manager.ids()).toHaveLength(3);
     expect(new Set(manager.ids()).size).toBe(3);
     expect(terminalLayoutPaneIds(manager.layoutSnapshot).sort()).toEqual([...manager.ids()].sort());
+  });
+
+  it("resumeAll reports one pane failure and continues with the remaining panes", async () => {
+    const manager = makeManager();
+    await manager.addPane({ cliId: "shell" });
+    await manager.addPane({ cliId: "shell" });
+    const [first, second] = manager.ids();
+    manager.suspendPane(first);
+    manager.markExited(first);
+    manager.suspendPane(second);
+    manager.markExited(second);
+    const error = new Error("spawn failed");
+    const report = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const resume = vi
+      .spyOn(manager, "resumePane")
+      .mockRejectedValueOnce(error)
+      .mockResolvedValueOnce(undefined);
+
+    await manager.resumeAll();
+
+    expect(resume).toHaveBeenNthCalledWith(1, first);
+    expect(resume).toHaveBeenNthCalledWith(2, second);
+    expect(report).toHaveBeenCalledWith(`Failed to resume pane ${first}`, error);
+    report.mockRestore();
   });
 });

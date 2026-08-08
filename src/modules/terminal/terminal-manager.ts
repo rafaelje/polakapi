@@ -352,18 +352,16 @@ export class TerminalManager {
     if (!current?.suspended || this.isLive(paneId)) return;
     const resumeArgs = resolveProfile(current.cliId).resumeArgs;
     const { title, cwd, startupCmd, cliId, lastShellCommand, lastShellCommandAlias } = current;
+    const shouldReplay =
+      !resumeArgs &&
+      !!lastShellCommand &&
+      shouldReplayShellCommand(lastShellCommand, lastShellCommandAlias === true);
     const newId = await this.replacePane(
       paneId,
       { title, cwd, startupCmd, cliId },
-      { extraArgs: resumeArgs, skipStartupCmd: resumeArgs !== undefined },
+      { extraArgs: resumeArgs, skipStartupCmd: resumeArgs !== undefined || shouldReplay },
     );
-    // Shell profiles have no resumeArgs; replay only whitelisted/alias commands.
-    if (
-      newId &&
-      !resumeArgs &&
-      lastShellCommand &&
-      shouldReplayShellCommand(lastShellCommand, lastShellCommandAlias === true)
-    ) {
+    if (newId && shouldReplay && lastShellCommand) {
       this.scheduleShellReplay(newId, lastShellCommand);
     }
   }
@@ -372,7 +370,12 @@ export class TerminalManager {
   // other's layout snapshot and corrupt the grid.
   async resumeAll(): Promise<void> {
     for (const id of [...this.order]) {
-      if (this.specsById.get(id)?.suspended) await this.resumePane(id);
+      if (!this.specsById.get(id)?.suspended) continue;
+      try {
+        await this.resumePane(id);
+      } catch (error) {
+        console.error(`Failed to resume pane ${id}`, error);
+      }
     }
   }
 
