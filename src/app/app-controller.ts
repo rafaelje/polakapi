@@ -320,7 +320,6 @@ export class AppController {
       focusDirection: (direction) => this.router.getActive()?.focusDirection(direction),
       // Resolved lazily so the keybinding is harmless before bootstrap mounts.
       togglePalette: () => this.palette?.toggle(),
-      toggleCommandCenter: () => this.workspaces?.projectPane.toggleCommandCenter(),
     });
   }
 

@@ -5,11 +5,6 @@ import {
 } from "../modules/workspaces/panel/workspaces-empty-state";
 import type { Project } from "../modules/workspaces/state/types";
 import {
-  openProjectCommandCenter,
-  type ProjectCommand,
-  type ProjectCommandCenterHandle,
-} from "./project-command-center";
-import {
   openProjectToolbarMenu,
   type ProjectToolbarMenuHandle,
   type ProjectToolbarMenuItem,
@@ -37,7 +32,6 @@ export interface ProjectPaneHandle {
   setActiveProject(project: Project | null): void;
   setActiveCli(cliId: string): void;
   setSuspendResumeCounts(liveCount: number, suspendedCount: number): void;
-  toggleCommandCenter(): void;
   dispose(): void;
 }
 
@@ -80,27 +74,6 @@ export function mountProjectPane(opts: ProjectPaneOptions): ProjectPaneHandle {
   profileBtn.setAttribute("aria-expanded", "false");
   splitControl.append(startBtn, profileBtn);
 
-  const commandBtn = createButton("project-toolbar-command", "");
-  commandBtn.id = "project-command-center";
-  commandBtn.title = "Open project command center";
-  commandBtn.setAttribute("aria-label", "Open project command center");
-  commandBtn.setAttribute("aria-haspopup", "listbox");
-  commandBtn.setAttribute("aria-expanded", "false");
-
-  const commandIcon = document.createElement("span");
-  commandIcon.className = "project-toolbar-command-icon";
-  commandIcon.textContent = "⌕";
-  commandIcon.setAttribute("aria-hidden", "true");
-
-  const commandLabel = document.createElement("span");
-  commandLabel.className = "project-toolbar-command-label";
-  commandLabel.textContent = "Run a project command…";
-
-  const commandShortcut = document.createElement("kbd");
-  commandShortcut.className = "project-toolbar-command-shortcut";
-  commandShortcut.textContent = /Mac|iPhone|iPad/.test(navigator.platform) ? "⌘ K" : "Ctrl ⇧ K";
-  commandBtn.append(commandIcon, commandLabel, commandShortcut);
-
   const spacer = document.createElement("span");
   spacer.className = "project-toolbar-spacer";
 
@@ -124,13 +97,13 @@ export function mountProjectPane(opts: ProjectPaneOptions): ProjectPaneHandle {
   actionsBtn.setAttribute("aria-haspopup", "menu");
   actionsBtn.setAttribute("aria-expanded", "false");
 
-  subToolbar.append(splitControl, commandBtn, spacer, status, suspendBtn, resumeBtn, actionsBtn);
+  subToolbar.append(splitControl, spacer, status, suspendBtn, resumeBtn, actionsBtn);
 
   let emptyState: EmptyStateHandle | null = createProjectEmptyState();
   let currentProject: Project | null = null;
   let currentCliId = "shell";
   let showResume = false;
-  let activeMenu: ProjectToolbarMenuHandle | ProjectCommandCenterHandle | null = null;
+  let activeMenu: ProjectToolbarMenuHandle | null = null;
 
   host.replaceChildren(subToolbar, gridEl, emptyState.element);
   host.classList.add("inactive");
@@ -175,78 +148,6 @@ export function mountProjectPane(opts: ProjectPaneOptions): ProjectPaneHandle {
   };
   const onSuspendAll = (): void => callbacks.onSuspendAll();
   const onResumeAll = (): void => callbacks.onResumeAll();
-  const commandItems = (): ProjectCommand[] => {
-    const path = currentProject?.path;
-    return [
-      {
-        id: "start-terminal",
-        label: `Start ${profileLabel(currentCliId)}`,
-        group: "Terminal",
-        keywords: ["new", "create", currentCliId],
-        run: callbacks.onAddTerminal,
-      },
-      {
-        id: "layouts",
-        label: "Layouts…",
-        group: "Workspace",
-        keywords: ["arrange", "template"],
-        run: () => callbacks.onOpenLayoutsMenu(commandBtn),
-      },
-      {
-        id: "run-all",
-        label: "Run command in all…",
-        group: "Workspace",
-        keywords: ["terminal", "batch", "execute"],
-        run: callbacks.onRunInAll,
-      },
-      {
-        id: showResume ? "resume-all" : "suspend-all",
-        label: showResume ? "Resume all" : "Suspend all",
-        group: "Workspace",
-        keywords: ["terminal", "process", "memory"],
-        run: showResume ? callbacks.onResumeAll : callbacks.onSuspendAll,
-      },
-      {
-        id: "reveal",
-        label: "Reveal in file manager",
-        group: "Open project",
-        keywords: ["finder", "explorer", "folder"],
-        disabled: !path,
-        run: () => {
-          if (path) callbacks.onRevealFolder(path);
-        },
-      },
-      {
-        id: "open-ide",
-        label: "Open in IDE",
-        group: "Open project",
-        keywords: ["editor", "code"],
-        disabled: !path,
-        run: () => {
-          if (path) callbacks.onOpenInEditor(path);
-        },
-      },
-      {
-        id: "open-terminal",
-        label: "Open in terminal",
-        group: "Open project",
-        keywords: ["shell", "external"],
-        disabled: !path,
-        run: () => {
-          if (path) callbacks.onOpenInShell(path);
-        },
-      },
-    ];
-  };
-  const onCommandCenter = (): void => {
-    const wasOpen = commandBtn.getAttribute("aria-expanded") === "true";
-    closeActiveMenu();
-    if (wasOpen || commandBtn.disabled) return;
-    activeMenu = openProjectCommandCenter({
-      trigger: commandBtn,
-      commands: commandItems(),
-    });
-  };
   const onProjectActions = (): void => {
     const wasOpen = actionsBtn.getAttribute("aria-expanded") === "true";
     closeActiveMenu();
@@ -294,7 +195,6 @@ export function mountProjectPane(opts: ProjectPaneOptions): ProjectPaneHandle {
 
   startBtn.addEventListener("click", onStart);
   profileBtn.addEventListener("click", onProfileMenu);
-  commandBtn.addEventListener("click", onCommandCenter);
   suspendBtn.addEventListener("click", onSuspendAll);
   resumeBtn.addEventListener("click", onResumeAll);
   actionsBtn.addEventListener("click", onProjectActions);
@@ -302,7 +202,6 @@ export function mountProjectPane(opts: ProjectPaneOptions): ProjectPaneHandle {
   const setControlsDisabled = (disabled: boolean): void => {
     startBtn.disabled = disabled;
     profileBtn.disabled = disabled;
-    commandBtn.disabled = disabled;
     suspendBtn.disabled = disabled;
     resumeBtn.disabled = disabled;
     actionsBtn.disabled = disabled;
@@ -338,14 +237,10 @@ export function mountProjectPane(opts: ProjectPaneOptions): ProjectPaneHandle {
       status.classList.toggle("is-idle", liveCount === 0 && suspendedCount === 0);
       status.classList.toggle("is-suspended", liveCount === 0 && suspendedCount > 0);
     },
-    toggleCommandCenter(): void {
-      onCommandCenter();
-    },
     dispose(): void {
       closeActiveMenu();
       startBtn.removeEventListener("click", onStart);
       profileBtn.removeEventListener("click", onProfileMenu);
-      commandBtn.removeEventListener("click", onCommandCenter);
       suspendBtn.removeEventListener("click", onSuspendAll);
       resumeBtn.removeEventListener("click", onResumeAll);
       actionsBtn.removeEventListener("click", onProjectActions);

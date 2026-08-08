@@ -17,7 +17,7 @@ function ev(overrides: Partial<ShortcutKeyEvent>): ShortcutKeyEvent {
 describe("resolveAppShortcut on Linux/Windows (Ctrl+Shift)", () => {
   const isMac = false;
 
-  it("maps Ctrl+Shift+T/W/P/K to pane and palette actions", () => {
+  it("maps Ctrl+Shift+T/W/P to pane and palette actions", () => {
     expect(resolveAppShortcut(ev({ ctrlKey: true, shiftKey: true, key: "T" }), isMac)).toEqual({
       kind: "new-pane",
     });
@@ -27,9 +27,7 @@ describe("resolveAppShortcut on Linux/Windows (Ctrl+Shift)", () => {
     expect(resolveAppShortcut(ev({ ctrlKey: true, shiftKey: true, key: "P" }), isMac)).toEqual({
       kind: "toggle-palette",
     });
-    expect(resolveAppShortcut(ev({ ctrlKey: true, shiftKey: true, key: "K" }), isMac)).toEqual({
-      kind: "toggle-command-center",
-    });
+    expect(resolveAppShortcut(ev({ ctrlKey: true, shiftKey: true, key: "K" }), isMac)).toBeNull();
   });
 
   it("maps Ctrl+Shift+brackets and digits via physical key codes", () => {
@@ -95,9 +93,7 @@ describe("resolveAppShortcut on macOS (Cmd)", () => {
       kind: "focus-index",
       index: 2,
     });
-    expect(resolveAppShortcut(ev({ metaKey: true, key: "k" }), isMac)).toEqual({
-      kind: "toggle-command-center",
-    });
+    expect(resolveAppShortcut(ev({ metaKey: true, key: "k" }), isMac)).toBeNull();
   });
 
   it("maps Cmd+Shift+Arrow to directional focus but no other shifted combos", () => {

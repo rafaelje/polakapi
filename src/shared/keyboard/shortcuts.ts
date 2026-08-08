@@ -6,14 +6,12 @@ export interface ShortcutHandlers {
   focusNext: () => void;
   focusDirection: (direction: "left" | "right" | "up" | "down") => void;
   togglePalette: () => void;
-  toggleCommandCenter: () => void;
 }
 
 export type AppShortcut =
   | { kind: "new-pane" }
   | { kind: "close-focused" }
   | { kind: "toggle-palette" }
-  | { kind: "toggle-command-center" }
   | { kind: "focus-prev" }
   | { kind: "focus-next" }
   | { kind: "focus-index"; index: number }
@@ -52,7 +50,6 @@ export function resolveAppShortcut(e: ShortcutKeyEvent, isMac: boolean): AppShor
     if (e.key.toLowerCase() === "t") return { kind: "new-pane" };
     if (e.key.toLowerCase() === "w") return { kind: "close-focused" };
     if (e.key.toLowerCase() === "p") return { kind: "toggle-palette" };
-    if (e.key.toLowerCase() === "k") return { kind: "toggle-command-center" };
     if (e.key === "[") return { kind: "focus-prev" };
     if (e.key === "]") return { kind: "focus-next" };
     if (e.key >= "1" && e.key <= "9") return { kind: "focus-index", index: Number(e.key) - 1 };
@@ -63,7 +60,6 @@ export function resolveAppShortcut(e: ShortcutKeyEvent, isMac: boolean): AppShor
   if (e.key.toLowerCase() === "t") return { kind: "new-pane" };
   if (e.key.toLowerCase() === "w") return { kind: "close-focused" };
   if (e.key.toLowerCase() === "p") return { kind: "toggle-palette" };
-  if (e.key.toLowerCase() === "k") return { kind: "toggle-command-center" };
   if (e.code === "BracketLeft") return { kind: "focus-prev" };
   if (e.code === "BracketRight") return { kind: "focus-next" };
   const digit = /^Digit([1-9])$/.exec(e.code);
@@ -87,9 +83,6 @@ export function wireShortcuts(handlers: ShortcutHandlers): () => void {
         return;
       case "toggle-palette":
         handlers.togglePalette();
-        return;
-      case "toggle-command-center":
-        handlers.toggleCommandCenter();
         return;
       case "focus-prev":
         handlers.focusPrev();

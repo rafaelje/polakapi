@@ -107,18 +107,13 @@ describe("project toolbar", () => {
     expect(handlers.onOpenLayoutsMenu).toHaveBeenCalledExactlyOnceWith(actions);
   });
 
-  it("searches and executes project commands from the command center", () => {
-    const { handlers, pane } = mount();
+  it("keeps the toolbar focused on terminal controls", () => {
+    const { pane } = mount();
     pane.setActiveProject(project());
-    pane.toggleCommandCenter();
 
-    const input = document.querySelector<HTMLInputElement>(".project-command-center-input");
-    if (input) input.value = "open in terminal";
-    input?.dispatchEvent(new Event("input", { bubbles: true }));
-    input?.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
-
-    expect(handlers.onOpenInShell).toHaveBeenCalledExactlyOnceWith("/tmp/simple-c");
-    expect(document.querySelector(".project-command-center")).toBeNull();
+    expect(document.querySelector("#project-command-center")).toBeNull();
+    expect(document.querySelector("#add-pane")).not.toBeNull();
+    expect(document.querySelector("#project-actions-menu")).not.toBeNull();
   });
 
   it("keeps terminal counts and suspend or resume state synchronized", () => {
@@ -147,12 +142,7 @@ describe("project toolbar", () => {
 
   it("disables project controls until a project is active", () => {
     const { pane } = mount();
-    const controls = [
-      "#add-pane",
-      "#terminal-profile-menu",
-      "#project-command-center",
-      "#project-actions-menu",
-    ];
+    const controls = ["#add-pane", "#terminal-profile-menu", "#project-actions-menu"];
 
     expect(
       controls.every((selector) => document.querySelector<HTMLButtonElement>(selector)?.disabled),
