@@ -72,7 +72,7 @@ export function mountProjectPane(opts: ProjectPaneOptions): ProjectPaneHandle {
   const startBtn = createButton("project-toolbar-start", "Start Local terminal");
   startBtn.id = "add-pane";
 
-  const profileBtn = createButton("project-toolbar-profile", "⌄");
+  const profileBtn = createButton("project-toolbar-profile", "▾");
   profileBtn.id = "terminal-profile-menu";
   profileBtn.title = "Choose terminal type";
   profileBtn.setAttribute("aria-label", "Choose terminal type");
