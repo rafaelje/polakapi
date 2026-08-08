@@ -456,6 +456,7 @@ export function renderView(
     const list = document.createElement("div");
     list.className = "loop-step2-deps-list";
 
+    const dependencyIds = new Set(phase.dependsOn);
     const others = state.phases.filter((p) => p.id !== phase.id);
     if (others.length === 0) {
       const note = document.createElement("p");
@@ -469,7 +470,7 @@ export function renderView(
         const cb = document.createElement("input");
         cb.type = "checkbox";
         cb.value = other.id;
-        cb.checked = phase.dependsOn.includes(other.id);
+        cb.checked = dependencyIds.has(other.id);
         cb.disabled = state.busy;
         on(cb, "change", () => {
           const checked = list.querySelectorAll<HTMLInputElement>("input[type=checkbox]:checked");

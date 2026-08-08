@@ -170,7 +170,11 @@ export function attachTerminalDrop(deps: TerminalDropDeps): TerminalDropHandle {
  * themselves.
  */
 export function formatPathsForShell(paths: readonly string[]): string {
-  const quoted = paths.map(shellQuote).filter((s) => s.length > 0);
+  const quoted: string[] = [];
+  for (const path of paths) {
+    const value = shellQuote(path);
+    if (value.length > 0) quoted.push(value);
+  }
   if (quoted.length === 0) return "";
   return `${quoted.join(" ")} `;
 }

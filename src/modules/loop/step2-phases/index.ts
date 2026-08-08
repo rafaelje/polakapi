@@ -341,33 +341,41 @@ export function mountStep2Phases(slot: HTMLElement, ctx: Step2Context): Step2Han
         throw new Error(`the agent returned a cyclic dependency graph: ${cycle.join(" → ")}`);
       }
       await persistManifest(phases);
-      for (const d of drafts) {
-        const slug = phaseSlug(d);
-        await invoke<string>("loop_create_phase_dir", {
-          projectPath: ctx.projectPath,
-          runId: ctx.runId,
-          phaseSlug: slug,
-          withVisual: d.hasVisual,
-        });
-        if (d.logic && d.logic.trim()) {
-          await invoke<void>("loop_write_phase_file", {
+      await Promise.all(
+        drafts.map(async (draft) => {
+          const slug = phaseSlug(draft);
+          await invoke<string>("loop_create_phase_dir", {
             projectPath: ctx.projectPath,
             runId: ctx.runId,
             phaseSlug: slug,
-            file: "logic.md",
-            content: d.logic,
+            withVisual: draft.hasVisual,
           });
-        }
-        if (d.hasVisual && d.visual && d.visual.trim()) {
-          await invoke<void>("loop_write_phase_file", {
-            projectPath: ctx.projectPath,
-            runId: ctx.runId,
-            phaseSlug: slug,
-            file: "visual.html",
-            content: d.visual,
-          });
-        }
-      }
+          const writes: Array<Promise<void>> = [];
+          if (draft.logic?.trim()) {
+            writes.push(
+              invoke<void>("loop_write_phase_file", {
+                projectPath: ctx.projectPath,
+                runId: ctx.runId,
+                phaseSlug: slug,
+                file: "logic.md",
+                content: draft.logic,
+              }),
+            );
+          }
+          if (draft.hasVisual && draft.visual?.trim()) {
+            writes.push(
+              invoke<void>("loop_write_phase_file", {
+                projectPath: ctx.projectPath,
+                runId: ctx.runId,
+                phaseSlug: slug,
+                file: "visual.html",
+                content: draft.visual,
+              }),
+            );
+          }
+          await Promise.all(writes);
+        }),
+      );
       state.phases = phases;
       state.selectedSlug = phaseSlug(phases[0]);
       state.activeTab = "logic.md";
@@ -414,9 +422,11 @@ export function mountStep2Phases(slot: HTMLElement, ctx: Step2Context): Step2Han
 
   async function addPhase(): Promise<void> {
     // max+1 (not length+1) so a phase added after a delete gets a unique id.
-    const existingNums = state.phases
-      .map((p) => parseInt(p.id, 10))
-      .filter((n) => Number.isFinite(n));
+    const existingNums: number[] = [];
+    for (const phase of state.phases) {
+      const id = parseInt(phase.id, 10);
+      if (Number.isFinite(id)) existingNums.push(id);
+    }
     const nextNum = existingNums.length === 0 ? 1 : Math.max(...existingNums) + 1;
     const id = String(nextNum).padStart(2, "0");
     const name = `phase-${id}`;

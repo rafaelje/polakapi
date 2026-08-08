@@ -83,9 +83,11 @@ export function attachFinderDrop(panelRoot: HTMLElement, deps: FinderDropDeps): 
       toast("Drop on a workspace", "info");
       return;
     }
+    const validations = await Promise.all(paths.map((path) => validatePath(path)));
     let added = 0;
-    for (const path of paths) {
-      const validation = await validatePath(path);
+    for (let index = 0; index < paths.length; index += 1) {
+      const path = paths[index];
+      const validation = validations[index];
       if (!validation.ok) {
         toast(`${basename(path)}: ${formatPathError(validation)}`, "error");
         continue;

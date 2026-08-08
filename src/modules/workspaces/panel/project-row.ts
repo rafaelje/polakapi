@@ -459,12 +459,14 @@ function buildMoveToFolderItems(
     ...(controller.getState().workspaces.find((w) => w.id === workspaceId)?.folders ?? []),
   ].sort(compareByOrderThenName);
   if (folders.length === 0) return [];
-  const items = folders
-    .filter((f) => f.id !== currentFolderId)
-    .map((f) => ({
-      label: `Move to folder “${f.name}”`,
-      onSelect: () => controller.moveProjectToFolder(projectId, f.id),
-    }));
+  const items: Array<{ label: string; onSelect: () => void }> = [];
+  for (const folder of folders) {
+    if (folder.id === currentFolderId) continue;
+    items.push({
+      label: `Move to folder “${folder.name}”`,
+      onSelect: () => controller.moveProjectToFolder(projectId, folder.id),
+    });
+  }
   if (currentFolderId !== undefined) {
     items.push({
       label: "Move to workspace root",

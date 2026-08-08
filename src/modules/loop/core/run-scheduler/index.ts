@@ -12,7 +12,6 @@ import {
   createIntegratorState,
   createPhaseState,
   phaseToSlug,
-  sequentialPhaseOrder,
 } from "./factories";
 import {
   buildAgentDiff,
@@ -53,7 +52,6 @@ export {
   parseIntegrationVerdict,
   parseReviewVerdict,
   phaseToSlug,
-  sequentialPhaseOrder,
 };
 export type {
   AgentResult,
@@ -272,10 +270,17 @@ export class RunScheduler {
       if (this.shouldStop()) break;
       this.store.commit({ ...this.store.getState(), currentBatchIndex: batchIndex });
 
-      const slugs = this.store.getState().batches[batchIndex];
-      const phaseIndices = slugs
-        .map((slug) => this.store.getState().phases.findIndex((p) => p.slug === slug))
-        .filter((i) => i >= 0);
+      const state = this.store.getState();
+      const slugs = state.batches[batchIndex] ?? [];
+      const phaseIndexBySlug = new Map<string, number>();
+      for (let index = 0; index < state.phases.length; index += 1) {
+        phaseIndexBySlug.set(state.phases[index].slug, index);
+      }
+      const phaseIndices: number[] = [];
+      for (const slug of slugs) {
+        const index = phaseIndexBySlug.get(slug);
+        if (index !== undefined) phaseIndices.push(index);
+      }
       if (phaseIndices.length === 0) {
         batchIndex += 1;
         continue;
@@ -396,7 +401,9 @@ export class RunScheduler {
     const state = this.store.getState();
     if (state.mode !== "hybrid") return -1;
     for (let i = 0; i < state.batches.length; i++) {
-      if (state.batches[i].includes(slug)) return i;
+      for (const phaseSlug of state.batches[i]) {
+        if (phaseSlug === slug) return i;
+      }
     }
     return -1;
   }

@@ -1,4 +1,4 @@
-import { topologicalBatches, type Phase } from "../../step2-phases";
+import type { Phase } from "../../step2-phases";
 
 import type {
   AgentStageState,
@@ -79,12 +79,6 @@ export function createIntegratorState(batchIndex: number): IntegratorState {
 
 export function batchIdFor(index: number): string {
   return `batch-${index}`;
-}
-
-export function sequentialPhaseOrder(phases: Phase[]): Phase[] | null {
-  const batches = topologicalBatches(phases);
-  if (!batches) return null;
-  return batches.flat();
 }
 
 export function phaseToSlug(phase: Phase): string {

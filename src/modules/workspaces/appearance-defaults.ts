@@ -1,5 +1,5 @@
 import type { ColorToken } from "./state/types";
-import { PALETTE, deriveFallbackColor } from "./state/workspaces-reducer-appearance";
+import { deriveFallbackColor } from "./state/workspaces-reducer-appearance";
 
 // ---------------------------------------------------------------------------
 // F4 deterministic color default for rows that have not set an explicit
@@ -12,5 +12,3 @@ import { PALETTE, deriveFallbackColor } from "./state/workspaces-reducer-appeara
 export function deterministicColor(id: string): ColorToken {
   return deriveFallbackColor(id);
 }
-
-export { PALETTE };

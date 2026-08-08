@@ -557,13 +557,15 @@ export class WorkspacesController {
   ): Promise<void> {
     const hook = hookOverride ?? this.deleteHook;
     if (!hook) return;
-    for (const id of ids) {
-      try {
-        await hook(id);
-      } catch (error) {
-        console.error(errorMessage, error);
-      }
-    }
+    await Promise.all(
+      ids.map(async (id) => {
+        try {
+          await hook(id);
+        } catch (error) {
+          console.error(errorMessage, error);
+        }
+      }),
+    );
   }
 
   private async revalidatePersistedPaths(): Promise<void> {

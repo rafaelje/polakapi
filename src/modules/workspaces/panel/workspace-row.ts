@@ -138,9 +138,10 @@ export function createWorkspaceRow(opts: WorkspaceRowOptions): WorkspaceRowHandl
   const projectActivities = new Map<ProjectId, ProjectActivityState>(
     workspace.projects.map((project) => [project.id, opts.activityFor?.(project.id) ?? "idle"]),
   );
-  const bellPendingProjects = new Set<ProjectId>(
-    workspace.projects.filter((project) => opts.bellPendingFor?.(project.id)).map((p) => p.id),
-  );
+  const bellPendingProjects = new Set<ProjectId>();
+  for (const project of workspace.projects) {
+    if (opts.bellPendingFor?.(project.id)) bellPendingProjects.add(project.id);
+  }
 
   const syncActivitySummary = (): void => {
     const attention = bellPendingProjects.size;
