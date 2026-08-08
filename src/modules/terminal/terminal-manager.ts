@@ -374,6 +374,7 @@ export class TerminalManager {
     for (const id of [...this.order]) {
       if (!this.specsById.get(id)?.suspended) continue;
       try {
+        // react-doctor-disable-next-line react-doctor/async-await-in-loop
         await this.resumePane(id);
       } catch (error) {
         console.error(`Failed to resume pane ${id}`, error);
@@ -533,6 +534,7 @@ export class TerminalManager {
           idMap.set(spec.id, spec.id);
           continue;
         }
+        // react-doctor-disable-next-line react-doctor/async-await-in-loop
         const pane = await this.addPane(spec);
         const restoredId = pane?.el.dataset.ptyId;
         if (restoredId) idMap.set(spec.id, restoredId);

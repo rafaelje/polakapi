@@ -258,6 +258,7 @@ export class RunScheduler {
     for (let i = startIndex; i < this.store.getState().phases.length; i++) {
       if (this.shouldStop()) break;
       this.store.updatePhaseIndex(i);
+      // react-doctor-disable-next-line react-doctor/async-await-in-loop
       await this.phaseRunner.runPhase(i);
     }
     this.finalizeCycle();
@@ -291,6 +292,7 @@ export class RunScheduler {
       // and poison detectBatchConflicts. Real parallelism needs worktrees.
       for (const idx of phaseIndices) {
         if (this.shouldStop()) break;
+        // react-doctor-disable-next-line react-doctor/async-await-in-loop
         await this.phaseRunner.runPhase(idx);
       }
 
