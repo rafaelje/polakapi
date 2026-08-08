@@ -1,20 +1,30 @@
-import type { Project } from "../modules/workspaces/state/types";
+import { ALL_PROFILES, resolveProfile } from "../modules/terminal/cli-registry";
 import {
   createProjectEmptyState,
   type EmptyStateHandle,
 } from "../modules/workspaces/panel/workspaces-empty-state";
-import { ALL_PROFILES, type CliProfile } from "../modules/terminal/cli-registry";
+import type { Project } from "../modules/workspaces/state/types";
+import {
+  openProjectCommandCenter,
+  type ProjectCommand,
+  type ProjectCommandCenterHandle,
+} from "./project-command-center";
+import {
+  openProjectToolbarMenu,
+  type ProjectToolbarMenuHandle,
+  type ProjectToolbarMenuItem,
+} from "./project-toolbar-menu";
 
 export interface ProjectPaneCallbacks {
-  onAddTerminal(): void;
-  onOpenLayoutsMenu(anchor: HTMLElement): void;
-  onSuspendAll(): void;
-  onResumeAll(): void;
-  onRunInAll(): void;
-  onRevealFolder(path: string): void;
-  onOpenInEditor(path: string): void;
-  onOpenInShell(path: string): void;
-  onSetActiveCli(cliId: string): void;
+  onAddTerminal(this: void): void;
+  onOpenLayoutsMenu(this: void, anchor: HTMLElement): void;
+  onSuspendAll(this: void): void;
+  onResumeAll(this: void): void;
+  onRunInAll(this: void): void;
+  onRevealFolder(this: void, path: string): void;
+  onOpenInEditor(this: void, path: string): void;
+  onOpenInShell(this: void, path: string): void;
+  onSetActiveCli(this: void, cliId: string): void;
 }
 
 export interface ProjectPaneOptions {
@@ -26,68 +36,26 @@ export interface ProjectPaneOptions {
 export interface ProjectPaneHandle {
   setActiveProject(project: Project | null): void;
   setActiveCli(cliId: string): void;
-  /**
-   * Toggles which of Suspend/Resume all is shown for the active project: when
-   * every terminal is suspended (no live ones, but at least one suspended),
-   * "Resume all" replaces "Suspend all" instead of showing both at once.
-   */
   setSuspendResumeCounts(liveCount: number, suspendedCount: number): void;
+  toggleCommandCenter(): void;
   dispose(): void;
 }
 
-interface ChipRow {
-  element: HTMLDivElement;
-  setActive(cliId: string): void;
-  setDisabled(disabled: boolean): void;
-  dispose(): void;
+function profileLabel(cliId: string): string {
+  const profile = resolveProfile(cliId);
+  return profile.kind === "shell" ? "Local terminal" : profile.label;
 }
 
-function createChipRow(onSelect: (cliId: string) => void): ChipRow {
-  const element = document.createElement("div");
-  element.className = "cli-chips";
-
-  const chips: HTMLButtonElement[] = ALL_PROFILES.map((profile) => createChip(profile, onSelect));
-  for (const chip of chips) element.append(chip);
-
-  return {
-    element,
-    setActive(cliId: string): void {
-      for (const chip of chips) {
-        chip.classList.toggle("is-active", chip.dataset.cliId === cliId);
-      }
-    },
-    setDisabled(disabled: boolean): void {
-      for (const chip of chips) chip.disabled = disabled;
-    },
-    dispose(): void {
-      for (const chip of chips) chip.replaceWith(chip.cloneNode(true));
-      element.remove();
-    },
-  };
+function createButton(className: string, label: string): HTMLButtonElement {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = className;
+  button.textContent = label;
+  return button;
 }
 
-function createChip(profile: CliProfile, onSelect: (cliId: string) => void): HTMLButtonElement {
-  const chip = document.createElement("button");
-  chip.type = "button";
-  chip.className = `cli-chip cli-chip--${profile.id}`;
-  chip.dataset.cliId = profile.id;
-  chip.textContent = profile.label;
-  chip.addEventListener("click", () => {
-    if (chip.classList.contains("is-active")) return;
-    onSelect(profile.id);
-  });
-  return chip;
-}
-
-/**
- * Wraps the existing `#grid` with a local sub-toolbar containing the actions
- * that used to live in the global toolbar (+ Terminal, Run in all, Cols).
- * The sub-toolbar and the grid are only visible when a project is active.
- */
 export function mountProjectPane(opts: ProjectPaneOptions): ProjectPaneHandle {
   const { host, gridEl, callbacks } = opts;
-
-  // Preserve where the grid lived so we can restore on dispose.
   const originalParent = gridEl.parentElement;
   const originalNext = gridEl.nextSibling;
 
@@ -96,132 +64,258 @@ export function mountProjectPane(opts: ProjectPaneOptions): ProjectPaneHandle {
   const subToolbar = document.createElement("div");
   subToolbar.className = "project-pane-toolbar";
 
-  const addBtn = document.createElement("button");
-  addBtn.type = "button";
-  addBtn.id = "add-pane";
-  addBtn.textContent = "+ Terminal";
+  const splitControl = document.createElement("div");
+  splitControl.className = "project-toolbar-split pane-badge--shell";
+  splitControl.setAttribute("role", "group");
+  splitControl.setAttribute("aria-label", "Start terminal");
 
-  const layoutsBtn = document.createElement("button");
-  layoutsBtn.type = "button";
-  layoutsBtn.id = "layouts-menu";
-  layoutsBtn.title = "Apply or save a layout template";
-  layoutsBtn.textContent = "Layouts";
+  const startBtn = createButton("project-toolbar-start", "Start Local terminal");
+  startBtn.id = "add-pane";
 
-  const revealBtn = document.createElement("button");
-  revealBtn.type = "button";
-  revealBtn.title = "Reveal in file manager";
-  revealBtn.textContent = "Reveal";
+  const profileBtn = createButton("project-toolbar-profile", "⌄");
+  profileBtn.id = "terminal-profile-menu";
+  profileBtn.title = "Choose terminal type";
+  profileBtn.setAttribute("aria-label", "Choose terminal type");
+  profileBtn.setAttribute("aria-haspopup", "menu");
+  profileBtn.setAttribute("aria-expanded", "false");
+  splitControl.append(startBtn, profileBtn);
 
-  const editorBtn = document.createElement("button");
-  editorBtn.type = "button";
-  editorBtn.title = "Open in IDE";
-  editorBtn.textContent = "Open in IDE";
+  const commandBtn = createButton("project-toolbar-command", "");
+  commandBtn.id = "project-command-center";
+  commandBtn.title = "Open project command center";
+  commandBtn.setAttribute("aria-label", "Open project command center");
+  commandBtn.setAttribute("aria-haspopup", "listbox");
+  commandBtn.setAttribute("aria-expanded", "false");
 
-  const shellBtn = document.createElement("button");
-  shellBtn.type = "button";
-  shellBtn.title = "Open in external terminal";
-  shellBtn.textContent = "Shell";
+  const commandIcon = document.createElement("span");
+  commandIcon.className = "project-toolbar-command-icon";
+  commandIcon.textContent = "⌕";
+  commandIcon.setAttribute("aria-hidden", "true");
 
-  const externalGroup = document.createElement("div");
-  externalGroup.className = "project-pane-external";
-  externalGroup.append(revealBtn, editorBtn, shellBtn);
+  const commandLabel = document.createElement("span");
+  commandLabel.className = "project-toolbar-command-label";
+  commandLabel.textContent = "Run a project command…";
 
-  const runAllBtn = document.createElement("button");
-  runAllBtn.type = "button";
-  runAllBtn.id = "run-all";
-  runAllBtn.textContent = "Run command in all…";
+  const commandShortcut = document.createElement("kbd");
+  commandShortcut.className = "project-toolbar-command-shortcut";
+  commandShortcut.textContent = /Mac|iPhone|iPad/.test(navigator.platform) ? "⌘ K" : "Ctrl ⇧ K";
+  commandBtn.append(commandIcon, commandLabel, commandShortcut);
 
-  const suspendBtn = document.createElement("button");
-  suspendBtn.type = "button";
+  const spacer = document.createElement("span");
+  spacer.className = "project-toolbar-spacer";
+
+  const status = document.createElement("span");
+  status.className = "project-toolbar-status is-idle";
+  status.setAttribute("aria-live", "polite");
+  status.textContent = "No terminals";
+
+  const suspendBtn = createButton("project-toolbar-process", "⏸ Suspend all");
   suspendBtn.id = "suspend-all";
-  suspendBtn.title = "Kill this project's terminal processes to free RAM; panes stay to resume";
-  suspendBtn.textContent = "⏸ Suspend all";
+  suspendBtn.title = "Free RAM while keeping panes available to resume";
 
-  const resumeBtn = document.createElement("button");
-  resumeBtn.type = "button";
+  const resumeBtn = createButton("project-toolbar-process hidden", "▶ Resume all");
   resumeBtn.id = "resume-all";
-  resumeBtn.title =
-    "Resume every suspended terminal — shell terminals replay their last command, AI CLIs continue their session";
-  resumeBtn.textContent = "▶ Resume all";
+  resumeBtn.title = "Resume every suspended terminal";
 
-  const chipRow = createChipRow((cliId) => {
-    chipRow.setActive(cliId);
-    callbacks.onSetActiveCli(cliId);
-  });
-  chipRow.setActive("shell");
+  const actionsBtn = createButton("project-toolbar-actions", "•••");
+  actionsBtn.id = "project-actions-menu";
+  actionsBtn.title = "Project actions";
+  actionsBtn.setAttribute("aria-label", "Project actions");
+  actionsBtn.setAttribute("aria-haspopup", "menu");
+  actionsBtn.setAttribute("aria-expanded", "false");
 
-  subToolbar.append(
-    chipRow.element,
-    addBtn,
-    layoutsBtn,
-    runAllBtn,
-    suspendBtn,
-    resumeBtn,
-    externalGroup,
-  );
+  subToolbar.append(splitControl, commandBtn, spacer, status, suspendBtn, resumeBtn, actionsBtn);
 
   let emptyState: EmptyStateHandle | null = createProjectEmptyState();
   let currentProject: Project | null = null;
+  let currentCliId = "shell";
+  let showResume = false;
+  let activeMenu: ProjectToolbarMenuHandle | ProjectCommandCenterHandle | null = null;
 
-  // Insert sub-toolbar and the grid into `host`, then append the empty state
-  // below them (it is only visible when no project is active — `gridEl` is
-  // hidden via the `inactive` modifier).
   host.replaceChildren(subToolbar, gridEl, emptyState.element);
   host.classList.add("inactive");
-  // Start disabled — setActiveProject(project) flips them on once the
-  // bootstrap layer wires the router to an active project.
-  addBtn.disabled = true;
-  layoutsBtn.disabled = true;
-  runAllBtn.disabled = true;
-  suspendBtn.disabled = true;
-  resumeBtn.disabled = true;
-  resumeBtn.classList.add("hidden");
-  revealBtn.disabled = true;
-  editorBtn.disabled = true;
-  shellBtn.disabled = true;
-  chipRow.setDisabled(true);
 
-  const onAdd = (): void => callbacks.onAddTerminal();
-  const onLayouts = (): void => callbacks.onOpenLayoutsMenu(layoutsBtn);
+  const setProfile = (cliId: string): void => {
+    currentCliId = resolveProfile(cliId).id;
+    for (const profile of ALL_PROFILES) {
+      splitControl.classList.remove(`pane-badge--${profile.id}`);
+    }
+    splitControl.classList.add(`pane-badge--${currentCliId}`);
+    startBtn.textContent = `Start ${profileLabel(currentCliId)}`;
+    startBtn.title = `Start ${profileLabel(currentCliId)}`;
+  };
+
+  const closeActiveMenu = (): void => {
+    activeMenu?.dispose();
+    activeMenu = null;
+  };
+
+  const onStart = (): void => callbacks.onAddTerminal();
+  const onProfileMenu = (): void => {
+    const wasOpen = profileBtn.getAttribute("aria-expanded") === "true";
+    closeActiveMenu();
+    if (wasOpen) return;
+    activeMenu = openProjectToolbarMenu({
+      trigger: profileBtn,
+      label: "Terminal type",
+      align: "start",
+      items: ALL_PROFILES.map(
+        (profile): ProjectToolbarMenuItem => ({
+          label: profileLabel(profile.id),
+          profileId: profile.id,
+          checked: profile.id === currentCliId,
+          onSelect: () => {
+            if (profile.id === currentCliId) return;
+            setProfile(profile.id);
+            callbacks.onSetActiveCli(profile.id);
+          },
+        }),
+      ),
+    });
+  };
   const onSuspendAll = (): void => callbacks.onSuspendAll();
   const onResumeAll = (): void => callbacks.onResumeAll();
-  const onRunAll = (): void => callbacks.onRunInAll();
-  const onReveal = (): void => {
+  const commandItems = (): ProjectCommand[] => {
     const path = currentProject?.path;
-    if (path) callbacks.onRevealFolder(path);
+    return [
+      {
+        id: "start-terminal",
+        label: `Start ${profileLabel(currentCliId)}`,
+        group: "Terminal",
+        keywords: ["new", "create", currentCliId],
+        run: callbacks.onAddTerminal,
+      },
+      {
+        id: "layouts",
+        label: "Layouts…",
+        group: "Workspace",
+        keywords: ["arrange", "template"],
+        run: () => callbacks.onOpenLayoutsMenu(commandBtn),
+      },
+      {
+        id: "run-all",
+        label: "Run command in all…",
+        group: "Workspace",
+        keywords: ["terminal", "batch", "execute"],
+        run: callbacks.onRunInAll,
+      },
+      {
+        id: showResume ? "resume-all" : "suspend-all",
+        label: showResume ? "Resume all" : "Suspend all",
+        group: "Workspace",
+        keywords: ["terminal", "process", "memory"],
+        run: showResume ? callbacks.onResumeAll : callbacks.onSuspendAll,
+      },
+      {
+        id: "reveal",
+        label: "Reveal in file manager",
+        group: "Open project",
+        keywords: ["finder", "explorer", "folder"],
+        disabled: !path,
+        run: () => {
+          if (path) callbacks.onRevealFolder(path);
+        },
+      },
+      {
+        id: "open-ide",
+        label: "Open in IDE",
+        group: "Open project",
+        keywords: ["editor", "code"],
+        disabled: !path,
+        run: () => {
+          if (path) callbacks.onOpenInEditor(path);
+        },
+      },
+      {
+        id: "open-terminal",
+        label: "Open in terminal",
+        group: "Open project",
+        keywords: ["shell", "external"],
+        disabled: !path,
+        run: () => {
+          if (path) callbacks.onOpenInShell(path);
+        },
+      },
+    ];
   };
-  const onEditor = (): void => {
-    const path = currentProject?.path;
-    if (path) callbacks.onOpenInEditor(path);
+  const onCommandCenter = (): void => {
+    const wasOpen = commandBtn.getAttribute("aria-expanded") === "true";
+    closeActiveMenu();
+    if (wasOpen || commandBtn.disabled) return;
+    activeMenu = openProjectCommandCenter({
+      trigger: commandBtn,
+      commands: commandItems(),
+    });
   };
-  const onShell = (): void => {
+  const onProjectActions = (): void => {
+    const wasOpen = actionsBtn.getAttribute("aria-expanded") === "true";
+    closeActiveMenu();
+    if (wasOpen) return;
     const path = currentProject?.path;
-    if (path) callbacks.onOpenInShell(path);
+    activeMenu = openProjectToolbarMenu({
+      trigger: actionsBtn,
+      label: "Project actions",
+      items: [
+        {
+          id: "layouts-menu",
+          label: "Layouts…",
+          onSelect: () => callbacks.onOpenLayoutsMenu(actionsBtn),
+        },
+        { id: "run-all", label: "Run command in all…", onSelect: callbacks.onRunInAll },
+        {
+          label: showResume ? "Resume all" : "Suspend all",
+          onSelect: showResume ? callbacks.onResumeAll : callbacks.onSuspendAll,
+        },
+        {
+          label: "Reveal in file manager",
+          separatorBefore: true,
+          disabled: !path,
+          onSelect: () => {
+            if (path) callbacks.onRevealFolder(path);
+          },
+        },
+        {
+          label: "Open in IDE",
+          disabled: !path,
+          onSelect: () => {
+            if (path) callbacks.onOpenInEditor(path);
+          },
+        },
+        {
+          label: "Open in terminal",
+          disabled: !path,
+          onSelect: () => {
+            if (path) callbacks.onOpenInShell(path);
+          },
+        },
+      ],
+    });
   };
 
-  addBtn.addEventListener("click", onAdd);
-  layoutsBtn.addEventListener("click", onLayouts);
+  startBtn.addEventListener("click", onStart);
+  profileBtn.addEventListener("click", onProfileMenu);
+  commandBtn.addEventListener("click", onCommandCenter);
   suspendBtn.addEventListener("click", onSuspendAll);
   resumeBtn.addEventListener("click", onResumeAll);
-  runAllBtn.addEventListener("click", onRunAll);
-  revealBtn.addEventListener("click", onReveal);
-  editorBtn.addEventListener("click", onEditor);
-  shellBtn.addEventListener("click", onShell);
+  actionsBtn.addEventListener("click", onProjectActions);
+
+  const setControlsDisabled = (disabled: boolean): void => {
+    startBtn.disabled = disabled;
+    profileBtn.disabled = disabled;
+    commandBtn.disabled = disabled;
+    suspendBtn.disabled = disabled;
+    resumeBtn.disabled = disabled;
+    actionsBtn.disabled = disabled;
+  };
+  setControlsDisabled(true);
 
   return {
     setActiveProject(project: Project | null): void {
+      closeActiveMenu();
       currentProject = project;
       const active = project !== null;
       host.classList.toggle("inactive", !active);
-      addBtn.disabled = !active;
-      layoutsBtn.disabled = !active;
-      runAllBtn.disabled = !active;
-      suspendBtn.disabled = !active;
-      resumeBtn.disabled = !active;
-      revealBtn.disabled = project === null || !project.path;
-      editorBtn.disabled = project === null || !project.path;
-      shellBtn.disabled = project === null || !project.path;
-      chipRow.setDisabled(!active);
+      setControlsDisabled(!active);
       if (active && emptyState) {
         emptyState.dispose();
         emptyState = null;
@@ -231,34 +325,36 @@ export function mountProjectPane(opts: ProjectPaneOptions): ProjectPaneHandle {
       }
     },
     setActiveCli(cliId: string): void {
-      chipRow.setActive(cliId);
+      setProfile(cliId);
     },
     setSuspendResumeCounts(liveCount: number, suspendedCount: number): void {
-      // Nothing left running but at least one suspended pane: show only
-      // "Resume all" instead of both actions side by side.
-      const showResume = liveCount === 0 && suspendedCount > 0;
+      showResume = liveCount === 0 && suspendedCount > 0;
       suspendBtn.classList.toggle("hidden", showResume);
       resumeBtn.classList.toggle("hidden", !showResume);
+      const parts: string[] = [];
+      if (liveCount > 0) parts.push(`${liveCount} running`);
+      if (suspendedCount > 0) parts.push(`${suspendedCount} suspended`);
+      status.textContent = parts.join(" · ") || "No terminals";
+      status.classList.toggle("is-idle", liveCount === 0 && suspendedCount === 0);
+      status.classList.toggle("is-suspended", liveCount === 0 && suspendedCount > 0);
+    },
+    toggleCommandCenter(): void {
+      onCommandCenter();
     },
     dispose(): void {
-      addBtn.removeEventListener("click", onAdd);
-      layoutsBtn.removeEventListener("click", onLayouts);
+      closeActiveMenu();
+      startBtn.removeEventListener("click", onStart);
+      profileBtn.removeEventListener("click", onProfileMenu);
+      commandBtn.removeEventListener("click", onCommandCenter);
       suspendBtn.removeEventListener("click", onSuspendAll);
       resumeBtn.removeEventListener("click", onResumeAll);
-      runAllBtn.removeEventListener("click", onRunAll);
-      revealBtn.removeEventListener("click", onReveal);
-      editorBtn.removeEventListener("click", onEditor);
-      shellBtn.removeEventListener("click", onShell);
-      chipRow.dispose();
+      actionsBtn.removeEventListener("click", onProjectActions);
       emptyState?.dispose();
       emptyState = null;
       subToolbar.remove();
       host.classList.remove("project-pane", "inactive");
-      // Restore the grid to its original parent so callers that hold a
-      // direct reference do not break.
-      if (originalParent && originalParent !== host) {
+      if (originalParent && originalParent !== host)
         originalParent.insertBefore(gridEl, originalNext);
-      }
     },
   };
 }

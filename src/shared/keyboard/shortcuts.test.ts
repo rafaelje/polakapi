@@ -17,7 +17,7 @@ function ev(overrides: Partial<ShortcutKeyEvent>): ShortcutKeyEvent {
 describe("resolveAppShortcut on Linux/Windows (Ctrl+Shift)", () => {
   const isMac = false;
 
-  it("maps Ctrl+Shift+T/W/P to pane and palette actions", () => {
+  it("maps Ctrl+Shift+T/W/P/K to pane and palette actions", () => {
     expect(resolveAppShortcut(ev({ ctrlKey: true, shiftKey: true, key: "T" }), isMac)).toEqual({
       kind: "new-pane",
     });
@@ -26,6 +26,9 @@ describe("resolveAppShortcut on Linux/Windows (Ctrl+Shift)", () => {
     });
     expect(resolveAppShortcut(ev({ ctrlKey: true, shiftKey: true, key: "P" }), isMac)).toEqual({
       kind: "toggle-palette",
+    });
+    expect(resolveAppShortcut(ev({ ctrlKey: true, shiftKey: true, key: "K" }), isMac)).toEqual({
+      kind: "toggle-command-center",
     });
   });
 
@@ -91,6 +94,9 @@ describe("resolveAppShortcut on macOS (Cmd)", () => {
     expect(resolveAppShortcut(ev({ metaKey: true, key: "3" }), isMac)).toEqual({
       kind: "focus-index",
       index: 2,
+    });
+    expect(resolveAppShortcut(ev({ metaKey: true, key: "k" }), isMac)).toEqual({
+      kind: "toggle-command-center",
     });
   });
 
