@@ -57,6 +57,7 @@
 
 .project-toolbar-split {
   --cli-color: var(--cli-shell);
+
   display: inline-flex;
   align-items: stretch;
   flex: 0 0 auto;

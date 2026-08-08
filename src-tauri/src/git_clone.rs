@@ -69,7 +69,12 @@ fn ssh_command_with_batch_mode() -> String {
 }
 
 fn append_batch_mode(configured: Option<&str>) -> String {
-    format!("{} -oBatchMode=yes", configured.unwrap_or("ssh").trim())
+    let configured = configured.unwrap_or("ssh").trim();
+    let program_end = configured
+        .find(char::is_whitespace)
+        .unwrap_or(configured.len());
+    let (program, arguments) = configured.split_at(program_end);
+    format!("{program} -oBatchMode=yes{arguments}")
 }
 
 fn is_valid_git_url(url: &str) -> bool {
@@ -140,7 +145,11 @@ mod tests {
     fn preserves_configured_ssh_command_when_enabling_batch_mode() {
         assert_eq!(
             append_batch_mode(Some("ssh -i ~/.ssh/work -p 2222")),
-            "ssh -i ~/.ssh/work -p 2222 -oBatchMode=yes"
+            "ssh -oBatchMode=yes -i ~/.ssh/work -p 2222"
+        );
+        assert_eq!(
+            append_batch_mode(Some("ssh -oBatchMode=no")),
+            "ssh -oBatchMode=yes -oBatchMode=no"
         );
         assert_eq!(append_batch_mode(None), "ssh -oBatchMode=yes");
     }

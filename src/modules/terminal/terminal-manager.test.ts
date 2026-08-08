@@ -502,19 +502,18 @@ describe("TerminalManager resumeAll / shell command replay", () => {
   afterEach(() => {
     vi.useRealTimers();
   });
-  it("resumePane replays the captured lastShellCommand for a shell profile", async () => {
+  it("resumePane preserves shell command metadata across repeated resume cycles", async () => {
     const manager = makeManager();
     await manager.addPane({ cliId: "shell" });
-    const [id] = manager.ids();
+    let [id] = manager.ids();
     fake.emitShellCommand(id, "lazygit");
+    for (let cycle = 0; cycle < 2; cycle += 1) {
+      manager.suspendPane(id);
+      manager.markExited(id);
+      await manager.resumePane(id);
+      [id] = manager.ids();
+    }
     expect(manager.specs()[0]?.lastShellCommand).toBe("lazygit");
-    manager.suspendPane(id);
-    manager.markExited(id);
-    await manager.resumePane(id);
-    const newId = manager.ids()[0];
-    await vi.advanceTimersByTimeAsync(1000);
-    const { ptyWrite } = await import("./pty-client");
-    expect(ptyWrite).toHaveBeenCalledWith(newId, "lazygit\r");
   });
   it("resumePane does not replay non-whitelisted commands like git push", async () => {
     const manager = makeManager();

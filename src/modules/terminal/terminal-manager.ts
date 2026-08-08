@@ -243,6 +243,8 @@ export class TerminalManager {
       cwd: spec?.cwd,
       startupCmd: spec?.startupCmd,
       cliId: profile.id,
+      lastShellCommand: spec?.lastShellCommand,
+      lastShellCommandAlias: spec?.lastShellCommandAlias,
     };
     this.panes.set(ptyId, pane);
     this.order.push(ptyId);
@@ -358,7 +360,7 @@ export class TerminalManager {
       shouldReplayShellCommand(lastShellCommand, lastShellCommandAlias === true);
     const newId = await this.replacePane(
       paneId,
-      { title, cwd, startupCmd, cliId },
+      { title, cwd, startupCmd, cliId, lastShellCommand, lastShellCommandAlias },
       { extraArgs: resumeArgs, skipStartupCmd: resumeArgs !== undefined || shouldReplay },
     );
     if (newId && shouldReplay && lastShellCommand) {
