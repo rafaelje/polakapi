@@ -5,7 +5,6 @@ import { matchesProject } from "../project-filter";
 import { validatePath } from "../path-validation";
 import { createSelectionStore } from "../state/selection";
 import { createWorkspaceRow, type WorkspaceRowHandle } from "./workspace-row";
-import { mountRunningSection } from "./running-projects";
 import { createSidebarEmptyState, type EmptyStateHandle } from "./workspaces-empty-state";
 import { sortedWorkspaces } from "../state/workspaces-reducer";
 import type { ProjectId } from "../state/types";
@@ -120,12 +119,10 @@ export function mountWorkspacesPanel(opts: WorkspacesPanelOptions): WorkspacesPa
   const suspendedCountFor = (projectId: ProjectId): number =>
     liveCounts?.getSuspendedCount?.(projectId) ?? 0;
 
-  const running = liveCounts ? mountRunningSection({ controller, getCount: liveCountFor }) : null;
-
   const body = document.createElement("div");
   body.className = "ws-panel-body";
 
-  root.append(header, ...(running ? [running.element] : []), body);
+  root.append(header, body);
 
   const handles: WorkspaceRowHandle[] = [];
   let emptyState: EmptyStateHandle | null = null;
@@ -233,11 +230,6 @@ export function mountWorkspacesPanel(opts: WorkspacesPanelOptions): WorkspacesPa
     for (const w of event.state.workspaces) for (const p of w.projects) validIds.add(p.id);
     selection.prune(validIds);
     render();
-    running?.refresh();
-  });
-
-  const unsubscribeActive = controller.on((event) => {
-    if (event.type === "active-project-changed") running?.refresh();
   });
 
   const unsubscribeCounts =
@@ -247,7 +239,6 @@ export function mountWorkspacesPanel(opts: WorkspacesPanelOptions): WorkspacesPa
       for (const [projectId, count] of counts) {
         for (const handle of handles) handle.setLiveCount(projectId, count);
       }
-      running?.refresh();
     }) ?? null;
 
   // F5: coalesce rapid bells at the panel layer. The router emits one event
@@ -280,7 +271,6 @@ export function mountWorkspacesPanel(opts: WorkspacesPanelOptions): WorkspacesPa
   return {
     unmount(): void {
       unsubscribeController();
-      unsubscribeActive();
       unsubscribeCounts?.();
       unsubscribeBells?.();
       finderDrop.detach();
