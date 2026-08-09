@@ -157,7 +157,7 @@ jobs:
         run: |
           version=$(jq -r .version src-tauri/tauri.conf.json)
           echo "tag=v${version}" >> "$GITHUB_OUTPUT"
-          echo "title=PolakAPI v${version}" >> "$GITHUB_OUTPUT"
+          echo "title=polakapi v${version}" >> "$GITHUB_OUTPUT"
       - name: Publish desktop installers to GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}

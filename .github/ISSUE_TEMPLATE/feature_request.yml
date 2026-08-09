@@ -1,0 +1,76 @@
+name: Feature request
+description: Propose an improvement or new capability for polakapi.
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: checkboxes
+    id: prerequisites
+    attributes:
+      label: Prerequisites
+      options:
+        - label: I searched existing issues and did not find an equivalent proposal.
+          required: true
+
+  - type: dropdown
+    id: affected-area
+    attributes:
+      label: Area
+      options:
+        - Terminal and PTY
+        - Workspaces and projects
+        - Notes and persistence
+        - Prompt history and CLI hooks
+        - Loop workflow
+        - Adversarial review
+        - Packaging and releases
+        - Contributor experience
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: Describe the user need or limitation this proposal addresses.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposed-solution
+    attributes:
+      label: Proposed solution
+      description: Describe the behavior you would like and how it should work.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Describe current workarounds or alternative designs.
+
+  - type: textarea
+    id: platform-impact
+    attributes:
+      label: Platform considerations
+      description: Note any expected differences across macOS, Linux, or Windows.
+
+  - type: dropdown
+    id: contribution
+    attributes:
+      label: Contribution
+      description: Would you be interested in implementing this feature?
+      options:
+        - "Yes"
+        - Maybe, with guidance
+        - "No"
+    validations:
+      required: true
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional context
+      description: Add mockups, examples, references, or other relevant information.
