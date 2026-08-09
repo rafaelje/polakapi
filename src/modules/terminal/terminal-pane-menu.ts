@@ -1,4 +1,5 @@
 import { confirmModal, promptModal } from "../../shared/ui/modal";
+import { clampPopoverToViewport } from "../../shared/ui/popover-position";
 import { ALL_PROFILES, resolveProfile, type CliProfile } from "./cli-registry";
 import type { TerminalDockPosition } from "./terminal-layout";
 import type { StartupCmdEditCallbacks, SuspendCallbacks } from "./terminal-pane-types";
@@ -97,6 +98,7 @@ export function openPaneMenu(opts: PaneMenuOptions): PaneMenuHandle {
   });
 
   document.body.append(popover);
+  clampPopoverToViewport(popover);
   window.addEventListener("mousedown", onOutside, true);
   window.addEventListener("keydown", onKey, true);
   window.addEventListener("resize", dispose);
@@ -166,6 +168,7 @@ export function openCliRespawnMenu(opts: CliRespawnMenuOptions): PaneMenuHandle 
   }
 
   document.body.append(popover);
+  clampPopoverToViewport(popover);
   window.addEventListener("mousedown", onOutside, true);
   window.addEventListener("keydown", onKey, true);
   window.addEventListener("resize", dispose);
@@ -263,6 +266,7 @@ export function openTerminalContextMenu(opts: TerminalContextMenuOptions): PaneM
 
   popover.append(copyItem, pasteItem);
   document.body.append(popover);
+  clampPopoverToViewport(popover);
   window.addEventListener("mousedown", onOutside, true);
   window.addEventListener("keydown", onKey, true);
   window.addEventListener("resize", dispose);
