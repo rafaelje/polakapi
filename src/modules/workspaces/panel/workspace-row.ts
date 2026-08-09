@@ -2,15 +2,20 @@ import { promptModal } from "../../../shared/ui/modal";
 import { showToast } from "../../../shared/ui/toast";
 import { deterministicColor } from "../appearance-defaults";
 import { openAppearancePicker } from "../forms/appearance-picker";
+import { createFolderRow, type FolderRowHandle } from "./folder-row";
 import { createProjectRow, createShortcutHint, type ProjectRowHandle } from "./project-row";
-import { filterProjects } from "../project-filter";
+import { matchesProject } from "../project-filter";
 import { openRowMenu } from "../forms/row-menu";
 import { startInlineRename } from "../forms/rename-inline";
 import { normalizeShortcutKey } from "../state/workspaces-reducer-shortcuts";
+import type { ProjectActivityState } from "../../terminal/project-activity";
 import type { SelectionStore } from "../state/selection";
-import type { Project, ProjectId, Workspace } from "../state/types";
+import type { ProjectId, Workspace } from "../state/types";
 import type { WorkspacesController } from "../state/workspaces-controller";
-import { sortedProjects } from "../state/workspaces-reducer";
+import { compareByOrderThenName } from "../state/workspaces-reducer-helpers";
+import { sortedWorkspaceEntries } from "../state/workspaces-reducer";
+
+const WORKSPACE_CLICK_DELAY_MS = 280;
 
 export interface WorkspaceRowOptions {
   workspace: Workspace;
@@ -21,6 +26,10 @@ export interface WorkspaceRowOptions {
    * created rows already show the right badge before the next event fires.
    */
   liveCountFor?: (projectId: ProjectId) => number;
+  activityFor?: (projectId: ProjectId) => ProjectActivityState;
+  bellPendingFor?: (projectId: ProjectId) => boolean;
+  /** Resolves the suspended-terminal count; feeds "Resume terminals (N)". */
+  getSuspendedCount?: (projectId: ProjectId) => number;
   /**
    * Optional sidebar search query. When non-empty, only projects matching the
    * query are rendered. Workspaces with zero matches are hidden by the panel.
@@ -29,6 +38,8 @@ export interface WorkspaceRowOptions {
   /** Multi-selection store shared across all rows. */
   selection: SelectionStore;
   onSuspendProject?: (projectId: ProjectId) => void;
+  onResumeProject?: (projectId: ProjectId) => void;
+  onDeleteSelected?: () => void;
 }
 
 export interface WorkspaceRowHandle {
@@ -38,10 +49,8 @@ export interface WorkspaceRowHandle {
    * No-op when the project is not currently rendered under this row.
    */
   setLiveCount(projectId: ProjectId, n: number): void;
-  /**
-   * F5: forward a bell-pending toggle to the matching ProjectRow. No-op when
-   * the project is not currently rendered under this row.
-   */
+  setActivity(projectId: ProjectId, state: ProjectActivityState): void;
+  /** Forward a bell-pending toggle to the matching project row. */
   setBellPending(projectId: ProjectId, pending: boolean): void;
   dispose(): void;
 }
@@ -75,6 +84,27 @@ export function createWorkspaceRow(opts: WorkspaceRowOptions): WorkspaceRowHandl
   const name = document.createElement("span");
   name.className = "ws-workspace-name";
   name.textContent = workspace.name;
+  const setNameInteractive = (interactive: boolean): void => {
+    if (interactive) {
+      name.tabIndex = 0;
+      name.setAttribute("role", "button");
+      name.setAttribute("aria-expanded", String(!workspace.collapsed));
+      name.title = "Click to collapse or expand. Double-click to rename.";
+      return;
+    }
+    name.removeAttribute("tabindex");
+    name.removeAttribute("role");
+    name.removeAttribute("aria-expanded");
+    name.removeAttribute("title");
+  };
+  setNameInteractive(true);
+
+  const activitySummary = document.createElement("span");
+  activitySummary.className = "ws-workspace-activity";
+  const activityDot = document.createElement("span");
+  activityDot.className = "ws-workspace-activity-dot";
+  const activityLabel = document.createElement("span");
+  activitySummary.append(activityDot, activityLabel);
 
   const addBtn = document.createElement("button");
   addBtn.type = "button";
@@ -90,7 +120,7 @@ export function createWorkspaceRow(opts: WorkspaceRowOptions): WorkspaceRowHandl
 
   header.append(chevron, name);
   if (workspace.shortcut) header.append(createShortcutHint(workspace.shortcut));
-  header.append(addBtn, menuBtn);
+  header.append(activitySummary, addBtn, menuBtn);
   wrapper.append(header);
 
   const projectsList = document.createElement("div");
@@ -99,32 +129,119 @@ export function createWorkspaceRow(opts: WorkspaceRowOptions): WorkspaceRowHandl
   wrapper.append(projectsList);
 
   const projectHandles = new Map<ProjectId, ProjectRowHandle>();
+  const ownProjectIds = new Set<ProjectId>();
+  const folderHandles: FolderRowHandle[] = [];
   const activeProjectId = controller.getState().activeProjectId;
   const liveCountFor = opts.liveCountFor;
-
-  const visibleProjects: Project[] = filterProjects(
-    opts.filterQuery ?? "",
-    workspace,
-    sortedProjects(workspace),
+  const suspendedCountFor = opts.getSuspendedCount;
+  const activeQuery = opts.filterQuery ?? "";
+  const projectActivities = new Map<ProjectId, ProjectActivityState>(
+    workspace.projects.map((project) => [project.id, opts.activityFor?.(project.id) ?? "idle"]),
   );
+  const bellPendingProjects = new Set<ProjectId>();
+  for (const project of workspace.projects) {
+    if (opts.bellPendingFor?.(project.id)) bellPendingProjects.add(project.id);
+  }
 
-  for (const project of visibleProjects) {
-    const initialCount = liveCountFor ? liveCountFor(project.id) : 0;
-    const handle = createProjectRow({
-      onSuspendProject: opts.onSuspendProject,
-      project,
-      workspaceId: workspace.id,
-      isActive: activeProjectId === project.id,
-      liveTerminalsCount: initialCount,
+  const syncActivitySummary = (): void => {
+    const attention = bellPendingProjects.size;
+    const working = [...projectActivities.values()].filter((state) => state === "working").length;
+    const ready = [...projectActivities.values()].filter((state) => state === "ready").length;
+    const recent = [...projectActivities.values()].filter((state) => state === "recent").length;
+    let state: "attention" | ProjectActivityState = "idle";
+    let text = "";
+    if (attention > 0) {
+      state = "attention";
+      text = `${attention} need${attention === 1 ? "s" : ""} attention`;
+    } else if (working > 0) {
+      state = "working";
+      text = `${working} working`;
+    } else if (ready > 0) {
+      state = "ready";
+      text = `${ready} active`;
+    } else if (recent > 0) {
+      state = "recent";
+      text = `${recent} recent`;
+    }
+    activitySummary.dataset.activity = state;
+    activitySummary.classList.toggle("hidden", state === "idle");
+    activityLabel.textContent = text;
+    activitySummary.title = text;
+  };
+  syncActivitySummary();
+
+  const folderCount = (workspace.folders ?? []).length;
+  const sortedFolderIds = [...(workspace.folders ?? [])]
+    .sort(compareByOrderThenName)
+    .map((f) => f.id);
+
+  for (const entry of sortedWorkspaceEntries(workspace)) {
+    if (entry.kind === "project") {
+      // Search filtering for ungrouped projects, applied per-entry (same
+      // matching rule `filterProjects` uses for the whole list).
+      if (activeQuery && !matchesProject(activeQuery, workspace.name, entry.project)) continue;
+      const project = entry.project;
+      const initialCount = liveCountFor ? liveCountFor(project.id) : 0;
+      const handle = createProjectRow({
+        onSuspendProject: opts.onSuspendProject,
+        onResumeProject: opts.onResumeProject,
+        onDeleteSelected: opts.onDeleteSelected,
+        project,
+        workspaceId: workspace.id,
+        isActive: activeProjectId === project.id,
+        liveTerminalsCount: initialCount,
+        activityState: projectActivities.get(project.id) ?? "idle",
+        bellPending: bellPendingProjects.has(project.id),
+        controller,
+        getLiveCount: liveCountFor ? () => liveCountFor(project.id) : undefined,
+        getSuspendedCount: suspendedCountFor ? () => suspendedCountFor(project.id) : undefined,
+        selection: opts.selection,
+      });
+      projectHandles.set(project.id, handle);
+      ownProjectIds.add(project.id);
+      projectsList.append(handle.element);
+      continue;
+    }
+
+    const folder = entry.folder;
+    const folderIdx = sortedFolderIds.indexOf(folder.id);
+    // Skip a folder entirely when a search is active and none of its
+    // projects match — same "hide empty groups" rule the panel already
+    // applies to whole workspaces.
+    if (activeQuery) {
+      const hasMatch = workspace.projects.some(
+        (p) => p.folderId === folder.id && matchesProject(activeQuery, workspace.name, p),
+      );
+      if (!hasMatch) continue;
+    }
+    const folderHandle = createFolderRow({
+      folder,
+      workspace,
       controller,
-      getLiveCount: liveCountFor ? () => liveCountFor(project.id) : undefined,
+      liveCountFor: opts.liveCountFor,
+      activityFor: opts.activityFor,
+      bellPendingFor: opts.bellPendingFor,
+      getSuspendedCount: opts.getSuspendedCount,
+      filterQuery: opts.filterQuery,
       selection: opts.selection,
+      onSuspendProject: opts.onSuspendProject,
+      onResumeProject: opts.onResumeProject,
+      onDeleteSelected: opts.onDeleteSelected,
+      isFirst: folderIdx === 0,
+      isLast: folderIdx === folderCount - 1,
     });
-    projectHandles.set(project.id, handle);
-    projectsList.append(handle.element);
+    folderHandles.push(folderHandle);
+    for (const [pid, handle] of folderHandle.projectHandles) projectHandles.set(pid, handle);
+    projectsList.append(folderHandle.element);
   }
 
   const listeners: Array<() => void> = [];
+  let collapseTimer: ReturnType<typeof setTimeout> | null = null;
+  const clearCollapseTimer = (): void => {
+    if (collapseTimer === null) return;
+    clearTimeout(collapseTimer);
+    collapseTimer = null;
+  };
   const on = <K extends keyof HTMLElementEventMap>(
     el: HTMLElement,
     type: K,
@@ -139,10 +256,38 @@ export function createWorkspaceRow(opts: WorkspaceRowOptions): WorkspaceRowHandl
     controller.toggleCollapsed(workspace.id);
   });
 
-  on(header, "dblclick", (e) => {
-    if (e.target === addBtn || e.target === menuBtn) return;
+  on(name, "click", (e) => {
+    if (e.target !== name) return;
+    if (e.detail > 1) {
+      clearCollapseTimer();
+      return;
+    }
+    clearCollapseTimer();
+    collapseTimer = setTimeout(() => {
+      collapseTimer = null;
+      controller.toggleCollapsed(workspace.id);
+    }, WORKSPACE_CLICK_DELAY_MS);
+  });
+
+  on(name, "dblclick", (e) => {
+    if (e.target !== name) return;
     e.preventDefault();
+    e.stopPropagation();
+    clearCollapseTimer();
     void runRename();
+  });
+
+  on(name, "keydown", (e) => {
+    if (e.target !== name) return;
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      clearCollapseTimer();
+      controller.toggleCollapsed(workspace.id);
+    } else if (e.key === "F2") {
+      e.preventDefault();
+      clearCollapseTimer();
+      void runRename();
+    }
   });
 
   on(addBtn, "click", (e) => {
@@ -163,6 +308,14 @@ export function createWorkspaceRow(opts: WorkspaceRowOptions): WorkspaceRowHandl
         {
           label: "Add project…",
           onSelect: () => void controller.createProjectInteractive(workspace.id),
+        },
+        {
+          label: "New folder…",
+          onSelect: () => void controller.createFolderInteractive(workspace.id),
+        },
+        {
+          label: "Clone repo…",
+          onSelect: () => void controller.cloneRepoInteractive(workspace.id),
         },
         {
           label: workspace.collapsed ? "Expand" : "Collapse",
@@ -191,14 +344,24 @@ export function createWorkspaceRow(opts: WorkspaceRowOptions): WorkspaceRowHandl
     });
   }
 
+  let renaming = false;
   async function runRename(): Promise<void> {
-    const next = await startInlineRename({
-      target: name,
-      initialValue: workspace.name,
-      placeholder: "Workspace name",
-    });
-    if (next && next !== workspace.name) {
-      controller.renameWorkspace(workspace.id, next);
+    if (renaming) return;
+    renaming = true;
+    clearCollapseTimer();
+    setNameInteractive(false);
+    try {
+      const next = await startInlineRename({
+        target: name,
+        initialValue: workspace.name,
+        placeholder: "Workspace name",
+      });
+      if (next && next !== workspace.name) {
+        controller.renameWorkspace(workspace.id, next);
+      }
+    } finally {
+      renaming = false;
+      setNameInteractive(true);
     }
   }
 
@@ -241,15 +404,30 @@ export function createWorkspaceRow(opts: WorkspaceRowOptions): WorkspaceRowHandl
     setLiveCount(projectId: ProjectId, n: number): void {
       projectHandles.get(projectId)?.setLiveCount(n);
     },
+    setActivity(projectId: ProjectId, state: ProjectActivityState): void {
+      if (!projectActivities.has(projectId)) return;
+      projectActivities.set(projectId, state);
+      projectHandles.get(projectId)?.setActivity(state);
+      syncActivitySummary();
+    },
     setBellPending(projectId: ProjectId, pending: boolean): void {
+      if (!projectActivities.has(projectId)) return;
+      if (pending) bellPendingProjects.add(projectId);
+      else bellPendingProjects.delete(projectId);
       projectHandles.get(projectId)?.setBellPending(pending);
+      syncActivitySummary();
     },
     dispose(): void {
+      clearCollapseTimer();
       appearancePicker?.dispose();
       appearancePicker = null;
       for (const off of listeners.splice(0)) off();
-      for (const handle of projectHandles.values()) handle.dispose();
+      for (const handle of folderHandles.splice(0)) handle.dispose();
+      for (const id of ownProjectIds) projectHandles.get(id)?.dispose();
+      ownProjectIds.clear();
       projectHandles.clear();
+      projectActivities.clear();
+      bellPendingProjects.clear();
       wrapper.remove();
     },
   };

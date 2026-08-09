@@ -8,6 +8,7 @@ export type { TerminalLayoutNode };
 // type level. They are still plain strings at runtime (crypto.randomUUID()).
 export type WorkspaceId = string & { readonly __brand: "WorkspaceId" };
 export type ProjectId = string & { readonly __brand: "ProjectId" };
+export type FolderId = string & { readonly __brand: "FolderId" };
 
 /**
  * F4: closed set of color tokens applied to workspaces and projects. Kept as a
@@ -46,6 +47,19 @@ export interface Project {
    */
   notes?: string;
   shortcut?: string;
+  // Sidebar folder this project is grouped under. Undefined = ungrouped.
+  folderId?: FolderId;
+}
+
+// Single-level grouping of projects in a workspace, backed by a real directory.
+export interface Folder {
+  id: FolderId;
+  name: string;
+  /** Absolute path of the directory backing this folder. Optional for older data. */
+  path?: string;
+  /** If undefined, sorts alphabetically among sibling entries (folders + ungrouped projects). */
+  order?: number;
+  collapsed?: boolean;
 }
 
 export interface Workspace {
@@ -57,6 +71,8 @@ export interface Workspace {
   order?: number;
   shortcut?: string;
   projects: Project[];
+  /** Optional/additive — workspaces created before this feature simply have no field. */
+  folders?: Folder[];
 }
 
 export interface LayoutTemplateSpec {
@@ -94,6 +110,7 @@ export interface CreateProjectInput {
   /** Must already be validated by the caller. */
   path: string;
   color?: ColorToken;
+  folderId?: FolderId;
 }
 
 export type WorkspacesEvent =

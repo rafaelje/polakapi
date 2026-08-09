@@ -1,0 +1,19 @@
+_polakapi_integration_dir="$ZDOTDIR"
+_polakapi_shell_token="$POLAKAPI_SHELL_TOKEN"
+unset POLAKAPI_SHELL_TOKEN
+
+if [ -n "$POLAKAPI_REAL_ZDOTDIR" ]; then
+  ZDOTDIR="$POLAKAPI_REAL_ZDOTDIR"
+else
+  unset ZDOTDIR
+fi
+
+if [ -n "$ZDOTDIR" ] && [ -f "$ZDOTDIR/.zshenv" ]; then
+  source "$ZDOTDIR/.zshenv"
+elif [ -z "$ZDOTDIR" ] && [ -f "$HOME/.zshenv" ]; then
+  source "$HOME/.zshenv"
+fi
+
+ZDOTDIR="$_polakapi_integration_dir"
+export ZDOTDIR
+unset _polakapi_integration_dir

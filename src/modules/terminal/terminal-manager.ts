@@ -7,7 +7,7 @@ import {
   type FocusDirection,
 } from "./terminal-focus-navigation";
 import { confirmRespawn } from "./terminal-pane-menu";
-import { attachTerminalDocking, type TerminalDockingHandle } from "./terminal-docking";
+import { type TerminalDockingHandle } from "./terminal-docking";
 import {
   appendTerminalPane,
   createDefaultTerminalLayout,
@@ -23,7 +23,9 @@ import {
   type TerminalLayoutPath,
 } from "./terminal-layout";
 import { TerminalPane } from "./terminal-pane";
-import { ptyKill, ptyWrite } from "./pty-client";
+import { scheduleTerminalWrite, wireTerminalPane } from "./terminal-pane-wiring";
+import { shouldReplayShellCommand } from "./resume-whitelist";
+import { ptyKill } from "./pty-client";
 import {
   registerManagerBell,
   type BellNotificationHandle,
@@ -31,13 +33,6 @@ import {
 } from "./terminal-notifications";
 import { layoutTerminalSplits } from "./terminal-split-layout";
 import { type TerminalSpec } from "./types";
-
-/**
- * Empirical delay before piping `startupCmd` into a freshly-spawned PTY.
- * Long enough for zsh/bash on macOS + Linux to print their first prompt;
- * short enough to feel instantaneous. Fire-and-forget — we do not parse PS1.
- */
-const STARTUP_CMD_DELAY_MS = 200;
 
 function errorMessage(error: unknown): string {
   if (typeof error === "string") return error;
@@ -133,7 +128,9 @@ export class TerminalManager {
       next.cwd === current.cwd &&
       next.startupCmd === current.startupCmd &&
       next.cliId === current.cliId &&
-      next.suspended === current.suspended
+      next.suspended === current.suspended &&
+      next.lastShellCommand === current.lastShellCommand &&
+      next.lastShellCommandAlias === current.lastShellCommandAlias
     ) {
       return;
     }
@@ -147,6 +144,14 @@ export class TerminalManager {
 
   get size(): number {
     return this.liveIds.size;
+  }
+
+  /** Count of specs currently suspended (placeholder panes) — drives the
+   * "Resume terminals (N)" row-menu item, mirroring `getLiveCount`. */
+  get suspendedCount(): number {
+    let count = 0;
+    for (const spec of this.specsById.values()) if (spec.suspended) count++;
+    return count;
   }
 
   get focusedPaneId(): string | null {
@@ -238,6 +243,8 @@ export class TerminalManager {
       cwd: spec?.cwd,
       startupCmd: spec?.startupCmd,
       cliId: profile.id,
+      lastShellCommand: spec?.lastShellCommand,
+      lastShellCommandAlias: spec?.lastShellCommandAlias,
     };
     this.panes.set(ptyId, pane);
     this.order.push(ptyId);
@@ -266,43 +273,23 @@ export class TerminalManager {
     return pane;
   }
 
+  // Delegates to terminal-pane-wiring.ts, kept out of this file for the line budget.
   private wirePaneCallbacks(pane: TerminalPane, ptyId: string): void {
-    // Inject callbacks that let the pane menu read + persist its own startup
-    // command without holding a reference to the workspaces controller. The
-    // manager remains the single owner of the spec table.
-    pane.setStartupCmdCallbacks({
-      getStartupCmd: () => this.specsById.get(ptyId)?.startupCmd,
-      onChange: (next) => this.updateSpec(ptyId, { startupCmd: next }),
-    });
-    pane.setCliRespawnCallbacks({
-      getCurrentCliId: () => this.specsById.get(ptyId)?.cliId ?? "shell",
-      onRespawnRequest: (cliId) => {
-        void this.requestRespawn(ptyId, cliId);
-      },
-    });
-    pane.setDockMenuCallbacks({
-      canDock: () => this.order.length > 1,
-      onDockAtEdge: (position) => this.dockAtRoot(ptyId, position),
-    });
-    pane.setSuspendCallbacks({
-      isLive: () => this.isLive(ptyId),
-      isSuspended: () => this.specsById.get(ptyId)?.suspended === true,
-      onSuspendRequest: () => this.suspendPane(ptyId),
-      onResumeRequest: () => void this.resumePane(ptyId),
-    });
-    const dockingHandle = attachTerminalDocking({
-      handle: pane.headerEl,
+    const dockingHandle = wireTerminalPane(pane, ptyId, {
       grid: this.grid,
-      paneId: ptyId,
-      onDock: (sourceId, targetId, position) => this.dock(sourceId, targetId, position),
+      isLive: (id) => this.isLive(id),
+      getSpec: (id) => this.specsById.get(id),
+      updateSpec: (id, patch) => this.updateSpec(id, patch),
+      requestRespawn: (id, cliId) => this.requestRespawn(id, cliId),
+      suspendPane: (id) => this.suspendPane(id),
+      resumePane: (id) => this.resumePane(id),
+      dockAtRoot: (id, position) => this.dockAtRoot(id, position),
+      dock: (sourceId, targetId, position) => this.dock(sourceId, targetId, position),
+      setFocus: (id) => this.setFocus(id),
+      close: (id) => this.close(id),
+      orderLength: () => this.order.length,
     });
     this.dockingHandles.set(ptyId, dockingHandle);
-    pane.el.addEventListener("mousedown", () => this.setFocus(ptyId));
-    pane.bodyEl.addEventListener("focusin", () => this.setFocus(ptyId));
-    pane.closeBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      void this.close(ptyId);
-    });
   }
 
   /**
@@ -326,17 +313,7 @@ export class TerminalManager {
   }
 
   private scheduleStartupCmd(ptyId: string, startupCmd: string | undefined): void {
-    // F4: auto-execute the startup command into the freshly spawned PTY.
-    // Fire-and-forget — the 200ms delay gives the shell time to print its
-    // first prompt; we do not block addPane and do not parse PS1.
-    if (!startupCmd || startupCmd.trim().length === 0) return;
-    setTimeout(() => {
-      // Pane may have been closed between spawn and timer fire.
-      if (!this.panes.has(ptyId)) return;
-      void ptyWrite(ptyId, `${startupCmd}\r`).catch((error) => {
-        console.error("Failed to write startupCmd", error);
-      });
-    }, STARTUP_CMD_DELAY_MS);
+    scheduleTerminalWrite(this.panes, ptyId, startupCmd, "startupCmd");
   }
 
   /** Confirm-and-respawn; the modal is skipped for panes with no output yet. */
@@ -376,20 +353,45 @@ export class TerminalManager {
     const current = this.specsById.get(paneId);
     if (!current?.suspended || this.isLive(paneId)) return;
     const resumeArgs = resolveProfile(current.cliId).resumeArgs;
-    const { title, cwd, startupCmd, cliId } = current;
-    await this.replacePane(
+    const { title, cwd, startupCmd, cliId, lastShellCommand, lastShellCommandAlias } = current;
+    const shouldReplay =
+      !resumeArgs &&
+      !!lastShellCommand &&
+      shouldReplayShellCommand(lastShellCommand, lastShellCommandAlias === true);
+    const newId = await this.replacePane(
       paneId,
-      { title, cwd, startupCmd, cliId },
-      { extraArgs: resumeArgs, skipStartupCmd: resumeArgs !== undefined },
+      { title, cwd, startupCmd, cliId, lastShellCommand, lastShellCommandAlias },
+      { extraArgs: resumeArgs, skipStartupCmd: resumeArgs !== undefined || shouldReplay },
     );
+    if (newId && shouldReplay && lastShellCommand) {
+      this.scheduleShellReplay(newId, lastShellCommand);
+    }
+  }
+
+  // Sequential, not concurrent: overlapping replacePane calls stomp on each
+  // other's layout snapshot and corrupt the grid.
+  async resumeAll(): Promise<void> {
+    for (const id of [...this.order]) {
+      if (!this.specsById.get(id)?.suspended) continue;
+      try {
+        // react-doctor-disable-next-line react-doctor/async-await-in-loop
+        await this.resumePane(id);
+      } catch (error) {
+        console.error(`Failed to resume pane ${id}`, error);
+      }
+    }
+  }
+
+  private scheduleShellReplay(ptyId: string, command: string): void {
+    scheduleTerminalWrite(this.panes, ptyId, command, "lastShellCommand");
   }
 
   private async replacePane(
     paneId: string,
     spec: Partial<TerminalSpec>,
     opts?: { extraArgs?: string[]; skipStartupCmd?: boolean },
-  ): Promise<void> {
-    if (this.respawning.has(paneId)) return;
+  ): Promise<string | null> {
+    if (this.respawning.has(paneId)) return null;
     this.respawning.add(paneId);
     try {
       const targetIdx = this.order.indexOf(paneId);
@@ -399,7 +401,7 @@ export class TerminalManager {
       if (!pane) {
         this.relayout();
         this.emitAll();
-        return;
+        return null;
       }
       const newId = pane.ptyId || this.order[this.order.length - 1];
       if (newId && targetIdx >= 0) {
@@ -414,6 +416,7 @@ export class TerminalManager {
       }
       this.relayout();
       this.emitAll();
+      return newId || null;
     } finally {
       this.respawning.delete(paneId);
     }
@@ -531,6 +534,7 @@ export class TerminalManager {
           idMap.set(spec.id, spec.id);
           continue;
         }
+        // react-doctor-disable-next-line react-doctor/async-await-in-loop
         const pane = await this.addPane(spec);
         const restoredId = pane?.el.dataset.ptyId;
         if (restoredId) idMap.set(spec.id, restoredId);

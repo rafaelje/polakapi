@@ -27,6 +27,7 @@ describe("resolveAppShortcut on Linux/Windows (Ctrl+Shift)", () => {
     expect(resolveAppShortcut(ev({ ctrlKey: true, shiftKey: true, key: "P" }), isMac)).toEqual({
       kind: "toggle-palette",
     });
+    expect(resolveAppShortcut(ev({ ctrlKey: true, shiftKey: true, key: "K" }), isMac)).toBeNull();
   });
 
   it("maps Ctrl+Shift+brackets and digits via physical key codes", () => {
@@ -92,6 +93,7 @@ describe("resolveAppShortcut on macOS (Cmd)", () => {
       kind: "focus-index",
       index: 2,
     });
+    expect(resolveAppShortcut(ev({ metaKey: true, key: "k" }), isMac)).toBeNull();
   });
 
   it("maps Cmd+Shift+Arrow to directional focus but no other shifted combos", () => {

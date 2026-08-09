@@ -1,5 +1,7 @@
 import type {
   CreateProjectInput,
+  Folder,
+  FolderId,
   Project,
   ProjectId,
   Workspace,
@@ -31,6 +33,36 @@ export function sortedWorkspaces(state: WorkspacesState): Workspace[] {
 
 export function sortedProjects(workspace: Workspace): Project[] {
   return [...workspace.projects].sort(compareByOrderThenName);
+}
+
+export type WorkspaceEntry =
+  | { kind: "folder"; folder: Folder }
+  | { kind: "project"; project: Project };
+
+// Folders + ungrouped projects, interleaved and sorted together.
+export function sortedWorkspaceEntries(workspace: Workspace): WorkspaceEntry[] {
+  const folderEntries: WorkspaceEntry[] = (workspace.folders ?? []).map((folder) => ({
+    kind: "folder",
+    folder,
+  }));
+  const projectEntries: WorkspaceEntry[] = workspace.projects
+    .filter((p) => p.folderId === undefined)
+    .map((project) => ({ kind: "project", project }));
+  return [...folderEntries, ...projectEntries].sort((a, b) =>
+    compareByOrderThenName(entryOrderable(a), entryOrderable(b)),
+  );
+}
+
+function entryOrderable(entry: WorkspaceEntry): { name: string; order?: number } {
+  return entry.kind === "folder" ? entry.folder : entry.project;
+}
+
+// Projects assigned to folderId (or ungrouped), sorted like sortedProjects.
+export function sortedProjectsInFolder(
+  workspace: Workspace,
+  folderId: FolderId | undefined,
+): Project[] {
+  return workspace.projects.filter((p) => p.folderId === folderId).sort(compareByOrderThenName);
 }
 
 export function findProject(
@@ -86,6 +118,7 @@ export function addProject(state: WorkspacesState, input: CreateProjectInput): W
     name: input.name,
     path: input.path,
     color: input.color,
+    folderId: input.folderId,
   };
   return mapWorkspaces(state, (w) =>
     w.id === input.workspaceId ? { ...w, projects: [...w.projects, project] } : w,
@@ -120,6 +153,21 @@ export function setProjectPathInvalid(
       p.pathInvalid === invalid ? p : { ...p, pathInvalid: invalid },
     ),
   );
+}
+
+export function deleteProjects(state: WorkspacesState, ids: readonly ProjectId[]): WorkspacesState {
+  const set = new Set(ids);
+  if (set.size === 0) return state;
+  const activeProjectId =
+    state.activeProjectId && set.has(state.activeProjectId) ? null : state.activeProjectId;
+  return {
+    ...state,
+    activeProjectId,
+    workspaces: state.workspaces.map((w) => ({
+      ...w,
+      projects: w.projects.filter((p) => !set.has(p.id)),
+    })),
+  };
 }
 
 export function deleteProject(state: WorkspacesState, id: ProjectId): WorkspacesState {
@@ -158,7 +206,13 @@ export function moveProject(
 ): WorkspacesState {
   const found = findProject(state, id);
   if (!found) return state;
-  const moved: Project = { ...found.project, order: undefined };
+  // Folder ids are workspace-scoped, so clear it only when crossing workspaces.
+  const crossesWorkspace = found.workspace.id !== toWorkspaceId;
+  const moved: Project = {
+    ...found.project,
+    order: undefined,
+    folderId: crossesWorkspace ? undefined : found.project.folderId,
+  };
   return mapWorkspaces(state, (w) => {
     if (w.id === found.workspace.id && w.id === toWorkspaceId) {
       const filtered = w.projects.filter((p) => p.id !== id);
@@ -194,20 +248,23 @@ export function moveProjects(
   atIndex: number,
 ): WorkspacesState {
   if (ids.length === 0) return state;
-  const movingSet = new Set<ProjectId>(ids);
+  const movingSet = new Set<ProjectId>();
   const movingProjects: Project[] = [];
   for (const id of ids) {
     const found = findProject(state, id);
-    if (found) movingProjects.push({ ...found.project, order: undefined });
+    if (!found) continue;
+    const crossesWorkspace = found.workspace.id !== toWorkspaceId;
+    if (!crossesWorkspace) continue;
+    movingSet.add(id);
+    movingProjects.push({ ...found.project, order: undefined, folderId: undefined });
   }
   if (movingProjects.length === 0) return state;
   return mapWorkspaces(state, (w) => {
     if (w.id === toWorkspaceId) {
-      const filtered = w.projects.filter((p) => !movingSet.has(p.id));
-      const clamped = Math.max(0, Math.min(atIndex, filtered.length));
-      const next = [...filtered];
+      const clamped = Math.max(0, Math.min(atIndex, w.projects.length));
+      const next = [...w.projects];
       next.splice(clamped, 0, ...movingProjects);
-      return { ...w, projects: reassignOrder(next) };
+      return { ...w, projects: next };
     }
     const hadAny = w.projects.some((p) => movingSet.has(p.id));
     if (!hadAny) return w;
@@ -293,3 +350,19 @@ export {
   setProjectColor,
   setWorkspaceColor,
 } from "./workspaces-reducer-appearance";
+
+// Single-level sidebar folders — same re-export pattern so callers can keep
+// importing from "./workspaces-reducer".
+export {
+  addFolder,
+  renameFolder,
+  deleteFolder,
+  toggleFolderCollapsed,
+  moveFolderUp,
+  moveFolderDown,
+  resetAlphabeticalOrderInFolder,
+  moveProjectToFolder,
+  moveProjectToBucket,
+  moveProjectsToBucket,
+  reorderProjectsInFolder,
+} from "./workspaces-reducer-folders";

@@ -46,6 +46,7 @@ export class PhaseRunner {
         continue;
       }
       if (agent === "review") {
+        // react-doctor-disable-next-line react-doctor/async-await-in-loop
         await this.runReviewLoop(index);
       } else if (agent === "implementation") {
         // On resume, replay the prior reviewer's notes so the regenerated
@@ -53,8 +54,10 @@ export class PhaseRunner {
         const review = store.getState().phases[index]?.stages.review;
         const reviewNotes =
           review && review.retries > 0 && review.message ? review.message : undefined;
+        // react-doctor-disable-next-line react-doctor/async-await-in-loop
         await this.runStage(index, agent, reviewNotes ? { reviewNotes } : undefined);
       } else {
+        // react-doctor-disable-next-line react-doctor/async-await-in-loop
         await this.runStage(index, agent);
       }
       const stage = store.getState().phases[index].stages[agent];

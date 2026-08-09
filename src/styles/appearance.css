@@ -61,10 +61,6 @@
 .ws-project-row.active[data-color] {
   background: color-mix(in srgb, var(--ws-accent) 14%, transparent);
 }
-.ws-project-row.active[data-color] .ws-active-dot {
-  background: var(--ws-accent);
-}
-
 /* Breadcrumb chips inherit the workspace tint. */
 .breadcrumb-segment[data-color] {
   color: var(--ws-accent);

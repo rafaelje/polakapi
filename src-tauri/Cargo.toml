@@ -1,9 +1,10 @@
 [package]
 name = "polakapi"
-version = "0.2.0"
+version = "0.3.0"
 description = "A Tauri App"
 authors = ["you"]
 edition = "2021"
+publish = false
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -17,6 +18,9 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
+[package.metadata.cargo-machete]
+ignored = ["tauri-build"]
+
 [dependencies]
 tauri = { version = "2", features = [] }
 serde = { version = "1", features = ["derive"] }
@@ -27,6 +31,7 @@ parking_lot = "0.12"
 tauri-plugin-store = "2.4.3"
 tauri-plugin-dialog = "2"
 tauri-plugin-notification = "2.3.3"
+tauri-plugin-clipboard-manager = "2"
 tokio = { version = "1", features = ["time", "rt", "macros", "process", "io-util"] }
 tempfile = "3"
 rusqlite = { version = "0.32", features = ["bundled"] }

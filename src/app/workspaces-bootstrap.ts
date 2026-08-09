@@ -118,6 +118,7 @@ export async function bootstrapWorkspaces(
     liveCounts: router,
     bellSource,
     onSuspendProject: (projectId) => router.getById(projectId)?.suspendAll(),
+    onResumeProject: (projectId) => void router.getById(projectId)?.resumeAll(),
   });
 
   // Bridges native Finder drops and HTML5 URL/text drops into whichever pane
@@ -164,6 +165,7 @@ export async function bootstrapWorkspaces(
         });
       },
       onSuspendAll: () => router.getActive()?.suspendAll(),
+      onResumeAll: () => void router.getActive()?.resumeAll(),
       onRunInAll: () => void runCommandInActivePanes(router),
       onRevealFolder: (path) => {
         void revealFolder(path);
@@ -184,6 +186,16 @@ export async function bootstrapWorkspaces(
   });
   const breadcrumb = mountBreadcrumb({ host: elements.breadcrumbHost });
 
+  // Also re-run off the router's counts-changed event (see subscription
+  // below) since live count settles later than the suspended flag flip.
+  const refreshSuspendResumeToggle = (): void => {
+    const project = controller.getActiveProject();
+    projectPane.setSuspendResumeCounts(
+      project ? router.getCount(project.id) : 0,
+      project ? router.getSuspendedCount(project.id) : 0,
+    );
+  };
+
   const activateProject = async (project: Project | null): Promise<void> => {
     if (!project) {
       router.unmount();
@@ -199,6 +211,9 @@ export async function bootstrapWorkspaces(
         await manager.restoreSpecs(specs);
       }
     }
+    // Called directly since restoreSpecs's own spec-changed event can fire
+    // before AppController has assigned `this.workspaces` on first boot.
+    refreshSuspendResumeToggle();
   };
 
   const refreshActiveContext = (): void => {
@@ -208,9 +223,14 @@ export async function bootstrapWorkspaces(
       : null;
     breadcrumb.update(workspace, project);
     projectPane.setActiveProject(project);
+    refreshSuspendResumeToggle();
     if (project) elements.projectPaneHost.dataset.projectId = project.id;
     else delete elements.projectPaneHost.dataset.projectId;
   };
+
+  const unsubscribeRouterSuspendToggle = router.on((event: TerminalRouterEvent) => {
+    if (event.type === "counts-changed") refreshSuspendResumeToggle();
+  });
 
   // PTY teardown for project deletion. Runs after the user confirms in the
   // modal and before the reducer removes the project — this keeps sidebar
@@ -279,6 +299,7 @@ export async function bootstrapWorkspaces(
     unsubscribeController();
     unwireDeleteHook();
     unsubscribeRouterBell();
+    unsubscribeRouterSuspendToggle();
     bellListeners.clear();
     router.setNotificationContext(null);
     notesListeners.clear();

@@ -1,2 +1,6 @@
 allowBuilds:
   esbuild: true
+minimumReleaseAge: 10080
+trustPolicy: no-downgrade
+overrides:
+  nanoid: 3.3.13

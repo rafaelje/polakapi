@@ -24,6 +24,7 @@ export function filterAgents(agents: readonly AgentDef[], query: string): AgentD
   const tokens = q.split(/\s+/u).filter(Boolean);
   return agents.filter((a) => {
     const h = haystackOf(a);
+    // react-doctor-disable-next-line react-doctor/js-set-map-lookups
     return tokens.every((t) => h.includes(t));
   });
 }

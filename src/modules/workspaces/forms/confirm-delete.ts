@@ -105,3 +105,29 @@ export function confirmDeleteProject(name: string, liveTerminals: number): Promi
     danger: true,
   });
 }
+
+export function confirmDeleteFolder(name: string, projectCount: number): Promise<boolean> {
+  const detail =
+    projectCount === 0
+      ? "This folder is empty."
+      : `${projectCount} project${projectCount === 1 ? "" : "s"} will be ungrouped, not deleted.`;
+  return confirmModal({
+    title: `Delete folder "${name}"?`,
+    message: `${detail} The directory on disk is not touched.`,
+    confirmLabel: "Delete",
+    danger: true,
+  });
+}
+
+export function confirmDeleteProjects(count: number, liveTerminals: number): Promise<boolean> {
+  const detail =
+    liveTerminals > 0
+      ? `${liveTerminals} attached terminal${liveTerminals === 1 ? "" : "s"} will be closed. This action cannot be undone.`
+      : "This action cannot be undone.";
+  return confirmModal({
+    title: `Delete ${count} project${count === 1 ? "" : "s"}?`,
+    message: detail,
+    confirmLabel: "Delete",
+    danger: true,
+  });
+}

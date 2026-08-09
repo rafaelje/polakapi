@@ -51,10 +51,6 @@ export function createEmptyLedger(): FindingLedger {
   return { findings: [], appliedPasses: [] };
 }
 
-export function findFinding(ledger: FindingLedger, id: string): Finding | undefined {
-  return ledger.findings.find((f) => f.id === id);
-}
-
 export function isPassApplied(ledger: FindingLedger, round: number, role: PassRole): boolean {
   return ledger.appliedPasses.some((p) => p.round === round && p.role === role);
 }

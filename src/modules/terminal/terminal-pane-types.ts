@@ -30,4 +30,9 @@ export interface SuspendCallbacks {
   onSuspendRequest(): void;
   onResumeRequest(): void;
 }
+
+// Reports each captured command up to the TerminalManager for "Resume all" to replay.
+export interface ShellCommandCallbacks {
+  onCommand(command: string, isAlias: boolean): void;
+}
 import type { TerminalDockPosition } from "./terminal-layout";

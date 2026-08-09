@@ -165,8 +165,12 @@ function renderHybridTimeline(state: RunSchedulerState, ctx: Step3RunContext, on
     return wrap;
   }
 
+  const phaseIndexBySlug = new Map<string, number>();
+  for (let index = 0; index < state.phases.length; index += 1) {
+    phaseIndexBySlug.set(state.phases[index].slug, index);
+  }
   for (let i = 0; i < state.batches.length; i++) {
-    wrap.appendChild(renderBatchPanel(i, state));
+    wrap.appendChild(renderBatchPanel(i, state, phaseIndexBySlug));
     const integrator = state.integrators[i];
     if (integrator) {
       wrap.appendChild(renderIntegratorCard(integrator, i, state, ctx, on));
@@ -175,7 +179,11 @@ function renderHybridTimeline(state: RunSchedulerState, ctx: Step3RunContext, on
   return wrap;
 }
 
-function renderBatchPanel(batchIndex: number, state: RunSchedulerState): HTMLElement {
+function renderBatchPanel(
+  batchIndex: number,
+  state: RunSchedulerState,
+  phaseIndexBySlug: ReadonlyMap<string, number>,
+): HTMLElement {
   const panel = document.createElement("section");
   panel.className = "loop-step3-run-batch";
   if (state.currentBatchIndex === batchIndex && state.status === "running") {
@@ -197,8 +205,8 @@ function renderBatchPanel(batchIndex: number, state: RunSchedulerState): HTMLEle
   const grid = document.createElement("div");
   grid.className = "loop-step3-run-batch-grid";
   for (const slug of slugs) {
-    const phaseIndex = state.phases.findIndex((p) => p.slug === slug);
-    if (phaseIndex < 0) continue;
+    const phaseIndex = phaseIndexBySlug.get(slug);
+    if (phaseIndex === undefined) continue;
     grid.appendChild(renderPhaseCard(state.phases[phaseIndex], phaseIndex, state));
   }
   panel.appendChild(grid);

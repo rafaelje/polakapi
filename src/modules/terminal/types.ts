@@ -17,6 +17,7 @@ export interface PaneCreateOptions {
  *                 (i.e. the owning project's `path`).
  * - `startupCmd` — optional one-shot command piped into the shell on spawn.
  * - `cliId`     — optional CLI profile id; undefined resolves to SHELL_PROFILE.
+ * - `lastShellCommand` — replay-eligible submitted command persisted to disk.
  */
 export interface TerminalSpec {
   id: string;
@@ -25,4 +26,7 @@ export interface TerminalSpec {
   startupCmd?: string;
   cliId?: string;
   suspended?: boolean;
+  lastShellCommand?: string;
+  /** True when the persisted command resolved to a shell alias/function. */
+  lastShellCommandAlias?: boolean;
 }

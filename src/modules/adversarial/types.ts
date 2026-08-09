@@ -123,12 +123,7 @@ export interface DiffMeta {
 }
 
 // Must stay in sync with the Rust `is_adversarial_prompt` allowlist.
-export const ADVERSARIAL_PROMPT_NAMES = [
-  "adversarial-critic.md",
-  "adversarial-defender.md",
-] as const;
-
-export type AdversarialPromptName = (typeof ADVERSARIAL_PROMPT_NAMES)[number];
+export type AdversarialPromptName = "adversarial-critic.md" | "adversarial-defender.md";
 
 export const DEFAULT_ROUNDS = 2;
 export const MIN_ROUNDS = 1;
@@ -145,14 +140,6 @@ export const SEVERITY_RANK: Record<Severity, number> = {
 
 export function severityAtOrAbove(sev: Severity, threshold: Severity): boolean {
   return SEVERITY_RANK[sev] >= SEVERITY_RANK[threshold];
-}
-
-export function defaultSlot(cli: LoopCli): DebateSlot {
-  return {
-    cli,
-    model: defaultModelForCli(cli),
-    effort: "default",
-  };
 }
 
 export function defaultModelForCli(cli: LoopCli): string {
@@ -175,13 +162,4 @@ export function cliSupportsEffort(cli: LoopCli): boolean {
 export function buildRunFilePath(projectPath: string, runId: string, file: string): string {
   const sep = projectPath.includes("\\") ? "\\" : "/";
   return [projectPath, ".adversarial", "runs", runId, file].join(sep);
-}
-
-export function buildRunPromptPath(
-  projectPath: string,
-  runId: string,
-  name: AdversarialPromptName,
-): string {
-  const sep = projectPath.includes("\\") ? "\\" : "/";
-  return [projectPath, ".adversarial", "runs", runId, "prompts", name].join(sep);
 }
