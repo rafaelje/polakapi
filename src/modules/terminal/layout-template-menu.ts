@@ -1,4 +1,5 @@
 import { confirmModal, promptModal } from "../../shared/ui/modal";
+import { clampPopoverToViewport } from "../../shared/ui/popover-position";
 import type { LayoutTemplate } from "../workspaces/state/types";
 import type { PaneMenuHandle } from "./terminal-pane-menu";
 
@@ -64,6 +65,7 @@ export function openLayoutTemplateMenu(opts: LayoutTemplateMenuOptions): PaneMen
   popover.append(saveItem);
 
   document.body.append(popover);
+  clampPopoverToViewport(popover);
   window.addEventListener("mousedown", onOutside, true);
   window.addEventListener("keydown", onKey, true);
   window.addEventListener("resize", dispose);
