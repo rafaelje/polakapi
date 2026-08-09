@@ -1,5 +1,6 @@
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import type { UnlistenFn } from "@tauri-apps/api/event";
+import { mapWithConcurrency } from "../../../shared/async/map-with-concurrency";
 import { formatPathError } from "../path-validation";
 import type { PathValidation, WorkspaceId } from "../state/types";
 import type { WorkspacesController } from "../state/workspaces-controller";
@@ -20,6 +21,7 @@ export interface FinderDropHandle {
 }
 
 const DROP_TARGET_CLASS = "ws-drop-target";
+const PATH_VALIDATION_CONCURRENCY = 8;
 
 /**
  * Subscribes to Tauri 2's native drag-drop event on the current webview window
@@ -83,7 +85,7 @@ export function attachFinderDrop(panelRoot: HTMLElement, deps: FinderDropDeps): 
       toast("Drop on a workspace", "info");
       return;
     }
-    const validations = await Promise.all(paths.map((path) => validatePath(path)));
+    const validations = await mapWithConcurrency(paths, PATH_VALIDATION_CONCURRENCY, validatePath);
     let added = 0;
     for (let index = 0; index < paths.length; index += 1) {
       const path = paths[index];

@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { mapWithConcurrency } from "../../shared/async/map-with-concurrency";
 
 interface SessionRow {
   id: number;
@@ -49,6 +50,7 @@ const filterEl = document.getElementById("prompts-filter");
 const refreshBtn = document.getElementById("prompts-refresh");
 const deleteBtn = document.getElementById("prompts-delete");
 const selectAllEl = document.getElementById("prompts-select-all");
+const PROMPT_LOAD_CONCURRENCY = 8;
 
 let sessions: SessionRow[] = [];
 let activeSessionId: number | null = null;
@@ -231,7 +233,9 @@ function createPromptCard(
 }
 
 async function loadFullPrompts(prompts: PromptListRow[]): Promise<Map<number, PromptFullRow>> {
-  const rows = await Promise.all(prompts.map((prompt) => getPrompt(prompt.id)));
+  const rows = await mapWithConcurrency(prompts, PROMPT_LOAD_CONCURRENCY, (prompt) =>
+    getPrompt(prompt.id),
+  );
   const fullById = new Map<number, PromptFullRow>();
   for (const row of rows) {
     if (row) fullById.set(row.id, row);

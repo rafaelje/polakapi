@@ -54,10 +54,10 @@ jobs:
       - name: Tests
         run: cargo test --manifest-path src-tauri/Cargo.toml --lib
       - name: Unused dependencies
-        uses: bnjbvr/cargo-machete@v0.9.2
+        uses: bnjbvr/cargo-machete@ac30a525c0a8d163a92d727b3ff079ee3f6ecb08 # v0.9.2
         with:
           args: --with-metadata src-tauri
       - name: Dependency policies
-        uses: EmbarkStudios/cargo-deny-action@v2.1.1
+        uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
         with:
           manifest-path: src-tauri/Cargo.toml
