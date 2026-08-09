@@ -115,23 +115,23 @@ jobs:
         with:
           workspaces: src-tauri -> target
       - run: pnpm install --frozen-lockfile
-      - name: Build Windows installer
+      - name: Build Windows bundle
         run: pnpm tauri build --bundles nsis
-      - name: Verify Windows installer
+      - name: Verify Windows bundle
         shell: pwsh
         run: |
-          $installers = @(Get-ChildItem "src-tauri/target/release/bundle/nsis/*-setup.exe" -File)
+          $bundles = @(Get-ChildItem "src-tauri/target/release/bundle/nsis/*-setup.exe" -File)
 
-          if ($installers.Count -eq 0) {
-            throw "No Windows installer found"
+          if ($bundles.Count -eq 0) {
+            throw "No Windows bundle found"
           }
 
-          foreach ($installer in $installers) {
-            if ($installer.Length -eq 0) {
-              throw "Windows installer is empty: $($installer.FullName)"
+          foreach ($bundle in $bundles) {
+            if ($bundle.Length -eq 0) {
+              throw "Windows bundle is empty: $($bundle.FullName)"
             }
           }
-      - name: Upload Windows installer
+      - name: Upload Windows bundle
         uses: actions/upload-artifact@v7
         with:
           name: polakapi-windows-x86_64
