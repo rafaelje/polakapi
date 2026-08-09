@@ -1,4 +1,4 @@
-name: Build desktop release
+name: Build and publish desktop release
 
 on:
   push:
@@ -99,9 +99,50 @@ jobs:
           retention-days: 30
           compression-level: 0
 
+  build-windows:
+    name: Windows x86_64 NSIS installer
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+      - run: pnpm install --frozen-lockfile
+      - name: Build Windows installer
+        run: pnpm tauri build --bundles nsis
+      - name: Verify Windows installer
+        shell: pwsh
+        run: |
+          $installers = @(Get-ChildItem "src-tauri/target/release/bundle/nsis/*-setup.exe" -File)
+
+          if ($installers.Count -eq 0) {
+            throw "No Windows installer found"
+          }
+
+          foreach ($installer in $installers) {
+            if ($installer.Length -eq 0) {
+              throw "Windows installer is empty: $($installer.FullName)"
+            }
+          }
+      - name: Upload Windows installer
+        uses: actions/upload-artifact@v7
+        with:
+          name: polakapi-windows-x86_64
+          path: src-tauri/target/release/bundle/nsis/*-setup.exe
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
+
   publish-release:
     name: Publish GitHub Release
-    needs: [build-dmg, build-linux]
+    needs: [build-dmg, build-linux, build-windows]
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-22.04
     steps:
