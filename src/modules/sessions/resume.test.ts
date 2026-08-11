@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ProjectId, WorkspaceId, WorkspacesState } from "../workspaces/state/types";
-import { buildResumeLaunchArgs, selectResumeProject } from "./resume";
+import { buildResumeLaunchArgs, isAgentSessionResumeRequest, selectResumeProject } from "./resume";
 
 describe("buildResumeLaunchArgs", () => {
   it.each([
@@ -13,6 +13,27 @@ describe("buildResumeLaunchArgs", () => {
 
   it("rejects an empty native id", () => {
     expect(() => buildResumeLaunchArgs("codex", "   ")).toThrow("Session id is required");
+  });
+});
+
+describe("isAgentSessionResumeRequest", () => {
+  const validRequest = {
+    agent: "codex",
+    nativeId: "session-1",
+    title: "Session",
+    cwd: null,
+  };
+
+  it("accepts a valid request", () => {
+    expect(isAgentSessionResumeRequest(validRequest)).toBe(true);
+  });
+
+  it.each([
+    { ...validRequest, agent: "unknown" },
+    { ...validRequest, nativeId: "   " },
+    { ...validRequest, cwd: undefined },
+  ])("rejects an invalid request", (request) => {
+    expect(isAgentSessionResumeRequest(request)).toBe(false);
   });
 });
 

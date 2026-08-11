@@ -185,4 +185,17 @@ describe("terminal launch arguments", () => {
       "session-2",
     ]);
   });
+
+  it.each([
+    ["suspended", true],
+    ["lastShellCommand", "pnpm test"],
+    ["lastShellCommandAlias", true],
+  ] as const)("detects a change to %s", (field, value) => {
+    const { state, pid } = seed();
+    const withTerminal = addTerminalSpec(state, pid, { id: "terminal" });
+    const changed = updateTerminalSpec(withTerminal, pid, "terminal", { [field]: value });
+
+    expect(changed).not.toBe(withTerminal);
+    expect(findProject(changed, pid)?.project.terminals?.[0]?.[field]).toBe(value);
+  });
 });

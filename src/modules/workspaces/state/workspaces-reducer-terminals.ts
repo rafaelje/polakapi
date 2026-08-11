@@ -122,6 +122,9 @@ function shallowEqualSpec(a: TerminalSpec, b: TerminalSpec): boolean {
     a.cwd === b.cwd &&
     a.startupCmd === b.startupCmd &&
     a.cliId === b.cliId &&
+    a.suspended === b.suspended &&
+    a.lastShellCommand === b.lastShellCommand &&
+    a.lastShellCommandAlias === b.lastShellCommandAlias &&
     equalStringArrays(a.launchArgs, b.launchArgs)
   );
 }

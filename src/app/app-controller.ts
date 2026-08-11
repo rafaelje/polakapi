@@ -106,6 +106,7 @@ export class AppController {
       onTabChange: (tab) => queueSave({ activeBottomTab: tab }),
     });
     this.loopButton = mountLoopButton();
+    await this.wireSessionResume();
     this.sessionsButton = mountSessionsButton();
     this.adversarialButton = mountAdversarialButton();
     // Eager boot — same pattern as workspaces/loop profiles — so the first
@@ -137,7 +138,6 @@ export class AppController {
       router: this.router,
       isWindowFocused: () => this.windowFocused,
     });
-    await this.wireSessionResume();
 
     // Mount the command palette once the controller is ready. The shortcut
     // handler resolves through `this.palette?` so the Cmd-P keybinding wired
