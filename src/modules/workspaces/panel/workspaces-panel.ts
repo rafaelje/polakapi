@@ -8,7 +8,7 @@ import { createWorkspaceRow, type WorkspaceRowHandle } from "./workspace-row";
 import { createSidebarEmptyState, type EmptyStateHandle } from "./workspaces-empty-state";
 import { sortedWorkspaces } from "../state/workspaces-reducer";
 import type { ProjectActivityState } from "../../terminal/project-activity";
-import type { ProjectId } from "../state/types";
+import type { Project, ProjectId } from "../state/types";
 import type { WorkspacesController } from "../state/workspaces-controller";
 
 /**
@@ -53,6 +53,7 @@ export interface WorkspacesPanelOptions {
   liveCounts?: LiveCountSource;
   /** Optional. When provided, the panel toggles `.has-bell` on rows. */
   bellSource?: BellPendingSource;
+  activeOnlyToggle: HTMLInputElement;
   onSuspendProject?: (projectId: ProjectId) => void;
   onResumeProject?: (projectId: ProjectId) => void;
 }
@@ -70,7 +71,7 @@ export interface WorkspacesPanelHandle {
  * re-rendering the panel.
  */
 export function mountWorkspacesPanel(opts: WorkspacesPanelOptions): WorkspacesPanelHandle {
-  const { root, controller, liveCounts, bellSource } = opts;
+  const { root, controller, liveCounts, bellSource, activeOnlyToggle } = opts;
 
   const previousContent = Array.from(root.childNodes);
   root.replaceChildren();
@@ -127,6 +128,7 @@ export function mountWorkspacesPanel(opts: WorkspacesPanelOptions): WorkspacesPa
   const handles: WorkspaceRowHandle[] = [];
   let emptyState: EmptyStateHandle | null = null;
   let query = "";
+  let activeOnly = activeOnlyToggle.checked;
   const selection = createSelectionStore();
   const pendingByProject = new Map<ProjectId, Set<string>>();
 
@@ -154,6 +156,12 @@ export function mountWorkspacesPanel(opts: WorkspacesPanelOptions): WorkspacesPa
     render();
   };
   search.addEventListener("input", onSearchInput);
+
+  const onActiveOnlyChange = (): void => {
+    activeOnly = activeOnlyToggle.checked;
+    render();
+  };
+  activeOnlyToggle.addEventListener("change", onActiveOnlyChange);
 
   // Clear the multi-selection when the user clicks the panel chrome (header,
   // body background, between rows) without a modifier. Row clicks stop short
@@ -195,13 +203,17 @@ export function mountWorkspacesPanel(opts: WorkspacesPanelOptions): WorkspacesPa
     }
 
     const activeQuery = query.trim();
+    const matchesActiveFilter = (project: Project): boolean =>
+      !activeOnly || liveCountFor(project.id) > 0;
     for (const workspace of sortedWorkspaces(state)) {
       // When a search is active, skip workspaces that have no matching
       // projects entirely — the row helper would render an empty header
       // with no children, which is noise.
-      if (activeQuery) {
-        const hasMatch = workspace.projects.some((p) =>
-          matchesProject(activeQuery, workspace.name, p),
+      if (activeQuery || activeOnly) {
+        const hasMatch = workspace.projects.some(
+          (project) =>
+            matchesActiveFilter(project) &&
+            (!activeQuery || matchesProject(activeQuery, workspace.name, project)),
         );
         if (!hasMatch) continue;
       }
@@ -213,6 +225,7 @@ export function mountWorkspacesPanel(opts: WorkspacesPanelOptions): WorkspacesPa
         bellPendingFor: (projectId) => (pendingByProject.get(projectId)?.size ?? 0) > 0,
         getSuspendedCount: liveCounts ? suspendedCountFor : undefined,
         filterQuery: activeQuery,
+        projectFilter: activeOnly ? matchesActiveFilter : undefined,
         selection,
         onSuspendProject: opts.onSuspendProject,
         onResumeProject: opts.onResumeProject,
@@ -238,6 +251,10 @@ export function mountWorkspacesPanel(opts: WorkspacesPanelOptions): WorkspacesPa
   const unsubscribeTerminalEvents =
     liveCounts?.on((event) => {
       if (event.type === "counts-changed") {
+        if (activeOnly) {
+          render();
+          return;
+        }
         const counts = (event as { counts: ReadonlyMap<ProjectId, number> }).counts;
         for (const [projectId, count] of counts) {
           for (const handle of handles) handle.setLiveCount(projectId, count);
@@ -287,6 +304,7 @@ export function mountWorkspacesPanel(opts: WorkspacesPanelOptions): WorkspacesPa
       addBtn.removeEventListener("click", onAddClick);
       collapseBtn.removeEventListener("click", onCollapseClick);
       search.removeEventListener("input", onSearchInput);
+      activeOnlyToggle.removeEventListener("change", onActiveOnlyChange);
       root.removeEventListener("click", onPanelClick);
       selection.clear();
       for (const handle of handles.splice(0)) handle.dispose();

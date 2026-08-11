@@ -169,6 +169,64 @@ body {
   border-color: var(--border);
 }
 
+.toolbar-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #8a8a8a;
+  cursor: pointer;
+  font-size: 11px;
+  user-select: none;
+}
+
+.toolbar-switch input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  opacity: 0;
+}
+
+.toolbar-switch-track {
+  position: relative;
+  width: 28px;
+  height: 16px;
+  border: 1px solid #3b3d45;
+  border-radius: 999px;
+  background: #23252b;
+  transition:
+    background 140ms ease,
+    border-color 140ms ease;
+}
+
+.toolbar-switch-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #85878e;
+  transition:
+    background 140ms ease,
+    transform 140ms ease;
+}
+
+.toolbar-switch input:checked + .toolbar-switch-track {
+  border-color: color-mix(in srgb, var(--accent) 65%, transparent);
+  background: color-mix(in srgb, var(--accent) 32%, transparent);
+}
+
+.toolbar-switch input:checked + .toolbar-switch-track .toolbar-switch-thumb {
+  background: var(--accent);
+  transform: translateX(12px);
+}
+
+.toolbar-switch input:focus-visible + .toolbar-switch-track {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 .toolbar .toggle-btn {
   padding: 4px 6px;
   display: inline-flex;

@@ -18,6 +18,7 @@ export interface FolderRowOptions {
   bellPendingFor?: (projectId: ProjectId) => boolean;
   getSuspendedCount?: (projectId: ProjectId) => number;
   filterQuery?: string;
+  projectFilter?: (project: Project) => boolean;
   selection: SelectionStore;
   onSuspendProject?: (projectId: ProjectId) => void;
   onResumeProject?: (projectId: ProjectId) => void;
@@ -87,7 +88,7 @@ export function createFolderRow(opts: FolderRowOptions): FolderRowHandle {
     opts.filterQuery ?? "",
     workspace,
     sortedProjectsInFolder(workspace, folder.id),
-  );
+  ).filter((project) => opts.projectFilter?.(project) ?? true);
 
   for (const project of visibleProjects) {
     const initialCount = liveCountFor ? liveCountFor(project.id) : 0;

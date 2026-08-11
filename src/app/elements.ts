@@ -13,6 +13,7 @@ export interface AppElements {
   notes: NotesElements;
   /** Toolbar slot for the workspace > project breadcrumb. */
   breadcrumbHost: HTMLElement;
+  activeProjectsOnlyToggle: HTMLInputElement;
   /** Wrapper around `#grid` that owns the per-project sub-toolbar. */
   projectPaneHost: HTMLElement;
 }
@@ -28,6 +29,10 @@ export function getAppElements(): AppElements {
     notesGutter: document.getElementById("gutter-notes"),
     notes: getNotesElements(),
     breadcrumbHost: requireById("breadcrumb"),
+    activeProjectsOnlyToggle: requireById<HTMLInputElement>(
+      "active-projects-only",
+      HTMLInputElement,
+    ),
     projectPaneHost: requireById("project-pane"),
   };
 }
