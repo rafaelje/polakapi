@@ -1,4 +1,5 @@
 import { terminalLayoutsEqual } from "../../terminal/terminal-layout";
+import { equalStringArrays } from "../../terminal/terminal-spec-utils";
 import type { ProjectId, TerminalLayoutNode, TerminalSpec, WorkspacesState } from "./types";
 import { mapProjectInWorkspace, mapWorkspaces } from "./workspaces-reducer-helpers";
 
@@ -120,6 +121,10 @@ function shallowEqualSpec(a: TerminalSpec, b: TerminalSpec): boolean {
     a.title === b.title &&
     a.cwd === b.cwd &&
     a.startupCmd === b.startupCmd &&
-    a.cliId === b.cliId
+    a.cliId === b.cliId &&
+    a.suspended === b.suspended &&
+    a.lastShellCommand === b.lastShellCommand &&
+    a.lastShellCommandAlias === b.lastShellCommandAlias &&
+    equalStringArrays(a.launchArgs, b.launchArgs)
   );
 }

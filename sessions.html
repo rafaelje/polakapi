@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="stylesheet" href="/src/modules/sessions/sessions.css" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>/sessions</title>
+    <script type="module" src="/src/modules/sessions/sessions.ts" defer></script>
+  </head>
+  <body>
+    <main class="sessions-body">
+      <header class="sessions-header">
+        <div class="sessions-heading">
+          <strong>/sessions</strong>
+          <span class="sessions-counter" id="sessions-counter">loading…</span>
+        </div>
+        <div class="sessions-controls">
+          <input
+            type="search"
+            id="sessions-search"
+            class="sessions-control sessions-search"
+            aria-label="Search sessions"
+            placeholder="Search title, path, or id…"
+            autocomplete="off"
+          />
+          <select id="sessions-agent" class="sessions-control" aria-label="Filter by agent">
+            <option value="all">All agents</option>
+            <option value="codex">Codex</option>
+            <option value="claude">Claude</option>
+            <option value="opencode">OpenCode</option>
+          </select>
+          <select id="sessions-kind" class="sessions-control" aria-label="Filter by kind">
+            <option value="all">All kinds</option>
+            <option value="interactive">Interactive</option>
+            <option value="non-interactive">Non-interactive</option>
+            <option value="subagent">Subagents</option>
+          </select>
+          <label class="sessions-archived">
+            <input type="checkbox" id="sessions-include-archived" />
+            archived
+          </label>
+          <button type="button" id="sessions-refresh" class="sessions-btn">reload</button>
+        </div>
+      </header>
+      <div id="sessions-warnings" class="sessions-warnings" hidden></div>
+      <aside class="sessions-list" id="sessions-list" aria-label="Saved sessions"></aside>
+      <section class="sessions-detail" id="sessions-detail">
+        <p class="sessions-empty">Select a session to see its metadata.</p>
+      </section>
+    </main>
+  </body>
+</html>

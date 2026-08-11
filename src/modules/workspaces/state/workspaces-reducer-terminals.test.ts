@@ -134,7 +134,6 @@ describe("addTerminalSpec / replaceTerminalSpecs preserve cliId", () => {
     expect(terminals?.[2].cliId).toBeUndefined();
   });
 });
-
 describe("setProjectTerminalLayout", () => {
   it("stores and clears a project layout", () => {
     const { state, pid } = seed();
@@ -161,5 +160,42 @@ describe("setProjectTerminalLayout", () => {
     const unchanged = setProjectTerminalLayout(stored, pid, { ...layout });
 
     expect(findProject(unchanged, pid)!.project).toBe(project);
+  });
+});
+
+describe("terminal launch arguments", () => {
+  it("persists launch arguments and compares equal arrays by value", () => {
+    const { state, pid } = seed();
+    const withTerminal = addTerminalSpec(state, pid, {
+      id: "resume",
+      cliId: "codex",
+      launchArgs: ["resume", "session-1"],
+    });
+
+    const unchanged = updateTerminalSpec(withTerminal, pid, "resume", {
+      launchArgs: ["resume", "session-1"],
+    });
+    const changed = updateTerminalSpec(withTerminal, pid, "resume", {
+      launchArgs: ["resume", "session-2"],
+    });
+
+    expect(findProject(unchanged, pid)?.project).toBe(findProject(withTerminal, pid)?.project);
+    expect(findProject(changed, pid)?.project.terminals?.[0]?.launchArgs).toEqual([
+      "resume",
+      "session-2",
+    ]);
+  });
+
+  it.each([
+    ["suspended", true],
+    ["lastShellCommand", "pnpm test"],
+    ["lastShellCommandAlias", true],
+  ] as const)("detects a change to %s", (field, value) => {
+    const { state, pid } = seed();
+    const withTerminal = addTerminalSpec(state, pid, { id: "terminal" });
+    const changed = updateTerminalSpec(withTerminal, pid, "terminal", { [field]: value });
+
+    expect(changed).not.toBe(withTerminal);
+    expect(findProject(changed, pid)?.project.terminals?.[0]?.[field]).toBe(value);
   });
 });

@@ -24,6 +24,12 @@ const ALLOWED_SHELL_BASENAMES: &[&str] =
     &["sh", "bash", "zsh", "fish", "dash", "ksh", "tcsh", "csh"];
 
 const ALLOWED_AI_CLI_BASENAMES: &[&str] = &["claude", "codex", "opencode", "cursor-agent"];
+const LEGACY_CAPTURE_ENV: &[&str] = &[
+    "POLAKAPI_PTY_ID",
+    "POLAKAPI_DB_PATH",
+    "POLAKAPI_HELPER",
+    "POLAKAPI_CLI",
+];
 
 const MAX_ARG_LEN: usize = 4096;
 const MAX_ARGS: usize = 64;
@@ -139,10 +145,6 @@ pub fn spawn_session(
     let validated_args = validate_args(args)?;
     let validated_cwd = validate_cwd(cwd)?;
 
-    // Generate the pty id up front so it can be injected as an env var into
-    // the spawned AI CLI process (claude / codex / opencode). The hooks the
-    // CLI invokes read these vars to attribute the prompt to this tab and
-    // to know which DB to write to.
     let id = uuid::Uuid::new_v4().to_string();
 
     let mut cmd = CommandBuilder::new(&shell);
@@ -161,13 +163,7 @@ pub fn spawn_session(
             shell_integration::apply(&config_dir.join("shell-integration"), &mut cmd, &shell, &id);
         }
     }
-
-    // If this session spawns an AI CLI directly (claude / codex / opencode),
-    // inject env vars that let the polakapi-capture hooks (registered by the
-    // user's settings.json / hooks.json) write back to the right DB and
-    // attribute the prompt to this terminal tab. No keystroke capture —
-    // the hooks are invoked by the CLI itself with structured JSON.
-    inject_polakapi_env(&mut cmd, app.clone(), &id, &shell);
+    strip_legacy_capture_env(&mut cmd);
 
     let child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
     drop(pair.slave);
@@ -342,35 +338,14 @@ fn home_dir_from_env() -> Option<PathBuf> {
     }
 }
 
-/// Drains the longest valid UTF-8 prefix from `buf` and returns it as a String.
-/// Any trailing partial code-point bytes remain in `buf` for the next chunk.
-/// Injects `POLAKAPI_PTY_ID`, `POLAKAPI_DB_PATH` and `POLAKAPI_HELPER` into
-/// the spawned PTY's environment when the command is an AI CLI
-/// (`claude` / `codex` / `opencode`). The hooks registered by polakapi in
-/// the user's `~/.claude/settings.json` / `~/.codex/hooks.json` read these
-/// to attribute prompts to this terminal tab and to know which DB to
-/// write to. No-op for shell sessions.
-fn inject_polakapi_env(cmd: &mut CommandBuilder, app: AppHandle, pty_id: &str, command: &str) {
-    let basename = Path::new(command)
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or(command);
-    if !ALLOWED_AI_CLI_BASENAMES
-        .iter()
-        .any(|allowed| allowed.eq_ignore_ascii_case(basename))
-    {
-        return;
-    }
-    cmd.env("POLAKAPI_PTY_ID", pty_id);
-    cmd.env("POLAKAPI_CLI", basename);
-    if let Ok(db_path) = crate::db::Db::resolve_path(&app) {
-        cmd.env("POLAKAPI_DB_PATH", db_path.to_string_lossy().to_string());
-    }
-    if let Ok(exe) = std::env::current_exe() {
-        cmd.env("POLAKAPI_HELPER", exe.to_string_lossy().to_string());
+fn strip_legacy_capture_env(cmd: &mut CommandBuilder) {
+    for key in LEGACY_CAPTURE_ENV {
+        cmd.env_remove(key);
     }
 }
 
+/// Drains the longest valid UTF-8 prefix from `buf` and returns it as a String.
+/// Any trailing partial code-point bytes remain in `buf` for the next chunk.
 fn drain_valid_utf8(buf: &mut Vec<u8>) -> String {
     match std::str::from_utf8(buf) {
         Ok(s) => {
@@ -547,6 +522,25 @@ mod tests {
             Some(std::ffi::OsStr::new("truecolor"))
         );
         assert_eq!(cmd.get_env("NO_COLOR"), None);
+    }
+
+    #[test]
+    fn removes_legacy_capture_environment() {
+        let mut command = CommandBuilder::new("codex");
+        for key in LEGACY_CAPTURE_ENV {
+            command.env(key, "legacy-value");
+        }
+        command.env("TERM", "xterm-256color");
+
+        strip_legacy_capture_env(&mut command);
+
+        for key in LEGACY_CAPTURE_ENV {
+            assert!(command.get_env(key).is_none());
+        }
+        assert_eq!(
+            command.get_env("TERM"),
+            Some(std::ffi::OsStr::new("xterm-256color"))
+        );
     }
 
     #[test]
