@@ -1,5 +1,13 @@
 import type { AgentId, AgentSession } from "./types";
 
+const SESSION_TIMESTAMP_FORMATTER = new Intl.DateTimeFormat(undefined, {
+  year: "numeric",
+  month: "short",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+});
+
 export interface SessionFilters {
   needle: string;
   agent: AgentId | "all";
@@ -40,11 +48,5 @@ export function formatSessionTimestamp(timestamp: number): string {
   if (!Number.isFinite(timestamp) || timestamp <= 0) return "unknown time";
   const date = new Date(timestamp);
   if (Number.isNaN(date.getTime())) return "unknown time";
-  return new Intl.DateTimeFormat(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(date);
+  return SESSION_TIMESTAMP_FORMATTER.format(date);
 }
