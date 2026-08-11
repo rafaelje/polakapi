@@ -17,6 +17,7 @@ pub fn keep_awake_set(state: State<'_, AwakeState>, enabled: bool) -> Result<boo
         return Ok(true);
     }
     let awake = keepawake::Builder::default()
+        .display(true)
         .idle(true)
         .sleep(true)
         .reason("AI agents running in terminals")
