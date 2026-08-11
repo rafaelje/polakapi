@@ -370,7 +370,10 @@ export class AppController {
         btn.classList.toggle("active", active);
         queueSave({ keepAwakeEnabled: active });
         if (showFeedback) {
-          showToast(active ? "System sleep inhibited" : "System sleep restored", "info");
+          showToast(
+            active ? "System and display sleep inhibited" : "System and display sleep restored",
+            "info",
+          );
         }
       } catch {
         // invoke() already surfaced the error toast
