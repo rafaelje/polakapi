@@ -2,7 +2,7 @@ import { WebviewWindow, getAllWebviewWindows } from "@tauri-apps/api/webviewWind
 import { showToast } from "../../shared/ui/toast";
 
 // One window per app (label "adversarial-review"): a second click focuses the
-// existing instance. Mirrors the loop/prompts window pattern so the three
+// existing instance. Mirrors the loop/sessions window pattern so the three
 // popups behave the same.
 
 const ADV_LABEL = "adversarial-review";

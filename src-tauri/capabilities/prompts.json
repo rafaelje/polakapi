@@ -1,7 +1,0 @@
-{
-  "$schema": "../gen/schemas/desktop-schema.json",
-  "identifier": "prompts",
-  "description": "Capability for the floating /prompts popup window. Read-only commands prompt_list_sessions / prompt_list_by_session / prompt_get / prompt_search reach this window via the global invoke_handler registration in lib.rs (same pattern as the loop window).",
-  "windows": ["prompts"],
-  "permissions": ["core:default"]
-}

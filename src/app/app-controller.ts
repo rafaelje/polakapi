@@ -1,4 +1,5 @@
-import { type UnlistenFn } from "@tauri-apps/api/event";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   loadLayout,
   flushSave,
@@ -28,9 +29,9 @@ import { mountBottomPanel, type BottomPanelHandle } from "../modules/bottom-pane
 import { isBottomTab } from "../modules/bottom-panel/types";
 import { mountLoopButton, type LoopButtonHandle } from "../modules/agents-flow/loop-window";
 import {
-  mountPromptsButton,
-  type PromptsButtonHandle,
-} from "../modules/agents-flow/prompts-window";
+  mountSessionsButton,
+  type SessionsButtonHandle,
+} from "../modules/agents-flow/sessions-window";
 import {
   mountAdversarialButton,
   type AdversarialButtonHandle,
@@ -49,6 +50,13 @@ import { wireWindowLifecycle } from "./lifecycle";
 import { wireQuitConfirm } from "./quit-confirm";
 import { TerminalRouter } from "./terminal-router";
 import { type AppElements } from "./elements";
+import {
+  AGENT_SESSION_RESUME_EVENT,
+  buildResumeLaunchArgs,
+  isAgentSessionResumeRequest,
+  selectResumeProject,
+} from "../modules/sessions/resume";
+import type { AgentSessionResumeRequest } from "../modules/sessions/types";
 
 export class AppController {
   private readonly router: TerminalRouter;
@@ -56,7 +64,7 @@ export class AppController {
   private palette: CommandPaletteHandle | null = null;
   private bottomPanel: BottomPanelHandle | null = null;
   private loopButton: LoopButtonHandle | null = null;
-  private promptsButton: PromptsButtonHandle | null = null;
+  private sessionsButton: SessionsButtonHandle | null = null;
   private adversarialButton: AdversarialButtonHandle | null = null;
   private agentsButton: AgentsButtonHandle | null = null;
   private agentsController: AgentsController | null = null;
@@ -69,6 +77,7 @@ export class AppController {
   private unwireFocus: (() => void) | null = null;
   private unlistenData: UnlistenFn | null = null;
   private unlistenExit: UnlistenFn | null = null;
+  private unlistenSessionResume: UnlistenFn | null = null;
   /**
    * F5: cached window focus state. document.hasFocus() can lie momentarily
    * during alt-tab on macOS, so we track the focus/blur transitions ourselves
@@ -97,7 +106,7 @@ export class AppController {
       onTabChange: (tab) => queueSave({ activeBottomTab: tab }),
     });
     this.loopButton = mountLoopButton();
-    this.promptsButton = mountPromptsButton();
+    this.sessionsButton = mountSessionsButton();
     this.adversarialButton = mountAdversarialButton();
     // Eager boot — same pattern as workspaces/loop profiles — so the first
     // /agents open never flashes an empty list while agents.json loads.
@@ -128,6 +137,7 @@ export class AppController {
       router: this.router,
       isWindowFocused: () => this.windowFocused,
     });
+    await this.wireSessionResume();
 
     // Mount the command palette once the controller is ready. The shortcut
     // handler resolves through `this.palette?` so the Cmd-P keybinding wired
@@ -154,6 +164,8 @@ export class AppController {
     this.unlistenData = null;
     this.unlistenExit?.();
     this.unlistenExit = null;
+    this.unlistenSessionResume?.();
+    this.unlistenSessionResume = null;
     this.unwireShortcuts?.();
     this.unwireShortcuts = null;
     this.unwireWindowLifecycle?.();
@@ -179,8 +191,8 @@ export class AppController {
     this.loopButton?.dispose();
     this.loopButton = null;
 
-    this.promptsButton?.dispose();
-    this.promptsButton = null;
+    this.sessionsButton?.dispose();
+    this.sessionsButton = null;
 
     this.adversarialButton?.dispose();
     this.adversarialButton = null;
@@ -249,6 +261,48 @@ export class AppController {
       found.pane.markExited();
       found.manager.markExited(id);
     });
+  }
+
+  private async wireSessionResume(): Promise<void> {
+    this.unlistenSessionResume = await listen<unknown>(AGENT_SESSION_RESUME_EVENT, (event) => {
+      if (!isAgentSessionResumeRequest(event.payload)) {
+        showToast("Invalid session resume request", "error");
+        return;
+      }
+      void this.resumeAgentSession(event.payload);
+    });
+  }
+
+  private async resumeAgentSession(request: AgentSessionResumeRequest): Promise<void> {
+    const workspaces = this.workspaces;
+    if (!workspaces) {
+      showToast("Workspaces are not ready", "error");
+      return;
+    }
+    const project = selectResumeProject(workspaces.controller.getState(), request.cwd);
+    if (!project) {
+      showToast("Add a project before resuming a session", "error");
+      return;
+    }
+    try {
+      const launchArgs = buildResumeLaunchArgs(request.agent, request.nativeId);
+      workspaces.controller.setActiveProject(project.id);
+      const manager = this.router.getOrCreate(project);
+      const pane = await manager.addPane({
+        title: request.title,
+        cwd: request.cwd ?? project.path,
+        cliId: request.agent,
+        launchArgs,
+      });
+      if (pane?.ptyId) manager.setFocus(pane.ptyId, true);
+      const mainWindow = getCurrentWindow();
+      await mainWindow.unminimize();
+      await mainWindow.show();
+      await mainWindow.setFocus();
+    } catch (error) {
+      console.error("Failed to resume agent session", error);
+      showToast(`Could not resume session: ${String(error)}`, "error");
+    }
   }
 
   private wireGutters(): void {

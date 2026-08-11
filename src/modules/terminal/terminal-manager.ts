@@ -25,6 +25,7 @@ import {
 import { TerminalPane } from "./terminal-pane";
 import { scheduleTerminalWrite, wireTerminalPane } from "./terminal-pane-wiring";
 import { shouldReplayShellCommand } from "./resume-whitelist";
+import { equalStringArrays } from "./terminal-spec-utils";
 import { ptyKill } from "./pty-client";
 import {
   registerManagerBell,
@@ -128,6 +129,7 @@ export class TerminalManager {
       next.cwd === current.cwd &&
       next.startupCmd === current.startupCmd &&
       next.cliId === current.cliId &&
+      equalStringArrays(next.launchArgs, current.launchArgs) &&
       next.suspended === current.suspended &&
       next.lastShellCommand === current.lastShellCommand &&
       next.lastShellCommandAlias === current.lastShellCommandAlias
@@ -219,12 +221,13 @@ export class TerminalManager {
     const cliId = spec?.cliId ?? this.activeCliId;
     const profile = resolveProfile(cliId);
     const command = profile.command || undefined;
+    const baseArgs = spec?.launchArgs ?? profile.args;
     let spawnError: string | null = null;
     try {
       await pane.attach(this.grid, {
         cwd,
         command,
-        args: opts?.extraArgs ? [...(profile.args ?? []), ...opts.extraArgs] : profile.args,
+        args: opts?.extraArgs ? [...(baseArgs ?? []), ...opts.extraArgs] : baseArgs,
         cliId: profile.id,
       });
     } catch (error) {
@@ -243,6 +246,7 @@ export class TerminalManager {
       cwd: spec?.cwd,
       startupCmd: spec?.startupCmd,
       cliId: profile.id,
+      launchArgs: spec?.launchArgs,
       lastShellCommand: spec?.lastShellCommand,
       lastShellCommandAlias: spec?.lastShellCommandAlias,
     };
@@ -324,8 +328,7 @@ export class TerminalManager {
     await this.respawnPane(ptyId, cliId);
   }
 
-  /** Kill-and-respawn with `cliId`, preserving cwd / title / startupCmd and
-   * the grid slot. The ptyId changes — external holders must invalidate. */
+  /** Kill-and-respawn with `cliId`, clearing launch arguments but preserving the grid slot. */
   async respawnPane(ptyId: string, cliId: string): Promise<void> {
     const current = this.specsById.get(ptyId);
     if (!current) return;
@@ -352,19 +355,22 @@ export class TerminalManager {
   async resumePane(paneId: string): Promise<void> {
     const current = this.specsById.get(paneId);
     if (!current?.suspended || this.isLive(paneId)) return;
-    const resumeArgs = resolveProfile(current.cliId).resumeArgs;
-    const { title, cwd, startupCmd, cliId, lastShellCommand, lastShellCommandAlias } = current;
+    const resumeArgs = current.launchArgs ? undefined : resolveProfile(current.cliId).resumeArgs;
     const shouldReplay =
       !resumeArgs &&
-      !!lastShellCommand &&
-      shouldReplayShellCommand(lastShellCommand, lastShellCommandAlias === true);
+      !!current.lastShellCommand &&
+      shouldReplayShellCommand(current.lastShellCommand, current.lastShellCommandAlias === true);
     const newId = await this.replacePane(
       paneId,
-      { title, cwd, startupCmd, cliId, lastShellCommand, lastShellCommandAlias },
-      { extraArgs: resumeArgs, skipStartupCmd: resumeArgs !== undefined || shouldReplay },
+      { ...current, suspended: undefined },
+      {
+        extraArgs: resumeArgs,
+        skipStartupCmd:
+          current.launchArgs !== undefined || resumeArgs !== undefined || shouldReplay,
+      },
     );
-    if (newId && shouldReplay && lastShellCommand) {
-      this.scheduleShellReplay(newId, lastShellCommand);
+    if (newId && shouldReplay && current.lastShellCommand) {
+      this.scheduleShellReplay(newId, current.lastShellCommand);
     }
   }
 
