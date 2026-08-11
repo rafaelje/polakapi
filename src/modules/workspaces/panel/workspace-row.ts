@@ -136,11 +136,11 @@ export function createWorkspaceRow(opts: WorkspaceRowOptions): WorkspaceRowHandl
   const liveCountFor = opts.liveCountFor;
   const suspendedCountFor = opts.getSuspendedCount;
   const activeQuery = opts.filterQuery ?? "";
-  const projectActivities = new Map<ProjectId, ProjectActivityState>(
-    workspace.projects
-      .filter((project) => opts.projectFilter?.(project) ?? true)
-      .map((project) => [project.id, opts.activityFor?.(project.id) ?? "idle"]),
-  );
+  const projectActivities = new Map<ProjectId, ProjectActivityState>();
+  for (const project of workspace.projects) {
+    if (opts.projectFilter && !opts.projectFilter(project)) continue;
+    projectActivities.set(project.id, opts.activityFor?.(project.id) ?? "idle");
+  }
   const bellPendingProjects = new Set<ProjectId>();
   for (const project of workspace.projects) {
     if (opts.bellPendingFor?.(project.id)) bellPendingProjects.add(project.id);
