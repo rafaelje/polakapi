@@ -1,0 +1,333 @@
+/* ---------------------------------------------------------------------------
+ * /agents — library modal. Same overlay pattern as cmd-palette but with a
+ * two-column list+preview body and an inline editor mode.
+ * ------------------------------------------------------------------------- */
+
+.agents-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 210;
+}
+
+.agents-modal {
+  width: min(760px, 92vw);
+  max-height: 78vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+  overflow: hidden;
+}
+
+.agents-modal-head {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.agents-modal-search {
+  flex: 1 1 auto;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 13px;
+  outline: none;
+}
+
+.agents-modal-search:focus {
+  border-color: var(--accent);
+}
+
+.agents-modal-badge {
+  font:
+    11px ui-monospace,
+    Menlo,
+    monospace;
+  color: #6fcf97;
+  border: 1px solid rgba(111, 207, 151, 0.45);
+  background: rgba(111, 207, 151, 0.08);
+  border-radius: 5px;
+  padding: 4px 8px;
+  white-space: nowrap;
+}
+
+.agents-modal-badge-off {
+  color: #b5651d;
+  border-color: rgba(181, 101, 29, 0.5);
+  background: rgba(181, 101, 29, 0.08);
+}
+
+.agents-modal-btn {
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 5px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.agents-modal-btn:hover:not(:disabled) {
+  border-color: #4a4a4a;
+}
+
+.agents-modal-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.agents-modal-btn-primary {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.agents-modal-btn-danger {
+  border-color: rgba(235, 87, 87, 0.55);
+  color: #eb5757;
+}
+
+.agents-modal-body {
+  flex: 1 1 auto;
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  min-height: 260px;
+  overflow: hidden;
+}
+
+.agents-modal-list {
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+  padding: 6px;
+}
+
+.agents-modal-empty {
+  padding: 16px 12px;
+  color: #6a6a6a;
+  font-style: italic;
+  font-size: 13px;
+}
+
+.agents-modal-row {
+  padding: 7px 9px;
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--text);
+}
+
+.agents-modal-row[aria-selected="true"] {
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+}
+
+.agents-modal-row-name {
+  font-size: 13px;
+}
+
+.agents-modal-row-desc {
+  font-size: 11px;
+  color: #8a8a8a;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agents-modal-row-meta {
+  font-size: 10px;
+  color: #666;
+  margin-top: 2px;
+}
+
+.agents-modal-preview {
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+}
+
+.agents-modal-preview-empty {
+  color: #6a6a6a;
+  font-style: italic;
+  font-size: 13px;
+}
+
+.agents-modal-chips {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.agents-modal-chip {
+  font:
+    10.5px ui-monospace,
+    Menlo,
+    monospace;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 2px 9px;
+  color: var(--accent);
+}
+
+.agents-modal-preview-body {
+  flex: 1 1 auto;
+  overflow: auto;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px 12px;
+  color: #b9c2d4;
+  font:
+    11px/1.55 ui-monospace,
+    Menlo,
+    monospace;
+  white-space: pre-wrap;
+  margin: 0;
+}
+
+.agents-modal-actions {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  padding: 10px 12px;
+  border-top: 1px solid var(--border);
+}
+
+.agents-modal-hint {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 14px;
+  font-size: 10.5px;
+  color: #6a6a6a;
+  padding: 8px 12px;
+  border-top: 1px solid var(--border);
+}
+
+.agents-modal-hint kbd {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  padding: 0 5px;
+  font-size: 10px;
+  margin-right: 4px;
+}
+
+/* Editor mode. */
+
+.agents-modal-editor-title {
+  font-size: 13px;
+}
+
+.agents-modal-editor-body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.agents-modal-editor-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.agents-modal-editor-field label {
+  font-size: 11px;
+  color: #8a8a8a;
+}
+
+.agents-modal-editor-field input {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 10px;
+  color: var(--text);
+  font-size: 13px;
+  outline: none;
+}
+
+.agents-modal-editor-field input:focus {
+  border-color: var(--accent);
+}
+
+.agents-modal-editor-field-label {
+  font-size: 11px;
+  color: #8a8a8a;
+  margin-top: 4px;
+}
+
+.agents-modal-editor-error {
+  font-size: 11px;
+  color: #eb5757;
+}
+
+.agents-modal-file {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px;
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.agents-modal-file-head {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.agents-modal-file-title {
+  flex: 1 1 auto;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 9px;
+  color: var(--text);
+  font:
+    12px ui-monospace,
+    Menlo,
+    monospace;
+  outline: none;
+}
+
+.agents-modal-file-title:focus {
+  border-color: var(--accent);
+}
+
+.agents-modal-file-content {
+  width: 100%;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  color: var(--text);
+  font:
+    11px/1.55 ui-monospace,
+    Menlo,
+    monospace;
+  resize: vertical;
+  min-height: 100px;
+  outline: none;
+}
+
+.agents-modal-file-content:focus {
+  border-color: var(--accent);
+}
+
+.agents-modal-add-file {
+  align-self: flex-start;
+}

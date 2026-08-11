@@ -1,0 +1,46 @@
+name: React Doctor
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+  statuses: write
+
+concurrency:
+  group: react-doctor-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  react-doctor:
+    name: React Doctor
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Analyze project
+        id: doctor
+        uses: millionco/react-doctor@v2
+        with:
+          blocking: warning
+          scope: full
+      - name: Require a perfect score
+        if: ${{ always() }}
+        env:
+          REACT_DOCTOR_SCORE: ${{ steps.doctor.outputs.score }}
+        run: |
+          if [ -z "$REACT_DOCTOR_SCORE" ]; then
+            echo "::error::React Doctor did not return a score."
+            exit 1
+          fi
+          if [ "$REACT_DOCTOR_SCORE" != "100" ]; then
+            echo "::error::React Doctor score must be 100, got $REACT_DOCTOR_SCORE."
+            exit 1
+          fi

@@ -1,5 +1,9 @@
 import { promptModal } from "../shared/ui/modal";
+import { showToast } from "../shared/ui/toast";
 import { ptyWrite } from "../modules/terminal/pty-client";
+import { buildLayoutTemplate } from "../modules/terminal/layout-templates";
+import { wireActivationShortcuts } from "../modules/workspaces/activation-shortcuts";
+import { openLayoutTemplateMenu } from "../modules/terminal/layout-template-menu";
 import { attachTerminalDrop, type TerminalDropHandle } from "../modules/terminal/terminal-drop";
 import { openInEditor, openInShell, revealFolder } from "../modules/workspaces/open-external";
 import { WorkspacesController } from "../modules/workspaces/state/workspaces-controller";
@@ -113,6 +117,9 @@ export async function bootstrapWorkspaces(
     controller,
     liveCounts: router,
     bellSource,
+    activeOnlyToggle: elements.activeProjectsOnlyToggle,
+    onSuspendProject: (projectId) => router.getById(projectId)?.suspendAll(),
+    onResumeProject: (projectId) => void router.getById(projectId)?.resumeAll(),
   });
 
   // Bridges native Finder drops and HTML5 URL/text drops into whichever pane
@@ -136,6 +143,30 @@ export async function bootstrapWorkspaces(
         if (!manager) return;
         void manager.addPane();
       },
+      onOpenLayoutsMenu: (anchor) => {
+        const manager = router.getActive();
+        openLayoutTemplateMenu({
+          trigger: anchor,
+          templates: controller.getLayoutTemplates(),
+          canSave: (manager?.size ?? 0) > 0,
+          onApply: (template) => {
+            const active = router.getActive();
+            if (!active) return;
+            void active.applyTemplate(template);
+          },
+          onSaveAs: (name) => {
+            const active = router.getActive();
+            if (!active) return;
+            const template = buildLayoutTemplate(name, active.specs(), active.layoutSnapshot);
+            if (!template) return;
+            controller.saveLayoutTemplate(template);
+            showToast(`Layout "${template.name}" saved`, "info");
+          },
+          onDelete: (templateId) => controller.deleteLayoutTemplate(templateId),
+        });
+      },
+      onSuspendAll: () => router.getActive()?.suspendAll(),
+      onResumeAll: () => void router.getActive()?.resumeAll(),
       onRunInAll: () => void runCommandInActivePanes(router),
       onRevealFolder: (path) => {
         void revealFolder(path);
@@ -156,6 +187,16 @@ export async function bootstrapWorkspaces(
   });
   const breadcrumb = mountBreadcrumb({ host: elements.breadcrumbHost });
 
+  // Also re-run off the router's counts-changed event (see subscription
+  // below) since live count settles later than the suspended flag flip.
+  const refreshSuspendResumeToggle = (): void => {
+    const project = controller.getActiveProject();
+    projectPane.setSuspendResumeCounts(
+      project ? router.getCount(project.id) : 0,
+      project ? router.getSuspendedCount(project.id) : 0,
+    );
+  };
+
   const activateProject = async (project: Project | null): Promise<void> => {
     if (!project) {
       router.unmount();
@@ -171,6 +212,9 @@ export async function bootstrapWorkspaces(
         await manager.restoreSpecs(specs);
       }
     }
+    // Called directly since restoreSpecs's own spec-changed event can fire
+    // before AppController has assigned `this.workspaces` on first boot.
+    refreshSuspendResumeToggle();
   };
 
   const refreshActiveContext = (): void => {
@@ -180,9 +224,14 @@ export async function bootstrapWorkspaces(
       : null;
     breadcrumb.update(workspace, project);
     projectPane.setActiveProject(project);
+    refreshSuspendResumeToggle();
     if (project) elements.projectPaneHost.dataset.projectId = project.id;
     else delete elements.projectPaneHost.dataset.projectId;
   };
+
+  const unsubscribeRouterSuspendToggle = router.on((event: TerminalRouterEvent) => {
+    if (event.type === "counts-changed") refreshSuspendResumeToggle();
+  });
 
   // PTY teardown for project deletion. Runs after the user confirms in the
   // modal and before the reducer removes the project — this keeps sidebar
@@ -243,11 +292,15 @@ export async function bootstrapWorkspaces(
     source: notesSource,
   });
 
+  const unwireActivation = wireActivationShortcuts(controller);
+
   const unsubscribe = (): void => {
+    unwireActivation();
     terminalDrop.detach();
     unsubscribeController();
     unwireDeleteHook();
     unsubscribeRouterBell();
+    unsubscribeRouterSuspendToggle();
     bellListeners.clear();
     router.setNotificationContext(null);
     notesListeners.clear();

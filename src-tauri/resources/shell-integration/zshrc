@@ -1,0 +1,19 @@
+# polakapi shell integration wrapper, sourced as $ZDOTDIR/.zshrc. Restores
+# ZDOTDIR before sourcing the user's real .zshrc, then adds the capture hook.
+
+_polakapi_integration_dir="$ZDOTDIR"
+
+if [ -n "$POLAKAPI_REAL_ZDOTDIR" ]; then
+  ZDOTDIR="$POLAKAPI_REAL_ZDOTDIR"
+else
+  unset ZDOTDIR
+fi
+
+if [ -n "$ZDOTDIR" ] && [ -f "$ZDOTDIR/.zshrc" ]; then
+  source "$ZDOTDIR/.zshrc"
+elif [ -z "$ZDOTDIR" ] && [ -f "$HOME/.zshrc" ]; then
+  source "$HOME/.zshrc"
+fi
+
+source "$_polakapi_integration_dir/integration.zsh"
+unset _polakapi_integration_dir POLAKAPI_REAL_ZDOTDIR

@@ -1,0 +1,994 @@
+/* ─────────── Step 3 · execution view (timeline + budget) ─────────── */
+
+.loop-step-slot.loop-step3-run {
+  display: block;
+  align-items: stretch;
+  justify-content: stretch;
+  padding: 0;
+}
+
+.loop-step3-run-root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--bg);
+}
+
+.loop-step3-run-root > .loop-step3-run-timeline {
+  flex: 1 1 auto;
+}
+
+.loop-step3-run-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 18px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+}
+
+.loop-step3-run-header-left {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.loop-step3-run-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.loop-step3-run-subtitle {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: ui-monospace, SFMono-Regular, monospace;
+}
+
+.loop-step3-run-header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.loop-step3-run-abort {
+  color: var(--danger);
+}
+
+.loop-step3-run-timeline {
+  overflow-y: auto;
+  padding: 12px 18px;
+  min-height: 0;
+}
+
+.loop-step3-run-empty {
+  color: var(--text-muted);
+  font-size: 13px;
+  text-align: center;
+  padding: 24px;
+}
+
+.loop-step3-run-grid {
+  display: grid;
+  grid-template-columns: 180px repeat(4, 1fr);
+  gap: 6px;
+  padding: 4px 0;
+}
+
+.loop-step3-run-grid-head {
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 8px;
+  margin-bottom: 8px;
+}
+
+.loop-step3-run-cell {
+  background: var(--panel-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 50px;
+}
+
+.loop-step3-run-cell-head {
+  background: transparent;
+  border: none;
+  text-transform: uppercase;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  font-weight: 600;
+  padding: 4px 10px;
+  min-height: 0;
+}
+
+.loop-step3-run-row {
+  align-items: stretch;
+}
+
+.loop-step3-run-row-current .loop-step3-run-cell {
+  border-color: rgba(255, 140, 42, 0.4);
+}
+
+.loop-step3-run-row-warning .loop-step3-run-cell-phase {
+  border-color: rgba(255, 200, 100, 0.5);
+}
+
+.loop-step3-run-row-error .loop-step3-run-cell-phase {
+  border-color: var(--danger);
+}
+
+.loop-step3-run-row-done .loop-step3-run-cell-phase {
+  border-color: rgba(74, 210, 122, 0.4);
+}
+
+.loop-step3-run-cell-phase {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.loop-step3-run-phase-id {
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.loop-step3-run-phase-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  word-break: break-word;
+}
+
+.loop-step3-run-status {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 600;
+  align-self: flex-start;
+  padding: 1px 6px;
+  border-radius: 2px;
+}
+
+.loop-step3-run-status-pending {
+  background: var(--panel);
+  color: var(--text-muted);
+}
+
+.loop-step3-run-status-running {
+  background: rgba(255, 140, 42, 0.2);
+  color: var(--accent);
+}
+
+.loop-step3-run-status-done {
+  background: rgba(74, 210, 122, 0.18);
+  color: #4ad27a;
+}
+
+.loop-step3-run-status-warning {
+  background: rgba(255, 200, 100, 0.18);
+  color: #ffc864;
+}
+
+.loop-step3-run-status-error {
+  background: rgba(255, 90, 90, 0.18);
+  color: var(--danger);
+}
+
+.loop-step3-run-cell-stage {
+  font-size: 11px;
+}
+
+.loop-step3-run-stage-pending {
+  opacity: 0.65;
+}
+
+.loop-step3-run-stage-running {
+  border-color: rgba(255, 140, 42, 0.5);
+}
+
+.loop-step3-run-stage-done {
+  border-color: rgba(74, 210, 122, 0.3);
+}
+
+.loop-step3-run-stage-warning {
+  border-color: rgba(255, 200, 100, 0.5);
+}
+
+.loop-step3-run-stage-error {
+  border-color: var(--danger);
+}
+
+.loop-step3-run-stage-top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.loop-step3-run-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--text-muted);
+}
+
+.loop-step3-run-dot-running {
+  background: var(--accent);
+}
+
+.loop-step3-run-dot-running.loop-step3-run-dot-active {
+  animation: loop-pulse 1s ease-in-out infinite;
+}
+
+.loop-step3-run-dot-done {
+  background: #4ad27a;
+}
+
+.loop-step3-run-dot-warning {
+  background: #ffc864;
+}
+
+.loop-step3-run-dot-error {
+  background: var(--danger);
+}
+
+@keyframes loop-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.loop-step3-run-stage-label {
+  font-size: 11px;
+  color: var(--text);
+  text-transform: lowercase;
+}
+
+.loop-step3-run-retries {
+  margin-left: auto;
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  font-size: 10px;
+  color: var(--text-muted);
+  background: var(--panel);
+  padding: 1px 5px;
+  border-radius: 2px;
+}
+
+.loop-step3-run-stage-meta {
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.loop-step3-run-stage-message {
+  font-size: 11px;
+  color: var(--danger);
+  word-break: break-word;
+}
+
+.loop-step3-run-stage-warning .loop-step3-run-stage-message {
+  color: #ffc864;
+}
+
+.loop-step3-run-budget {
+  background: var(--panel);
+  border-top: 1px solid var(--border);
+  padding: 12px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.loop-step3-run-budget-head {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.loop-step3-run-budget-total {
+  font-size: 13px;
+  color: var(--text);
+}
+
+.loop-step3-run-budget-cost {
+  color: var(--text-muted);
+}
+
+.loop-step3-run-budget-ratio {
+  color: var(--text-muted);
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  font-size: 11px;
+}
+
+.loop-step3-run-budget-ratio-warn {
+  color: #ffc864;
+}
+
+.loop-step3-run-budget-bar {
+  height: 4px;
+  background: var(--panel-elev);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.loop-step3-run-budget-bar-fill {
+  height: 100%;
+  background: var(--accent);
+  transition: width 200ms ease;
+}
+
+.loop-step3-run-budget-bar-fill-warn {
+  background: #ffc864;
+}
+
+.loop-step3-run-budget-breakdown {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.loop-step3-run-budget-row {
+  display: grid;
+  grid-template-columns: 130px 1fr auto;
+  gap: 12px;
+  align-items: center;
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: ui-monospace, SFMono-Regular, monospace;
+}
+
+.loop-step3-run-budget-name {
+  color: var(--text);
+}
+
+.loop-step3-run-budget-row-cost {
+  text-align: right;
+  color: var(--text);
+}
+
+.loop-step3-run-message {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+/* ─────────── Section 8 · hybrid mode view (batches + integrator) ─────────── */
+
+.loop-step3-run-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 18px;
+  font-size: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.loop-step3-run-banner-warning {
+  background: rgba(255, 200, 100, 0.12);
+  color: #ffc864;
+}
+
+.loop-step3-run-banner-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #ffc864;
+  color: var(--bg);
+  font-weight: 700;
+  font-size: 12px;
+}
+
+.loop-step3-run-hybrid {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.loop-step3-run-batch {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.loop-step3-run-batch-current {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent) inset;
+}
+
+.loop-step3-run-batch-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.loop-step3-run-batch-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.loop-step3-run-batch-counter {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: ui-monospace, SFMono-Regular, monospace;
+}
+
+.loop-step3-run-batch-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+.loop-step3-run-card {
+  background: var(--panel-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.loop-step3-run-card-current {
+  border-color: var(--accent);
+}
+
+.loop-step3-run-card-done {
+  border-left: 3px solid #4caf50;
+}
+
+.loop-step3-run-card-warning {
+  border-left: 3px solid #ffc864;
+}
+
+.loop-step3-run-card-error {
+  border-left: 3px solid var(--danger);
+}
+
+.loop-step3-run-card-exhausted::after {
+  content: "cap revisor alcanzado";
+  font-size: 10px;
+  color: #ffc864;
+  font-family: ui-monospace, SFMono-Regular, monospace;
+}
+
+.loop-step3-run-card-head {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.loop-step3-run-card-id {
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.loop-step3-run-card-name {
+  color: var(--text);
+  font-weight: 600;
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.loop-step3-run-card-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.loop-step3-run-bar {
+  display: grid;
+  grid-template-columns: 44px 1fr auto;
+  gap: 6px;
+  align-items: center;
+  font-size: 10px;
+}
+
+.loop-step3-run-bar-label {
+  color: var(--text-muted);
+  font-family: ui-monospace, SFMono-Regular, monospace;
+}
+
+.loop-step3-run-bar-track {
+  display: block;
+  height: 5px;
+  background: var(--panel);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.loop-step3-run-bar-fill {
+  display: block;
+  height: 100%;
+  width: 0%;
+  background: var(--text-muted);
+  transition:
+    width 250ms ease,
+    background 250ms ease;
+}
+
+.loop-step3-run-bar-pending .loop-step3-run-bar-fill {
+  background: transparent;
+}
+
+.loop-step3-run-bar-running .loop-step3-run-bar-fill {
+  background: var(--accent);
+  animation: loop-step3-run-bar-pulse 1.4s ease-in-out infinite;
+}
+
+.loop-step3-run-bar-done .loop-step3-run-bar-fill {
+  background: #4caf50;
+}
+
+.loop-step3-run-bar-warning .loop-step3-run-bar-fill {
+  background: #ffc864;
+}
+
+.loop-step3-run-bar-error .loop-step3-run-bar-fill {
+  background: var(--danger);
+}
+
+@keyframes loop-step3-run-bar-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
+.loop-step3-run-bar-retries {
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.loop-step3-run-card-meta {
+  font-size: 10px;
+  color: var(--text-muted);
+  font-family: ui-monospace, SFMono-Regular, monospace;
+}
+
+.loop-step3-run-integrator {
+  background: var(--panel);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.loop-step3-run-integrator-running {
+  border-style: solid;
+  border-color: var(--accent);
+}
+
+.loop-step3-run-integrator-done {
+  border-style: solid;
+  border-color: #4caf50;
+}
+
+.loop-step3-run-integrator-conflict {
+  border-style: solid;
+  border-color: #ffc864;
+  background: rgba(255, 200, 100, 0.08);
+}
+
+.loop-step3-run-integrator-error {
+  border-style: solid;
+  border-color: var(--danger);
+}
+
+.loop-step3-run-integrator-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.loop-step3-run-integrator-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--panel-elev);
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.loop-step3-run-integrator-running .loop-step3-run-integrator-icon {
+  background: var(--accent);
+  color: var(--bg);
+}
+
+.loop-step3-run-integrator-done .loop-step3-run-integrator-icon {
+  background: #4caf50;
+  color: var(--bg);
+}
+
+.loop-step3-run-integrator-conflict .loop-step3-run-integrator-icon {
+  background: #ffc864;
+  color: var(--bg);
+}
+
+.loop-step3-run-integrator-error .loop-step3-run-integrator-icon {
+  background: var(--danger);
+  color: var(--bg);
+}
+
+.loop-step3-run-integrator-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.loop-step3-run-integrator-text strong {
+  font-size: 12px;
+  color: var(--text);
+}
+
+.loop-step3-run-integrator-sub {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: ui-monospace, SFMono-Regular, monospace;
+}
+
+.loop-step3-run-integrator-meta {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: ui-monospace, SFMono-Regular, monospace;
+}
+
+.loop-step3-run-integrator-message {
+  margin: 0;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.loop-step3-run-integrator-conflicts {
+  background: var(--panel-elev);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.loop-step3-run-integrator-conflicts-title {
+  font-size: 11px;
+  color: var(--text);
+  font-weight: 600;
+}
+
+.loop-step3-run-integrator-conflicts-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.loop-step3-run-integrator-conflicts-list li {
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  font-size: 11px;
+  color: #ffc864;
+}
+
+.loop-step3-run-integrator-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.loop-step3-run-conflict-btn-danger {
+  color: var(--danger);
+}
+
+/* ─────────── Section 9 · Resume banner ─────────── */
+
+.loop-resume-banner {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  background:
+    linear-gradient(0deg, rgba(255, 140, 42, 0.08), rgba(255, 140, 42, 0.08)), var(--panel);
+  border-bottom: 1px solid rgba(255, 140, 42, 0.4);
+}
+
+.loop-resume-banner-icon {
+  font-size: 16px;
+  color: var(--accent);
+  flex: 0 0 auto;
+}
+
+.loop-resume-banner-body {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.loop-resume-banner-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.loop-resume-banner-meta {
+  margin: 0;
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.loop-resume-banner-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
+.loop-resume-banner-actions .loop-btn-primary {
+  margin-top: 0;
+  align-self: auto;
+}
+
+.loop-resume-banner-dismiss {
+  padding: 2px 8px;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.loop-resume-banner button:disabled {
+  opacity: 0.5;
+  cursor: progress;
+}
+
+/* ─────────── Section 10 · Toast host (shared/ui/toast.ts) ───────────
+ * Duplicated from src/styles.css so the host works in the
+ * /loop window (loads this CSS independently from the main one). If the
+ * host tokens change, keep them in sync with styles.css.
+ */
+
+#toast-host {
+  position: fixed;
+  right: 14px;
+  bottom: 14px;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.toast {
+  pointer-events: auto;
+  max-width: 360px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--border);
+  font-size: 12px;
+  line-height: 1.4;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.4);
+  opacity: 0;
+  transform: translateY(8px);
+  transition:
+    opacity 0.18s ease,
+    transform 0.18s ease;
+  cursor: pointer;
+}
+
+.toast.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.toast-error {
+  border-color: #ff6b6b;
+  color: #ffd4d4;
+}
+
+.toast-success {
+  border-color: #4caf50;
+  color: #d8f4dd;
+}
+
+.toast-warning {
+  border-color: #ffc864;
+  color: #ffe9bf;
+}
+
+/* ─────────── Section 10 · Modal (shared/ui/modal.ts) ─────────── */
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+
+.modal-backdrop.visible {
+  opacity: 1;
+}
+
+.modal-dialog {
+  min-width: 360px;
+  max-width: min(520px, 92vw);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.55);
+}
+
+.modal-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.modal-message {
+  font-size: 12px;
+  color: #b5b5b5;
+}
+
+.modal-input {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 8px;
+  font:
+    13px ui-monospace,
+    "SF Mono",
+    Menlo,
+    Consolas,
+    monospace;
+}
+
+.modal-input:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.modal-btn {
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 12px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.modal-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.modal-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.modal-btn-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #1a1208;
+}
+
+.modal-btn-primary:hover {
+  color: #1a1208;
+  opacity: 0.92;
+}
+
+.modal-btn-danger {
+  background: #ff5b5b;
+  border-color: #ff5b5b;
+  color: #190606;
+}
+
+.modal-btn-danger:hover {
+  color: #190606;
+  opacity: 0.92;
+}
+
+/* ─────────── Section 10 · Focus rings and a11y ───────────
+ * Ensures a visible and consistent focus ring on all buttons and
+ * inputs of the /loop module. Without this rule, some inherited
+ * elements depend on the browser default, which in webview can be invisible.
+ */
+
+.loop-btn:focus-visible,
+button.loop-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* ─────────── Section 10 · Empty states ─────────── */
+
+.loop-empty-state {
+  padding: 12px 14px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-md);
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.4;
+  background: rgba(255, 255, 255, 0.01);
+}
+
+.loop-empty-state-title {
+  display: block;
+  margin-bottom: 4px;
+  font-weight: 600;
+  color: var(--text);
+}

@@ -32,21 +32,33 @@ impl ShellRegistry {
             }
         }
 
-        #[cfg(unix)]
-        {
-            let child = Command::new("ghostty")
-                .arg(format!("--working-directory={path}"))
-                .spawn()
-                .map_err(|e| format!("failed to launch ghostty: {e}"))?;
-            map.insert(canonical, child);
-        }
-        #[cfg(windows)]
-        {
-            let _ = path;
-            return Err("ghostty is not available on Windows".to_string());
-        }
+        let child = shell_command(path)?
+            .spawn()
+            .map_err(|e| format!("failed to launch Ghostty: {e}"))?;
+        map.insert(canonical, child);
         Ok(())
     }
+}
+
+#[cfg(target_os = "macos")]
+fn shell_command(path: &str) -> Result<Command, String> {
+    let mut command = Command::new("open");
+    command
+        .args(["-na", "Ghostty.app", "--args"])
+        .arg(format!("--working-directory={path}"));
+    Ok(command)
+}
+
+#[cfg(target_os = "linux")]
+fn shell_command(path: &str) -> Result<Command, String> {
+    let mut command = Command::new("ghostty");
+    command.arg(format!("--working-directory={path}"));
+    Ok(command)
+}
+
+#[cfg(target_os = "windows")]
+fn shell_command(_path: &str) -> Result<Command, String> {
+    Err("Ghostty is not available on Windows".to_string())
 }
 
 /// Closed set of editor binaries the frontend is allowed to invoke. The
@@ -156,6 +168,73 @@ pub fn open_in_shell(registry: &ShellRegistry, path: &str) -> Result<(), String>
     registry.spawn_or_focus(path)
 }
 
+/// Opens an http(s) URL in the system browser. Only web schemes are accepted —
+/// file://, javascript: etc. are rejected so terminal output cannot make the
+/// host open arbitrary targets.
+pub fn open_url(url: &str) -> Result<(), String> {
+    let trimmed = url.trim();
+    if !is_web_url(trimmed) {
+        return Err(format!("url scheme not allowed: {trimmed}"));
+    }
+
+    #[cfg(target_os = "macos")]
+    let mut command = Command::new("open");
+    #[cfg(target_os = "linux")]
+    let mut command = Command::new("xdg-open");
+    #[cfg(target_os = "windows")]
+    let mut command = Command::new("explorer");
+
+    command
+        .arg(trimmed)
+        .spawn()
+        .map_err(|e| format!("failed to open url: {e}"))?;
+    Ok(())
+}
+
+fn is_web_url(url: &str) -> bool {
+    if url.contains('\0') {
+        return false;
+    }
+    let lower = url.to_ascii_lowercase();
+    lower.starts_with("http://") || lower.starts_with("https://")
+}
+
+/// Opens a local path clicked in a terminal: directories in the file manager,
+/// files in the editor (falling back to revealing the parent directory when no
+/// editor is on PATH). A leading `~` is expanded against $HOME.
+pub fn open_local_path(path: &str) -> Result<(), String> {
+    let expanded = expand_home(path.trim());
+    let metadata = std::fs::metadata(&expanded).map_err(|e| format!("invalid path: {e}"))?;
+    if metadata.is_dir() {
+        return open_in_explorer(&expanded);
+    }
+    open_file_in_editor(&expanded, None).or_else(|_| {
+        let parent = std::path::Path::new(&expanded)
+            .parent()
+            .ok_or_else(|| "path has no parent directory".to_string())?;
+        open_in_explorer(&parent.to_string_lossy())
+    })
+}
+
+fn expand_home(path: &str) -> String {
+    let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .ok();
+    expand_home_with(path, home.as_deref())
+}
+
+fn expand_home_with(path: &str, home: Option<&str>) -> String {
+    if path == "~" {
+        return home.unwrap_or(path).to_string();
+    }
+    if let Some(rest) = path.strip_prefix("~/") {
+        if let Some(dir) = home {
+            return format!("{dir}/{rest}");
+        }
+    }
+    path.to_string()
+}
+
 /// Opens a single file `path` in an editor. Same resolver/allowlist as
 /// [`open_in_editor`], but accepts files (not directories). Used by `/loop`
 /// step 1 to open `<run>/prompts/problem-intake.md` for editing.
@@ -179,6 +258,42 @@ pub fn open_file_in_editor(path: &str, editor: Option<&str>) -> Result<(), Strin
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn is_web_url_accepts_only_http_and_https() {
+        assert!(is_web_url("https://example.com/a?b=c"));
+        assert!(is_web_url("http://localhost:5173"));
+        assert!(is_web_url("HTTPS://EXAMPLE.COM"));
+        assert!(!is_web_url("file:///etc/passwd"));
+        assert!(!is_web_url("javascript:alert(1)"));
+        assert!(!is_web_url("ftp://host"));
+        assert!(!is_web_url("/home/user/file"));
+        assert!(!is_web_url("https://x\0y"));
+    }
+
+    #[test]
+    fn open_url_rejects_non_web_schemes() {
+        assert!(open_url("file:///etc/passwd").is_err());
+        assert!(open_url("javascript:alert(1)").is_err());
+    }
+
+    #[test]
+    fn expand_home_handles_tilde_prefix() {
+        let home = Some("/home/tester");
+        assert_eq!(expand_home_with("~", home), "/home/tester");
+        assert_eq!(
+            expand_home_with("~/repo/file.rs", home),
+            "/home/tester/repo/file.rs"
+        );
+        assert_eq!(expand_home_with("/absolute/path", home), "/absolute/path");
+        assert_eq!(expand_home_with("~other/x", home), "~other/x");
+        assert_eq!(expand_home_with("~", None), "~");
+    }
+
+    #[test]
+    fn open_local_path_rejects_nonexistent() {
+        assert!(open_local_path("/nonexistent/does-not-exist-9876").is_err());
+    }
 
     #[test]
     fn allowlist_accepts_known_editors() {
@@ -215,5 +330,24 @@ mod tests {
         let registry = ShellRegistry::default();
         let result = open_in_shell(&registry, "/nonexistent/does-not-exist-12345");
         assert!(result.is_err());
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn shell_command_uses_macos_app_launcher() {
+        let command = shell_command("/tmp/project").unwrap();
+        assert_eq!(command.get_program(), "open");
+        assert_eq!(
+            command
+                .get_args()
+                .map(|arg| arg.to_string_lossy().into_owned())
+                .collect::<Vec<_>>(),
+            [
+                "-na",
+                "Ghostty.app",
+                "--args",
+                "--working-directory=/tmp/project"
+            ]
+        );
     }
 }

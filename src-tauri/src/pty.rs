@@ -5,7 +5,9 @@ use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
+
+use crate::shell_integration;
 
 #[cfg(target_os = "windows")]
 const ALLOWED_SHELL_BASENAMES: &[&str] = &[
@@ -21,7 +23,7 @@ const ALLOWED_SHELL_BASENAMES: &[&str] = &[
 const ALLOWED_SHELL_BASENAMES: &[&str] =
     &["sh", "bash", "zsh", "fish", "dash", "ksh", "tcsh", "csh"];
 
-const ALLOWED_AI_CLI_BASENAMES: &[&str] = &["claude", "codex", "opencode"];
+const ALLOWED_AI_CLI_BASENAMES: &[&str] = &["claude", "codex", "opencode", "cursor-agent"];
 
 const MAX_ARG_LEN: usize = 4096;
 const MAX_ARGS: usize = 64;
@@ -55,6 +57,20 @@ impl PtyStore {
         if let Some(session) = self.remove_session(id) {
             kill_and_wait(session);
         }
+    }
+
+    pub fn session_pids(&self) -> Vec<(String, u32)> {
+        self.sessions
+            .lock()
+            .iter()
+            .filter_map(|(id, session)| {
+                session
+                    .child
+                    .lock()
+                    .process_id()
+                    .map(|pid| (id.clone(), pid))
+            })
+            .collect()
     }
 
     pub fn kill_all(&self) {
@@ -114,6 +130,11 @@ pub fn spawn_session(
         })
         .map_err(|e| e.to_string())?;
 
+    // Captured before command/args are consumed below — no command and no
+    // args means the frontend's plain "shell" spawn path.
+    let is_bare_shell_request = command.as_deref().map(str::trim).unwrap_or("").is_empty()
+        && args.as_ref().map(Vec::is_empty).unwrap_or(true);
+
     let shell = resolve_command(command)?;
     let validated_args = validate_args(args)?;
     let validated_cwd = validate_cwd(cwd)?;
@@ -133,7 +154,13 @@ pub fn spawn_session(
     } else if let Some(dir) = default_working_dir() {
         cmd.cwd(dir);
     }
-    cmd.env("TERM", "xterm-256color");
+    configure_terminal_environment(&mut cmd);
+
+    if is_bare_shell_request {
+        if let Ok(config_dir) = app.path().app_config_dir() {
+            shell_integration::apply(&config_dir.join("shell-integration"), &mut cmd, &shell, &id);
+        }
+    }
 
     // If this session spawns an AI CLI directly (claude / codex / opencode),
     // inject env vars that let the polakapi-capture hooks (registered by the
@@ -202,6 +229,12 @@ pub fn spawn_session(
     });
 
     Ok(id)
+}
+
+fn configure_terminal_environment(cmd: &mut CommandBuilder) {
+    cmd.env("TERM", "xterm-256color");
+    cmd.env("COLORTERM", "truecolor");
+    cmd.env_remove("NO_COLOR");
 }
 
 fn resolve_command(command: Option<String>) -> Result<String, String> {
@@ -463,6 +496,7 @@ mod tests {
         assert!(is_allowed_command("claude"));
         assert!(is_allowed_command("codex"));
         assert!(is_allowed_command("opencode"));
+        assert!(is_allowed_command("cursor-agent"));
         assert!(is_allowed_command("/usr/local/bin/claude"));
         assert!(is_allowed_command("/opt/homebrew/bin/codex"));
         assert!(is_allowed_command("/usr/bin/opencode"));
@@ -495,6 +529,24 @@ mod tests {
     fn resolve_command_accepts_ai_cli() {
         let resolved = resolve_command(Some("claude".to_string())).unwrap();
         assert_eq!(resolved, "claude");
+    }
+
+    #[test]
+    fn terminal_environment_enables_color_output() {
+        let mut cmd = CommandBuilder::new("zsh");
+        cmd.env("NO_COLOR", "1");
+
+        configure_terminal_environment(&mut cmd);
+
+        assert_eq!(
+            cmd.get_env("TERM"),
+            Some(std::ffi::OsStr::new("xterm-256color"))
+        );
+        assert_eq!(
+            cmd.get_env("COLORTERM"),
+            Some(std::ffi::OsStr::new("truecolor"))
+        );
+        assert_eq!(cmd.get_env("NO_COLOR"), None);
     }
 
     #[test]

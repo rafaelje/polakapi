@@ -4,21 +4,26 @@ import {
   type TerminalManagerEvent,
 } from "../modules/terminal/terminal-manager";
 import type { TerminalPane } from "../modules/terminal/terminal-pane";
+import type { TerminalLayoutNode } from "../modules/terminal/terminal-layout";
 import type { TerminalSpec } from "../modules/terminal/types";
 import { ptyKill } from "../modules/terminal/pty-client";
+import {
+  ProjectActivityTracker,
+  type ProjectActivityState,
+} from "../modules/terminal/project-activity";
 import type { Project, ProjectId } from "../modules/workspaces/state/types";
 
 export type TerminalRouterEvent =
   | { type: "counts-changed"; counts: ReadonlyMap<ProjectId, number> }
+  | { type: "activity-changed"; projectId: ProjectId; state: ProjectActivityState }
   | { type: "bell-pending"; projectId: ProjectId; paneId: string; pending: boolean };
 
 export type TerminalRouterListener = (event: TerminalRouterEvent) => void;
 
 export interface TerminalRouterOptions {
   onPersistSpecs(projectId: ProjectId, specs: TerminalSpec[]): void;
+  onPersistLayout(projectId: ProjectId, layout: TerminalLayoutNode | null): void;
 }
-
-const DEFAULT_GRID_COLS = 2;
 
 /**
  * Owns one TerminalManager per ProjectId. Manages mount/unmount via DOM
@@ -37,8 +42,14 @@ export class TerminalRouter {
   private activeHost: HTMLElement | null = null;
   private mountToken = 0;
   private notificationContext: NotificationContext | null = null;
+  private readonly activity: ProjectActivityTracker;
 
-  constructor(private readonly opts: TerminalRouterOptions) {}
+  constructor(private readonly opts: TerminalRouterOptions) {
+    this.activity = new ProjectActivityTracker({
+      getLiveCount: (projectId) => this.getCount(projectId),
+      onChange: (projectId, state) => this.emit({ type: "activity-changed", projectId, state }),
+    });
+  }
 
   /**
    * F5: late-bind a notification context that every existing AND future
@@ -57,7 +68,7 @@ export class TerminalRouter {
     const manager = new TerminalManager({
       projectId: project.id,
       defaultCwd: project.path,
-      gridCols: DEFAULT_GRID_COLS,
+      layout: project.terminalLayout,
       activeCliId: project.activeCliId,
       notificationContext: this.notificationContext ?? undefined,
     });
@@ -137,6 +148,19 @@ export class TerminalRouter {
     return this.managers.get(projectId)?.size ?? 0;
   }
 
+  getActivity(projectId: ProjectId): ProjectActivityState {
+    return this.activity.get(projectId);
+  }
+
+  recordActivity(ptyId: string): void {
+    const found = this.findPaneById(ptyId);
+    if (found) this.activity.record(found.manager.projectId, ptyId);
+  }
+
+  getSuspendedCount(projectId: ProjectId): number {
+    return this.managers.get(projectId)?.suspendedCount ?? 0;
+  }
+
   totalLiveCount(): number {
     let total = 0;
     for (const manager of this.managers.values()) total += manager.size;
@@ -147,6 +171,32 @@ export class TerminalRouter {
     const ids: string[] = [];
     for (const manager of this.managers.values()) ids.push(...manager.ids());
     return ids;
+  }
+
+  livePanes(): Array<{
+    paneId: string;
+    projectId: ProjectId;
+    cliId?: string;
+    lastActivityAt: number;
+  }> {
+    const out: Array<{
+      paneId: string;
+      projectId: ProjectId;
+      cliId?: string;
+      lastActivityAt: number;
+    }> = [];
+    for (const [projectId, manager] of this.managers) {
+      for (const spec of manager.specs()) {
+        if (!manager.isLive(spec.id)) continue;
+        out.push({
+          paneId: spec.id,
+          projectId,
+          cliId: spec.cliId,
+          lastActivityAt: manager.get(spec.id)?.lastActivityAt ?? 0,
+        });
+      }
+    }
+    return out;
   }
 
   onProjectPathChanged(projectId: ProjectId, newPath: string): void {
@@ -175,6 +225,7 @@ export class TerminalRouter {
     unsubscribe?.();
     this.unsubscribes.delete(projectId);
     this.managers.delete(projectId);
+    this.activity.delete(projectId);
     await manager.dispose();
     this.emitCounts();
   }
@@ -191,8 +242,11 @@ export class TerminalRouter {
   private onManagerEvent(event: TerminalManagerEvent): void {
     if (event.type === "count-changed") {
       this.emitCounts();
+      this.activity.refresh(event.projectId);
     } else if (event.type === "spec-changed") {
       this.opts.onPersistSpecs(event.projectId, event.specs);
+    } else if (event.type === "layout-changed") {
+      this.opts.onPersistLayout(event.projectId, event.layout);
     } else if (event.type === "bell-pending") {
       this.emit({
         type: "bell-pending",

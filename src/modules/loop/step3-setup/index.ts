@@ -376,18 +376,22 @@ export function mountStep3Setup(slot: HTMLElement, ctx: Step3Context): Step3Hand
     const overrides: Partial<Record<LoopPromptName, string>> = {};
     try {
       await ensureRunDir();
+      const writes: Array<Promise<void>> = [];
       for (const name of LOOP_PROMPT_NAMES) {
         const buf = state.promptBuffers.get(name);
         if (buf === undefined) continue;
-        await invoke<void>("loop_write_run_prompt", {
-          projectPath: ctx.projectPath,
-          runId: ctx.runId,
-          name,
-          content: buf,
-        });
+        writes.push(
+          invoke<void>("loop_write_run_prompt", {
+            projectPath: ctx.projectPath,
+            runId: ctx.runId,
+            name,
+            content: buf,
+          }),
+        );
         const global = state.globals.get(name) ?? "";
         if (buf !== global) overrides[name] = buf;
       }
+      await Promise.all(writes);
     } catch (err) {
       state.busy = false;
       state.status = `could not persist prompts: ${stringifyError(err)}`;

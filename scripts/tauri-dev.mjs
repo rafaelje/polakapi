@@ -16,6 +16,7 @@
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import tauriCliPackage from "@tauri-apps/cli/package.json" with { type: "json" };
 
 const [subcommand, ...rest] = process.argv.slice(2);
 const args = [subcommand, ...rest];
@@ -40,7 +41,8 @@ if (subcommand === "dev") {
 // Going through `node_modules/.bin/tauri` (a shell shim) re-parses argv via
 // `"$@"` and strips the double quotes from the JSON `--config` value.
 const projectRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
-const tauriJs = join(projectRoot, "node_modules", "@tauri-apps", "cli", "tauri.js");
+const tauriPackageRoot = join(projectRoot, "node_modules", ...tauriCliPackage.name.split("/"));
+const tauriJs = join(tauriPackageRoot, tauriCliPackage.bin.tauri);
 
 const child = spawn(process.execPath, [tauriJs, ...args], {
   stdio: "inherit",

@@ -1,18 +1,38 @@
-import type { ProjectId } from "../workspaces/state/types";
-import { confirmModal } from "../workspaces/forms/confirm-delete";
+import type { LayoutTemplate, ProjectId } from "../workspaces/state/types";
 import { resolveProfile } from "./cli-registry";
-import { layoutTerminalGrid } from "./terminal-grid-layout";
+import { executeTemplatePlan, planTemplateApplication } from "./layout-templates";
+import {
+  paneBoxes,
+  resolveDirectionalFocus,
+  type FocusDirection,
+} from "./terminal-focus-navigation";
+import { confirmRespawn } from "./terminal-pane-menu";
+import { type TerminalDockingHandle } from "./terminal-docking";
+import {
+  appendTerminalPane,
+  createDefaultTerminalLayout,
+  dockTerminalPane,
+  dockTerminalPaneAtRoot,
+  removeTerminalPane,
+  repairTerminalLayout,
+  replaceTerminalPaneId,
+  terminalLayoutPaneIds,
+  updateTerminalSplitRatio,
+  type TerminalDockPosition,
+  type TerminalLayoutNode,
+  type TerminalLayoutPath,
+} from "./terminal-layout";
 import { TerminalPane } from "./terminal-pane";
-import { ptyWrite } from "./pty-client";
-import { registerBellNotification, type BellNotificationHandle } from "./terminal-notifications";
+import { scheduleTerminalWrite, wireTerminalPane } from "./terminal-pane-wiring";
+import { shouldReplayShellCommand } from "./resume-whitelist";
+import { ptyKill } from "./pty-client";
+import {
+  registerManagerBell,
+  type BellNotificationHandle,
+  type NotificationContext,
+} from "./terminal-notifications";
+import { layoutTerminalSplits } from "./terminal-split-layout";
 import { type TerminalSpec } from "./types";
-
-/**
- * Empirical delay before piping `startupCmd` into a freshly-spawned PTY.
- * Long enough for zsh/bash on macOS + Linux to print their first prompt;
- * short enough to feel instantaneous. Fire-and-forget — we do not parse PS1.
- */
-const STARTUP_CMD_DELAY_MS = 200;
 
 function errorMessage(error: unknown): string {
   if (typeof error === "string") return error;
@@ -20,34 +40,15 @@ function errorMessage(error: unknown): string {
   return String(error);
 }
 
-/**
- * F5: external state the bell wiring needs to make a focus decision. Provided
- * by the bootstrap so the manager itself does not depend on the router or the
- * window-focus tracker. `getProjectName` is also late-bound so renames after
- * pane spawn still flow into the OS notification title.
- */
-export interface NotificationContext {
-  /** Currently active project id (router-level state). */
-  getActiveProjectId(): ProjectId | null;
-  /** Whether the OS window currently holds focus. */
-  isWindowFocused(): boolean;
-  /** Resolves the current project name (rename-safe). */
-  getProjectName(projectId: ProjectId): string;
-  /** Forwards bell pendings out of the manager (badge driver). */
-  onBellPending(projectId: ProjectId, paneId: string, pending: boolean): void;
-}
+export type { NotificationContext };
 
 export interface TerminalManagerOptions {
   /** Identity used for router lookup + events. */
   projectId: ProjectId;
   /** project.path applied when a spec omits cwd. */
   defaultCwd: string;
-  /** Initial number of columns per row. Must be >= 1. */
-  gridCols: number;
-  /**
-   * Default CLI id for new panes. Undefined falls back to "shell". Persisted
-   * by the bootstrap so chip selection survives restart.
-   */
+  layout?: TerminalLayoutNode;
+  /** Default CLI id for new panes; undefined falls back to "shell". */
   activeCliId?: string;
   /** Optional. When omitted, panes do not register bell notifications. */
   notificationContext?: NotificationContext;
@@ -56,6 +57,7 @@ export interface TerminalManagerOptions {
 export type TerminalManagerEvent =
   | { type: "count-changed"; projectId: ProjectId; count: number }
   | { type: "spec-changed"; projectId: ProjectId; specs: TerminalSpec[] }
+  | { type: "layout-changed"; projectId: ProjectId; layout: TerminalLayoutNode | null }
   | { type: "bell-pending"; projectId: ProjectId; paneId: string; pending: boolean };
 
 export type TerminalManagerListener = (event: TerminalManagerEvent) => void;
@@ -73,13 +75,15 @@ export class TerminalManager {
   private readonly specsById = new Map<string, TerminalSpec>();
   private focusedId: string | null = null;
   private readonly grid: HTMLElement;
-  private cols: number;
+  private layout: TerminalLayoutNode | null = null;
+  private initialLayout: TerminalLayoutNode | null;
   private defaultCwd: string;
   private readonly listeners = new Set<TerminalManagerListener>();
-  private suppressSpecEvent = false;
+  private suppressPersistenceEvents = false;
   private notificationContext: NotificationContext | null;
   /** Per-pane bell handles, disposed on close() / dispose(). */
   private readonly bellHandles = new Map<string, BellNotificationHandle>();
+  private readonly dockingHandles = new Map<string, TerminalDockingHandle>();
   /**
    * Guards `respawnPane` against re-entry — a double click on the badge menu
    * (or two close-together IPC events) would otherwise spawn two replacement
@@ -93,7 +97,7 @@ export class TerminalManager {
   constructor(opts: TerminalManagerOptions) {
     this.projectId = opts.projectId;
     this.defaultCwd = opts.defaultCwd;
-    this.cols = Math.max(1, Math.floor(opts.gridCols));
+    this.initialLayout = opts.layout ?? null;
     this.activeCliId = opts.activeCliId && opts.activeCliId.length > 0 ? opts.activeCliId : "shell";
     this.notificationContext = opts.notificationContext ?? null;
     const grid = document.createElement("div");
@@ -123,7 +127,10 @@ export class TerminalManager {
       next.title === current.title &&
       next.cwd === current.cwd &&
       next.startupCmd === current.startupCmd &&
-      next.cliId === current.cliId
+      next.cliId === current.cliId &&
+      next.suspended === current.suspended &&
+      next.lastShellCommand === current.lastShellCommand &&
+      next.lastShellCommandAlias === current.lastShellCommandAlias
     ) {
       return;
     }
@@ -139,8 +146,20 @@ export class TerminalManager {
     return this.liveIds.size;
   }
 
+  /** Count of specs currently suspended (placeholder panes) — drives the
+   * "Resume terminals (N)" row-menu item, mirroring `getLiveCount`. */
+  get suspendedCount(): number {
+    let count = 0;
+    for (const spec of this.specsById.values()) if (spec.suspended) count++;
+    return count;
+  }
+
   get focusedPaneId(): string | null {
     return this.focusedId;
+  }
+
+  get layoutSnapshot(): TerminalLayoutNode | null {
+    return this.layout;
   }
 
   setActiveCli(cliId: string): void {
@@ -169,13 +188,8 @@ export class TerminalManager {
     return this.panes.get(id);
   }
 
-  /**
-   * True when `id` corresponds to a spawned, non-exited PTY session — false
-   * for failed spawns (synthetic `failed-*` ids with no backend session)
-   * and for panes whose process already exited. Callers that write to the
-   * PTY (e.g. /agents insert) must check this so they don't fire an
-   * "unknown pty" error against a dead pane.
-   */
+  /** True for spawned, non-exited PTY sessions — false for failed spawns
+   * (synthetic `failed-*` ids) and exited processes. Writers must check it. */
   isLive(id: string): boolean {
     return this.liveIds.has(id);
   }
@@ -195,9 +209,10 @@ export class TerminalManager {
    */
   async addPane(
     spec?: Partial<TerminalSpec>,
-    opts?: { silent?: boolean },
+    opts?: { silent?: boolean; extraArgs?: string[]; skipStartupCmd?: boolean },
   ): Promise<TerminalPane | null> {
     const pane = new TerminalPane();
+    const anchorId = this.focusedId;
     pane.el.style.visibility = "hidden";
 
     const cwd = spec?.cwd ?? this.defaultCwd;
@@ -209,7 +224,7 @@ export class TerminalManager {
       await pane.attach(this.grid, {
         cwd,
         command,
-        args: profile.args,
+        args: opts?.extraArgs ? [...(profile.args ?? []), ...opts.extraArgs] : profile.args,
         cliId: profile.id,
       });
     } catch (error) {
@@ -228,9 +243,12 @@ export class TerminalManager {
       cwd: spec?.cwd,
       startupCmd: spec?.startupCmd,
       cliId: profile.id,
+      lastShellCommand: spec?.lastShellCommand,
+      lastShellCommandAlias: spec?.lastShellCommandAlias,
     };
     this.panes.set(ptyId, pane);
     this.order.push(ptyId);
+    this.layout = appendTerminalPane(this.layout, ptyId, anchorId);
     if (!spawnError) this.liveIds.add(ptyId);
     this.specsById.set(ptyId, finalSpec);
     pane.el.dataset.ptyId = ptyId;
@@ -246,131 +264,144 @@ export class TerminalManager {
     if (!opts?.silent) {
       this.setFocus(ptyId);
       this.relayout();
-      this.emitCount();
-      this.emitSpecs();
+      this.emitAll();
     }
 
-    if (!spawnError) {
+    if (!spawnError && !opts?.skipStartupCmd) {
       this.scheduleStartupCmd(ptyId, finalSpec.startupCmd);
     }
     return pane;
   }
 
+  // Delegates to terminal-pane-wiring.ts, kept out of this file for the line budget.
   private wirePaneCallbacks(pane: TerminalPane, ptyId: string): void {
-    // Inject callbacks that let the pane menu read + persist its own startup
-    // command without holding a reference to the workspaces controller. The
-    // manager remains the single owner of the spec table.
-    pane.setStartupCmdCallbacks({
-      getStartupCmd: () => this.specsById.get(ptyId)?.startupCmd,
-      onChange: (next) => this.updateSpec(ptyId, { startupCmd: next }),
+    const dockingHandle = wireTerminalPane(pane, ptyId, {
+      grid: this.grid,
+      isLive: (id) => this.isLive(id),
+      getSpec: (id) => this.specsById.get(id),
+      updateSpec: (id, patch) => this.updateSpec(id, patch),
+      requestRespawn: (id, cliId) => this.requestRespawn(id, cliId),
+      suspendPane: (id) => this.suspendPane(id),
+      resumePane: (id) => this.resumePane(id),
+      dockAtRoot: (id, position) => this.dockAtRoot(id, position),
+      dock: (sourceId, targetId, position) => this.dock(sourceId, targetId, position),
+      setFocus: (id) => this.setFocus(id),
+      close: (id) => this.close(id),
+      orderLength: () => this.order.length,
     });
-    pane.setCliRespawnCallbacks({
-      getCurrentCliId: () => this.specsById.get(ptyId)?.cliId ?? "shell",
-      onRespawnRequest: (cliId) => {
-        void this.requestRespawn(ptyId, cliId);
-      },
-    });
-    pane.el.addEventListener("mousedown", () => this.setFocus(ptyId));
-    pane.bodyEl.addEventListener("focusin", () => this.setFocus(ptyId));
-    pane.closeBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      void this.close(ptyId);
-    });
+    this.dockingHandles.set(ptyId, dockingHandle);
   }
 
   /**
    * F5: wire bell notifications. The manager is the single owner of the
-   * handle and disposes it in close()/dispose(). The "active + focused"
-   * predicate is resolved at fire-time via the injected notificationContext,
-   * not captured here, so a project becoming active later (without spawning
-   * new panes) still suppresses its existing bells correctly.
+   * handle and disposes it in close()/dispose().
    */
   private registerBell(pane: TerminalPane, ptyId: string): void {
     const ctx = this.notificationContext;
     if (!ctx) return;
     const projectId = this.projectId;
-    const bellHandle = registerBellNotification({
+    const handle = registerManagerBell({
       pane,
       paneId: ptyId,
       projectId,
-      getProjectName: () => ctx.getProjectName(projectId),
+      ctx,
       getTerminalTitle: () =>
         this.specsById.get(ptyId)?.title ?? pane.titleEl.textContent ?? "terminal",
-      isActiveAndFocused: () => ctx.getActiveProjectId() === projectId && ctx.isWindowFocused(),
-      onPendingBell: (pending) => {
-        ctx.onBellPending(projectId, ptyId, pending);
-        this.emit({
-          type: "bell-pending",
-          projectId,
-          paneId: ptyId,
-          pending,
-        });
-      },
+      onEmit: (pending) => this.emit({ type: "bell-pending", projectId, paneId: ptyId, pending }),
     });
-    this.bellHandles.set(ptyId, bellHandle);
+    this.bellHandles.set(ptyId, handle);
   }
 
   private scheduleStartupCmd(ptyId: string, startupCmd: string | undefined): void {
-    // F4: auto-execute the startup command into the freshly spawned PTY.
-    // Fire-and-forget — the 200ms delay gives the shell time to print its
-    // first prompt; we do not block addPane and do not parse PS1.
-    if (!startupCmd || startupCmd.trim().length === 0) return;
-    setTimeout(() => {
-      // Pane may have been closed between spawn and timer fire.
-      if (!this.panes.has(ptyId)) return;
-      void ptyWrite(ptyId, `${startupCmd}\r`).catch((error) => {
-        console.error("Failed to write startupCmd", error);
-      });
-    }, STARTUP_CMD_DELAY_MS);
+    scheduleTerminalWrite(this.panes, ptyId, startupCmd, "startupCmd");
   }
 
-  /**
-   * Confirm-and-respawn. Skips the modal for empty panes (no output received
-   * yet) so the very common "spawned the wrong CLI, swap right away" case is
-   * frictionless. Otherwise prompts the user since respawn kills the live
-   * process.
-   */
+  /** Confirm-and-respawn; the modal is skipped for panes with no output yet. */
   private async requestRespawn(ptyId: string, cliId: string): Promise<void> {
     const pane = this.panes.get(ptyId);
     if (!pane) return;
-    if (pane.hasOutput) {
-      const profile = resolveProfile(cliId);
-      const ok = await confirmModal({
-        title: `Respawn terminal with ${profile.label}?`,
-        message: "The current process will be killed and a new one started. Output will be lost.",
-        confirmLabel: "Respawn",
-        danger: true,
-      });
-      if (!ok) return;
-    }
+    if (pane.hasOutput && !(await confirmRespawn(cliId))) return;
     await this.respawnPane(ptyId, cliId);
   }
 
-  /**
-   * Kill the current PTY for a pane and spawn a new one using `cliId`.
-   * Preserves cwd / title / startupCmd and the pane's grid slot. The pane's
-   * ptyId changes — external holders of the old id must invalidate.
-   */
+  /** Kill-and-respawn with `cliId`, preserving cwd / title / startupCmd and
+   * the grid slot. The ptyId changes — external holders must invalidate. */
   async respawnPane(ptyId: string, cliId: string): Promise<void> {
-    if (this.respawning.has(ptyId)) return;
     const current = this.specsById.get(ptyId);
     if (!current) return;
-    this.respawning.add(ptyId);
+    await this.replacePane(ptyId, {
+      title: current.title,
+      cwd: current.cwd,
+      startupCmd: current.startupCmd,
+      cliId,
+    });
+  }
+
+  suspendPane(ptyId: string): void {
+    const pane = this.panes.get(ptyId);
+    if (!pane || !this.isLive(ptyId)) return;
+    this.updateSpec(ptyId, { suspended: true });
+    pane.markSuspended();
+    void ptyKill(ptyId);
+  }
+
+  suspendAll(): void {
+    for (const id of [...this.liveIds]) this.suspendPane(id);
+  }
+
+  async resumePane(paneId: string): Promise<void> {
+    const current = this.specsById.get(paneId);
+    if (!current?.suspended || this.isLive(paneId)) return;
+    const resumeArgs = resolveProfile(current.cliId).resumeArgs;
+    const { title, cwd, startupCmd, cliId, lastShellCommand, lastShellCommandAlias } = current;
+    const shouldReplay =
+      !resumeArgs &&
+      !!lastShellCommand &&
+      shouldReplayShellCommand(lastShellCommand, lastShellCommandAlias === true);
+    const newId = await this.replacePane(
+      paneId,
+      { title, cwd, startupCmd, cliId, lastShellCommand, lastShellCommandAlias },
+      { extraArgs: resumeArgs, skipStartupCmd: resumeArgs !== undefined || shouldReplay },
+    );
+    if (newId && shouldReplay && lastShellCommand) {
+      this.scheduleShellReplay(newId, lastShellCommand);
+    }
+  }
+
+  // Sequential, not concurrent: overlapping replacePane calls stomp on each
+  // other's layout snapshot and corrupt the grid.
+  async resumeAll(): Promise<void> {
+    for (const id of [...this.order]) {
+      if (!this.specsById.get(id)?.suspended) continue;
+      try {
+        // react-doctor-disable-next-line react-doctor/async-await-in-loop
+        await this.resumePane(id);
+      } catch (error) {
+        console.error(`Failed to resume pane ${id}`, error);
+      }
+    }
+  }
+
+  private scheduleShellReplay(ptyId: string, command: string): void {
+    scheduleTerminalWrite(this.panes, ptyId, command, "lastShellCommand");
+  }
+
+  private async replacePane(
+    paneId: string,
+    spec: Partial<TerminalSpec>,
+    opts?: { extraArgs?: string[]; skipStartupCmd?: boolean },
+  ): Promise<string | null> {
+    if (this.respawning.has(paneId)) return null;
+    this.respawning.add(paneId);
     try {
-      const targetIdx = this.order.indexOf(ptyId);
-      const preserved: Partial<TerminalSpec> = {
-        title: current.title,
-        cwd: current.cwd,
-        startupCmd: current.startupCmd,
-        cliId,
-      };
-      await this.close(ptyId, { silent: true });
-      const pane = await this.addPane(preserved, { silent: true });
+      const targetIdx = this.order.indexOf(paneId);
+      const preservedLayout = this.layout;
+      await this.close(paneId, { silent: true });
+      const pane = await this.addPane(spec, { silent: true, ...opts });
       if (!pane) {
         this.relayout();
-        this.emitCount();
-        this.emitSpecs();
-        return;
+        this.emitAll();
+        return null;
       }
       const newId = pane.ptyId || this.order[this.order.length - 1];
       if (newId && targetIdx >= 0) {
@@ -379,19 +410,16 @@ export class TerminalManager {
           this.order.splice(fromIdx, 1);
           this.order.splice(targetIdx, 0, newId);
         }
+        this.layout = replaceTerminalPaneId(preservedLayout, paneId, newId);
+        this.syncOrderToLayout();
         this.setFocus(newId);
       }
       this.relayout();
-      this.emitCount();
-      this.emitSpecs();
+      this.emitAll();
+      return newId || null;
     } finally {
-      this.respawning.delete(ptyId);
+      this.respawning.delete(paneId);
     }
-  }
-
-  /** Backward-compat alias used by code paths that have not migrated yet. */
-  create(): Promise<TerminalPane | null> {
-    return this.addPane();
   }
 
   async close(ptyId: string, opts?: { silent?: boolean }): Promise<void> {
@@ -402,6 +430,9 @@ export class TerminalManager {
     const wasLive = this.liveIds.delete(ptyId);
     this.bellHandles.get(ptyId)?.dispose();
     this.bellHandles.delete(ptyId);
+    this.dockingHandles.get(ptyId)?.dispose();
+    this.dockingHandles.delete(ptyId);
+    this.layout = removeTerminalPane(this.layout, ptyId);
     const idx = this.order.indexOf(ptyId);
     if (idx >= 0) this.order.splice(idx, 1);
     if (this.focusedId === ptyId) {
@@ -417,6 +448,7 @@ export class TerminalManager {
       this.relayout();
       if (wasLive) this.emitCount();
       this.emitSpecs();
+      this.emitLayout();
     }
   }
 
@@ -425,14 +457,30 @@ export class TerminalManager {
     this.emitCount();
   }
 
+  private addSuspendedPane(spec: TerminalSpec): void {
+    const pane = new TerminalPane();
+    const profile = resolveProfile(spec.cliId);
+    pane.attachPlaceholder(this.grid, {
+      cliId: profile.id,
+      command: profile.command || undefined,
+    });
+    const paneId = spec.id;
+    this.panes.set(paneId, pane);
+    this.order.push(paneId);
+    this.layout = appendTerminalPane(this.layout, paneId);
+    this.specsById.set(paneId, { ...spec, cliId: profile.id });
+    pane.el.dataset.ptyId = paneId;
+    this.wirePaneCallbacks(pane, paneId);
+  }
+
   closeFocused(): void {
     if (this.focusedId) void this.close(this.focusedId);
   }
 
   setFocus(ptyId: string, focusTerm = false): void {
     this.focusedId = ptyId;
-    for (const pane of this.panes.values()) {
-      pane.el.classList.toggle("focused", pane.ptyId === ptyId);
+    for (const [id, pane] of this.panes) {
+      pane.el.classList.toggle("focused", id === ptyId);
     }
     if (focusTerm) this.panes.get(ptyId)?.focus();
   }
@@ -449,41 +497,116 @@ export class TerminalManager {
     this.focusByIndex(next);
   }
 
+  focusDirection(direction: FocusDirection): void {
+    const boxes = paneBoxes(this.order, (id) => this.panes.get(id)?.el);
+    const next = resolveDirectionalFocus(boxes, this.focusedId, direction);
+    if (next && next !== this.focusedId) this.setFocus(next, true);
+  }
+
   /** Tears down every PTY + xterm and removes gridEl from any parent. */
   async dispose(): Promise<void> {
     this.listeners.clear();
     for (const handle of this.bellHandles.values()) handle.dispose();
     this.bellHandles.clear();
+    for (const handle of this.dockingHandles.values()) handle.dispose();
+    this.dockingHandles.clear();
     const toClose = [...this.panes.values()];
     this.panes.clear();
     this.liveIds.clear();
     this.specsById.clear();
     this.order.splice(0);
+    this.layout = null;
     this.focusedId = null;
     await Promise.all(toClose.map((p) => p.dispose().catch(() => undefined)));
     this.grid.remove();
   }
 
-  /**
-   * Replays an array of specs as live panes. Suppresses per-pane spec-changed
-   * events and emits a single one at the end so persistence writes are not
-   * amplified.
-   */
+  /** Replays persisted specs as panes, emitting one batched spec-changed at
+   * the end so persistence writes are not amplified per pane. */
   async restoreSpecs(specs: TerminalSpec[]): Promise<void> {
     if (specs.length === 0) return;
-    this.suppressSpecEvent = true;
+    const idMap = new Map<string, string>();
+    this.suppressPersistenceEvents = true;
     try {
       for (const spec of specs) {
-        await this.addPane(spec);
+        if (spec.suspended) {
+          this.addSuspendedPane(spec);
+          idMap.set(spec.id, spec.id);
+          continue;
+        }
+        // react-doctor-disable-next-line react-doctor/async-await-in-loop
+        const pane = await this.addPane(spec);
+        const restoredId = pane?.el.dataset.ptyId;
+        if (restoredId) idMap.set(spec.id, restoredId);
       }
     } finally {
-      this.suppressSpecEvent = false;
+      this.suppressPersistenceEvents = false;
     }
+    this.layout = this.initialLayout
+      ? repairTerminalLayout(this.initialLayout, this.order, idMap)
+      : createDefaultTerminalLayout(this.order);
+    this.initialLayout = null;
+    this.syncOrderToLayout();
+    this.relayout();
     this.emitSpecs();
+    this.emitLayout();
+  }
+
+  async applyTemplate(template: LayoutTemplate): Promise<void> {
+    const live = this.order.map((id) => ({ id, cliId: this.specsById.get(id)?.cliId }));
+    const idMap = await executeTemplatePlan(
+      planTemplateApplication(template.specs, live),
+      async (spec) => {
+        const pane = await this.addPane(
+          { title: spec.title, startupCmd: spec.startupCmd, cliId: spec.cliId },
+          { silent: true },
+        );
+        return pane?.el.dataset.ptyId ?? null;
+      },
+    );
+    this.layout = repairTerminalLayout(template.layout, this.order, idMap);
+    this.syncOrderToLayout();
+    if (!this.focusedId && this.order.length > 0) this.setFocus(this.order[0]);
+    this.relayout();
+    this.emitAll();
   }
 
   private relayout(): void {
-    layoutTerminalGrid(this.grid, this.order, this.panes, this.cols, () => this.refit());
+    layoutTerminalSplits(this.grid, this.layout, this.panes, {
+      refit: () => this.refit(),
+      onRatioChange: (path, ratio) => this.updateSplitRatio(path, ratio),
+    });
+  }
+
+  dock(sourceId: string, targetId: string, position: TerminalDockPosition): void {
+    this.applyLayout(dockTerminalPane(this.layout, sourceId, targetId, position));
+  }
+
+  dockAtRoot(sourceId: string, position: TerminalDockPosition): void {
+    this.applyLayout(dockTerminalPaneAtRoot(this.layout, sourceId, position));
+  }
+
+  private updateSplitRatio(path: TerminalLayoutPath, ratio: number): void {
+    this.applyLayout(updateTerminalSplitRatio(this.layout, path, ratio));
+  }
+
+  private applyLayout(next: TerminalLayoutNode | null, rerender = true): void {
+    if (next === this.layout) return;
+    this.layout = next;
+    this.syncOrderToLayout();
+    if (rerender) this.relayout();
+    this.emitLayout();
+  }
+
+  private syncOrderToLayout(): void {
+    const nextOrder = terminalLayoutPaneIds(this.layout).filter((id) => this.panes.has(id));
+    this.order.splice(0, this.order.length, ...nextOrder);
+  }
+
+  private emitAll(): void {
+    this.emitCount();
+    this.emitSpecs();
+    this.emitLayout();
   }
 
   private emitCount(): void {
@@ -495,12 +618,17 @@ export class TerminalManager {
   }
 
   private emitSpecs(): void {
-    if (this.suppressSpecEvent) return;
+    if (this.suppressPersistenceEvents) return;
     this.emit({
       type: "spec-changed",
       projectId: this.projectId,
       specs: this.specs(),
     });
+  }
+
+  private emitLayout(): void {
+    if (this.suppressPersistenceEvents) return;
+    this.emit({ type: "layout-changed", projectId: this.projectId, layout: this.layout });
   }
 
   private emit(event: TerminalManagerEvent): void {

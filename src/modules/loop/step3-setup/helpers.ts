@@ -38,5 +38,5 @@ export function canExecute(state: Step3State): boolean {
 }
 
 export function clone<T>(v: T): T {
-  return JSON.parse(JSON.stringify(v)) as T;
+  return structuredClone(v);
 }

@@ -12,6 +12,21 @@
       <div class="toolbar">
         <div id="breadcrumb" class="breadcrumb"></div>
         <span class="spacer"></span>
+        <button
+          type="button"
+          class="memory-indicator"
+          id="memory-indicator"
+          title="Terminal memory usage — click to set limit"
+        >
+          RAM
+        </button>
+        <label class="toolbar-switch" title="Show active projects only">
+          <span class="toolbar-switch-label">Active only</span>
+          <input id="active-projects-only" type="checkbox" role="switch" />
+          <span class="toolbar-switch-track" aria-hidden="true">
+            <span class="toolbar-switch-thumb"></span>
+          </span>
+        </label>
         <div class="toggle-group">
           <button class="toggle-btn active" id="toggle-left" title="Toggle workspaces panel">
             <svg
@@ -50,6 +65,18 @@
             >
               <rect x="1.5" y="3.5" width="13" height="9" rx="1.5" />
               <rect x="10" y="5" width="3" height="6" fill="currentColor" stroke="none" />
+            </svg>
+          </button>
+          <button class="toggle-btn" id="toggle-awake" title="Keep system awake (prevent sleep)">
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.2"
+            >
+              <path d="M9 1.5 4 9.5h3.2L6 14.5l6-8H8.8L9 1.5z" stroke-linejoin="round" />
             </svg>
           </button>
         </div>

@@ -13,15 +13,3 @@ export function requireById<T extends Element = HTMLElement>(id: string, ctor?: 
   }
   return el as unknown as T;
 }
-
-export function requireQuery<T extends Element = HTMLElement>(
-  selector: string,
-  ctor?: ElementCtor<T>,
-): T {
-  const el = document.querySelector(selector);
-  if (!el) throw new Error(`Required element ${selector} not found in DOM`);
-  if (ctor && !(el instanceof ctor)) {
-    throw new Error(`Element ${selector} is not a ${ctor.name}`);
-  }
-  return el as unknown as T;
-}

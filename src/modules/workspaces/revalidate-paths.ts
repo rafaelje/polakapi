@@ -49,8 +49,3 @@ export function applyPathValidationResults(
   }
   return next;
 }
-
-export async function revalidatePersistedPaths(state: WorkspacesState): Promise<WorkspacesState> {
-  const results = await collectPathValidationResults(state);
-  return applyPathValidationResults(state, results);
-}

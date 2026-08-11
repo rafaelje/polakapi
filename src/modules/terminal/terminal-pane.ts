@@ -4,9 +4,24 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import { resolveProfile } from "./cli-registry";
 import { ptySpawn, ptyWrite, ptyResize, ptyKill } from "./pty-client";
 import { terminalTheme } from "./terminal-theme";
-import { attachTerminalClipboard } from "./terminal-clipboard";
-import { openPaneMenu, openCliRespawnMenu } from "./terminal-pane-menu";
-import type { CliRespawnCallbacks, StartupCmdEditCallbacks } from "./terminal-pane-types";
+import {
+  attachTerminalClipboard,
+  attachTerminalContextMenuGuard,
+  attachTerminalCopyPasteKeys,
+  copyTerminalSelection,
+  pasteIntoTerminal,
+} from "./terminal-clipboard";
+import { attachTerminalKeybindings } from "./terminal-keybindings";
+import { classifyLinkText, createPathLinkProvider, openLinkFromText } from "./terminal-links";
+import { openPaneMenu, openCliRespawnMenu, openTerminalContextMenu } from "./terminal-pane-menu";
+import { attachShellCommandCapture } from "./terminal-shell-integration";
+import type {
+  CliRespawnCallbacks,
+  DockMenuCallbacks,
+  ShellCommandCallbacks,
+  StartupCmdEditCallbacks,
+  SuspendCallbacks,
+} from "./terminal-pane-types";
 import { type PaneCreateOptions } from "./types";
 
 export type { StartupCmdEditCallbacks };
@@ -19,7 +34,9 @@ export class TerminalPane {
    * to skip the respawn confirmation for empty panes.
    */
   hasOutput = false;
+  lastActivityAt = Date.now();
   readonly el: HTMLElement;
+  readonly headerEl: HTMLElement;
   readonly bodyEl: HTMLElement;
   readonly titleEl: HTMLElement;
   readonly badgeEl: HTMLButtonElement;
@@ -30,15 +47,19 @@ export class TerminalPane {
   private readonly disposables: Array<{ dispose(): void }> = [];
   private startupCmdCallbacks: StartupCmdEditCallbacks | null = null;
   private cliRespawnCallbacks: CliRespawnCallbacks | null = null;
+  private dockMenuCallbacks: DockMenuCallbacks | null = null;
+  private suspendCallbacks: SuspendCallbacks | null = null;
+  private shellCommandCallbacks: ShellCommandCallbacks | null = null;
   private spawnFailed = false;
+  private suspended = false;
 
   constructor() {
     this.el = document.createElement("div");
     this.el.className = "pane";
     this.el.style.flex = "1 1 0";
 
-    const header = document.createElement("div");
-    header.className = "pane-header";
+    this.headerEl = document.createElement("div");
+    this.headerEl.className = "pane-header";
     this.badgeEl = document.createElement("button");
     this.badgeEl.type = "button";
     this.badgeEl.className = "pane-badge pane-badge--shell";
@@ -55,7 +76,7 @@ export class TerminalPane {
     this.closeBtn = document.createElement("button");
     this.closeBtn.textContent = "×";
     this.closeBtn.title = "Close terminal";
-    header.append(this.badgeEl, this.titleEl, this.menuBtn, this.closeBtn);
+    this.headerEl.append(this.badgeEl, this.titleEl, this.menuBtn, this.closeBtn);
     this.menuBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       this.openPaneMenu();
@@ -67,7 +88,7 @@ export class TerminalPane {
 
     this.bodyEl = document.createElement("div");
     this.bodyEl.className = "pane-body";
-    this.el.append(header, this.bodyEl);
+    this.el.append(this.headerEl, this.bodyEl);
 
     this.term = new Terminal({
       fontFamily: 'ui-monospace, "SF Mono", Menlo, Consolas, monospace',
@@ -76,16 +97,60 @@ export class TerminalPane {
       cursorBlink: true,
       allowProposedApi: true,
       scrollback: 5000,
+      // OSC 8 hyperlinks (claude & friends emit them). Without a handler
+      // xterm ignores clicks entirely; window.open is a no-op in the Tauri
+      // webview, so activation must route through the Rust openers.
+      linkHandler: {
+        allowNonHttpProtocols: true,
+        activate: (event, text) => {
+          event.preventDefault();
+          openLinkFromText(text);
+        },
+      },
     });
     this.fitAddon = new FitAddon();
     this.term.loadAddon(this.fitAddon);
-    this.term.loadAddon(new WebLinksAddon());
+    // Plain-text URL detection; same Rust-routed activation as above.
+    this.term.loadAddon(
+      new WebLinksAddon((event, uri) => {
+        event.preventDefault();
+        openLinkFromText(uri);
+      }),
+    );
   }
 
   async attach(host: HTMLElement, opts?: PaneCreateOptions): Promise<void> {
     host.append(this.el);
     this.term.open(this.bodyEl);
+    // Absolute paths in output become clickable (file → editor, dir → file
+    // manager). classifyLinkText re-validates before invoking Rust.
+    this.disposables.push(
+      this.term.registerLinkProvider(
+        createPathLinkProvider(this.term, (path) => {
+          if (classifyLinkText(path)) openLinkFromText(path);
+        }),
+      ),
+    );
+    this.disposables.push(
+      attachShellCommandCapture(
+        this.term,
+        () => this.ptyId,
+        ({ command, isAlias }) => {
+          this.shellCommandCallbacks?.onCommand(command, isAlias);
+        },
+      ),
+    );
     this.disposables.push(attachTerminalClipboard(this.term));
+    this.disposables.push(
+      attachTerminalContextMenuGuard(this.bodyEl, (at) => this.openContextMenu(at)),
+    );
+    attachTerminalCopyPasteKeys(this.term);
+    this.disposables.push(
+      attachTerminalKeybindings(this.term, (data) => {
+        if (this.spawnFailed || !this.ptyId) return;
+        void ptyWrite(this.ptyId, data);
+      }),
+    );
     this.safeFit();
     this.updateCliBadge(opts?.cliId);
 
@@ -101,9 +166,11 @@ export class TerminalPane {
       ? `${opts.command} · ${this.ptyId.slice(0, 6)}`
       : `shell · ${this.ptyId.slice(0, 6)}`;
 
+    this.lastActivityAt = Date.now();
     this.disposables.push(
       this.term.onData((data) => {
         if (this.spawnFailed) return;
+        this.lastActivityAt = Date.now();
         void ptyWrite(this.ptyId, data);
       }),
       this.term.onResize(({ cols, rows }) => {
@@ -114,12 +181,47 @@ export class TerminalPane {
   }
 
   write(data: string): void {
-    if (data.length > 0) this.hasOutput = true;
+    if (data.length > 0) {
+      this.hasOutput = true;
+      this.lastActivityAt = Date.now();
+    }
     this.term.write(data);
   }
 
   markExited(): void {
+    if (this.suspended) return;
     this.term.write("\r\n\x1b[90m[process exited]\x1b[0m\r\n");
+  }
+
+  get isSuspended(): boolean {
+    return this.suspended;
+  }
+
+  markSuspended(): void {
+    if (this.suspended) return;
+    this.suspended = true;
+    this.el.classList.add("pane--suspended");
+    const overlay = document.createElement("button");
+    overlay.type = "button";
+    overlay.className = "pane-suspended-overlay";
+    overlay.textContent = "⏸ Suspended — click to resume";
+    overlay.addEventListener("click", (e) => {
+      e.stopPropagation();
+      this.suspendCallbacks?.onResumeRequest();
+    });
+    this.bodyEl.append(overlay);
+  }
+
+  attachPlaceholder(host: HTMLElement, opts?: Pick<PaneCreateOptions, "cliId" | "command">): void {
+    host.append(this.el);
+    this.term.open(this.bodyEl);
+    this.disposables.push(
+      attachTerminalContextMenuGuard(this.bodyEl, (at) => this.openContextMenu(at)),
+    );
+    this.safeFit();
+    this.updateCliBadge(opts?.cliId);
+    this.titleEl.textContent = opts?.command ? `${opts.command} · suspended` : "shell · suspended";
+    this.markSuspended();
   }
 
   /**
@@ -182,6 +284,18 @@ export class TerminalPane {
     this.cliRespawnCallbacks = callbacks;
   }
 
+  setDockMenuCallbacks(callbacks: DockMenuCallbacks | null): void {
+    this.dockMenuCallbacks = callbacks;
+  }
+
+  setSuspendCallbacks(callbacks: SuspendCallbacks | null): void {
+    this.suspendCallbacks = callbacks;
+  }
+
+  setShellCommandCallbacks(callbacks: ShellCommandCallbacks | null): void {
+    this.shellCommandCallbacks = callbacks;
+  }
+
   private openPaneMenu(): void {
     const callbacks = this.startupCmdCallbacks;
     if (!callbacks) return;
@@ -189,6 +303,18 @@ export class TerminalPane {
       trigger: this.menuBtn,
       getStartupCmd: () => callbacks.getStartupCmd(),
       onChangeStartupCmd: (next) => callbacks.onChange(next),
+      canDock: () => this.dockMenuCallbacks?.canDock() ?? false,
+      onDockAtEdge: (position) => this.dockMenuCallbacks?.onDockAtEdge(position),
+      suspend: this.suspendCallbacks,
+    });
+  }
+
+  private openContextMenu(at: { x: number; y: number }): void {
+    openTerminalContextMenu({
+      at,
+      hasSelection: () => this.term.getSelection().length > 0,
+      onCopy: () => copyTerminalSelection(this.term),
+      onPaste: () => pasteIntoTerminal(this.term),
     });
   }
 

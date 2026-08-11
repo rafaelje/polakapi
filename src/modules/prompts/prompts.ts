@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { mapWithConcurrency } from "../../shared/async/map-with-concurrency";
 
 interface SessionRow {
   id: number;
@@ -49,6 +50,7 @@ const filterEl = document.getElementById("prompts-filter");
 const refreshBtn = document.getElementById("prompts-refresh");
 const deleteBtn = document.getElementById("prompts-delete");
 const selectAllEl = document.getElementById("prompts-select-all");
+const PROMPT_LOAD_CONCURRENCY = 8;
 
 let sessions: SessionRow[] = [];
 let activeSessionId: number | null = null;
@@ -170,35 +172,75 @@ function renderDetail(prompts: PromptListRow[], fullById: Map<number, PromptFull
     detailEl.innerHTML = '<p class="prompts-empty">no prompts in this session.</p>';
     return;
   }
-  detailEl.innerHTML = prompts
-    .map((p) => {
-      const full = fullById.get(p.id);
-      const userInput = full?.userInput ?? p.userPreview;
-      const responseText = full?.responseText;
-      const responseBlock =
-        responseText != null
-          ? `<div class="prompt-response">${escapeHtml(responseText)}</div>`
-          : `<div class="prompt-pending">response pending…</div>`;
-      const tokens =
-        p.tokensIn != null || p.tokensOut != null
-          ? `<span>${p.tokensIn ?? "?"}→${p.tokensOut ?? "?"} tokens</span>`
-          : "";
-      const cost = p.costUsd != null ? `<span>$${p.costUsd.toFixed(4)}</span>` : "";
-      const elapsed = p.elapsedMs != null ? `<span>${p.elapsedMs}ms</span>` : "";
-      const error = p.error ? `<div class="prompt-error">${escapeHtml(p.error)}</div>` : "";
-      return `
-        <div class="prompt-card" data-prompt-id="${p.id}">
-          <div class="prompt-card-header">
-            <span class="prompt-seq">#${p.seq}</span>
-            <span>${formatTimestamp(p.createdAt)}</span>
-          </div>
-          <div class="prompt-user">${escapeHtml(userInput ?? "")}</div>
-          ${responseBlock}
-          <div class="prompt-meta">${tokens}${cost}${elapsed}</div>
-          ${error}
-        </div>`;
-    })
-    .join("");
+  detailEl.replaceChildren(...prompts.map((p) => createPromptCard(p, fullById.get(p.id))));
+}
+
+function createPromptCard(
+  prompt: PromptListRow,
+  full: PromptFullRow | undefined,
+  showSession = false,
+): HTMLElement {
+  const card = document.createElement("div");
+  card.className = "prompt-card";
+  if (!showSession) card.dataset.promptId = String(prompt.id);
+
+  const header = document.createElement("div");
+  header.className = "prompt-card-header";
+  const sequence = document.createElement("span");
+  sequence.className = "prompt-seq";
+  sequence.textContent = `#${prompt.seq}`;
+  const timestamp = document.createElement("span");
+  timestamp.textContent = showSession
+    ? `session ${prompt.sessionId} · ${formatTimestamp(prompt.createdAt)}`
+    : formatTimestamp(prompt.createdAt);
+  header.append(sequence, timestamp);
+
+  const user = document.createElement("div");
+  user.className = "prompt-user";
+  user.textContent = full?.userInput ?? prompt.userPreview ?? "";
+  const response = document.createElement("div");
+  response.className = full?.responseText != null ? "prompt-response" : "prompt-pending";
+  response.textContent = full?.responseText ?? "response pending…";
+  card.append(header, user, response);
+
+  if (!showSession) {
+    const meta = document.createElement("div");
+    meta.className = "prompt-meta";
+    if (prompt.tokensIn != null || prompt.tokensOut != null) {
+      const tokens = document.createElement("span");
+      tokens.textContent = `${prompt.tokensIn ?? "?"}→${prompt.tokensOut ?? "?"} tokens`;
+      meta.append(tokens);
+    }
+    if (prompt.costUsd != null) {
+      const cost = document.createElement("span");
+      cost.textContent = `$${prompt.costUsd.toFixed(4)}`;
+      meta.append(cost);
+    }
+    if (prompt.elapsedMs != null) {
+      const elapsed = document.createElement("span");
+      elapsed.textContent = `${prompt.elapsedMs}ms`;
+      meta.append(elapsed);
+    }
+    card.append(meta);
+    if (prompt.error) {
+      const error = document.createElement("div");
+      error.className = "prompt-error";
+      error.textContent = prompt.error;
+      card.append(error);
+    }
+  }
+  return card;
+}
+
+async function loadFullPrompts(prompts: PromptListRow[]): Promise<Map<number, PromptFullRow>> {
+  const rows = await mapWithConcurrency(prompts, PROMPT_LOAD_CONCURRENCY, (prompt) =>
+    getPrompt(prompt.id),
+  );
+  const fullById = new Map<number, PromptFullRow>();
+  for (const row of rows) {
+    if (row) fullById.set(row.id, row);
+  }
+  return fullById;
 }
 
 async function openSession(sessionId: number): Promise<void> {
@@ -213,11 +255,7 @@ async function openSession(sessionId: number): Promise<void> {
             (p.error?.toLowerCase().includes(filterNeedle.toLowerCase()) ?? false),
         )
       : prompts;
-  const fullById = new Map<number, PromptFullRow>();
-  for (const p of filtered) {
-    const full = await getPrompt(p.id);
-    if (full) fullById.set(p.id, full);
-  }
+  const fullById = await loadFullPrompts(filtered);
   renderDetail(filtered, fullById);
 }
 
@@ -229,39 +267,21 @@ async function runSearch(): Promise<void> {
   }
   const hits = await searchPrompts(needle);
   if (detailEl) {
-    const fullById = new Map<number, PromptFullRow>();
-    for (const p of hits) {
-      const full = await getPrompt(p.id);
-      if (full) fullById.set(p.id, full);
-    }
+    const fullById = await loadFullPrompts(hits);
     activeSessionId = null;
     renderSessions();
     if (hits.length === 0) {
-      detailEl.innerHTML = `<p class="prompts-empty">no prompts match "${escapeHtml(needle)}".</p>`;
+      const empty = document.createElement("p");
+      empty.className = "prompts-empty";
+      empty.textContent = `no prompts match "${needle}".`;
+      detailEl.replaceChildren(empty);
     } else {
-      detailEl.innerHTML = `<p class="prompts-sub">${hits.length} matches across sessions.</p>`;
-      detailEl.insertAdjacentHTML(
-        "beforeend",
-        hits
-          .map((p) => {
-            const full = fullById.get(p.id);
-            const userInput = full?.userInput ?? p.userPreview;
-            const responseText = full?.responseText;
-            const responseBlock =
-              responseText != null
-                ? `<div class="prompt-response">${escapeHtml(responseText)}</div>`
-                : `<div class="prompt-pending">response pending…</div>`;
-            return `
-              <div class="prompt-card">
-                <div class="prompt-card-header">
-                  <span class="prompt-seq">#${p.seq}</span>
-                  <span>session ${p.sessionId} · ${formatTimestamp(p.createdAt)}</span>
-                </div>
-                <div class="prompt-user">${escapeHtml(userInput ?? "")}</div>
-                ${responseBlock}
-              </div>`;
-          })
-          .join(""),
+      const summary = document.createElement("p");
+      summary.className = "prompts-sub";
+      summary.textContent = `${hits.length} matches across sessions.`;
+      detailEl.replaceChildren(
+        summary,
+        ...hits.map((prompt) => createPromptCard(prompt, fullById.get(prompt.id), true)),
       );
     }
   }

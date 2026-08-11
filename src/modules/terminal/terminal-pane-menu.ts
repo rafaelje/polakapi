@@ -1,6 +1,8 @@
-import { promptModal } from "../../shared/ui/modal";
-import { ALL_PROFILES, type CliProfile } from "./cli-registry";
-import type { StartupCmdEditCallbacks } from "./terminal-pane-types";
+import { confirmModal, promptModal } from "../../shared/ui/modal";
+import { clampPopoverToViewport } from "../../shared/ui/popover-position";
+import { ALL_PROFILES, resolveProfile, type CliProfile } from "./cli-registry";
+import type { TerminalDockPosition } from "./terminal-layout";
+import type { StartupCmdEditCallbacks, SuspendCallbacks } from "./terminal-pane-types";
 
 /**
  * Pane header kebab menu. Extracted from terminal-pane.ts so the pane class
@@ -12,6 +14,9 @@ export interface PaneMenuOptions {
   trigger: HTMLElement;
   getStartupCmd(): string | undefined;
   onChangeStartupCmd(next: string | undefined): void;
+  canDock(): boolean;
+  onDockAtEdge(position: TerminalDockPosition): void;
+  suspend?: SuspendCallbacks | null;
 }
 
 export interface PaneMenuHandle {
@@ -36,6 +41,40 @@ export function openPaneMenu(opts: PaneMenuOptions): PaneMenuHandle {
   editItem.textContent = "Edit startup command…";
   popover.append(editItem);
 
+  const suspend = opts.suspend;
+  if (suspend) {
+    const suspended = suspend.isSuspended();
+    const item = document.createElement("button");
+    item.type = "button";
+    item.className = "pane-menu-item";
+    item.textContent = suspended ? "Resume" : "Suspend (free RAM)";
+    item.disabled = !suspended && !suspend.isLive();
+    item.addEventListener("click", () => {
+      dispose();
+      if (suspended) suspend.onResumeRequest();
+      else suspend.onSuspendRequest();
+    });
+    popover.append(item);
+  }
+
+  const separator = document.createElement("div");
+  separator.className = "pane-menu-separator";
+  popover.append(separator);
+  const canDock = opts.canDock();
+  for (const [position, label] of DOCK_MENU_ITEMS) {
+    const item = document.createElement("button");
+    item.type = "button";
+    item.className = "pane-menu-item";
+    item.textContent = label;
+    item.disabled = !canDock;
+    item.dataset.dockPosition = position;
+    item.addEventListener("click", () => {
+      dispose();
+      opts.onDockAtEdge(position);
+    });
+    popover.append(item);
+  }
+
   let disposed = false;
   const dispose = (): void => {
     if (disposed) return;
@@ -59,6 +98,7 @@ export function openPaneMenu(opts: PaneMenuOptions): PaneMenuHandle {
   });
 
   document.body.append(popover);
+  clampPopoverToViewport(popover);
   window.addEventListener("mousedown", onOutside, true);
   window.addEventListener("keydown", onKey, true);
   window.addEventListener("resize", dispose);
@@ -128,6 +168,7 @@ export function openCliRespawnMenu(opts: CliRespawnMenuOptions): PaneMenuHandle 
   }
 
   document.body.append(popover);
+  clampPopoverToViewport(popover);
   window.addEventListener("mousedown", onOutside, true);
   window.addEventListener("keydown", onKey, true);
   window.addEventListener("resize", dispose);
@@ -155,4 +196,91 @@ function createRespawnItem(
   return item;
 }
 
+export async function confirmRespawn(cliId: string): Promise<boolean> {
+  const profile = resolveProfile(cliId);
+  return confirmModal({
+    title: `Respawn terminal with ${profile.label}?`,
+    message: "The current process will be killed and a new one started. Output will be lost.",
+    confirmLabel: "Respawn",
+    danger: true,
+  });
+}
+
+export interface TerminalContextMenuOptions {
+  at: { x: number; y: number };
+  hasSelection(): boolean;
+  onCopy(): void;
+  onPaste(): void;
+}
+
+let activeTerminalMenuDispose: (() => void) | null = null;
+
+// Right-click menu for the terminal body. Replaces the webview's native menu,
+// which in WebKitGTK can activate Paste on the same right-click gesture.
+export function openTerminalContextMenu(opts: TerminalContextMenuOptions): PaneMenuHandle {
+  activeTerminalMenuDispose?.();
+  document.querySelectorAll(".pane-menu-popover").forEach((node) => node.remove());
+
+  const popover = document.createElement("div");
+  popover.className = "pane-menu-popover";
+  popover.style.position = "fixed";
+  popover.style.top = `${opts.at.y + 2}px`;
+  popover.style.left = `${opts.at.x + 2}px`;
+
+  let disposed = false;
+  const dispose = (): void => {
+    if (disposed) return;
+    disposed = true;
+    popover.remove();
+    window.removeEventListener("mousedown", onOutside, true);
+    window.removeEventListener("keydown", onKey, true);
+    window.removeEventListener("resize", dispose);
+    window.removeEventListener("scroll", dispose, true);
+    if (activeTerminalMenuDispose === dispose) activeTerminalMenuDispose = null;
+  };
+  const onOutside = (e: MouseEvent): void => {
+    if (!popover.contains(e.target as Node)) dispose();
+  };
+  const onKey = (e: KeyboardEvent): void => {
+    if (e.key === "Escape") dispose();
+  };
+
+  const copyItem = document.createElement("button");
+  copyItem.type = "button";
+  copyItem.className = "pane-menu-item";
+  copyItem.textContent = "Copy";
+  copyItem.disabled = !opts.hasSelection();
+  copyItem.addEventListener("click", () => {
+    dispose();
+    opts.onCopy();
+  });
+
+  const pasteItem = document.createElement("button");
+  pasteItem.type = "button";
+  pasteItem.className = "pane-menu-item";
+  pasteItem.textContent = "Paste";
+  pasteItem.addEventListener("click", () => {
+    dispose();
+    opts.onPaste();
+  });
+
+  popover.append(copyItem, pasteItem);
+  document.body.append(popover);
+  clampPopoverToViewport(popover);
+  window.addEventListener("mousedown", onOutside, true);
+  window.addEventListener("keydown", onKey, true);
+  window.addEventListener("resize", dispose);
+  window.addEventListener("scroll", dispose, true);
+  activeTerminalMenuDispose = dispose;
+
+  return { dispose };
+}
+
 export type { StartupCmdEditCallbacks };
+
+const DOCK_MENU_ITEMS: ReadonlyArray<readonly [TerminalDockPosition, string]> = [
+  ["top", "Dock at top"],
+  ["right", "Dock at right"],
+  ["bottom", "Dock at bottom"],
+  ["left", "Dock at left"],
+];

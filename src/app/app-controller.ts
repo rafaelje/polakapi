@@ -6,8 +6,15 @@ import {
   type PersistedLayout,
 } from "../shared/persistence/store";
 import { wireShortcuts } from "../shared/keyboard/shortcuts";
+import { invoke } from "../shared/tauri/invoke";
 import { showToast } from "../shared/ui/toast";
 import { onPtyData, onPtyExit, ptyKill } from "../modules/terminal/pty-client";
+import {
+  formatMemoryIndicator,
+  startMemoryGuard,
+  type MemoryGuardHandle,
+} from "../modules/terminal/memory-guard";
+import { openMemorySettingsMenu } from "../modules/terminal/memory-settings-menu";
 import { startFlexDrag, wireSidebarGutters } from "../modules/layout/gutters";
 import { wireToggles } from "../modules/layout/panel-toggles";
 import { type SidebarTarget } from "../modules/layout/types";
@@ -55,6 +62,9 @@ export class AppController {
   private agentsController: AgentsController | null = null;
   private unwireShortcuts: (() => void) | null = null;
   private unwireWindowLifecycle: (() => void) | null = null;
+  private memoryGuard: MemoryGuardHandle | null = null;
+  private memoryLimitMb = 0;
+  private idleSuspendMinutes = 0;
   private unwireQuitConfirm: (() => void) | null = null;
   private unwireFocus: (() => void) | null = null;
   private unlistenData: UnlistenFn | null = null;
@@ -72,6 +82,9 @@ export class AppController {
     this.router = new TerminalRouter({
       onPersistSpecs: (projectId, specs) => {
         this.workspaces?.controller.replaceTerminalSpecs(projectId, specs);
+      },
+      onPersistLayout: (projectId, layout) => {
+        this.workspaces?.controller.setProjectTerminalLayout(projectId, layout);
       },
     });
   }
@@ -99,6 +112,7 @@ export class AppController {
     await this.wirePtyEvents();
     this.wireGutters();
     this.wirePanelToggles();
+    this.wireKeepAwakeToggle(layout.keepAwakeEnabled === true);
     this.wireKeyboardShortcuts();
     this.wireWindowFocus();
     this.unwireWindowLifecycle = wireWindowLifecycle({
@@ -119,6 +133,8 @@ export class AppController {
     // handler resolves through `this.palette?` so the Cmd-P keybinding wired
     // earlier in start() is a no-op until this line runs.
     this.palette = mountCommandPalette({ controller: this.workspaces.controller });
+
+    this.wireMemoryGuard(layout);
 
     // Wire the quit hook *after* workspaces is ready so the modal can resolve
     // project names by looking the controller's state up at confirm time.
@@ -146,6 +162,8 @@ export class AppController {
     this.unwireQuitConfirm = null;
     this.unwireFocus?.();
     this.unwireFocus = null;
+    this.memoryGuard?.dispose();
+    this.memoryGuard = null;
 
     this.palette?.dispose();
     this.palette = null;
@@ -219,7 +237,10 @@ export class AppController {
   private async wirePtyEvents(): Promise<void> {
     this.unlistenData = await onPtyData(({ id, data }) => {
       if (this.bottomPanel?.handlePtyData(id, data)) return;
-      this.router.findPaneById(id)?.pane.write(data);
+      const found = this.router.findPaneById(id);
+      if (!found) return;
+      this.router.recordActivity(id);
+      found.pane.write(data);
     });
     this.unlistenExit = await onPtyExit(({ id }) => {
       if (this.bottomPanel?.handlePtyExit(id)) return;
@@ -296,9 +317,69 @@ export class AppController {
       focusByIndex: (idx) => this.router.getActive()?.focusByIndex(idx),
       focusPrev: () => this.router.getActive()?.focusRelative(-1),
       focusNext: () => this.router.getActive()?.focusRelative(1),
+      focusDirection: (direction) => this.router.getActive()?.focusDirection(direction),
       // Resolved lazily so the keybinding is harmless before bootstrap mounts.
       togglePalette: () => this.palette?.toggle(),
     });
+  }
+
+  private wireMemoryGuard(layout: PersistedLayout): void {
+    this.memoryLimitMb = layout.memoryLimitMb ?? 0;
+    this.idleSuspendMinutes = layout.idleSuspendMinutes ?? 0;
+    const btn = document.getElementById("memory-indicator");
+    this.memoryGuard = startMemoryGuard({
+      getPanes: () => this.router.livePanes(),
+      getActiveProjectId: () => this.workspaces?.controller.getActiveProject()?.id ?? null,
+      getLimitMb: () => this.memoryLimitMb,
+      getIdleLimitMs: () => this.idleSuspendMinutes * 60_000,
+      suspendPane: (paneId) => this.router.findPaneById(paneId)?.manager.suspendPane(paneId),
+      onStats: (stats, usedMb) => {
+        if (!btn) return;
+        btn.textContent = formatMemoryIndicator(usedMb, this.memoryLimitMb);
+        btn.title =
+          `Terminals: ${usedMb} MB · limit ${this.memoryLimitMb > 0 ? `${this.memoryLimitMb} MB` : "off"} · ` +
+          `idle: ${this.idleSuspendMinutes > 0 ? `${this.idleSuspendMinutes} min` : "off"} · ` +
+          `system free: ${stats.availableMb} MB — click to configure`;
+      },
+    });
+    btn?.addEventListener("click", () => {
+      openMemorySettingsMenu({
+        trigger: btn,
+        limitMb: this.memoryLimitMb,
+        idleMinutes: this.idleSuspendMinutes,
+        onLimitChange: (mb) => {
+          this.memoryLimitMb = mb;
+          queueSave({ memoryLimitMb: mb });
+          void this.memoryGuard?.tick();
+        },
+        onIdleChange: (minutes) => {
+          this.idleSuspendMinutes = minutes;
+          queueSave({ idleSuspendMinutes: minutes });
+          void this.memoryGuard?.tick();
+        },
+      });
+    });
+  }
+
+  private wireKeepAwakeToggle(initial: boolean): void {
+    const btn = document.getElementById("toggle-awake");
+    if (!btn) return;
+    const apply = async (enabled: boolean, showFeedback: boolean): Promise<void> => {
+      try {
+        const active = await invoke<boolean>("keep_awake_set", { enabled });
+        btn.classList.toggle("active", active);
+        queueSave({ keepAwakeEnabled: active });
+        if (showFeedback) {
+          showToast(active ? "System sleep inhibited" : "System sleep restored", "info");
+        }
+      } catch {
+        // invoke() already surfaced the error toast
+      }
+    };
+    btn.addEventListener("click", () => {
+      void apply(!btn.classList.contains("active"), true);
+    });
+    if (initial) void apply(true, false);
   }
 
   private persistSidebarWidths(): void {

@@ -18,3 +18,21 @@ export interface CliRespawnCallbacks {
   getCurrentCliId(): string;
   onRespawnRequest(cliId: string): void;
 }
+
+export interface DockMenuCallbacks {
+  canDock(): boolean;
+  onDockAtEdge(position: TerminalDockPosition): void;
+}
+
+export interface SuspendCallbacks {
+  isLive(): boolean;
+  isSuspended(): boolean;
+  onSuspendRequest(): void;
+  onResumeRequest(): void;
+}
+
+// Reports each captured command up to the TerminalManager for "Resume all" to replay.
+export interface ShellCommandCallbacks {
+  onCommand(command: string, isAlias: boolean): void;
+}
+import type { TerminalDockPosition } from "./terminal-layout";

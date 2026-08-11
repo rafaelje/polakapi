@@ -7,27 +7,27 @@ import { createSelectionStore } from "../state/selection";
 import { createWorkspaceRow, type WorkspaceRowHandle } from "./workspace-row";
 import { createSidebarEmptyState, type EmptyStateHandle } from "./workspaces-empty-state";
 import { sortedWorkspaces } from "../state/workspaces-reducer";
-import type { ProjectId } from "../state/types";
+import type { ProjectActivityState } from "../../terminal/project-activity";
+import type { Project, ProjectId } from "../state/types";
 import type { WorkspacesController } from "../state/workspaces-controller";
 
 /**
- * Live-count surface the panel needs from the TerminalRouter. Kept as a
- * minimal structural type so the panel does not depend on the router class
- * directly (avoids an import cycle and keeps the module testable in isolation).
- */
-/**
- * Live-count event the panel cares about. Kept as a discriminated union with
+ * Terminal event the panel cares about. Kept as a discriminated union with
  * an open shape so callers (the TerminalRouter) can emit additional variants
- * — only `counts-changed` is consumed here.
+ * without coupling the panel to the router class.
  */
 export type LiveCountEvent =
   | { type: "counts-changed"; counts: ReadonlyMap<ProjectId, number> }
+  | { type: "activity-changed"; projectId: ProjectId; state: ProjectActivityState }
   | { type: string; [key: string]: unknown };
 
 export interface LiveCountSource {
   getCount(projectId: ProjectId): number;
   liveCountsByProject(): ReadonlyMap<ProjectId, number>;
   on(listener: (event: LiveCountEvent) => void): () => void;
+  getActivity?(projectId: ProjectId): ProjectActivityState;
+  /** Optional — feeds the "Resume terminals (N)" row-menu item. */
+  getSuspendedCount?(projectId: ProjectId): number;
 }
 
 /**
@@ -49,10 +49,13 @@ export interface BellPendingSource {
 export interface WorkspacesPanelOptions {
   root: HTMLElement;
   controller: WorkspacesController;
-  /** Optional. When provided, the panel surfaces live PTY counts in badges. */
+  /** Optional. Surfaces live PTY counts and project activity. */
   liveCounts?: LiveCountSource;
   /** Optional. When provided, the panel toggles `.has-bell` on rows. */
   bellSource?: BellPendingSource;
+  activeOnlyToggle: HTMLInputElement;
+  onSuspendProject?: (projectId: ProjectId) => void;
+  onResumeProject?: (projectId: ProjectId) => void;
 }
 
 export interface WorkspacesPanelHandle {
@@ -64,11 +67,11 @@ export interface WorkspacesPanelHandle {
  * thin: it only renders the header + scrollable body, hands children off to
  * `createWorkspaceRow`, and re-renders the body in response to
  * `controller.on('state-changed', ...)`. When a `liveCounts` source is given,
- * the panel also subscribes to its `counts-changed` event and fans badge
- * updates out to the matching rows without re-rendering the panel.
+ * the panel also fans count and activity updates out to matching rows without
+ * re-rendering the panel.
  */
 export function mountWorkspacesPanel(opts: WorkspacesPanelOptions): WorkspacesPanelHandle {
-  const { root, controller, liveCounts, bellSource } = opts;
+  const { root, controller, liveCounts, bellSource, activeOnlyToggle } = opts;
 
   const previousContent = Array.from(root.childNodes);
   root.replaceChildren();
@@ -89,13 +92,33 @@ export function mountWorkspacesPanel(opts: WorkspacesPanelOptions): WorkspacesPa
   search.autocomplete = "off";
   search.spellcheck = false;
 
+  const collapseBtn = document.createElement("button");
+  collapseBtn.type = "button";
+  collapseBtn.className = "ws-panel-collapse";
+
   const addBtn = document.createElement("button");
   addBtn.type = "button";
   addBtn.className = "ws-panel-add";
   addBtn.title = "New workspace";
   addBtn.textContent = "+";
 
-  header.append(title, search, addBtn);
+  header.append(title, search, collapseBtn, addBtn);
+
+  const syncCollapseBtn = (): void => {
+    const allCollapsed = controller.areAllCollapsed();
+    collapseBtn.textContent = allCollapsed ? "⊞" : "⊟";
+    collapseBtn.title = allCollapsed ? "Expand all workspaces" : "Collapse all workspaces";
+  };
+  const onCollapseClick = (): void => {
+    controller.setAllCollapsed(!controller.areAllCollapsed());
+  };
+  collapseBtn.addEventListener("click", onCollapseClick);
+
+  const liveCountFor = (projectId: ProjectId): number => liveCounts?.getCount(projectId) ?? 0;
+  const suspendedCountFor = (projectId: ProjectId): number =>
+    liveCounts?.getSuspendedCount?.(projectId) ?? 0;
+  const activityFor = (projectId: ProjectId): ProjectActivityState =>
+    liveCounts?.getActivity?.(projectId) ?? "idle";
 
   const body = document.createElement("div");
   body.className = "ws-panel-body";
@@ -105,7 +128,23 @@ export function mountWorkspacesPanel(opts: WorkspacesPanelOptions): WorkspacesPa
   const handles: WorkspaceRowHandle[] = [];
   let emptyState: EmptyStateHandle | null = null;
   let query = "";
+  let activeOnly = activeOnlyToggle.checked;
   const selection = createSelectionStore();
+  const pendingByProject = new Map<ProjectId, Set<string>>();
+
+  const deleteSelected = (): void => {
+    const ids = [...selection.getSelected()];
+    if (ids.length === 0) return;
+    const total = ids.reduce((sum, id) => sum + liveCountFor(id), 0);
+    void controller
+      .deleteProjectsWithLiveCount(ids, total)
+      .then((ok) => {
+        if (ok) selection.clear();
+      })
+      .catch(() => {
+        showToast("Failed to delete the selected projects", "error");
+      });
+  };
 
   const onAddClick = (): void => {
     void controller.createWorkspaceInteractive();
@@ -117,6 +156,12 @@ export function mountWorkspacesPanel(opts: WorkspacesPanelOptions): WorkspacesPa
     render();
   };
   search.addEventListener("input", onSearchInput);
+
+  const onActiveOnlyChange = (): void => {
+    activeOnly = activeOnlyToggle.checked;
+    render();
+  };
+  activeOnlyToggle.addEventListener("change", onActiveOnlyChange);
 
   // Clear the multi-selection when the user clicks the panel chrome (header,
   // body background, between rows) without a modifier. Row clicks stop short
@@ -141,9 +186,8 @@ export function mountWorkspacesPanel(opts: WorkspacesPanelOptions): WorkspacesPa
     toast: (msg, kind) => showToast(msg, kind ?? "info"),
   });
 
-  const liveCountFor = (projectId: ProjectId): number => liveCounts?.getCount(projectId) ?? 0;
-
   const render = (): void => {
+    syncCollapseBtn();
     for (const handle of handles.splice(0)) handle.dispose();
     if (emptyState) {
       emptyState.dispose();
@@ -159,13 +203,17 @@ export function mountWorkspacesPanel(opts: WorkspacesPanelOptions): WorkspacesPa
     }
 
     const activeQuery = query.trim();
+    const matchesActiveFilter = (project: Project): boolean =>
+      !activeOnly || liveCountFor(project.id) > 0;
     for (const workspace of sortedWorkspaces(state)) {
       // When a search is active, skip workspaces that have no matching
       // projects entirely — the row helper would render an empty header
       // with no children, which is noise.
-      if (activeQuery) {
-        const hasMatch = workspace.projects.some((p) =>
-          matchesProject(activeQuery, workspace.name, p),
+      if (activeQuery || activeOnly) {
+        const hasMatch = workspace.projects.some(
+          (project) =>
+            matchesActiveFilter(project) &&
+            (!activeQuery || matchesProject(activeQuery, workspace.name, project)),
         );
         if (!hasMatch) continue;
       }
@@ -173,8 +221,15 @@ export function mountWorkspacesPanel(opts: WorkspacesPanelOptions): WorkspacesPa
         workspace,
         controller,
         liveCountFor: liveCounts ? liveCountFor : undefined,
+        activityFor: liveCounts ? activityFor : undefined,
+        bellPendingFor: (projectId) => (pendingByProject.get(projectId)?.size ?? 0) > 0,
+        getSuspendedCount: liveCounts ? suspendedCountFor : undefined,
         filterQuery: activeQuery,
+        projectFilter: activeOnly ? matchesActiveFilter : undefined,
         selection,
+        onSuspendProject: opts.onSuspendProject,
+        onResumeProject: opts.onResumeProject,
+        onDeleteSelected: deleteSelected,
       });
       handles.push(handle);
       body.append(handle.element);
@@ -193,12 +248,23 @@ export function mountWorkspacesPanel(opts: WorkspacesPanelOptions): WorkspacesPa
     render();
   });
 
-  const unsubscribeCounts =
+  const unsubscribeTerminalEvents =
     liveCounts?.on((event) => {
-      if (event.type !== "counts-changed") return;
-      const counts = (event as { counts: ReadonlyMap<ProjectId, number> }).counts;
-      for (const [projectId, count] of counts) {
-        for (const handle of handles) handle.setLiveCount(projectId, count);
+      if (event.type === "counts-changed") {
+        if (activeOnly) {
+          render();
+          return;
+        }
+        const counts = (event as { counts: ReadonlyMap<ProjectId, number> }).counts;
+        for (const [projectId, count] of counts) {
+          for (const handle of handles) handle.setLiveCount(projectId, count);
+        }
+      } else if (event.type === "activity-changed") {
+        const activity = event as {
+          projectId: ProjectId;
+          state: ProjectActivityState;
+        };
+        for (const handle of handles) handle.setActivity(activity.projectId, activity.state);
       }
     }) ?? null;
 
@@ -206,7 +272,6 @@ export function mountWorkspacesPanel(opts: WorkspacesPanelOptions): WorkspacesPa
   // per pane bell; the row only cares whether ANY of its panes has a pending
   // bell. We map projectId → Set<paneId> of pending panes; the row class is
   // toggled on the size transition 0↔1.
-  const pendingByProject = new Map<ProjectId, Set<string>>();
   const unsubscribeBells =
     bellSource?.on((event) => {
       if (event.type !== "bell-pending") return;
@@ -232,12 +297,14 @@ export function mountWorkspacesPanel(opts: WorkspacesPanelOptions): WorkspacesPa
   return {
     unmount(): void {
       unsubscribeController();
-      unsubscribeCounts?.();
+      unsubscribeTerminalEvents?.();
       unsubscribeBells?.();
       finderDrop.detach();
       dnd.detach();
       addBtn.removeEventListener("click", onAddClick);
+      collapseBtn.removeEventListener("click", onCollapseClick);
       search.removeEventListener("input", onSearchInput);
+      activeOnlyToggle.removeEventListener("change", onActiveOnlyChange);
       root.removeEventListener("click", onPanelClick);
       selection.clear();
       for (const handle of handles.splice(0)) handle.dispose();

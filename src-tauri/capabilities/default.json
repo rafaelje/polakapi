@@ -8,6 +8,8 @@
     "core:webview:allow-create-webview-window",
     "store:default",
     "dialog:default",
-    "notification:default"
+    "notification:default",
+    "clipboard-manager:allow-read-text",
+    "clipboard-manager:allow-write-text"
   ]
 }

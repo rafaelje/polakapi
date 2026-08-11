@@ -1,2 +1,4 @@
-- siempre escribe el codigo y comentarios en ingles
-- coloca solamente comentarios cuando es estrictamente requerido
+
+- always write the code and comments in English
+- only post comments when strictly required
+- the name is polakapi everything lowercase

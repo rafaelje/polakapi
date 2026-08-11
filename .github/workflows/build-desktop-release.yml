@@ -1,0 +1,187 @@
+name: Build and publish desktop release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: desktop-release-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-dmg:
+    name: Universal macOS DMG
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+      - run: pnpm install --frozen-lockfile
+      - name: Build universal DMG
+        run: pnpm tauri build --bundles dmg --target universal-apple-darwin
+      - name: Verify DMG
+        run: |
+          for dmg in src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg; do
+            hdiutil verify "$dmg"
+          done
+      - name: Upload DMG
+        uses: actions/upload-artifact@v7
+        with:
+          name: polakapi-macos-universal
+          path: src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
+
+  build-linux:
+    name: Linux x86_64 bundles
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+      - uses: pnpm/action-setup@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+      - run: pnpm install --frozen-lockfile
+      - name: Build Linux bundles
+        run: pnpm tauri build --bundles appimage,deb
+      - name: Verify Linux bundles
+        run: |
+          shopt -s nullglob
+          appimages=(src-tauri/target/release/bundle/appimage/*.AppImage)
+          deb_files=(src-tauri/target/release/bundle/deb/*.deb)
+
+          test "${#appimages[@]}" -gt 0
+          test "${#deb_files[@]}" -gt 0
+
+          for appimage in "${appimages[@]}"; do
+            test -x "$appimage"
+          done
+
+          for deb_file in "${deb_files[@]}"; do
+            dpkg-deb --info "$deb_file" >/dev/null
+          done
+      - name: Upload Linux bundles
+        uses: actions/upload-artifact@v7
+        with:
+          name: polakapi-linux-x86_64
+          path: |
+            src-tauri/target/release/bundle/appimage/*.AppImage
+            src-tauri/target/release/bundle/deb/*.deb
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
+
+  build-windows:
+    name: Windows x86_64 NSIS installer
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+      - run: pnpm install --frozen-lockfile
+      - name: Build Windows bundle
+        run: pnpm tauri build --bundles nsis
+      - name: Verify Windows bundle
+        shell: pwsh
+        run: |
+          $bundles = @(Get-ChildItem "src-tauri/target/release/bundle/nsis/*-setup.exe" -File)
+
+          if ($bundles.Count -eq 0) {
+            throw "No Windows bundle found"
+          }
+
+          foreach ($bundle in $bundles) {
+            if ($bundle.Length -eq 0) {
+              throw "Windows bundle is empty: $($bundle.FullName)"
+            }
+          }
+      - name: Upload Windows bundle
+        uses: actions/upload-artifact@v7
+        with:
+          name: polakapi-windows-x86_64
+          path: src-tauri/target/release/bundle/nsis/*-setup.exe
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
+
+  publish-release:
+    name: Publish GitHub Release
+    needs: [build-dmg, build-linux, build-windows]
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: polakapi-*
+          path: release-assets
+          merge-multiple: true
+      - name: Read release version
+        id: release
+        run: |
+          version=$(jq -r .version src-tauri/tauri.conf.json)
+          echo "tag=v${version}" >> "$GITHUB_OUTPUT"
+          echo "title=polakapi v${version}" >> "$GITHUB_OUTPUT"
+      - name: Publish desktop installers to GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+          RELEASE_TITLE: ${{ steps.release.outputs.title }}
+        run: |
+          assets=()
+          while IFS= read -r -d '' asset; do
+            assets+=("$asset")
+          done < <(find release-assets -type f -print0)
+
+          if (( ${#assets[@]} == 0 )); then
+            echo "No release assets found" >&2
+            exit 1
+          fi
+
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" "${assets[@]}" --clobber
+          else
+            gh release create "$RELEASE_TAG" "${assets[@]}" \
+              --target "$GITHUB_SHA" \
+              --title "$RELEASE_TITLE" \
+              --generate-notes
+          fi
+
+          release_url=$(gh release view "$RELEASE_TAG" --json url --jq .url)
+          echo "[Download the desktop installers from $RELEASE_TITLE]($release_url)" >> "$GITHUB_STEP_SUMMARY"

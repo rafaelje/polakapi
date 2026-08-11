@@ -101,6 +101,117 @@ export function promptModal(opts: PromptModalOptions): Promise<string | null> {
   });
 }
 
+export interface SelectModalOption {
+  value: string;
+  label: string;
+}
+
+export interface SelectModalOptions {
+  title: string;
+  message?: string;
+  options: SelectModalOption[];
+  initialValue?: string;
+  confirmLabel?: string;
+  cancelLabel?: string;
+}
+
+let selectModalTitleSequence = 0;
+
+// Multi-choice modal, native <select>. Resolves with the value or null on cancel.
+export function selectModal(opts: SelectModalOptions): Promise<string | null> {
+  return new Promise((resolve) => {
+    const backdrop = document.createElement("div");
+    backdrop.className = "modal-backdrop";
+
+    const dialog = document.createElement("div");
+    dialog.className = "modal-dialog";
+    dialog.setAttribute("role", "dialog");
+    dialog.setAttribute("aria-modal", "true");
+
+    const title = document.createElement("div");
+    title.className = "modal-title";
+    title.id = `select-modal-title-${++selectModalTitleSequence}`;
+    title.textContent = opts.title;
+    dialog.append(title);
+
+    if (opts.message) {
+      const message = document.createElement("div");
+      message.className = "modal-message";
+      message.textContent = opts.message;
+      dialog.append(message);
+    }
+
+    const select = document.createElement("select");
+    select.className = "modal-input";
+    select.setAttribute("aria-labelledby", title.id);
+    for (const option of opts.options) {
+      const optionEl = document.createElement("option");
+      optionEl.value = option.value;
+      optionEl.textContent = option.label;
+      select.append(optionEl);
+    }
+    if (opts.initialValue !== undefined) select.value = opts.initialValue;
+    dialog.append(select);
+
+    const actions = document.createElement("div");
+    actions.className = "modal-actions";
+
+    const cancelBtn = document.createElement("button");
+    cancelBtn.type = "button";
+    cancelBtn.className = "modal-btn";
+    cancelBtn.textContent = opts.cancelLabel ?? "Cancel";
+
+    const confirmBtn = document.createElement("button");
+    confirmBtn.type = "button";
+    confirmBtn.className = "modal-btn modal-btn-primary";
+    confirmBtn.textContent = opts.confirmLabel ?? "OK";
+
+    actions.append(cancelBtn, confirmBtn);
+    dialog.append(actions);
+    backdrop.append(dialog);
+    document.body.append(backdrop);
+
+    let settled = false;
+    const cleanup = (): void => {
+      if (settled) return;
+      settled = true;
+      window.removeEventListener("keydown", onKey);
+      backdrop.remove();
+    };
+    const confirm = (): void => {
+      const value = select.value;
+      cleanup();
+      resolve(value);
+    };
+    const cancel = (): void => {
+      cleanup();
+      resolve(null);
+    };
+
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        cancel();
+      } else if (e.key === "Enter") {
+        e.preventDefault();
+        confirm();
+      }
+    };
+
+    cancelBtn.addEventListener("click", cancel);
+    confirmBtn.addEventListener("click", confirm);
+    backdrop.addEventListener("mousedown", (e) => {
+      if (e.target === backdrop) cancel();
+    });
+    window.addEventListener("keydown", onKey);
+
+    requestAnimationFrame(() => {
+      backdrop.classList.add("visible");
+      select.focus();
+    });
+  });
+}
+
 export interface ConfirmModalOptions {
   title: string;
   message?: string;

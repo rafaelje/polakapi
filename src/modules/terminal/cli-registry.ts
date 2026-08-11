@@ -4,6 +4,7 @@ export interface CliProfile {
   command: string;
   args?: string[];
   kind: "shell" | "ai-cli";
+  resumeArgs?: string[];
 }
 
 export const SHELL_PROFILE: CliProfile = {
@@ -14,9 +15,28 @@ export const SHELL_PROFILE: CliProfile = {
 };
 
 export const AI_CLI_PROFILES: CliProfile[] = [
-  { id: "claude", label: "Claude", command: "claude", kind: "ai-cli" },
-  { id: "codex", label: "Codex", command: "codex", kind: "ai-cli" },
-  { id: "opencode", label: "Opencode", command: "opencode", kind: "ai-cli" },
+  { id: "claude", label: "Claude", command: "claude", kind: "ai-cli", resumeArgs: ["--continue"] },
+  {
+    id: "codex",
+    label: "Codex",
+    command: "codex",
+    kind: "ai-cli",
+    resumeArgs: ["resume", "--last"],
+  },
+  {
+    id: "opencode",
+    label: "Opencode",
+    command: "opencode",
+    kind: "ai-cli",
+    resumeArgs: ["--continue"],
+  },
+  {
+    id: "cursor",
+    label: "Cursor",
+    command: "cursor-agent",
+    kind: "ai-cli",
+    resumeArgs: ["resume"],
+  },
 ];
 
 export const ALL_PROFILES: CliProfile[] = [SHELL_PROFILE, ...AI_CLI_PROFILES];

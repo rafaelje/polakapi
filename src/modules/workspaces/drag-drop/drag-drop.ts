@@ -5,7 +5,7 @@ import {
   type VisualsHandle,
 } from "./drag-drop-visuals";
 import type { SelectionStore } from "../state/selection";
-import type { ProjectId, WorkspaceId } from "../state/types";
+import type { FolderId, ProjectId, WorkspaceId } from "../state/types";
 import type { WorkspacesController } from "../state/workspaces-controller";
 
 // Pointer-event drag-drop for the workspaces panel.
@@ -55,6 +55,7 @@ type Session =
       kind: "project";
       sourceId: ProjectId;
       fromWorkspace: WorkspaceId;
+      fromFolderId: FolderId | undefined;
       ids: ProjectId[];
     })
   | (SessionBase & {
@@ -70,13 +71,19 @@ export function attach(panelRoot: HTMLElement, deps: DragDropDeps): DragDropHand
 
   const resolveProjectDropZone = (
     el: HTMLElement,
-  ): { wsWrap: HTMLElement; list: HTMLElement } | null => {
+  ): { wsWrap: HTMLElement; list: HTMLElement; folderId: FolderId | undefined } | null => {
     const wsWrap = el.closest<HTMLElement>(".ws-workspace");
     if (!wsWrap) return null;
+    // A folder's own project list takes priority when the pointer is inside
+    // one; otherwise fall back to the workspace's ungrouped list.
+    const folderList = el.closest<HTMLElement>(".ws-folder-projects");
     const list =
-      el.closest<HTMLElement>(".ws-projects") ?? wsWrap.querySelector<HTMLElement>(".ws-projects");
+      folderList ??
+      el.closest<HTMLElement>(".ws-projects") ??
+      wsWrap.querySelector<HTMLElement>(".ws-projects");
     if (!list) return null;
-    return { wsWrap, list };
+    const folderId = (folderList?.dataset.folderId as FolderId | undefined) ?? undefined;
+    return { wsWrap, list, folderId };
   };
 
   const moveGhost = (ghost: HTMLElement, clientX: number, clientY: number): void => {
@@ -126,11 +133,13 @@ export function attach(panelRoot: HTMLElement, deps: DragDropDeps): DragDropHand
       const id = projectRow.dataset.projectId as ProjectId | undefined;
       const from = projectRow.dataset.workspaceId as WorkspaceId | undefined;
       if (!id || !from) return;
+      const fromFolderId = (projectRow.dataset.folderId as FolderId | undefined) ?? undefined;
       session = {
         kind: "project",
         sourceEl: projectRow,
         sourceId: id,
         fromWorkspace: from,
+        fromFolderId,
         startX: e.clientX,
         startY: e.clientY,
         pointerId: e.pointerId,
@@ -270,15 +279,19 @@ export function attach(panelRoot: HTMLElement, deps: DragDropDeps): DragDropHand
       }
       const index = computeInsertionIndex(zone.list, clientY, ".ws-project-row", s.idSet);
       const ids = s.ids;
-      if (ids.length > 1 || toWorkspace !== s.fromWorkspace) {
-        controller.moveProjects(ids, toWorkspace, index);
-      } else {
+      const sameBucket =
+        toWorkspace === s.fromWorkspace && zone.folderId === s.fromFolderId && ids.length === 1;
+      if (sameBucket) {
         const allIds = currentOrder<ProjectId>(zone.list, ".ws-project-row");
         const onlyId = ids[0];
         const cur = allIds.indexOf(onlyId);
         if (cur >= 0) allIds.splice(cur, 1);
         allIds.splice(index, 0, onlyId);
-        controller.reorderProjects(toWorkspace, allIds);
+        controller.reorderProjectsInFolder(toWorkspace, zone.folderId, allIds);
+      } else if (ids.length > 1) {
+        controller.moveProjectsToBucket(ids, toWorkspace, zone.folderId, index);
+      } else {
+        controller.moveProjectToBucket(ids[0], toWorkspace, zone.folderId, index);
       }
       visuals.clear();
       return;

@@ -8,6 +8,8 @@ export interface RowMenuItem {
 export interface RowMenuOptions {
   trigger: HTMLElement;
   items: RowMenuItem[];
+  /** Anchor the menu at these viewport coords (context menu) instead of `trigger`. */
+  at?: { x: number; y: number };
 }
 
 export interface RowMenuHandle {
@@ -41,7 +43,7 @@ export function openRowMenu(opts: RowMenuOptions): RowMenuHandle {
   }
 
   document.body.append(menu);
-  positionAt(menu, opts.trigger);
+  positionAt(menu, opts.trigger, opts.at);
 
   const onDocMouseDown = (e: MouseEvent): void => {
     const target = e.target as Node | null;
@@ -79,8 +81,7 @@ export function openRowMenu(opts: RowMenuOptions): RowMenuHandle {
   return handle;
 }
 
-function positionAt(menu: HTMLElement, trigger: HTMLElement): void {
-  const rect = trigger.getBoundingClientRect();
+function positionAt(menu: HTMLElement, trigger: HTMLElement, at?: { x: number; y: number }): void {
   // Initial off-screen layout pass so we get real menu dimensions.
   menu.style.left = "0px";
   menu.style.top = "0px";
@@ -89,12 +90,20 @@ function positionAt(menu: HTMLElement, trigger: HTMLElement): void {
   const viewportH = window.innerHeight;
   const viewportW = window.innerWidth;
 
-  let left = rect.right - menuRect.width;
-  if (left < 8) left = Math.min(rect.left, viewportW - menuRect.width - 8);
-  let top = rect.bottom + 4;
-  if (top + menuRect.height > viewportH - 8) {
-    top = Math.max(8, rect.top - menuRect.height - 4);
+  let left: number;
+  let top: number;
+  if (at) {
+    left = Math.min(at.x, viewportW - menuRect.width - 8);
+    top = Math.min(at.y, viewportH - menuRect.height - 8);
+  } else {
+    const rect = trigger.getBoundingClientRect();
+    left = rect.right - menuRect.width;
+    if (left < 8) left = Math.min(rect.left, viewportW - menuRect.width - 8);
+    top = rect.bottom + 4;
+    if (top + menuRect.height > viewportH - 8) {
+      top = Math.max(8, rect.top - menuRect.height - 4);
+    }
   }
-  menu.style.left = `${left}px`;
-  menu.style.top = `${top}px`;
+  menu.style.left = `${Math.max(8, left)}px`;
+  menu.style.top = `${Math.max(8, top)}px`;
 }
