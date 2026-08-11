@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { ProjectActivityState } from "../../terminal/project-activity";
 import { createSelectionStore } from "../state/selection";
-import type { ProjectId, Workspace, WorkspaceId } from "../state/types";
+import type { FolderId, ProjectId, Workspace, WorkspaceId } from "../state/types";
 import type { WorkspacesController } from "../state/workspaces-controller";
 import { createWorkspaceRow } from "./workspace-row";
 
@@ -111,6 +111,26 @@ describe("workspace row activity summary", () => {
     expect(toggleCollapsed).not.toHaveBeenCalled();
     expect(renameWorkspace).toHaveBeenCalledExactlyOnceWith("w1", "Platform");
     expect(name?.getAttribute("role")).toBe("button");
+    handle.dispose();
+  });
+
+  it("filters projects inside and outside folders", () => {
+    const data = workspace();
+    const folderId = "f1" as FolderId;
+    data.folders = [{ id: folderId, name: "Services" }];
+    data.projects[1].folderId = folderId;
+    const handle = createWorkspaceRow({
+      workspace: data,
+      controller: {
+        getState: () => ({ activeProjectId: null }),
+      } as unknown as WorkspacesController,
+      projectFilter: (project) => project.id === secondId,
+      selection: createSelectionStore(),
+    });
+
+    expect(handle.element.querySelectorAll(".ws-project-row")).toHaveLength(1);
+    expect(handle.element.querySelector(".ws-project-name")?.textContent).toBe("billing");
+    expect(handle.element.querySelectorAll(".ws-folder")).toHaveLength(1);
     handle.dispose();
   });
 });

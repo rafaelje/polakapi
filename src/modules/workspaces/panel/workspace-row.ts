@@ -10,7 +10,7 @@ import { startInlineRename } from "../forms/rename-inline";
 import { normalizeShortcutKey } from "../state/workspaces-reducer-shortcuts";
 import type { ProjectActivityState } from "../../terminal/project-activity";
 import type { SelectionStore } from "../state/selection";
-import type { ProjectId, Workspace } from "../state/types";
+import type { Project, ProjectId, Workspace } from "../state/types";
 import type { WorkspacesController } from "../state/workspaces-controller";
 import { compareByOrderThenName } from "../state/workspaces-reducer-helpers";
 import { sortedWorkspaceEntries } from "../state/workspaces-reducer";
@@ -35,6 +35,7 @@ export interface WorkspaceRowOptions {
    * query are rendered. Workspaces with zero matches are hidden by the panel.
    */
   filterQuery?: string;
+  projectFilter?: (project: Project) => boolean;
   /** Multi-selection store shared across all rows. */
   selection: SelectionStore;
   onSuspendProject?: (projectId: ProjectId) => void;
@@ -136,7 +137,9 @@ export function createWorkspaceRow(opts: WorkspaceRowOptions): WorkspaceRowHandl
   const suspendedCountFor = opts.getSuspendedCount;
   const activeQuery = opts.filterQuery ?? "";
   const projectActivities = new Map<ProjectId, ProjectActivityState>(
-    workspace.projects.map((project) => [project.id, opts.activityFor?.(project.id) ?? "idle"]),
+    workspace.projects
+      .filter((project) => opts.projectFilter?.(project) ?? true)
+      .map((project) => [project.id, opts.activityFor?.(project.id) ?? "idle"]),
   );
   const bellPendingProjects = new Set<ProjectId>();
   for (const project of workspace.projects) {
@@ -177,6 +180,7 @@ export function createWorkspaceRow(opts: WorkspaceRowOptions): WorkspaceRowHandl
 
   for (const entry of sortedWorkspaceEntries(workspace)) {
     if (entry.kind === "project") {
+      if (opts.projectFilter && !opts.projectFilter(entry.project)) continue;
       // Search filtering for ungrouped projects, applied per-entry (same
       // matching rule `filterProjects` uses for the whole list).
       if (activeQuery && !matchesProject(activeQuery, workspace.name, entry.project)) continue;
@@ -208,9 +212,12 @@ export function createWorkspaceRow(opts: WorkspaceRowOptions): WorkspaceRowHandl
     // Skip a folder entirely when a search is active and none of its
     // projects match — same "hide empty groups" rule the panel already
     // applies to whole workspaces.
-    if (activeQuery) {
+    if (activeQuery || opts.projectFilter) {
       const hasMatch = workspace.projects.some(
-        (p) => p.folderId === folder.id && matchesProject(activeQuery, workspace.name, p),
+        (project) =>
+          project.folderId === folder.id &&
+          (!opts.projectFilter || opts.projectFilter(project)) &&
+          (!activeQuery || matchesProject(activeQuery, workspace.name, project)),
       );
       if (!hasMatch) continue;
     }
@@ -223,6 +230,7 @@ export function createWorkspaceRow(opts: WorkspaceRowOptions): WorkspaceRowHandl
       bellPendingFor: opts.bellPendingFor,
       getSuspendedCount: opts.getSuspendedCount,
       filterQuery: opts.filterQuery,
+      projectFilter: opts.projectFilter,
       selection: opts.selection,
       onSuspendProject: opts.onSuspendProject,
       onResumeProject: opts.onResumeProject,

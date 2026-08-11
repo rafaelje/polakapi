@@ -117,6 +117,7 @@ export async function bootstrapWorkspaces(
     controller,
     liveCounts: router,
     bellSource,
+    activeOnlyToggle: elements.activeProjectsOnlyToggle,
     onSuspendProject: (projectId) => router.getById(projectId)?.suspendAll(),
     onResumeProject: (projectId) => void router.getById(projectId)?.resumeAll(),
   });
