@@ -1,12 +1,23 @@
+import { isMacPlatform } from "../../shared/keyboard/shortcuts";
+
 export interface TerminalKeybindingSource {
   element?: HTMLElement;
 }
 
-export function resolveTerminalKeyInput(event: KeyboardEvent): string | null {
-  if (!event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return null;
+export function resolveTerminalKeyInput(event: KeyboardEvent, isMac: boolean): string | null {
+  if (event.altKey) return null;
 
-  if (event.key === "ArrowLeft") return "\x01";
-  if (event.key === "ArrowRight") return "\x05";
+  if (event.shiftKey && event.key === "Enter" && !event.metaKey && !event.ctrlKey) {
+    return "\n";
+  }
+
+  if (event.shiftKey) return null;
+
+  const cmdHeld = isMac ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey;
+  if (!cmdHeld) return null;
+
+  if (isMac && event.key === "ArrowLeft") return "\x01";
+  if (isMac && event.key === "ArrowRight") return "\x05";
   return null;
 }
 
@@ -17,8 +28,9 @@ export function attachTerminalKeybindings(
   const element = source.element;
   if (!element) return { dispose: () => {} };
 
+  const isMac = isMacPlatform();
   const onKeyDown = (event: KeyboardEvent): void => {
-    const data = resolveTerminalKeyInput(event);
+    const data = resolveTerminalKeyInput(event, isMac);
     if (data === null) return;
 
     event.preventDefault();
