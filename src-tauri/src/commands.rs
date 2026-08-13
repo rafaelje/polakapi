@@ -90,9 +90,12 @@ pub fn fs_validate_path(path: String) -> Result<(), String> {
     validate_path(&path).map_err(|err| err.as_contract_string())
 }
 
-/// Creates `parent/name` on disk and returns the new absolute path.
+/// Creates `parent/name` on disk, runs `git init` inside it and returns the
+/// new absolute path so the frontend can register it as a project. The
+/// directory is removed again if `git init` fails, so no orphan folder is
+/// left behind.
 #[tauri::command]
-pub fn fs_create_folder(parent: String, name: String) -> Result<String, String> {
+pub fn create_project_folder(parent: String, name: String) -> Result<String, String> {
     let parent_path = std::path::Path::new(&parent);
     if !parent_path.is_dir() {
         return Err(format!("parent is not a directory: {parent}"));
@@ -106,7 +109,26 @@ pub fn fs_create_folder(parent: String, name: String) -> Result<String, String> 
         return Err(format!("already exists: {}", dest.display()));
     }
     std::fs::create_dir(&dest).map_err(|e| format!("could not create {}: {e}", dest.display()))?;
-    Ok(dest.to_string_lossy().to_string())
+
+    let output = std::process::Command::new("git")
+        .arg("init")
+        .current_dir(&dest)
+        .stdin(std::process::Stdio::null())
+        .output();
+    match output {
+        Ok(out) if out.status.success() => Ok(dest.to_string_lossy().to_string()),
+        Ok(out) => {
+            let _ = std::fs::remove_dir_all(&dest);
+            Err(format!(
+                "git init failed: {}",
+                String::from_utf8_lossy(&out.stderr).trim()
+            ))
+        }
+        Err(e) => {
+            let _ = std::fs::remove_dir_all(&dest);
+            Err(format!("could not run git init: {e}"))
+        }
+    }
 }
 
 fn is_valid_folder_name(name: &str) -> bool {
@@ -117,6 +139,36 @@ fn is_valid_folder_name(name: &str) -> bool {
         && !name.contains('/')
         && !name.contains('\\')
         && !name.contains('\0')
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn create_project_folder_creates_dir_and_inits_git() {
+        let tmp = tempfile::tempdir().unwrap();
+        let parent = tmp.path().to_string_lossy().to_string();
+
+        let path = create_project_folder(parent, "my-project".into()).unwrap();
+
+        let dest = std::path::Path::new(&path);
+        assert!(dest.is_dir());
+        assert!(dest.join(".git").is_dir());
+    }
+
+    #[test]
+    fn create_project_folder_rejects_bad_inputs() {
+        let tmp = tempfile::tempdir().unwrap();
+        let parent = tmp.path().to_string_lossy().to_string();
+
+        assert!(create_project_folder("/nonexistent-parent".into(), "x".into()).is_err());
+        assert!(create_project_folder(parent.clone(), "..".into()).is_err());
+        assert!(create_project_folder(parent.clone(), "a/b".into()).is_err());
+
+        std::fs::create_dir(tmp.path().join("taken")).unwrap();
+        assert!(create_project_folder(parent, "taken".into()).is_err());
+    }
 }
 
 /// Opens `path` in the OS file manager (Finder / Explorer / xdg-open).

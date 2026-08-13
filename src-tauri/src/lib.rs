@@ -32,7 +32,7 @@ use crate::adv_review::{
 };
 use crate::agent_sessions::agent_list_sessions;
 use crate::commands::{
-    app_exit, fs_create_folder, fs_validate_path, open_file_in_editor, open_in_editor,
+    app_exit, create_project_folder, fs_validate_path, open_file_in_editor, open_in_editor,
     open_in_explorer, open_in_shell, open_local_path, open_url, pty_kill, pty_resize, pty_spawn,
     pty_write,
 };
@@ -148,7 +148,7 @@ pub fn run() {
             keep_awake_set,
             app_exit,
             fs_validate_path,
-            fs_create_folder,
+            create_project_folder,
             open_in_explorer,
             open_in_editor,
             open_in_shell,

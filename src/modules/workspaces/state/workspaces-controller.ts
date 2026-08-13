@@ -27,7 +27,6 @@ import {
 } from "./workspaces-reducer-shortcuts";
 import type {
   ColorToken,
-  Folder,
   FolderId,
   LayoutTemplate,
   Project,
@@ -40,7 +39,6 @@ import type {
   WorkspacesState,
 } from "./types";
 import {
-  addFolder,
   addProject,
   addTerminalSpec,
   addWorkspace,
@@ -405,11 +403,9 @@ export class WorkspacesController {
   resetAlphabeticalOrder = (workspaceId: WorkspaceId): void =>
     this.commit(resetAlphabeticalOrder(this.state, workspaceId));
 
-  // Single-level sidebar folders. Same thin commit-wrapper style as the
-  // project/workspace setters above.
   // Picks a parent directory, prompts a name, creates `parent/name` on disk
-  // and registers it as a sidebar folder backed by that path.
-  async createFolderInteractive(workspaceId: WorkspaceId): Promise<Folder | null> {
+  // (the backend runs `git init` inside it) and registers it as a project.
+  async createProjectFolderInteractive(workspaceId: WorkspaceId): Promise<Project | null> {
     const workspace = this.state.workspaces.find((w) => w.id === workspaceId);
     if (!workspace) return null;
 
@@ -417,9 +413,9 @@ export class WorkspacesController {
     if (!parent) return null;
 
     const name = await promptModal({
-      title: "New folder",
+      title: "New project",
       message: `Will be created inside ${parent}`,
-      placeholder: "Folder name",
+      placeholder: "Project name",
       confirmLabel: "Create",
     });
     if (name === null) return null;
@@ -429,20 +425,19 @@ export class WorkspacesController {
     let path: string;
     try {
       path = await invoke<string>(
-        "fs_create_folder",
+        "create_project_folder",
         { parent, name: trimmed },
         { toastOnError: false },
       );
     } catch (cause) {
       const raw = cause instanceof InvokeError ? cause.cause : cause;
-      showToast(typeof raw === "string" ? raw : "Could not create folder", "error");
+      showToast(typeof raw === "string" ? raw : "Could not create project", "error");
       return null;
     }
 
-    const before = workspace.folders?.length ?? 0;
-    this.commit(addFolder(this.state, workspaceId, trimmed, path));
-    const updated = this.state.workspaces.find((w) => w.id === workspaceId);
-    return updated?.folders?.[before] ?? null;
+    const created = this.addProject(workspaceId, { name: trimmed, path });
+    if (created) this.setActiveProject(created.id);
+    return created;
   }
 
   renameFolder = (workspaceId: WorkspaceId, folderId: FolderId, name: string): void => {
