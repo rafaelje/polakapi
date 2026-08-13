@@ -12,7 +12,12 @@ import {
   pasteIntoTerminal,
 } from "./terminal-clipboard";
 import { attachTerminalKeybindings } from "./terminal-keybindings";
-import { classifyLinkText, createPathLinkProvider, openLinkFromText } from "./terminal-links";
+import {
+  classifyLinkText,
+  createPathLinkProvider,
+  isPrimaryClick,
+  openLinkFromText,
+} from "./terminal-links";
 import { openPaneMenu, openCliRespawnMenu, openTerminalContextMenu } from "./terminal-pane-menu";
 import { attachShellCommandCapture } from "./terminal-shell-integration";
 import type {
@@ -103,6 +108,7 @@ export class TerminalPane {
       linkHandler: {
         allowNonHttpProtocols: true,
         activate: (event, text) => {
+          if (!isPrimaryClick(event)) return;
           event.preventDefault();
           openLinkFromText(text);
         },
@@ -113,6 +119,7 @@ export class TerminalPane {
     // Plain-text URL detection; same Rust-routed activation as above.
     this.term.loadAddon(
       new WebLinksAddon((event, uri) => {
+        if (!isPrimaryClick(event)) return;
         event.preventDefault();
         openLinkFromText(uri);
       }),
