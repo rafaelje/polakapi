@@ -238,6 +238,23 @@ describe("WorkspacesController", () => {
     expect(controller.getActiveProject()?.id).toBe(created?.id);
   });
 
+  it("createProjectFolderInteractive toasts the path when the project cannot be registered", async () => {
+    persistence.loadWorkspaces.mockResolvedValueOnce(seededState());
+    pathPicker.pickProjectFolder.mockResolvedValueOnce("/home/user/code");
+    modal.promptModal.mockResolvedValueOnce("backend");
+    tauriInvoke.invoke.mockResolvedValueOnce("/home/user/code/backend");
+    const controller = await WorkspacesController.load();
+    vi.spyOn(controller, "addProject").mockReturnValueOnce(null);
+
+    const created = await controller.createProjectFolderInteractive(wid("w1"));
+
+    expect(created).toBeNull();
+    expect(toast.showToast).toHaveBeenCalledWith(
+      "Created /home/user/code/backend, but the project could not be added",
+      "error",
+    );
+  });
+
   it("createProjectFolderInteractive toasts the raw error and adds nothing on failure", async () => {
     persistence.loadWorkspaces.mockResolvedValueOnce(seededState());
     pathPicker.pickProjectFolder.mockResolvedValueOnce("/home/user/code");

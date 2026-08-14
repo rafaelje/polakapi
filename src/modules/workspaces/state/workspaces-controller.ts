@@ -436,7 +436,11 @@ export class WorkspacesController {
     }
 
     const created = this.addProject(workspaceId, { name: trimmed, path });
-    if (created) this.setActiveProject(created.id);
+    if (!created) {
+      showToast(`Created ${path}, but the project could not be added`, "error");
+      return null;
+    }
+    this.setActiveProject(created.id);
     return created;
   }
 
