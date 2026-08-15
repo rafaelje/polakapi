@@ -189,16 +189,29 @@ describe("attachTerminalDrop", () => {
   });
 
   it("writes shell-quoted paths to the PTY of the pane under the cursor", () => {
+    const originalUserAgentData = Object.getOwnPropertyDescriptor(navigator, "userAgentData");
+    Object.defineProperty(navigator, "userAgentData", {
+      value: { platform: "Linux" },
+      configurable: true,
+    });
     const { gridEl, paneEl } = makeGridWithPane("pty-77");
     const router = { getActiveHost: (): HTMLElement | null => gridEl };
     const handle = attachTerminalDrop({ gridEl, router });
 
-    setElementFromPoint(paneEl);
+    try {
+      setElementFromPoint(paneEl);
 
-    webview.fire({ type: "drop", position: { x: 10, y: 20 }, paths: ["/a/b.txt"] });
+      webview.fire({ type: "drop", position: { x: 10, y: 20 }, paths: ["/a/b.txt"] });
 
-    expect(ptyClient.ptyWrite).toHaveBeenCalledExactlyOnceWith("pty-77", "'/a/b.txt' ");
-    handle.detach();
+      expect(ptyClient.ptyWrite).toHaveBeenCalledExactlyOnceWith("pty-77", "'/a/b.txt' ");
+    } finally {
+      handle.detach();
+      if (originalUserAgentData) {
+        Object.defineProperty(navigator, "userAgentData", originalUserAgentData);
+      } else {
+        Reflect.deleteProperty(navigator, "userAgentData");
+      }
+    }
   });
 
   it("toggles .pane-drop-target on enter/leave", () => {
