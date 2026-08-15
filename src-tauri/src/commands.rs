@@ -96,7 +96,8 @@ pub fn fs_validate_path(path: String) -> Result<(), String> {
 /// left behind.
 #[tauri::command]
 pub fn create_project_folder(parent: String, name: String) -> Result<String, String> {
-    let parent_path = std::path::Path::new(&parent);
+    let parent_path = std::fs::canonicalize(&parent)
+        .map_err(|e| format!("could not resolve parent directory {parent}: {e}"))?;
     if !parent_path.is_dir() {
         return Err(format!("parent is not a directory: {parent}"));
     }
@@ -131,6 +132,8 @@ pub fn create_project_folder(parent: String, name: String) -> Result<String, Str
     }
 }
 
+/// Rejects names that would escape the selected parent or are invalid as a
+/// single filesystem path component.
 fn is_valid_folder_name(name: &str) -> bool {
     !name.is_empty()
         && name.len() <= 255
@@ -155,6 +158,23 @@ mod tests {
         let dest = std::path::Path::new(&path);
         assert!(dest.is_dir());
         assert!(dest.join(".git").is_dir());
+    }
+
+    #[test]
+    fn create_project_folder_returns_an_absolute_path_for_a_relative_parent() {
+        let current_dir = std::env::current_dir().unwrap();
+        let tmp = tempfile::tempdir_in(&current_dir).unwrap();
+        let relative_parent = tmp
+            .path()
+            .strip_prefix(&current_dir)
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
+
+        let path = create_project_folder(relative_parent, "my-project".into()).unwrap();
+
+        assert!(std::path::Path::new(&path).is_absolute());
+        assert!(std::path::Path::new(&path).join(".git").is_dir());
     }
 
     #[test]
