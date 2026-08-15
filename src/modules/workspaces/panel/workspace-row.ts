@@ -318,8 +318,8 @@ export function createWorkspaceRow(opts: WorkspaceRowOptions): WorkspaceRowHandl
           onSelect: () => void controller.createProjectInteractive(workspace.id),
         },
         {
-          label: "New folder…",
-          onSelect: () => void controller.createFolderInteractive(workspace.id),
+          label: "New project…",
+          onSelect: () => void controller.createProjectFolderInteractive(workspace.id),
         },
         {
           label: "Clone repo…",
