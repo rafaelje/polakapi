@@ -61,3 +61,27 @@ jobs:
         uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
         with:
           manifest-path: src-tauri/Cargo.toml
+
+  windows:
+    name: Windows compatibility
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run test
+      - run: pnpm run build
+      - name: Test Windows Rust backend
+        run: cargo test --manifest-path src-tauri/Cargo.toml
+      - name: Build Windows desktop executable
+        run: pnpm tauri build --no-bundle

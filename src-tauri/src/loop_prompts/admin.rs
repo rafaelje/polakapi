@@ -6,8 +6,8 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::Duration;
 
+use crate::platform_command;
 use serde::{Deserialize, Serialize};
-use tokio::process::Command as TokioCommand;
 
 use super::storage::is_allowed_output_agent;
 use super::{epoch_ms_now, is_safe_run_id};
@@ -391,7 +391,10 @@ pub async fn loop_validate_cli_model(cli: String, _model: String) -> Result<CliV
         return Ok(CliValidation::err(format!("unsupported CLI: {cli}")));
     }
 
-    let mut cmd = TokioCommand::new(&cli_lower);
+    let mut cmd = match platform_command::tokio_command(&cli_lower) {
+        Ok(command) => command,
+        Err(_) => return Ok(CliValidation::err(format!("{cli_lower} not found in PATH"))),
+    };
     cmd.arg("--version")
         .stdin(Stdio::null())
         .stdout(Stdio::null())

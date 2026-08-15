@@ -5,5 +5,6 @@ export default defineConfig({
     environment: "jsdom",
     include: ["src/**/*.test.ts"],
     css: false,
+    maxWorkers: process.platform === "win32" ? 4 : undefined,
   },
 });

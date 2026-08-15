@@ -1,4 +1,7 @@
 use serde::Serialize;
+use std::path::Path;
+
+use crate::platform_command;
 
 const POLAKAPI_HOOK_MARKER: &str = "polakapi-managed";
 
@@ -29,15 +32,20 @@ pub fn install_hooks_for_cli(cli: &str) -> Result<InstallHooksResult, String> {
 }
 
 fn install_hooks(cli: &str, bin: &str) -> Result<InstallHooksResult, String> {
-    let home = std::env::var("HOME").map_err(|_| "HOME not set".to_string())?;
+    let home = user_home_dir()?;
+    install_hooks_at_home(cli, bin, &home)
+}
+
+fn install_hooks_at_home(cli: &str, bin: &str, home: &Path) -> Result<InstallHooksResult, String> {
     let (directory, file) = match cli {
         "claude" => (".claude", "settings.json"),
         "codex" => (".codex", "hooks.json"),
         _ => return Err(format!("unsupported cli: {cli}")),
     };
-    let directory = format!("{home}/{directory}");
-    std::fs::create_dir_all(&directory).map_err(|e| format!("mkdir {directory}: {e}"))?;
-    let path = format!("{directory}/{file}");
+    let directory = home.join(directory);
+    std::fs::create_dir_all(&directory)
+        .map_err(|e| format!("mkdir {}: {e}", directory.display()))?;
+    let path = directory.join(file);
     let mut root = read_settings(&path)?;
     let already_installed = has_marker(&root);
 
@@ -53,9 +61,9 @@ fn install_hooks(cli: &str, bin: &str) -> Result<InstallHooksResult, String> {
         } else {
             root["hooks"] = desired;
         }
-        let serialized =
-            serde_json::to_string_pretty(&root).map_err(|e| format!("serialize {path}: {e}"))?;
-        std::fs::write(&path, serialized).map_err(|e| format!("write {path}: {e}"))?;
+        let serialized = serde_json::to_string_pretty(&root)
+            .map_err(|e| format!("serialize {}: {e}", path.display()))?;
+        std::fs::write(&path, serialized).map_err(|e| format!("write {}: {e}", path.display()))?;
     }
 
     Ok(InstallHooksResult {
@@ -68,20 +76,25 @@ fn install_hooks(cli: &str, bin: &str) -> Result<InstallHooksResult, String> {
             } else {
                 "installed"
             },
-            path
+            path.display()
         ),
         already_installed,
     })
 }
 
-fn read_settings(path: &str) -> Result<serde_json::Value, String> {
+fn user_home_dir() -> Result<std::path::PathBuf, String> {
+    platform_command::user_home_dir()
+        .ok_or_else(|| "user home directory is unavailable".to_string())
+}
+
+fn read_settings(path: &Path) -> Result<serde_json::Value, String> {
     let Ok(content) = std::fs::read_to_string(path) else {
         return Ok(serde_json::json!({}));
     };
     if content.trim().is_empty() {
         return Ok(serde_json::json!({}));
     }
-    serde_json::from_str(&content).map_err(|e| format!("parse {path}: {e}"))
+    serde_json::from_str(&content).map_err(|e| format!("parse {}: {e}", path.display()))
 }
 
 fn desired_hooks(bin: &str) -> serde_json::Value {
@@ -171,5 +184,18 @@ mod tests {
         assert_eq!(stop.len(), 2);
         assert_eq!(stop[0]["hooks"][0]["command"], "user-command");
         assert_eq!(stop[1]["hooks"][0]["_polakapi"], POLAKAPI_HOOK_MARKER);
+    }
+
+    #[test]
+    fn installs_hooks_under_the_supplied_home_directory() {
+        let home = tempfile::tempdir().unwrap();
+        let result =
+            install_hooks_at_home("claude", r"C:\Program Files\polakapi.exe", home.path()).unwrap();
+
+        assert!(result.ok);
+        let settings = home.path().join(".claude").join("settings.json");
+        assert!(settings.is_file());
+        let root = read_settings(&settings).unwrap();
+        assert!(has_marker(&root));
     }
 }

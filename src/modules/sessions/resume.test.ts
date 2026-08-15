@@ -62,4 +62,28 @@ describe("selectResumeProject", () => {
   it("falls back to the active project", () => {
     expect(selectResumeProject(state, "/outside")?.id).toBe(activeId);
   });
+
+  it("matches Windows paths across casing, separators, and a trailing slash", () => {
+    const windowsState: WorkspacesState = {
+      ...state,
+      workspaces: [
+        {
+          ...state.workspaces[0],
+          projects: [
+            state.workspaces[0].projects[0],
+            {
+              ...state.workspaces[0].projects[1],
+              path: "C:\\Users\\Dev\\Polakapi",
+            },
+          ],
+        },
+      ],
+    };
+
+    expect(selectResumeProject(windowsState, "c:/users/dev/polakapi/")?.id).toBe(matchingId);
+  });
+
+  it("keeps POSIX path matching case-sensitive", () => {
+    expect(selectResumeProject(state, "/SESSION/PATH")?.id).toBe(activeId);
+  });
 });

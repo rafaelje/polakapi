@@ -9,8 +9,11 @@ export type TerminalLinkTarget = { kind: "url"; url: string } | { kind: "path"; 
 
 /** Punctuation prose wraps around a link but that is not part of it. */
 const TRAILING_PUNCT = /[.,;!?)\]}'"”’>]+$/;
+const TRAILING_PATH_PUNCT = /[.,;!?}'"”’>]+$/;
 /** Trailing `:line` / `:line:col` file references emitted by compilers. */
 const LINE_COL_SUFFIX = /(:\d+){1,2}$/;
+const WINDOWS_DRIVE_PATH = /^[A-Za-z]:[\\/]/;
+const WINDOWS_NETWORK_OR_DEVICE_PATH = /^[\\/]{2}/;
 
 /**
  * Maps raw link text (OSC 8 uri, detected URL, or detected path) to an
@@ -22,18 +25,45 @@ export function classifyLinkText(raw: string): TerminalLinkTarget | null {
     return { kind: "url", url: text.replace(TRAILING_PUNCT, "") };
   }
   if (/^file:\/\//i.test(text)) {
-    try {
-      const path = decodeURIComponent(text.replace(/^file:\/\/(localhost)?/i, ""));
-      return path.startsWith("/") ? { kind: "path", path } : null;
-    } catch {
-      return null;
-    }
+    const path = pathFromFileUri(text);
+    return path === null ? null : { kind: "path", path };
   }
-  if (text.startsWith("/") || text === "~" || text.startsWith("~/")) {
-    const path = text.replace(TRAILING_PUNCT, "").replace(LINE_COL_SUFFIX, "");
+  const path = stripPathDecorations(text);
+  if (isOpenablePath(path)) {
     return { kind: "path", path };
   }
   return null;
+}
+
+function pathFromFileUri(text: string): string | null {
+  try {
+    const uri = new URL(text.replace(TRAILING_PUNCT, ""));
+    const host = uri.hostname;
+    if (host && host.toLowerCase() !== "localhost") return null;
+    let path = decodeURIComponent(uri.pathname);
+    if (/^\/[A-Za-z]:[\\/]/.test(path)) {
+      path = path.slice(1);
+    }
+    path = stripPathDecorations(path);
+    return isOpenablePath(path) ? path : null;
+  } catch {
+    return null;
+  }
+}
+
+function stripPathDecorations(path: string): string {
+  return path.replace(TRAILING_PATH_PUNCT, "").replace(LINE_COL_SUFFIX, "");
+}
+
+function isOpenablePath(path: string): boolean {
+  if (WINDOWS_NETWORK_OR_DEVICE_PATH.test(path)) return false;
+  return (
+    path.startsWith("/") ||
+    path === "~" ||
+    path.startsWith("~/") ||
+    path.startsWith("~\\") ||
+    WINDOWS_DRIVE_PATH.test(path)
+  );
 }
 
 /**
@@ -74,6 +104,10 @@ export interface PathMatch {
 // which the "//host/…" part of a URL never does.
 const PATH_RE = /(?:^|[\s"'`([<=])((?:~)?\/[\w.@+~-]+(?:\/[\w.@+~-]+)*\/?(?::\d+(?::\d+)?)?)/g;
 
+const QUOTED_WINDOWS_PATH_RE = /(["'])([A-Za-z]:[\\/].*?)\1/g;
+const WINDOWS_PATH_RE =
+  /(?:^|[\s`([<=])([A-Za-z]:[\\/](?:[^"'`<>\r\n]*?:\d+(?::\d+)?(?=$|[\s,;!?)}\]>])|[^\s"'`<>()[\]{}]+))/g;
+
 // file:// URIs (Claude and other CLIs print these for docs/artifacts they
 // create). WebLinksAddon only matches http(s), so these need their own scan.
 const FILE_URI_RE = /(?:^|[\s"'`([<])(file:\/\/[^\s"'`)\]>]+)/gi;
@@ -89,9 +123,20 @@ export function findAbsolutePaths(lineText: string): PathMatch[] {
   for (const match of lineText.matchAll(FILE_URI_RE)) {
     const text = match[1].replace(TRAILING_PUNCT, "");
     if (text.length <= "file://".length) continue;
+    if (classifyLinkText(text)?.kind !== "path") continue;
     out.push({ start: (match.index ?? 0) + match[0].length - match[1].length, text });
   }
-  return out;
+  for (const match of lineText.matchAll(QUOTED_WINDOWS_PATH_RE)) {
+    const text = match[2];
+    if (!isOpenablePath(stripPathDecorations(text))) continue;
+    out.push({ start: (match.index ?? 0) + match[1].length, text });
+  }
+  for (const match of lineText.matchAll(WINDOWS_PATH_RE)) {
+    const text = match[1].replace(TRAILING_PUNCT, "");
+    if (!isOpenablePath(stripPathDecorations(text))) continue;
+    out.push({ start: (match.index ?? 0) + match[0].length - match[1].length, text });
+  }
+  return out.sort((left, right) => left.start - right.start);
 }
 
 /**

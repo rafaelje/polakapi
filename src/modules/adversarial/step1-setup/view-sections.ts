@@ -1,4 +1,5 @@
 import type { LoopCli } from "../../loop/types";
+import { normalizePath, pathStartsWith, pathsEqual } from "../../path-comparison";
 import type { CliValidation } from "../scheduler/invokers";
 import {
   cliSupportsEffort,
@@ -211,19 +212,15 @@ export function parseScopeInput(raw: string): string[] {
  * outside the project (which the caller reports as a toast).
  */
 export function toRelativePath(projectPath: string, abs: string): string | null {
-  const projectVariants = macCanonicalVariants(normalize(projectPath));
-  const absVariants = macCanonicalVariants(normalize(abs));
+  const projectVariants = macCanonicalVariants(normalizePath(projectPath));
+  const absVariants = macCanonicalVariants(normalizePath(abs));
   for (const p of projectVariants) {
     for (const a of absVariants) {
-      if (a === p) return "";
-      if (a.startsWith(p + "/")) return a.slice(p.length + 1);
+      if (pathsEqual(a, p)) return "";
+      if (pathStartsWith(a, p)) return a.slice(p.length + 1);
     }
   }
   return null;
-}
-
-function normalize(path: string): string {
-  return path.replace(/\\/g, "/").replace(/\/+$/, "");
 }
 
 /**

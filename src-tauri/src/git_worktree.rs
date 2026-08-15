@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
 use crate::git_review::{detect_base_ref_sync, validate_repo_path};
+use crate::platform_command::external_path;
 
 #[tauri::command]
 pub async fn git_create_worktree(project_path: String, branch: String) -> Result<String, String> {
@@ -40,7 +41,9 @@ fn create_worktree_sync(project_path: &str, branch: &str) -> Result<String, Stri
     std::fs::create_dir_all(worktrees_root)
         .map_err(|e| format!("could not create {}: {e}", worktrees_root.display()))?;
 
-    let worktree_path_str = worktree_path.to_string_lossy().to_string();
+    let project_for_git = external_path(&project);
+    let worktree_path_for_git = external_path(&worktree_path);
+    let worktree_path_str = worktree_path_for_git.to_string_lossy().to_string();
     let output = Command::new("git")
         .args([
             "worktree",
@@ -50,7 +53,7 @@ fn create_worktree_sync(project_path: &str, branch: &str) -> Result<String, Stri
             &worktree_path_str,
             &base_ref,
         ])
-        .current_dir(&project)
+        .current_dir(project_for_git)
         .stdin(Stdio::null())
         .output()
         .map_err(|e| format!("could not run git worktree add: {e}"))?;

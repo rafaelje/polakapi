@@ -91,16 +91,73 @@ describe("formatPathsForShell", () => {
   });
 
   it("single-quotes a simple path with trailing space", () => {
-    expect(formatPathsForShell(["/tmp/foo.txt"])).toBe("'/tmp/foo.txt' ");
+    expect(formatPathsForShell(["/tmp/foo.txt"], "posix")).toBe("'/tmp/foo.txt' ");
   });
 
   it("escapes embedded single quotes", () => {
-    // POSIX: ' → '\''
-    expect(formatPathsForShell(["/x/it's.txt"])).toBe(`'/x/it'\\''s.txt' `);
+    expect(formatPathsForShell(["/x/it's.txt"], "posix")).toBe(`'/x/it'\\''s.txt' `);
   });
 
   it("space-separates multiple paths", () => {
-    expect(formatPathsForShell(["/a b/c", "/d.txt"])).toBe("'/a b/c' '/d.txt' ");
+    expect(formatPathsForShell(["/a b/c", "/d.txt"], "posix")).toBe("'/a b/c' '/d.txt' ");
+  });
+
+  it("double-quotes Windows paths for cmd-compatible insertion", () => {
+    expect(
+      formatPathsForShell(
+        ["C:\\Program Files\\polakapi\\notes.txt", "D:\\src\\main.ts"],
+        "windows",
+      ),
+    ).toBe('"C:\\Program Files\\polakapi\\notes.txt" "D:\\src\\main.ts" ');
+  });
+
+  it("prefers navigator.userAgentData when detecting the Windows shell platform", () => {
+    const originalUserAgentData = Object.getOwnPropertyDescriptor(navigator, "userAgentData");
+    Object.defineProperty(navigator, "userAgentData", {
+      value: { platform: "Windows" },
+      configurable: true,
+    });
+    try {
+      expect(formatPathsForShell(["C:\\a b.txt"])).toBe('"C:\\a b.txt" ');
+    } finally {
+      if (originalUserAgentData) {
+        Object.defineProperty(navigator, "userAgentData", originalUserAgentData);
+      } else {
+        Reflect.deleteProperty(navigator, "userAgentData");
+      }
+    }
+  });
+
+  it("falls back to navigator.userAgent when userAgentData is unavailable", () => {
+    const originalUserAgent = navigator.userAgent;
+    const originalUserAgentData = Object.getOwnPropertyDescriptor(navigator, "userAgentData");
+    Object.defineProperty(navigator, "userAgentData", { value: undefined, configurable: true });
+    Object.defineProperty(navigator, "userAgent", {
+      value: "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+      configurable: true,
+    });
+    try {
+      expect(formatPathsForShell(["C:\\a b.txt"])).toBe('"C:\\a b.txt" ');
+    } finally {
+      if (originalUserAgentData) {
+        Object.defineProperty(navigator, "userAgentData", originalUserAgentData);
+      } else {
+        Reflect.deleteProperty(navigator, "userAgentData");
+      }
+      Object.defineProperty(navigator, "userAgent", {
+        value: originalUserAgent,
+        configurable: true,
+      });
+    }
+  });
+
+  it("defaults to POSIX when navigator is unavailable", () => {
+    vi.stubGlobal("navigator", undefined);
+    try {
+      expect(formatPathsForShell(["/tmp/a b.txt"])).toBe("'/tmp/a b.txt' ");
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });
 
@@ -132,16 +189,29 @@ describe("attachTerminalDrop", () => {
   });
 
   it("writes shell-quoted paths to the PTY of the pane under the cursor", () => {
+    const originalUserAgentData = Object.getOwnPropertyDescriptor(navigator, "userAgentData");
+    Object.defineProperty(navigator, "userAgentData", {
+      value: { platform: "Linux" },
+      configurable: true,
+    });
     const { gridEl, paneEl } = makeGridWithPane("pty-77");
     const router = { getActiveHost: (): HTMLElement | null => gridEl };
     const handle = attachTerminalDrop({ gridEl, router });
 
-    setElementFromPoint(paneEl);
+    try {
+      setElementFromPoint(paneEl);
 
-    webview.fire({ type: "drop", position: { x: 10, y: 20 }, paths: ["/a/b.txt"] });
+      webview.fire({ type: "drop", position: { x: 10, y: 20 }, paths: ["/a/b.txt"] });
 
-    expect(ptyClient.ptyWrite).toHaveBeenCalledExactlyOnceWith("pty-77", "'/a/b.txt' ");
-    handle.detach();
+      expect(ptyClient.ptyWrite).toHaveBeenCalledExactlyOnceWith("pty-77", "'/a/b.txt' ");
+    } finally {
+      handle.detach();
+      if (originalUserAgentData) {
+        Object.defineProperty(navigator, "userAgentData", originalUserAgentData);
+      } else {
+        Reflect.deleteProperty(navigator, "userAgentData");
+      }
+    }
   });
 
   it("toggles .pane-drop-target on enter/leave", () => {

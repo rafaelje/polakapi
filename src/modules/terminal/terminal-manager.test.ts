@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 
 import type { LayoutTemplate, ProjectId } from "../workspaces/state/types";
 import { terminalLayoutPaneIds, type TerminalLayoutNode } from "./terminal-layout";
@@ -103,7 +103,6 @@ vi.mock("./terminal-split-layout", () => ({
 }));
 
 import { TerminalManager } from "./terminal-manager";
-
 function pid(id: string): ProjectId {
   return id as ProjectId;
 }
@@ -112,12 +111,14 @@ function makeManager(opts?: {
   activeCliId?: string;
   layout?: TerminalLayoutNode;
 }): TerminalManager {
-  return new TerminalManager({
+  const manager = new TerminalManager({
     projectId: pid("p1"),
     defaultCwd: "/tmp/project",
     activeCliId: opts?.activeCliId,
     layout: opts?.layout,
   });
+  onTestFinished(() => manager.dispose());
+  return manager;
 }
 
 describe("TerminalManager CLI wiring", () => {

@@ -33,6 +33,26 @@ describe("classifyLinkText", () => {
       kind: "path",
       path: "/etc/hosts",
     });
+    expect(classifyLinkText("file:///C:/Users/dev/a%20b.txt")).toEqual({
+      kind: "path",
+      path: "C:/Users/dev/a b.txt",
+    });
+    expect(classifyLinkText("file://localhost/C:/Users/dev/a%20b.txt")).toEqual({
+      kind: "path",
+      path: "C:/Users/dev/a b.txt",
+    });
+  });
+
+  it("rejects remote file uris, UNC paths, and Windows device namespaces", () => {
+    expect(classifyLinkText("file://server/share/report.txt")).toBeNull();
+    expect(classifyLinkText("file:////server/share/report.txt")).toBeNull();
+    expect(classifyLinkText(String.raw`\\server\share\report.txt`)).toBeNull();
+    expect(classifyLinkText("//server/share/report.txt")).toBeNull();
+    expect(classifyLinkText(String.raw`/\server\share\report.txt`)).toBeNull();
+    expect(classifyLinkText(String.raw`\/server/share/report.txt`)).toBeNull();
+    expect(classifyLinkText("file:///%5Cserver/share/report.txt")).toBeNull();
+    expect(classifyLinkText(String.raw`\\.\PhysicalDrive0`)).toBeNull();
+    expect(classifyLinkText(String.raw`\\?\C:\Windows\System32`)).toBeNull();
   });
 
   it("rejects malformed encoded file uris", () => {
@@ -47,10 +67,26 @@ describe("classifyLinkText", () => {
     expect(classifyLinkText("~/repo/file.rs")).toEqual({ kind: "path", path: "~/repo/file.rs" });
   });
 
+  it("classifies Windows drive and home-relative paths", () => {
+    expect(classifyLinkText(String.raw`C:\Users\dev\src\main.ts:12:5`)).toEqual({
+      kind: "path",
+      path: String.raw`C:\Users\dev\src\main.ts`,
+    });
+    expect(classifyLinkText("D:/work/polakapi/src/main.ts:9")).toEqual({
+      kind: "path",
+      path: "D:/work/polakapi/src/main.ts",
+    });
+    expect(classifyLinkText(String.raw`~\repo\file.rs`)).toEqual({
+      kind: "path",
+      path: String.raw`~\repo\file.rs`,
+    });
+  });
+
   it("rejects anything else (schemes, relative paths, prose)", () => {
     expect(classifyLinkText("javascript:alert(1)")).toBeNull();
     expect(classifyLinkText("ftp://host/file")).toBeNull();
     expect(classifyLinkText("src/main.ts")).toBeNull();
+    expect(classifyLinkText("C:relative\\file.ts")).toBeNull();
     expect(classifyLinkText("hola mundo")).toBeNull();
   });
 });
@@ -101,6 +137,54 @@ describe("findAbsolutePaths", () => {
     const [match] = findAbsolutePaths(line);
     expect(match?.text).toBe(line);
     expect(line.slice(match.start, match.start + match.text.length)).toBe(match.text);
+  });
+
+  it("finds Windows drive paths with compiler positions and correct offsets", () => {
+    const line = String.raw`error at C:\Users\dev\app\src\main.ts:14:3, fix it`;
+    const [match] = findAbsolutePaths(line);
+    expect(match?.text).toBe(String.raw`C:\Users\dev\app\src\main.ts:14:3`);
+    expect(line.slice(match.start, match.start + match.text.length)).toBe(match.text);
+  });
+
+  it("finds forward-slash Windows paths but rejects UNC and device paths", () => {
+    const line = String.raw`compare "\\server\share\a.txt" with (D:/tmp/out.log)`;
+    expect(findAbsolutePaths(line).map((match) => match.text)).toEqual(["D:/tmp/out.log"]);
+    expect(findAbsolutePaths(String.raw`open \\.\PhysicalDrive0 or \\?\C:\Windows`)).toEqual([]);
+  });
+
+  it("rejects remote file URI links", () => {
+    expect(findAbsolutePaths("open file://server/share/report.txt")).toEqual([]);
+    expect(findAbsolutePaths("open file:////server/share/report.txt")).toEqual([]);
+  });
+
+  it("finds an unquoted Windows path with spaces when it has a compiler position", () => {
+    const line = String.raw` --> C:\Users\Jane Doe\repo\src\main.rs:12:3`;
+    const [match] = findAbsolutePaths(line);
+    expect(match?.text).toBe(String.raw`C:\Users\Jane Doe\repo\src\main.rs:12:3`);
+    expect(line.slice(match.start, match.start + match.text.length)).toBe(match.text);
+  });
+
+  it("finds a quoted Windows path containing spaces", () => {
+    const line = String.raw`open "C:\Program Files\polakapi\report.txt:12:3" now`;
+    const [match] = findAbsolutePaths(line);
+    expect(match?.text).toBe(String.raw`C:\Program Files\polakapi\report.txt:12:3`);
+    expect(line.slice(match.start, match.start + match.text.length)).toBe(match.text);
+  });
+
+  it("preserves closing delimiters inside quoted Windows paths", () => {
+    const line = String.raw`open "C:\Program Files (x86)" now`;
+    const [match] = findAbsolutePaths(line);
+    expect(match?.text).toBe(String.raw`C:\Program Files (x86)`);
+    expect(classifyLinkText(match.text)).toEqual({
+      kind: "path",
+      path: String.raw`C:\Program Files (x86)`,
+    });
+
+    const [bracketMatch] = findAbsolutePaths(String.raw`open "C:\SDK[preview]" now`);
+    expect(classifyLinkText(bracketMatch.text)).toEqual({
+      kind: "path",
+      path: String.raw`C:\SDK[preview]`,
+    });
   });
 
   it("matches multiple file:// URIs on separate lines and trims trailing punctuation", () => {

@@ -15,7 +15,7 @@ export default tseslint.config(
             "eslint.config.js",
             "vite.config.ts",
             "vitest.config.ts",
-            "scripts/tauri-dev.mjs",
+            "scripts/*.mjs",
           ],
         },
         tsconfigRootDir: import.meta.dirname,
@@ -43,7 +43,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ["eslint.config.js", "vite.config.ts", "vitest.config.ts", "scripts/tauri-dev.mjs"],
+    files: ["eslint.config.js", "vite.config.ts", "vitest.config.ts", "scripts/*.mjs"],
     extends: [tseslint.configs.disableTypeChecked],
   },
   {

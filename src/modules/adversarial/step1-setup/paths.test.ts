@@ -22,6 +22,21 @@ describe("toRelativePath", () => {
     expect(toRelativePath("C:\\dev\\proj", "C:\\dev\\proj\\src\\foo")).toBe("src/foo");
   });
 
+  it("compares Windows drive paths case-insensitively", () => {
+    expect(toRelativePath("C:\\Dev\\Polakapi", "c:/dev/polakapi/Src/Main")).toBe("Src/Main");
+    expect(toRelativePath("C:\\Dev\\Polakapi", "c:\\dev\\polakapi")).toBe("");
+  });
+
+  it("compares UNC paths case-insensitively", () => {
+    expect(toRelativePath("\\\\Server\\Share\\Polakapi", "\\\\server\\share\\polakapi\\src")).toBe(
+      "src",
+    );
+  });
+
+  it("keeps POSIX path comparisons case-sensitive", () => {
+    expect(toRelativePath("/Users/dev/Polakapi", "/Users/dev/polakapi/src")).toBeNull();
+  });
+
   it("tolerates trailing slashes on the project path", () => {
     expect(toRelativePath("/x/y/", "/x/y/app")).toBe("app");
   });

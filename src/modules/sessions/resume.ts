@@ -1,4 +1,5 @@
 import type { Project, WorkspacesState } from "../workspaces/state/types";
+import { pathsEqual } from "../path-comparison";
 import type { AgentId, AgentSession, AgentSessionResumeRequest } from "./types";
 
 export const AGENT_SESSION_RESUME_EVENT = "agent-session:resume";
@@ -28,7 +29,7 @@ export function buildResumeLaunchArgs(agent: AgentId, nativeId: string): string[
 export function selectResumeProject(state: WorkspacesState, cwd: string | null): Project | null {
   if (cwd) {
     for (const workspace of state.workspaces) {
-      const exact = workspace.projects.find((project) => project.path === cwd);
+      const exact = workspace.projects.find((project) => pathsEqual(project.path, cwd));
       if (exact) return exact;
     }
   }
