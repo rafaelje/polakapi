@@ -191,7 +191,13 @@ function shellQuote(path: string, platform: TerminalShellPlatform): string {
 }
 
 function detectShellPlatform(): TerminalShellPlatform {
-  return /Win/i.test(navigator.platform) ? "windows" : "posix";
+  if (typeof navigator === "undefined") return "posix";
+  const userAgentData = Reflect.get(navigator, "userAgentData") as
+    | { platform?: unknown }
+    | undefined;
+  const detectedPlatform =
+    typeof userAgentData?.platform === "string" ? userAgentData.platform : navigator.userAgent;
+  return /Win/i.test(detectedPlatform) ? "windows" : "posix";
 }
 
 function hasTextLike(dt: DataTransfer): boolean {

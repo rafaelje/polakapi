@@ -1,4 +1,5 @@
 import type { Project, WorkspacesState } from "../workspaces/state/types";
+import { pathsEqual } from "../path-comparison";
 import type { AgentId, AgentSession, AgentSessionResumeRequest } from "./types";
 
 export const AGENT_SESSION_RESUME_EVENT = "agent-session:resume";
@@ -38,23 +39,6 @@ export function selectResumeProject(state: WorkspacesState, cwd: string | null):
     if (active) return active;
   }
   return null;
-}
-
-function pathsEqual(left: string, right: string): boolean {
-  const normalizedLeft = normalizePath(left);
-  const normalizedRight = normalizePath(right);
-  return isWindowsPath(normalizedLeft) && isWindowsPath(normalizedRight)
-    ? normalizedLeft.toLowerCase() === normalizedRight.toLowerCase()
-    : normalizedLeft === normalizedRight;
-}
-
-function normalizePath(path: string): string {
-  const normalized = path.replace(/\\/g, "/");
-  return normalized.length > 1 ? normalized.replace(/\/+$/, "") : normalized;
-}
-
-function isWindowsPath(path: string): boolean {
-  return /^(?:[A-Za-z]:(?:\/|$)|\/\/)/.test(path);
 }
 
 export function isAgentSessionResumeRequest(value: unknown): value is AgentSessionResumeRequest {

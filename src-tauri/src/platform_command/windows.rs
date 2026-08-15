@@ -126,6 +126,15 @@ fn read_npm_cmd_shim_target(shim: &Path, cli_name: &str) -> Result<PathBuf, Stri
         .ok_or_else(|| format!("Windows CLI shim has no parent: {}", shim.display()))?
         .canonicalize()
         .map_err(|error| format!("could not resolve shim directory: {error}"))?;
+    let containment_root = shim_root
+        .ancestors()
+        .find(|ancestor| {
+            ancestor
+                .file_name()
+                .is_some_and(|name| name == "node_modules")
+        })
+        .unwrap_or(&shim_root)
+        .to_path_buf();
 
     for line in contents.lines().filter(|line| line.contains("%*")) {
         for token in quoted_tokens(line) {
@@ -135,10 +144,10 @@ fn read_npm_cmd_shim_target(shim: &Path, cli_name: &str) -> Result<PathBuf, Stri
             let Ok(candidate) = candidate.canonicalize() else {
                 continue;
             };
-            if !candidate.starts_with(&shim_root) || !candidate.is_file() {
+            if !candidate.starts_with(&containment_root) || !candidate.is_file() {
                 continue;
             }
-            if package_bin_matches(&candidate, &shim_root, cli_name) {
+            if package_bin_matches(&candidate, &containment_root, cli_name) {
                 return Ok(candidate);
             }
         }
@@ -250,10 +259,33 @@ fn has_node_shebang(path: &Path) -> bool {
     {
         return false;
     }
-    matches!(
-        first_line.trim_end(),
-        "#!/usr/bin/env node" | "#!/usr/bin/node" | "#!node"
-    )
+    let Some(command_line) = first_line.trim_end().strip_prefix("#!") else {
+        return false;
+    };
+    let mut tokens = command_line.split_whitespace();
+    let Some(interpreter) = tokens.next() else {
+        return false;
+    };
+    if is_node_command(interpreter) {
+        return true;
+    }
+    if Path::new(interpreter)
+        .file_stem()
+        .and_then(OsStr::to_str)
+        .is_none_or(|stem| !stem.eq_ignore_ascii_case("env"))
+    {
+        return false;
+    }
+    tokens
+        .find(|token| !token.starts_with('-'))
+        .is_some_and(is_node_command)
+}
+
+fn is_node_command(command: &str) -> bool {
+    Path::new(command)
+        .file_stem()
+        .and_then(OsStr::to_str)
+        .is_some_and(|stem| stem.eq_ignore_ascii_case("node"))
 }
 
 fn resolve_qualified_program(program: &Path, extensions: &[OsString]) -> Option<ResolvedProgram> {
@@ -474,5 +506,59 @@ mod tests {
             invocation.prefix_args,
             [entrypoint.canonicalize().unwrap().into_os_string()]
         );
+    }
+
+    #[test]
+    fn resolves_standard_bin_shim_targets_inside_node_modules() {
+        let directory = tempfile::tempdir().unwrap();
+        let node_modules = directory.path().join("node_modules");
+        let package = node_modules.join("example-cli");
+        let entrypoint = package.join("bin").join("codex.js");
+        std::fs::create_dir_all(entrypoint.parent().unwrap()).unwrap();
+        std::fs::write(&entrypoint, "#!/usr/bin/env node\n").unwrap();
+        std::fs::write(
+            package.join("package.json"),
+            r#"{"bin":{"codex":"bin/codex.js"}}"#,
+        )
+        .unwrap();
+        let shim_root = node_modules.join(".bin");
+        std::fs::create_dir_all(&shim_root).unwrap();
+        let shim = shim_root.join("codex.cmd");
+        std::fs::write(
+            &shim,
+            "@echo off\r\n\"%dp0%\\..\\example-cli\\bin\\codex.js\" %*\r\n",
+        )
+        .unwrap();
+
+        let target = read_npm_cmd_shim_target(&shim, "codex").unwrap();
+
+        assert_eq!(target, entrypoint.canonicalize().unwrap());
+    }
+
+    #[test]
+    fn accepts_common_node_shebang_variants() {
+        let directory = tempfile::tempdir().unwrap();
+        for (index, shebang) in [
+            "#!/usr/bin/env -S node",
+            "#!/usr/bin/env node --enable-source-maps",
+            "#!  /usr/bin/node --enable-source-maps",
+            "#!node --trace-warnings",
+        ]
+        .iter()
+        .enumerate()
+        {
+            let entrypoint = directory.path().join(format!("entrypoint-{index}.js"));
+            std::fs::write(&entrypoint, format!("{shebang}\n")).unwrap();
+            assert!(has_node_shebang(&entrypoint), "rejected {shebang}");
+        }
+
+        for (index, shebang) in ["#!/usr/bin/env python", "#!/usr/bin/deno", "#!/bin/sh"]
+            .iter()
+            .enumerate()
+        {
+            let entrypoint = directory.path().join(format!("invalid-{index}.js"));
+            std::fs::write(&entrypoint, format!("{shebang}\n")).unwrap();
+            assert!(!has_node_shebang(&entrypoint), "accepted {shebang}");
+        }
     }
 }

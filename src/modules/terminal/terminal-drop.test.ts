@@ -95,7 +95,6 @@ describe("formatPathsForShell", () => {
   });
 
   it("escapes embedded single quotes", () => {
-    // POSIX: ' → '\''
     expect(formatPathsForShell(["/x/it's.txt"], "posix")).toBe(`'/x/it'\\''s.txt' `);
   });
 
@@ -112,16 +111,52 @@ describe("formatPathsForShell", () => {
     ).toBe('"C:\\Program Files\\polakapi\\notes.txt" "D:\\src\\main.ts" ');
   });
 
-  it("detects the Windows shell platform from navigator.platform", () => {
-    const originalPlatform = navigator.platform;
-    Object.defineProperty(navigator, "platform", { value: "Win32", configurable: true });
+  it("prefers navigator.userAgentData when detecting the Windows shell platform", () => {
+    const originalUserAgentData = Object.getOwnPropertyDescriptor(navigator, "userAgentData");
+    Object.defineProperty(navigator, "userAgentData", {
+      value: { platform: "Windows" },
+      configurable: true,
+    });
     try {
       expect(formatPathsForShell(["C:\\a b.txt"])).toBe('"C:\\a b.txt" ');
     } finally {
-      Object.defineProperty(navigator, "platform", {
-        value: originalPlatform,
+      if (originalUserAgentData) {
+        Object.defineProperty(navigator, "userAgentData", originalUserAgentData);
+      } else {
+        Reflect.deleteProperty(navigator, "userAgentData");
+      }
+    }
+  });
+
+  it("falls back to navigator.userAgent when userAgentData is unavailable", () => {
+    const originalUserAgent = navigator.userAgent;
+    const originalUserAgentData = Object.getOwnPropertyDescriptor(navigator, "userAgentData");
+    Object.defineProperty(navigator, "userAgentData", { value: undefined, configurable: true });
+    Object.defineProperty(navigator, "userAgent", {
+      value: "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+      configurable: true,
+    });
+    try {
+      expect(formatPathsForShell(["C:\\a b.txt"])).toBe('"C:\\a b.txt" ');
+    } finally {
+      if (originalUserAgentData) {
+        Object.defineProperty(navigator, "userAgentData", originalUserAgentData);
+      } else {
+        Reflect.deleteProperty(navigator, "userAgentData");
+      }
+      Object.defineProperty(navigator, "userAgent", {
+        value: originalUserAgent,
         configurable: true,
       });
+    }
+  });
+
+  it("defaults to POSIX when navigator is unavailable", () => {
+    vi.stubGlobal("navigator", undefined);
+    try {
+      expect(formatPathsForShell(["/tmp/a b.txt"])).toBe("'/tmp/a b.txt' ");
+    } finally {
+      vi.unstubAllGlobals();
     }
   });
 });
