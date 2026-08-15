@@ -66,6 +66,16 @@ function isOpenablePath(path: string): boolean {
   );
 }
 
+/**
+ * xterm's Linkifier activates links on any mouseup without checking the
+ * button, and the pane suppresses the native context menu (WebKitGTK paste
+ * quirk), so right/middle clicks would open links. Only the primary button
+ * may activate.
+ */
+export function isPrimaryClick(event: MouseEvent): boolean {
+  return event.button === 0;
+}
+
 export function openLinkTarget(target: TerminalLinkTarget): Promise<void> {
   return target.kind === "url"
     ? invoke<void>("open_url", { url: target.url })
@@ -152,6 +162,7 @@ export function createPathLinkProvider(
             end: { x: m.start + m.text.length, y: bufferLineNumber },
           },
           activate: (event: MouseEvent, text: string): void => {
+            if (!isPrimaryClick(event)) return;
             event.preventDefault();
             activate(text);
           },

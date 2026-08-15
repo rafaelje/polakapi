@@ -218,21 +218,57 @@ describe("WorkspacesController", () => {
     );
   });
 
-  it("createFolderInteractive creates the directory on disk and stores its path", async () => {
+  it("createProjectFolderInteractive creates the directory and registers it as a project", async () => {
     persistence.loadWorkspaces.mockResolvedValueOnce(seededState());
     pathPicker.pickProjectFolder.mockResolvedValueOnce("/home/user/code");
     modal.promptModal.mockResolvedValueOnce("backend");
     tauriInvoke.invoke.mockResolvedValueOnce("/home/user/code/backend");
     const controller = await WorkspacesController.load();
 
-    const folder = await controller.createFolderInteractive(wid("w1"));
+    const created = await controller.createProjectFolderInteractive(wid("w1"));
 
     expect(tauriInvoke.invoke).toHaveBeenCalledWith(
-      "fs_create_folder",
+      "create_project_folder",
       { parent: "/home/user/code", name: "backend" },
       { toastOnError: false },
     );
-    expect(folder).toMatchObject({ name: "backend", path: "/home/user/code/backend" });
+    expect(created).toMatchObject({ name: "backend", path: "/home/user/code/backend" });
+    expect(controller.getState().workspaces[0].folders ?? []).toHaveLength(0);
+    expect(controller.getState().workspaces[0].projects).toHaveLength(2);
+    expect(controller.getActiveProject()?.id).toBe(created?.id);
+  });
+
+  it("createProjectFolderInteractive toasts the path when the project cannot be registered", async () => {
+    persistence.loadWorkspaces.mockResolvedValueOnce(seededState());
+    pathPicker.pickProjectFolder.mockResolvedValueOnce("/home/user/code");
+    modal.promptModal.mockResolvedValueOnce("backend");
+    tauriInvoke.invoke.mockResolvedValueOnce("/home/user/code/backend");
+    const controller = await WorkspacesController.load();
+    vi.spyOn(controller, "addProject").mockReturnValueOnce(null);
+
+    const created = await controller.createProjectFolderInteractive(wid("w1"));
+
+    expect(created).toBeNull();
+    expect(toast.showToast).toHaveBeenCalledWith(
+      "Created /home/user/code/backend, but the project could not be added",
+      "error",
+    );
+  });
+
+  it("createProjectFolderInteractive toasts the raw error and adds nothing on failure", async () => {
+    persistence.loadWorkspaces.mockResolvedValueOnce(seededState());
+    pathPicker.pickProjectFolder.mockResolvedValueOnce("/home/user/code");
+    modal.promptModal.mockResolvedValueOnce("backend");
+    tauriInvoke.invoke.mockRejectedValueOnce(
+      new tauriInvoke.InvokeError("create_project_folder", "git init failed: boom"),
+    );
+    const controller = await WorkspacesController.load();
+
+    const created = await controller.createProjectFolderInteractive(wid("w1"));
+
+    expect(created).toBeNull();
+    expect(controller.getState().workspaces[0].projects).toHaveLength(1);
+    expect(toast.showToast).toHaveBeenCalledWith("git init failed: boom", "error");
   });
 
   it("cloneRepoInteractive clones into the folder path and registers the project there", async () => {

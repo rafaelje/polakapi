@@ -2,8 +2,15 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("../../shared/tauri/invoke", () => ({ invoke: vi.fn().mockResolvedValue(undefined) }));
 
+import type { ILink, Terminal } from "@xterm/xterm";
 import { invoke } from "../../shared/tauri/invoke";
-import { classifyLinkText, findAbsolutePaths, openLinkFromText } from "./terminal-links";
+import {
+  classifyLinkText,
+  createPathLinkProvider,
+  findAbsolutePaths,
+  isPrimaryClick,
+  openLinkFromText,
+} from "./terminal-links";
 
 describe("classifyLinkText", () => {
   it("classifies http(s) URLs and strips trailing prose punctuation", () => {
@@ -186,5 +193,38 @@ describe("findAbsolutePaths", () => {
       "file:///home/user/a.md",
       "file:///home/user/b.txt",
     ]);
+  });
+});
+
+describe("isPrimaryClick", () => {
+  it("accepts only the primary button", () => {
+    expect(isPrimaryClick(new MouseEvent("mouseup", { button: 0 }))).toBe(true);
+    expect(isPrimaryClick(new MouseEvent("mouseup", { button: 1 }))).toBe(false);
+    expect(isPrimaryClick(new MouseEvent("mouseup", { button: 2 }))).toBe(false);
+  });
+});
+
+describe("createPathLinkProvider", () => {
+  const term = {
+    buffer: {
+      active: {
+        getLine: () => ({ translateToString: () => "see /tmp/report.txt here" }),
+      },
+    },
+  } as unknown as Terminal;
+
+  it("activates on primary click only", () => {
+    const activate = vi.fn();
+    const provider = createPathLinkProvider(term, activate);
+    let links: ILink[] | undefined;
+    provider.provideLinks(1, (found) => (links = found));
+    const link = links?.[0];
+    expect(link?.text).toBe("/tmp/report.txt");
+
+    link?.activate(new MouseEvent("mouseup", { button: 2 }), link.text);
+    expect(activate).not.toHaveBeenCalled();
+
+    link?.activate(new MouseEvent("mouseup", { button: 0 }), link.text);
+    expect(activate).toHaveBeenCalledWith("/tmp/report.txt");
   });
 });
