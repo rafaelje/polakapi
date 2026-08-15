@@ -9,7 +9,19 @@
 // helper reuse the `db` module compiled into the same crate.
 
 fn main() {
-    let args: Vec<String> = std::env::args().collect();
+    let args_os: Vec<std::ffi::OsString> = std::env::args_os().collect();
+    #[cfg(target_os = "windows")]
+    if let Some(code) = polakapi_lib::run_windows_process_supervisor(&args_os[1..]) {
+        std::process::exit(code);
+    }
+    #[cfg(target_os = "windows")]
+    if let Some(code) = polakapi_lib::run_windows_batch_proxy(&args_os[1..]) {
+        std::process::exit(code);
+    }
+    let args: Vec<String> = args_os
+        .iter()
+        .map(|arg| arg.to_string_lossy().into_owned())
+        .collect();
     if args.len() >= 2 && args[1] == "capture" {
         std::process::exit(polakapi_lib::capture::run());
     }

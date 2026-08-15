@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager};
 
+use crate::platform_command;
 use crate::shell_integration;
 
 #[cfg(target_os = "windows")]
@@ -142,15 +143,14 @@ pub fn spawn_session(
         && args.as_ref().map(Vec::is_empty).unwrap_or(true);
 
     let shell = resolve_command(command)?;
+    let program = platform_command::resolve_program(&shell)?;
     let validated_args = validate_args(args)?;
     let validated_cwd = validate_cwd(cwd)?;
 
     let id = uuid::Uuid::new_v4().to_string();
 
-    let mut cmd = CommandBuilder::new(&shell);
-    for arg in validated_args {
-        cmd.arg(arg);
-    }
+    let mut cmd =
+        platform_command::portable_command(&program, &validated_args, !is_allowed_shell(&shell))?;
     if let Some(dir) = validated_cwd {
         cmd.cwd(dir);
     } else if let Some(dir) = default_working_dir() {
@@ -318,24 +318,7 @@ fn default_shell() -> String {
 }
 
 fn default_working_dir() -> Option<PathBuf> {
-    home_dir_from_env().or_else(|| std::env::current_dir().ok())
-}
-
-fn home_dir_from_env() -> Option<PathBuf> {
-    if let Some(home) = std::env::var_os("HOME") {
-        return Some(PathBuf::from(home));
-    }
-    if let Some(profile) = std::env::var_os("USERPROFILE") {
-        return Some(PathBuf::from(profile));
-    }
-    match (std::env::var_os("HOMEDRIVE"), std::env::var_os("HOMEPATH")) {
-        (Some(drive), Some(path)) => Some(PathBuf::from(format!(
-            "{}{}",
-            drive.to_string_lossy(),
-            path.to_string_lossy()
-        ))),
-        _ => None,
-    }
+    platform_command::user_home_dir().or_else(|| std::env::current_dir().ok())
 }
 
 fn strip_legacy_capture_env(cmd: &mut CommandBuilder) {

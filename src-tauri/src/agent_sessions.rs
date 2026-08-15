@@ -7,7 +7,9 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::process::{ChildStdin, ChildStdout, Command};
+use tokio::process::{ChildStdin, ChildStdout};
+
+use crate::platform_command;
 
 const CODEX_PAGE_SIZE: usize = 100;
 const CODEX_RESPONSE_TIMEOUT: Duration = Duration::from_secs(15);
@@ -102,7 +104,7 @@ async fn codex_sessions_with_deadline() -> Result<Vec<AgentSession>, String> {
 }
 
 async fn codex_sessions() -> Result<Vec<AgentSession>, String> {
-    let mut child = Command::new("codex")
+    let mut child = platform_command::tokio_command("codex")?
         .args(["app-server", "--listen", "stdio://"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -480,9 +482,7 @@ fn opencode_sessions_from_db(path: &Path) -> Result<Vec<AgentSession>, String> {
 }
 
 fn home_dir() -> Result<PathBuf, String> {
-    std::env::var_os("HOME")
-        .or_else(|| std::env::var_os("USERPROFILE"))
-        .map(PathBuf::from)
+    platform_command::user_home_dir()
         .ok_or_else(|| "user home directory is unavailable".to_string())
 }
 

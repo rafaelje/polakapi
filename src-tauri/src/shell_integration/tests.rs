@@ -1,4 +1,5 @@
 use super::*;
+#[cfg(not(target_os = "windows"))]
 use std::process::Command;
 
 #[test]
@@ -65,6 +66,7 @@ fn apply_matches_shell_case_insensitively_and_by_basename() {
     assert!(cmd.get_env("ZDOTDIR").is_some());
 }
 
+#[cfg(not(target_os = "windows"))]
 #[test]
 fn bash_integration_preserves_debug_trap_and_prompt_command_array() {
     let tmp = tempfile::tempdir().unwrap();

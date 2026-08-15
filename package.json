@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "tauri": "node scripts/tauri-dev.mjs",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run",
+    "test": "vitest run && node --test scripts/tauri-dev.test.mjs",
     "test:watch": "vitest",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",

@@ -215,8 +215,8 @@ export function toRelativePath(projectPath: string, abs: string): string | null 
   const absVariants = macCanonicalVariants(normalize(abs));
   for (const p of projectVariants) {
     for (const a of absVariants) {
-      if (a === p) return "";
-      if (a.startsWith(p + "/")) return a.slice(p.length + 1);
+      if (pathsEqual(a, p)) return "";
+      if (pathStartsWith(a, p + "/")) return a.slice(p.length + 1);
     }
   }
   return null;
@@ -224,6 +224,26 @@ export function toRelativePath(projectPath: string, abs: string): string | null 
 
 function normalize(path: string): string {
   return path.replace(/\\/g, "/").replace(/\/+$/, "");
+}
+
+function pathsEqual(left: string, right: string): boolean {
+  return useWindowsComparison(left, right)
+    ? left.toLowerCase() === right.toLowerCase()
+    : left === right;
+}
+
+function pathStartsWith(path: string, prefix: string): boolean {
+  return useWindowsComparison(path, prefix)
+    ? path.toLowerCase().startsWith(prefix.toLowerCase())
+    : path.startsWith(prefix);
+}
+
+function useWindowsComparison(left: string, right: string): boolean {
+  return isWindowsPath(left) && isWindowsPath(right);
+}
+
+function isWindowsPath(path: string): boolean {
+  return /^(?:[A-Za-z]:(?:\/|$)|\/\/)/.test(path);
 }
 
 /**

@@ -27,8 +27,8 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
+use crate::platform_command;
 use serde::{Deserialize, Serialize};
-use tokio::process::Command;
 
 mod parsers;
 mod process;
@@ -129,7 +129,9 @@ pub async fn run_loop_agent(
         return Err(format!("invalid run_dir_root: {root}"));
     }
     let scope = validate_loop_invocation_scope(&cwd, &run_id, root, system_prompt_path.as_deref())?;
-    let cwd = scope.cwd.to_string_lossy().to_string();
+    let cwd = platform_command::external_path(&scope.cwd)
+        .to_string_lossy()
+        .to_string();
     let system_prompt_path = scope.system_prompt_path.as_deref();
     let effort = normalize_effort(effort.as_deref());
 
@@ -205,7 +207,7 @@ async fn invoke_claude(
     if effort.is_some() {
         // Non-fatal: the log line below records the requested effort.
     }
-    let mut cmd = Command::new("claude");
+    let mut cmd = platform_command::tokio_command("claude")?;
     cmd.arg("-p")
         .arg(user_input)
         .arg("--output-format")
@@ -297,7 +299,7 @@ async fn invoke_codex(
         s
     };
 
-    let mut cmd = Command::new("codex");
+    let mut cmd = platform_command::tokio_command("codex")?;
     // codex accepts top-level config overrides via `-c key=value` before the
     // subcommand. Reasoning-effort tier is exposed as `model_reasoning_effort`.
     if let Some(level) = effort {
@@ -385,7 +387,7 @@ async fn invoke_opencode(
         s
     };
 
-    let mut cmd = Command::new("opencode");
+    let mut cmd = platform_command::tokio_command("opencode")?;
     cmd.arg("run")
         .arg("--format")
         .arg("json")

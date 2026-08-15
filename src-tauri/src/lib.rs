@@ -15,6 +15,7 @@ mod loop_cli;
 mod loop_prompts;
 mod memory;
 mod open;
+mod platform_command;
 mod pty;
 mod shell_integration;
 
@@ -56,6 +57,16 @@ use crate::loop_prompts::{
 };
 use crate::memory::pty_memory_stats;
 use crate::pty::PtyStore;
+
+#[cfg(target_os = "windows")]
+pub fn run_windows_batch_proxy(args: &[std::ffi::OsString]) -> Option<i32> {
+    platform_command::run_windows_batch_proxy(args)
+}
+
+#[cfg(target_os = "windows")]
+pub fn run_windows_process_supervisor(args: &[std::ffi::OsString]) -> Option<i32> {
+    platform_command::run_windows_process_supervisor(args)
+}
 
 /// macOS launches `.app` bundles with a minimal PATH (`/usr/bin:/bin:/usr/sbin:/sbin`),
 /// so binaries under `/opt/homebrew/bin`, `~/.npm-global/bin`, NVM shims, etc. are

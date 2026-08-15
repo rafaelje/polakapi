@@ -30,6 +30,13 @@ describe("shouldReplayShellCommand", () => {
     expect(shouldReplayShellCommand("/usr/bin/git status", false)).toBe(false);
   });
 
+  it("matches Windows basenames and executable shim suffixes", () => {
+    expect(shouldReplayShellCommand("C:\\tools\\HTOP.EXE", false)).toBe(true);
+    expect(shouldReplayShellCommand("C:/tools/pnpm.cmd", false)).toBe(true);
+    expect(shouldReplayShellCommand('"C:\\Program Files\\Neovim\\nvim.exe"', false)).toBe(true);
+    expect(shouldReplayShellCommand("C:\\tools\\git.exe", false)).toBe(false);
+  });
+
   it("rejects empty input", () => {
     expect(shouldReplayShellCommand("", false)).toBe(false);
     expect(shouldReplayShellCommand("   ", true)).toBe(false);

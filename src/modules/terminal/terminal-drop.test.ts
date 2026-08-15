@@ -91,16 +91,38 @@ describe("formatPathsForShell", () => {
   });
 
   it("single-quotes a simple path with trailing space", () => {
-    expect(formatPathsForShell(["/tmp/foo.txt"])).toBe("'/tmp/foo.txt' ");
+    expect(formatPathsForShell(["/tmp/foo.txt"], "posix")).toBe("'/tmp/foo.txt' ");
   });
 
   it("escapes embedded single quotes", () => {
     // POSIX: ' → '\''
-    expect(formatPathsForShell(["/x/it's.txt"])).toBe(`'/x/it'\\''s.txt' `);
+    expect(formatPathsForShell(["/x/it's.txt"], "posix")).toBe(`'/x/it'\\''s.txt' `);
   });
 
   it("space-separates multiple paths", () => {
-    expect(formatPathsForShell(["/a b/c", "/d.txt"])).toBe("'/a b/c' '/d.txt' ");
+    expect(formatPathsForShell(["/a b/c", "/d.txt"], "posix")).toBe("'/a b/c' '/d.txt' ");
+  });
+
+  it("double-quotes Windows paths for cmd-compatible insertion", () => {
+    expect(
+      formatPathsForShell(
+        ["C:\\Program Files\\polakapi\\notes.txt", "D:\\src\\main.ts"],
+        "windows",
+      ),
+    ).toBe('"C:\\Program Files\\polakapi\\notes.txt" "D:\\src\\main.ts" ');
+  });
+
+  it("detects the Windows shell platform from navigator.platform", () => {
+    const originalPlatform = navigator.platform;
+    Object.defineProperty(navigator, "platform", { value: "Win32", configurable: true });
+    try {
+      expect(formatPathsForShell(["C:\\a b.txt"])).toBe('"C:\\a b.txt" ');
+    } finally {
+      Object.defineProperty(navigator, "platform", {
+        value: originalPlatform,
+        configurable: true,
+      });
+    }
   });
 });
 

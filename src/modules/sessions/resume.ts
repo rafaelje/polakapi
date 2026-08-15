@@ -28,7 +28,7 @@ export function buildResumeLaunchArgs(agent: AgentId, nativeId: string): string[
 export function selectResumeProject(state: WorkspacesState, cwd: string | null): Project | null {
   if (cwd) {
     for (const workspace of state.workspaces) {
-      const exact = workspace.projects.find((project) => project.path === cwd);
+      const exact = workspace.projects.find((project) => pathsEqual(project.path, cwd));
       if (exact) return exact;
     }
   }
@@ -38,6 +38,23 @@ export function selectResumeProject(state: WorkspacesState, cwd: string | null):
     if (active) return active;
   }
   return null;
+}
+
+function pathsEqual(left: string, right: string): boolean {
+  const normalizedLeft = normalizePath(left);
+  const normalizedRight = normalizePath(right);
+  return isWindowsPath(normalizedLeft) && isWindowsPath(normalizedRight)
+    ? normalizedLeft.toLowerCase() === normalizedRight.toLowerCase()
+    : normalizedLeft === normalizedRight;
+}
+
+function normalizePath(path: string): string {
+  const normalized = path.replace(/\\/g, "/");
+  return normalized.length > 1 ? normalized.replace(/\/+$/, "") : normalized;
+}
+
+function isWindowsPath(path: string): boolean {
+  return /^(?:[A-Za-z]:(?:\/|$)|\/\/)/.test(path);
 }
 
 export function isAgentSessionResumeRequest(value: unknown): value is AgentSessionResumeRequest {

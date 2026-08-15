@@ -4,8 +4,9 @@ use std::process::{Child, Command};
 use std::sync::Mutex;
 
 use crate::fs::validate_path;
+use crate::platform_command::{self, ResolvedProgram};
 
-/// Tracks live external terminal windows (Ghostty) keyed by canonical project
+/// Tracks live external terminal windows keyed by canonical project
 /// path. Prevents a second click from spawning a duplicate window for the same
 /// project. Entries whose child has exited are lazily reaped on the next
 /// `spawn_or_focus` call for that path.
@@ -15,7 +16,7 @@ pub struct ShellRegistry {
 }
 
 impl ShellRegistry {
-    /// Spawns a Ghostty window at `path` unless one is already open for that
+    /// Spawns a terminal window at `path` unless one is already open for that
     /// path. Returns `Ok(())` in both cases — the caller cannot distinguish
     /// "opened" from "already open" and doesn't need to.
     pub fn spawn_or_focus(&self, path: &str) -> Result<(), String> {
@@ -34,7 +35,7 @@ impl ShellRegistry {
 
         let child = shell_command(path)?
             .spawn()
-            .map_err(|e| format!("failed to launch Ghostty: {e}"))?;
+            .map_err(|e| format!("failed to launch terminal: {e}"))?;
         map.insert(canonical, child);
         Ok(())
     }
@@ -57,8 +58,42 @@ fn shell_command(path: &str) -> Result<Command, String> {
 }
 
 #[cfg(target_os = "windows")]
-fn shell_command(_path: &str) -> Result<Command, String> {
-    Err("Ghostty is not available on Windows".to_string())
+fn shell_command(path: &str) -> Result<Command, String> {
+    if let Ok(program) = platform_command::resolve_program("wt") {
+        let mut command = Command::new(program.path());
+        command.args(["-d", path]);
+        return Ok(command);
+    }
+
+    for shell in ["pwsh", "powershell"] {
+        if let Ok(program) = platform_command::resolve_program(shell) {
+            return Ok(windows_console_command(
+                program.path(),
+                &["-NoLogo", "-NoExit"],
+                path,
+            ));
+        }
+    }
+
+    let comspec = std::env::var_os("COMSPEC").unwrap_or_else(|| "cmd.exe".into());
+    Ok(windows_console_command(
+        std::path::Path::new(&comspec),
+        &["/D"],
+        path,
+    ))
+}
+
+#[cfg(target_os = "windows")]
+fn windows_console_command(program: &std::path::Path, args: &[&str], path: &str) -> Command {
+    use std::os::windows::process::CommandExt;
+
+    const CREATE_NEW_CONSOLE: u32 = 0x0000_0010;
+    let mut command = Command::new(program);
+    command
+        .args(args)
+        .current_dir(path)
+        .creation_flags(CREATE_NEW_CONSOLE);
+    command
 }
 
 /// Closed set of editor binaries the frontend is allowed to invoke. The
@@ -77,19 +112,20 @@ fn is_allowed(editor: &str) -> bool {
     ALLOWED_EDITORS.contains(&editor)
 }
 
-/// Probes whether `cmd` is reachable on PATH. Uses `which` on Unix and `where`
-/// on Windows. Never panics.
+/// Probes whether `cmd` is reachable on PATH. Never panics.
 fn command_exists(cmd: &str) -> bool {
     #[cfg(unix)]
-    let probe = "which";
+    {
+        Command::new("which")
+            .arg(cmd)
+            .output()
+            .map(|output| output.status.success())
+            .unwrap_or(false)
+    }
     #[cfg(windows)]
-    let probe = "where";
-
-    Command::new(probe)
-        .arg(cmd)
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false)
+    {
+        platform_command::resolve_program(cmd).is_ok()
+    }
 }
 
 /// Resolves the editor to invoke:
@@ -98,16 +134,16 @@ fn command_exists(cmd: &str) -> bool {
 /// 2. Otherwise probe [`FALLBACK_ORDER`] and return the first hit.
 ///
 /// Returns `None` when nothing is available.
-fn resolve_editor(explicit: Option<&str>) -> Option<String> {
+fn resolve_editor(explicit: Option<&str>) -> Option<ResolvedProgram> {
     if let Some(cmd) = explicit {
         if is_allowed(cmd) {
-            return Some(cmd.to_string());
+            return platform_command::resolve_program(cmd).ok();
         }
         return None;
     }
     for &cmd in FALLBACK_ORDER {
         if command_exists(cmd) {
-            return Some(cmd.to_string());
+            return platform_command::resolve_program(cmd).ok();
         }
     }
     None
@@ -153,16 +189,15 @@ pub fn open_in_editor(path: &str, editor: Option<&str>) -> Result<(), String> {
     let cmd = resolve_editor(editor)
         .ok_or_else(|| "no editor found on PATH (tried agy-ide, code)".to_string())?;
 
-    Command::new(&cmd)
+    Command::new(cmd.path())
         .arg(path)
         .spawn()
-        .map_err(|e| format!("failed to launch {cmd}: {e}"))?;
+        .map_err(|e| format!("failed to launch {}: {e}", cmd.display_name()))?;
     Ok(())
 }
 
-/// Launches an external Ghostty terminal window at `path` as the working
+/// Launches an external terminal window at `path` as the working
 /// directory. If a window is already open for that path it is reused (no-op).
-/// Returns an error on Windows where Ghostty is unavailable.
 pub fn open_in_shell(registry: &ShellRegistry, path: &str) -> Result<(), String> {
     validate_path(path).map_err(|err| err.as_contract_string())?;
     registry.spawn_or_focus(path)
@@ -217,9 +252,7 @@ pub fn open_local_path(path: &str) -> Result<(), String> {
 }
 
 fn expand_home(path: &str) -> String {
-    let home = std::env::var("HOME")
-        .or_else(|_| std::env::var("USERPROFILE"))
-        .ok();
+    let home = platform_command::user_home_dir().map(|path| path.to_string_lossy().into_owned());
     expand_home_with(path, home.as_deref())
 }
 
@@ -230,6 +263,11 @@ fn expand_home_with(path: &str, home: Option<&str>) -> String {
     if let Some(rest) = path.strip_prefix("~/") {
         if let Some(dir) = home {
             return format!("{dir}/{rest}");
+        }
+    }
+    if let Some(rest) = path.strip_prefix("~\\") {
+        if let Some(dir) = home {
+            return format!("{dir}\\{rest}");
         }
     }
     path.to_string()
@@ -248,10 +286,10 @@ pub fn open_file_in_editor(path: &str, editor: Option<&str>) -> Result<(), Strin
     let cmd = resolve_editor(editor)
         .ok_or_else(|| "no editor found on PATH (tried agy-ide, code)".to_string())?;
 
-    Command::new(&cmd)
+    Command::new(cmd.path())
         .arg(path)
         .spawn()
-        .map_err(|e| format!("failed to launch {cmd}: {e}"))?;
+        .map_err(|e| format!("failed to launch {}: {e}", cmd.display_name()))?;
     Ok(())
 }
 
@@ -285,6 +323,10 @@ mod tests {
             expand_home_with("~/repo/file.rs", home),
             "/home/tester/repo/file.rs"
         );
+        assert_eq!(
+            expand_home_with("~\\repo\\file.rs", Some(r"C:\Users\tester")),
+            r"C:\Users\tester\repo\file.rs"
+        );
         assert_eq!(expand_home_with("/absolute/path", home), "/absolute/path");
         assert_eq!(expand_home_with("~other/x", home), "~other/x");
         assert_eq!(expand_home_with("~", None), "~");
@@ -311,8 +353,6 @@ mod tests {
 
     #[test]
     fn resolve_explicit_uses_allowlist() {
-        assert_eq!(resolve_editor(Some("code")).as_deref(), Some("code"));
-        assert_eq!(resolve_editor(Some("agy-ide")).as_deref(), Some("agy-ide"));
         // Rejected — not in allowlist.
         assert_eq!(resolve_editor(Some("rm")), None);
     }
@@ -349,5 +389,20 @@ mod tests {
                 "--working-directory=/tmp/project"
             ]
         );
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn console_fallback_starts_in_the_requested_directory() {
+        let command = windows_console_command(
+            std::path::Path::new(r"C:\Windows\System32\cmd.exe"),
+            &["/D"],
+            r"C:\code\polakapi",
+        );
+        assert_eq!(
+            command.get_current_dir(),
+            Some(std::path::Path::new(r"C:\code\polakapi"))
+        );
+        assert_eq!(command.get_args().collect::<Vec<_>>(), ["/D"]);
     }
 }

@@ -19,6 +19,7 @@ Requirements:
 - pnpm 11.8.0.
 - Rust stable with `rustfmt` and `clippy`.
 - The Tauri system dependencies listed in `.github/workflows/ci.yml` when developing on Linux.
+- The [Windows prerequisites and PowerShell setup](README.md#windows-setup) when developing on Windows.
 
 Install dependencies and start the desktop app:
 
@@ -47,6 +48,12 @@ pnpm run check
 ```
 
 If a change is platform-specific, test it on the affected operating system when possible and describe any untested platforms in the pull request.
+
+For Windows-specific native changes, also build the NSIS installer:
+
+```powershell
+pnpm tauri build --bundles nsis
+```
 
 ## Pull Requests
 

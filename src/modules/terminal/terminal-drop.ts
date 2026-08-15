@@ -23,6 +23,8 @@ export interface TerminalDropHandle {
   detach(): void;
 }
 
+export type TerminalShellPlatform = "posix" | "windows";
+
 /**
  * Bridges OS-level Finder drops AND in-browser drag&drop into the terminal
  * pane under the pointer.
@@ -163,26 +165,33 @@ export function attachTerminalDrop(deps: TerminalDropDeps): TerminalDropHandle {
 }
 
 /**
- * Builds the text inserted into the PTY for a file drop. Each path is
- * single-quoted so spaces / globs survive the shell; multiple paths are
- * space-separated. A trailing space is appended so the user can keep typing
- * arguments. No newline — they review the line first and press Enter
- * themselves.
+ * Builds the text inserted into the PTY for a file drop. Each path is quoted
+ * for the host shell platform; multiple paths are space-separated. A trailing
+ * space is appended so the user can keep typing arguments. No newline — they
+ * review the line first and press Enter themselves.
  */
-export function formatPathsForShell(paths: readonly string[]): string {
+export function formatPathsForShell(
+  paths: readonly string[],
+  platform: TerminalShellPlatform = detectShellPlatform(),
+): string {
   const quoted: string[] = [];
   for (const path of paths) {
-    const value = shellQuote(path);
+    const value = shellQuote(path, platform);
     if (value.length > 0) quoted.push(value);
   }
   if (quoted.length === 0) return "";
   return `${quoted.join(" ")} `;
 }
 
-function shellQuote(path: string): string {
+function shellQuote(path: string, platform: TerminalShellPlatform): string {
   if (path.length === 0) return "";
+  if (platform === "windows") return `"${path.replace(/"/g, '""')}"`;
   // POSIX-safe single quoting: wrap in '...' and escape embedded ' as '\''.
   return `'${path.replace(/'/g, "'\\''")}'`;
+}
+
+function detectShellPlatform(): TerminalShellPlatform {
+  return /Win/i.test(navigator.platform) ? "windows" : "posix";
 }
 
 function hasTextLike(dt: DataTransfer): boolean {

@@ -44,9 +44,19 @@ export const RESUME_COMMAND_WHITELIST: ReadonlySet<string> = new Set([
 export function shouldReplayShellCommand(command: string, isAlias: boolean): boolean {
   const trimmed = command.trim();
   if (!trimmed || isAlias) return false;
-  const tokens = trimmed.split(/\s+/);
-  if (tokens.length !== 1) return false;
-  const first = tokens[0] ?? "";
-  const base = first.split("/").pop() ?? first;
-  return RESUME_COMMAND_WHITELIST.has(base.toLowerCase());
+  const commandPath = singleCommandPath(trimmed);
+  if (commandPath === null) return false;
+  const base = commandPath.split(/[\\/]/).pop() ?? commandPath;
+  const normalized = base.replace(/\.(?:exe|cmd|bat|com)$/i, "").toLowerCase();
+  return RESUME_COMMAND_WHITELIST.has(normalized);
+}
+
+function singleCommandPath(command: string): string | null {
+  const quote = command[0];
+  if (quote === '"' || quote === "'") {
+    if (command[command.length - 1] !== quote) return null;
+    const inner = command.slice(1, -1);
+    return inner.length > 0 && !inner.includes(quote) ? inner : null;
+  }
+  return /\s/.test(command) ? null : command;
 }
