@@ -49,7 +49,13 @@ pub struct AuthoritativeWindow {
 }
 
 pub async fn fetch() -> Result<Option<ClaudeAuthoritative>, String> {
-    let Some(token) = read_token()? else {
+    // Credential I/O is blocking (filesystem read + macOS `security`
+    // subprocess), so run it off the async worker thread to avoid stalling
+    // the whole `usage_summary` join.
+    let token = tokio::task::spawn_blocking(read_token)
+        .await
+        .map_err(|error| format!("credential lookup task failed: {error}"))??;
+    let Some(token) = token else {
         return Ok(None);
     };
     let client = reqwest::Client::builder()

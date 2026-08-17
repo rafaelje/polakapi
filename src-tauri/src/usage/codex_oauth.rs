@@ -44,7 +44,12 @@ pub struct CodexAuthoritative {
 }
 
 pub async fn fetch() -> Result<Option<CodexAuthoritative>, String> {
-    let Some(auth) = read_auth()? else {
+    // Credential I/O is blocking (auth.json read); run it off the async
+    // worker thread so the parallel `usage_summary` join isn't stalled.
+    let auth = tokio::task::spawn_blocking(read_auth)
+        .await
+        .map_err(|error| format!("credential lookup task failed: {error}"))??;
+    let Some(auth) = auth else {
         return Ok(None);
     };
     let client = reqwest::Client::builder()

@@ -29,18 +29,34 @@ describe("sumLastDays", () => {
     bucket("2026-08-14", 400, 40),
     bucket("2026-08-13", 800, 80),
   ];
+  const now = Date.UTC(2026, 7, 16, 12, 0, 0); // 2026-08-16 12:00 UTC
 
   it("returns zeros when days <= 0", () => {
-    expect(sumLastDays(buckets, 0, (b) => b.claude).total).toBe(0);
+    expect(sumLastDays(buckets, 0, (b) => b.claude, now).total).toBe(0);
   });
 
-  it("sums claude tokens across the requested window", () => {
-    expect(sumLastDays(buckets, 2, (b) => b.claude).total).toBe(300);
-    expect(sumLastDays(buckets, 7, (b) => b.claude).total).toBe(1500);
+  it("sums claude tokens across the requested calendar window", () => {
+    expect(sumLastDays(buckets, 2, (b) => b.claude, now).total).toBe(300);
+    expect(sumLastDays(buckets, 7, (b) => b.claude, now).total).toBe(1500);
   });
 
   it("sums codex tokens independently", () => {
-    expect(sumLastDays(buckets, 3, (b) => b.codex).total).toBe(70);
+    expect(sumLastDays(buckets, 3, (b) => b.codex, now).total).toBe(70);
+  });
+
+  it("counts today by calendar, not by newest bucket", () => {
+    // History exists but nothing today: 'Today' must be zero, not last week's row.
+    const staleBuckets: DailyBucket[] = [bucket("2026-08-09", 999, 999)];
+    expect(sumLastDays(staleBuckets, 1, (b) => b.claude, now).total).toBe(0);
+  });
+
+  it("ignores the sentinel 'unknown' bucket", () => {
+    const mixed: DailyBucket[] = [bucket("unknown", 500, 500), ...buckets];
+    expect(sumLastDays(mixed, 1, (b) => b.claude, now).total).toBe(100);
+  });
+
+  it("includes every calendar bucket when days is Infinity", () => {
+    expect(sumLastDays(buckets, Number.POSITIVE_INFINITY, (b) => b.claude, now).total).toBe(1500);
   });
 });
 

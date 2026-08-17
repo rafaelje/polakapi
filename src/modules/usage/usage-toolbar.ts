@@ -1,10 +1,12 @@
 import { invoke } from "../../shared/tauri/invoke";
-import type { CodexRateWindow, UsageReport } from "./types";
+import { loadLayout } from "../../shared/persistence/store";
+import { claudePlan, type ClaudePlanTier, type CodexRateWindow, type UsageReport } from "./types";
 
 // Two brand-marked chips pinned to the toolbar: brand glyph + a thin
 // progress bar (session window) + inline text "58% 5h · 41% wk". Reads
 // the same `usage_summary` command as the panel and polls every REFRESH_MS
-// while the window is visible. Clicking a chip opens the usage tab.
+// while the window is visible. Clicking a chip triggers an on-demand
+// refresh (single call, both chips update).
 
 const REFRESH_MS = 60_000;
 
@@ -41,6 +43,19 @@ export function mountUsageToolbar(opts: UsageToolbarOptions): UsageToolbarHandle
   let disposed = false;
   let timer: ReturnType<typeof setInterval> | null = null;
   let inFlight = false;
+  let lastReport: UsageReport | null = null;
+  // The Claude fallback (no OAuth) shows the local 5h block as a percentage
+  // of the plan cap. Keep the persisted tier in sync so the chip and panel
+  // agree — otherwise a Max 20× user would see 100% on the chip while the
+  // panel reports 5% for the same block.
+  let planTier: ClaudePlanTier = "pro";
+  void loadLayout().then((layout) => {
+    if (disposed) return;
+    if (layout.claudePlanTier) {
+      planTier = layout.claudePlanTier;
+      if (lastReport) render(claude, codex, lastReport, planTier);
+    }
+  });
 
   const load = async (): Promise<void> => {
     if (disposed || inFlight) return;
@@ -51,7 +66,8 @@ export function mountUsageToolbar(opts: UsageToolbarOptions): UsageToolbarHandle
         toastOnError: false,
       });
       if (disposed) return;
-      render(claude, codex, report);
+      lastReport = report;
+      render(claude, codex, report, planTier);
     } catch {
       // Network hiccups shouldn't disturb the toolbar — next tick retries.
     } finally {
@@ -173,8 +189,13 @@ function percentSpan(percent: number | null, unit: string): HTMLElement {
   return wrap;
 }
 
-function render(claude: ChipHandle, codex: ChipHandle, report: UsageReport): void {
-  const claudeState = pickClaude(report);
+function render(
+  claude: ChipHandle,
+  codex: ChipHandle,
+  report: UsageReport,
+  planTier: ClaudePlanTier,
+): void {
+  const claudeState = pickClaude(report, planTier);
   const codexState = pickCodex(report);
   claude.setState(claudeState.state, claudeState.tooltip);
   codex.setState(codexState.state, codexState.tooltip);
@@ -185,7 +206,7 @@ interface Pick {
   tooltip: string;
 }
 
-function pickClaude(report: UsageReport): Pick {
+function pickClaude(report: UsageReport, planTier: ClaudePlanTier): Pick {
   const auth = report.claudeAuthoritative;
   if (auth) {
     const session = auth.session?.usedPercent ?? null;
@@ -206,11 +227,14 @@ function pickClaude(report: UsageReport): Pick {
       tooltip: "Claude — no session data yet",
     };
   }
-  const cap = 30_000_000;
+  const plan = claudePlan(planTier);
+  const cap = plan.blockTokenCap;
   const percent = cap > 0 ? Math.min(100, (block.tokens.total / cap) * 100) : 0;
   return {
     state: { session: percent, weekly: null, layout: "session-and-weekly" },
-    tooltip: `Claude · 5h ${fmt(percent)} (approx.) · ${resetSuffix(block.endsAt, report.nowSeconds)}`,
+    tooltip:
+      `Claude · 5h ${fmt(percent)} (${plan.label} approx.) · ` +
+      resetSuffix(block.endsAt, report.nowSeconds),
   };
 }
 

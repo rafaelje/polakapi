@@ -244,15 +244,16 @@ function liveNowSeconds(report: UsageReport): number {
 
 function renderSummary(host: HTMLElement, report: UsageReport): void {
   host.replaceChildren();
+  const nowMs = report.nowSeconds * 1000;
   const windows: { label: string; days: number }[] = [
     { label: "Today", days: 1 },
     { label: "7 days", days: 7 },
     { label: "30 days", days: 30 },
-    { label: "All time", days: report.daily.length },
+    { label: "All time", days: Number.POSITIVE_INFINITY },
   ];
   for (const window of windows) {
-    const claude = sumLastDays(report.daily, window.days, (b) => b.claude);
-    const codex = sumLastDays(report.daily, window.days, (b) => b.codex);
+    const claude = sumLastDays(report.daily, window.days, (b) => b.claude, nowMs);
+    const codex = sumLastDays(report.daily, window.days, (b) => b.codex, nowMs);
     host.append(summaryCard(window.label, claude, codex));
   }
 }
