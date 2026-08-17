@@ -18,6 +18,7 @@ mod open;
 mod platform_command;
 mod pty;
 mod shell_integration;
+mod usage;
 
 use std::sync::{Arc, Mutex};
 use tauri::Manager;
@@ -57,6 +58,7 @@ use crate::loop_prompts::{
 };
 use crate::memory::pty_memory_stats;
 use crate::pty::PtyStore;
+use crate::usage::usage_summary;
 
 #[cfg(target_os = "windows")]
 pub fn run_windows_batch_proxy(args: &[std::ffi::OsString]) -> Option<i32> {
@@ -212,7 +214,8 @@ pub fn run() {
             adv_write_state_file,
             adv_ensure_run_prompt,
             adv_read_run_prompt,
-            adv_write_run_prompt
+            adv_write_run_prompt,
+            usage_summary
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

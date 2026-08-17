@@ -27,6 +27,7 @@ import {
 } from "../modules/workspaces/command-palette/command-palette";
 import { mountBottomPanel, type BottomPanelHandle } from "../modules/bottom-panel/bottom-panel";
 import { isBottomTab } from "../modules/bottom-panel/types";
+import { mountUsageToolbar, type UsageToolbarHandle } from "../modules/usage/usage-toolbar";
 import { mountLoopButton, type LoopButtonHandle } from "../modules/agents-flow/loop-window";
 import {
   mountSessionsButton,
@@ -63,6 +64,7 @@ export class AppController {
   private workspaces: WorkspacesBootstrapHandle | null = null;
   private palette: CommandPaletteHandle | null = null;
   private bottomPanel: BottomPanelHandle | null = null;
+  private usageToolbar: UsageToolbarHandle | null = null;
   private loopButton: LoopButtonHandle | null = null;
   private sessionsButton: SessionsButtonHandle | null = null;
   private adversarialButton: AdversarialButtonHandle | null = null;
@@ -105,6 +107,10 @@ export class AppController {
       initialTab: isBottomTab(layout.activeBottomTab) ? layout.activeBottomTab : "notes",
       onTabChange: (tab) => queueSave({ activeBottomTab: tab }),
     });
+    const usageHost = document.getElementById("usage-indicators");
+    if (usageHost) {
+      this.usageToolbar = mountUsageToolbar({ host: usageHost });
+    }
     this.loopButton = mountLoopButton();
     await this.wireSessionResume();
     this.sessionsButton = mountSessionsButton();
@@ -180,6 +186,8 @@ export class AppController {
     this.palette?.dispose();
     this.palette = null;
 
+    this.usageToolbar?.dispose();
+    this.usageToolbar = null;
     const bottomPanel = this.bottomPanel;
     this.bottomPanel = null;
     if (bottomPanel) {

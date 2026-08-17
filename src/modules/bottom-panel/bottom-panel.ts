@@ -1,10 +1,13 @@
 import { mountShellPanel, type ShellPanelHandle } from "../shell/shell-panel";
+import { mountUsagePanel, type UsagePanelHandle } from "../usage/usage-panel";
 import { BOTTOM_TABS, isBottomTab, type BottomTab } from "./types";
 
 // Orchestrates the tab strip + per-tab containers in the bottom panel. The
 // notes textarea lives inside `[data-tab-panel="notes"]` and is driven by
 // the existing notes-panel module untouched. The shell tab is delegated to
-// the shell-panel module, which owns the TerminalPane lifecycle.
+// the shell-panel module, which owns the TerminalPane lifecycle. The usage
+// tab is delegated to the usage-panel module, which lazy-loads the Rust
+// `usage_summary` command on first activation.
 
 export interface BottomPanelOptions {
   /** Persist active tab on switch. */
@@ -38,13 +41,17 @@ export function mountBottomPanel(opts: BottomPanelOptions = {}): BottomPanelHand
     return null;
   }
   const shellHost = tabPanels.get("shell");
-  if (!shellHost) return null;
+  const usageHost = tabPanels.get("usage");
+  if (!shellHost || !usageHost) return null;
 
   let activeTab: BottomTab = opts.initialTab ?? "notes";
   let disposed = false;
 
   const shell: ShellPanelHandle = mountShellPanel(shellHost, {
     isVisible: () => !disposed && activeTab === "shell",
+  });
+  const usage: UsagePanelHandle = mountUsagePanel(usageHost, {
+    isVisible: () => !disposed && activeTab === "usage",
   });
 
   const setButtonState = (tab: BottomTab): void => {
@@ -69,6 +76,7 @@ export function mountBottomPanel(opts: BottomPanelOptions = {}): BottomPanelHand
     setButtonState(tab);
     setPanelVisibility(tab);
     if (tab === "shell") shell.activate();
+    if (tab === "usage") usage.activate();
     if (changed) opts.onTabChange?.(tab);
   };
 
@@ -86,6 +94,7 @@ export function mountBottomPanel(opts: BottomPanelOptions = {}): BottomPanelHand
   setButtonState(activeTab);
   setPanelVisibility(activeTab);
   if (activeTab === "shell") shell.activate();
+  if (activeTab === "usage") usage.activate();
 
   return {
     setActiveTab,
@@ -101,6 +110,7 @@ export function mountBottomPanel(opts: BottomPanelOptions = {}): BottomPanelHand
       for (const btn of tabButtons) {
         btn.removeEventListener("click", onButtonClick);
       }
+      usage.dispose();
       await shell.dispose();
     },
   };
