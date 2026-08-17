@@ -393,7 +393,7 @@ pub(crate) fn codex_limits_from_dir(root: &Path) -> Result<Option<CodexRateLimit
             Some((p, modified))
         })
         .collect();
-    with_mtime.sort_by(|a, b| b.1.cmp(&a.1));
+    with_mtime.sort_by_key(|entry| std::cmp::Reverse(entry.1));
     for (path, _) in with_mtime {
         if let Some(limits) = codex_limits_from_file(&path) {
             return Ok(Some(limits));
