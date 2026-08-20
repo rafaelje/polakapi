@@ -22,6 +22,7 @@ mod paste_image;
 mod platform_command;
 mod pty;
 mod shell_integration;
+mod skills;
 mod update_check;
 mod usage;
 
@@ -64,6 +65,7 @@ use crate::loop_prompts::{
 use crate::memory::pty_memory_stats;
 use crate::paste_image::save_pasted_image;
 use crate::pty::PtyStore;
+use crate::skills::{skill_explain, skill_read, skill_write, skills_list};
 use crate::update_check::update_check;
 use crate::usage::usage_summary;
 
@@ -226,6 +228,10 @@ pub fn run() {
             adv_ensure_run_prompt,
             adv_read_run_prompt,
             adv_write_run_prompt,
+            skills_list,
+            skill_read,
+            skill_write,
+            skill_explain,
             usage_summary,
             update_check,
             app_menu::toggle_menu_bar,

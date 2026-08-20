@@ -182,6 +182,24 @@ pub async fn run_loop_agent(
     }
 }
 
+/// One-shot invocation without the `/loop` run-scope validation. Used by
+/// features (e.g. `/skills`) that need a single normalized answer from a CLI
+/// against an arbitrary working directory.
+pub(crate) async fn run_one_shot(
+    cli: &str,
+    model: &str,
+    cwd: &str,
+    user_input: &str,
+    timeout_dur: Duration,
+) -> Result<AgentResult, String> {
+    match cli.to_ascii_lowercase().as_str() {
+        "claude" => invoke_claude(model, cwd, None, user_input, None, None, timeout_dur).await,
+        "codex" => invoke_codex(model, cwd, None, user_input, None, None, timeout_dur).await,
+        "opencode" => invoke_opencode(model, cwd, None, user_input, None, None, timeout_dur).await,
+        other => Err(format!("unsupported CLI: {other}")),
+    }
+}
+
 // ---------------------------------------------------------------------------
 // claude
 // ---------------------------------------------------------------------------

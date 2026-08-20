@@ -1,0 +1,113 @@
+/* ---------------------------------------------------------------------------
+ * /skills — installed-skills modal. Reuses the agents-modal shell and adds
+ * cli badges, the explain view and the raw-file editor.
+ * ------------------------------------------------------------------------- */
+
+.skills-modal-row-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.skills-modal-cli-badge {
+  font:
+    10px ui-monospace,
+    Menlo,
+    monospace;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 1px 7px;
+  color: #8a8a8a;
+  white-space: nowrap;
+}
+
+.skills-modal-cli-badge[data-cli="claude"] {
+  color: #d97757;
+  border-color: rgba(217, 119, 87, 0.45);
+}
+
+.skills-modal-cli-badge[data-cli="codex"] {
+  color: #6fcf97;
+  border-color: rgba(111, 207, 151, 0.45);
+}
+
+.skills-modal-cli-badge[data-cli="opencode"] {
+  color: #56ccf2;
+  border-color: rgba(86, 204, 242, 0.45);
+}
+
+.skills-modal-cli-badge[data-cli="cursor"] {
+  color: #bb86fc;
+  border-color: rgba(187, 134, 252, 0.45);
+}
+
+.skills-modal-cli-label {
+  font-size: 11px;
+  color: #8a8a8a;
+  align-self: center;
+  margin-right: -2px;
+}
+
+.skills-modal-select {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 5px 8px;
+  font-size: 12px;
+  outline: none;
+}
+
+.skills-modal-select:focus {
+  border-color: var(--accent);
+}
+
+.skills-modal-select:disabled {
+  opacity: 0.4;
+}
+
+.skills-modal .agents-modal-actions {
+  justify-content: flex-start;
+}
+
+.skills-modal .agents-modal-actions .agents-modal-btn:last-child {
+  margin-left: auto;
+}
+
+.skills-modal-explain-body {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+  overflow: hidden;
+  min-height: 260px;
+}
+
+.skills-modal-explain-status {
+  color: #8a8a8a;
+  font-size: 13px;
+  font-style: italic;
+}
+
+.skills-modal-explain-output {
+  font-size: 12px;
+}
+
+.skills-modal-path {
+  font:
+    10.5px ui-monospace,
+    Menlo,
+    monospace;
+  color: #6a6a6a;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 40%;
+}
+
+.skills-modal-editor-content {
+  flex: 1 1 auto;
+  min-height: 320px;
+  resize: none;
+}

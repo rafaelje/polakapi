@@ -51,6 +51,10 @@ import {
   createAgentsController,
   type AgentsController,
 } from "../modules/agents-library/agents-controller";
+import {
+  mountSkillsButton,
+  type SkillsButtonHandle,
+} from "../modules/skills-library/skills-button";
 import { flushSaveAgents } from "../shared/persistence/agents-store";
 import { bootstrapWorkspaces, type WorkspacesBootstrapHandle } from "./workspaces-bootstrap";
 import { wireWindowLifecycle } from "./lifecycle";
@@ -80,6 +84,7 @@ export class AppController {
   private adversarialButton: AdversarialButtonHandle | null = null;
   private agentsButton: AgentsButtonHandle | null = null;
   private agentsController: AgentsController | null = null;
+  private skillsButton: SkillsButtonHandle | null = null;
   private unwireShortcuts: (() => void) | null = null;
   private unwireWindowLifecycle: (() => void) | null = null;
   private memoryGuard: MemoryGuardHandle | null = null;
@@ -143,6 +148,7 @@ export class AppController {
         this.router.findPaneById(target.ptyId)?.manager.setFocus(target.ptyId, true);
       },
     });
+    this.skillsButton = mountSkillsButton();
     await this.wirePtyEvents();
     this.wireGutters();
     this.wirePanelToggles();
@@ -229,6 +235,9 @@ export class AppController {
 
     this.agentsButton?.dispose();
     this.agentsButton = null;
+
+    this.skillsButton?.dispose();
+    this.skillsButton = null;
 
     const agentsController = this.agentsController;
     this.agentsController = null;
