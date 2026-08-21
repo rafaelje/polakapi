@@ -26,6 +26,8 @@ interface ChipState {
   weekly: number | null;
   /** How much of the label to render (both stats, or weekly only). */
   layout: "session-and-weekly" | "weekly-only";
+  /** Unit label for the weekly slot; defaults to "wk". */
+  weeklyUnit?: string;
 }
 
 interface ChipHandle {
@@ -53,7 +55,7 @@ export function mountUsageToolbar(opts: UsageToolbarOptions): UsageToolbarHandle
     if (disposed) return;
     if (layout.claudePlanTier) {
       planTier = layout.claudePlanTier;
-      if (lastReport) render(claude, codex, lastReport, planTier);
+      if (lastReport) render(claude, codex, cursor, lastReport, planTier);
     }
   });
 
@@ -67,7 +69,7 @@ export function mountUsageToolbar(opts: UsageToolbarOptions): UsageToolbarHandle
       });
       if (disposed) return;
       lastReport = report;
-      render(claude, codex, report, planTier);
+      render(claude, codex, cursor, report, planTier);
     } catch {
       // Network hiccups shouldn't disturb the toolbar — next tick retries.
     } finally {
@@ -81,6 +83,7 @@ export function mountUsageToolbar(opts: UsageToolbarOptions): UsageToolbarHandle
   const setBusy = (busy: boolean): void => {
     claude.root.classList.toggle("usage-chip-busy", busy);
     codex.root.classList.toggle("usage-chip-busy", busy);
+    cursor.root.classList.toggle("usage-chip-busy", busy);
   };
 
   const onChipClick = (): void => {
@@ -88,6 +91,7 @@ export function mountUsageToolbar(opts: UsageToolbarOptions): UsageToolbarHandle
   };
   const claude = createChip(host, "claude", claudeGlyphSvg(), onChipClick);
   const codex = createChip(host, "codex", codexGlyphSvg(), onChipClick);
+  const cursor = createChip(host, "cursor", cursorGlyphSvg(), onChipClick);
 
   const startTimer = (): void => {
     if (timer !== null) return;
@@ -121,7 +125,7 @@ export function mountUsageToolbar(opts: UsageToolbarOptions): UsageToolbarHandle
 
 function createChip(
   host: HTMLElement,
-  provider: "claude" | "codex",
+  provider: "claude" | "codex" | "cursor",
   glyph: SVGSVGElement,
   onClick: () => void,
 ): ChipHandle {
@@ -164,12 +168,13 @@ function createChip(
     root.classList.toggle("usage-chip-critical", critical);
     root.classList.toggle("usage-chip-warning", warning);
     text.replaceChildren();
+    const weeklyUnit = state.weeklyUnit ?? "wk";
     if (state.layout === "weekly-only") {
-      text.append(percentSpan(weekly, "wk"));
+      text.append(percentSpan(weekly, weeklyUnit));
     } else {
       text.append(percentSpan(session, "5h"));
       text.append(document.createTextNode(" · "));
-      text.append(percentSpan(weekly, "wk"));
+      text.append(percentSpan(weekly, weeklyUnit));
     }
   };
 
@@ -192,13 +197,16 @@ function percentSpan(percent: number | null, unit: string): HTMLElement {
 function render(
   claude: ChipHandle,
   codex: ChipHandle,
+  cursor: ChipHandle,
   report: UsageReport,
   planTier: ClaudePlanTier,
 ): void {
   const claudeState = pickClaude(report, planTier);
   const codexState = pickCodex(report);
+  const cursorState = pickCursor(report);
   claude.setState(claudeState.state, claudeState.tooltip);
   codex.setState(codexState.state, codexState.tooltip);
+  cursor.setState(cursorState.state, cursorState.tooltip);
 }
 
 interface Pick {
@@ -252,6 +260,26 @@ function pickCodex(report: UsageReport): Pick {
   return {
     state: { session: null, weekly: weeklyPct, layout: "weekly-only" },
     tooltip: `Codex · weekly ${fmt(weeklyPct)}` + (suffix ? ` · ${suffix}` : ""),
+  };
+}
+
+function pickCursor(report: UsageReport): Pick {
+  const plan = report.cursorSummary?.plan;
+  if (!plan) {
+    return {
+      state: { session: null, weekly: null, layout: "weekly-only", weeklyUnit: "mo" },
+      tooltip: "Cursor — no plan data yet",
+    };
+  }
+  const suffix = plan.resetsAt ? resetSuffix(plan.resetsAt, report.nowSeconds) : null;
+  return {
+    state: {
+      session: null,
+      weekly: plan.usedPercent,
+      layout: "weekly-only",
+      weeklyUnit: "mo",
+    },
+    tooltip: `Cursor · plan ${fmt(plan.usedPercent)}` + (suffix ? ` · ${suffix}` : ""),
   };
 }
 
@@ -315,6 +343,34 @@ function claudeGlyphSvg(): SVGSVGElement {
   );
   path.setAttribute("fill", "#d97706");
   svg.append(path);
+  return svg;
+}
+
+// Cursor mark: dark rounded square with a simplified isometric-cube glyph.
+// Approximation — reads as the Cursor logo at 14px without licensed art.
+function cursorGlyphSvg(): SVGSVGElement {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("width", "14");
+  svg.setAttribute("height", "14");
+  svg.setAttribute("aria-hidden", "true");
+  const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+  rect.setAttribute("x", "1");
+  rect.setAttribute("y", "1");
+  rect.setAttribute("width", "22");
+  rect.setAttribute("height", "22");
+  rect.setAttribute("rx", "5");
+  rect.setAttribute("fill", "#111111");
+  const cube = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  cube.setAttribute(
+    "d",
+    "M12 4.5 L18.5 8.25 L18.5 15.75 L12 19.5 L5.5 15.75 L5.5 8.25 Z M5.5 8.25 L12 12 L18.5 8.25 M12 12 L12 19.5",
+  );
+  cube.setAttribute("stroke", "#f3f3f3");
+  cube.setAttribute("stroke-width", "1.2");
+  cube.setAttribute("fill", "none");
+  cube.setAttribute("stroke-linejoin", "round");
+  svg.append(rect, cube);
   return svg;
 }
 

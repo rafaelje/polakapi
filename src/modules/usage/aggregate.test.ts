@@ -3,6 +3,14 @@ import { formatTokens, sumLastDays } from "./aggregate";
 import type { DailyBucket } from "./types";
 
 const bucket = (date: string, claudeTotal: number, codexTotal: number): DailyBucket => ({
+  cursor: {
+    input: 0,
+    output: 0,
+    cacheRead: 0,
+    cacheWrite: 0,
+    reasoning: 0,
+    total: 0,
+  },
   date,
   claude: {
     input: claudeTotal,

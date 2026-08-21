@@ -9,9 +9,16 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use crate::platform_command;
 
 mod claude_oauth;
+mod codex_jsonl;
 mod codex_oauth;
+mod cursor_api;
 mod time;
 pub use claude_oauth::ClaudeAuthoritative;
+pub use cursor_api::CursorSummary;
+
+use codex_jsonl::{codex_limits_from_default, collect_codex_from_default};
+#[cfg(test)]
+pub(crate) use codex_jsonl::{codex_limits_from_dir, collect_codex_from_dir};
 use time::{as_u64, date_from_iso, unknown_date};
 
 #[cfg(test)]
@@ -33,6 +40,9 @@ use time::iso_to_epoch_seconds;
 //     rate_limits:{primary,secondary,plan_type,...}}`. `last_token_usage` is
 //     per-turn (not cumulative); `rate_limits` is authoritative and comes
 //     straight from OpenAI, so we surface the most recent one as-is.
+//   - Cursor: no local session ledger — daily tokens and plan usage come from
+//     the cursor.com dashboard API using the local Cursor login (see
+//     `cursor_api`).
 
 const CLAUDE_BLOCK_SECONDS: i64 = 5 * 60 * 60;
 
@@ -72,6 +82,7 @@ pub struct DailyBucket {
     pub date: String,
     pub claude: TokenTotals,
     pub codex: TokenTotals,
+    pub cursor: TokenTotals,
 }
 
 #[derive(Debug, Clone, Default, Serialize, PartialEq, Eq)]
@@ -79,6 +90,7 @@ pub struct DailyBucket {
 pub struct ProviderTotals {
     pub claude: TokenTotals,
     pub codex: TokenTotals,
+    pub cursor: TokenTotals,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -143,6 +155,9 @@ pub struct UsageReport {
     /// Uses the same OAuth token Claude Code itself uses; `None` when the
     /// user isn't signed in locally or the request failed.
     pub claude_authoritative: Option<ClaudeAuthoritative>,
+    /// Cursor plan usage from the cursor.com dashboard API; `None` when no
+    /// local Cursor login (IDE or cursor-agent) was found.
+    pub cursor_summary: Option<CursorSummary>,
     /// Server-reported "now" seconds so the UI countdown stays aligned with
     /// the Rust timestamps we returned above.
     pub now_seconds: i64,
@@ -156,6 +171,7 @@ pub async fn usage_summary() -> Result<UsageReport, String> {
     let codex_limits = tokio::task::spawn_blocking(codex_limits_from_default);
     let claude_authoritative = claude_oauth::fetch();
     let codex_authoritative = codex_oauth::fetch();
+    let cursor_data = cursor_api::fetch();
     let (
         claude_daily,
         codex_daily,
@@ -163,13 +179,15 @@ pub async fn usage_summary() -> Result<UsageReport, String> {
         codex_limits,
         claude_authoritative,
         codex_authoritative,
+        cursor_data,
     ) = tokio::join!(
         claude_daily,
         codex_daily,
         claude_block,
         codex_limits,
         claude_authoritative,
-        codex_authoritative
+        codex_authoritative,
+        cursor_data
     );
 
     let mut merged: BTreeMap<String, DailyBucket> = BTreeMap::new();
@@ -183,6 +201,7 @@ pub async fn usage_summary() -> Result<UsageReport, String> {
                     date,
                     claude: TokenTotals::default(),
                     codex: TokenTotals::default(),
+                    cursor: TokenTotals::default(),
                 });
                 bucket.claude.add(&tokens);
                 totals.claude.add(&tokens);
@@ -201,6 +220,7 @@ pub async fn usage_summary() -> Result<UsageReport, String> {
                     date,
                     claude: TokenTotals::default(),
                     codex: TokenTotals::default(),
+                    cursor: TokenTotals::default(),
                 });
                 bucket.codex.add(&tokens);
                 totals.codex.add(&tokens);
@@ -211,6 +231,36 @@ pub async fn usage_summary() -> Result<UsageReport, String> {
             message,
         }),
     }
+
+    let cursor_summary = match cursor_data {
+        Ok(Some(data)) => {
+            for message in data.warnings {
+                warnings.push(UsageWarning {
+                    provider: "cursor".to_string(),
+                    message,
+                });
+            }
+            for (date, tokens) in data.daily {
+                let bucket = merged.entry(date.clone()).or_insert_with(|| DailyBucket {
+                    date,
+                    claude: TokenTotals::default(),
+                    codex: TokenTotals::default(),
+                    cursor: TokenTotals::default(),
+                });
+                bucket.cursor.add(&tokens);
+                totals.cursor.add(&tokens);
+            }
+            data.summary
+        }
+        Ok(None) => None,
+        Err(message) => {
+            warnings.push(UsageWarning {
+                provider: "cursor".to_string(),
+                message,
+            });
+            None
+        }
+    };
 
     let mut daily: Vec<DailyBucket> = merged.into_values().collect();
     // Newest first for the UI's "last N days" slice.
@@ -273,6 +323,7 @@ pub async fn usage_summary() -> Result<UsageReport, String> {
         codex_limits,
         claude_block,
         claude_authoritative,
+        cursor_summary,
         now_seconds: now_seconds(),
     })
 }
@@ -306,24 +357,6 @@ pub(crate) fn collect_claude_from_dir(
     let mut days: BTreeMap<String, TokenTotals> = BTreeMap::new();
     for path in files {
         parse_claude_file(&path, &mut days);
-    }
-    Ok(days)
-}
-
-fn collect_codex_from_default() -> Result<BTreeMap<String, TokenTotals>, String> {
-    let root = home_dir()?.join(".codex/sessions");
-    collect_codex_from_dir(&root)
-}
-
-pub(crate) fn collect_codex_from_dir(root: &Path) -> Result<BTreeMap<String, TokenTotals>, String> {
-    if !root.exists() {
-        return Ok(BTreeMap::new());
-    }
-    let mut files = Vec::new();
-    collect_jsonl_files(root, &mut files)?;
-    let mut days: BTreeMap<String, TokenTotals> = BTreeMap::new();
-    for path in files {
-        parse_codex_file(&path, &mut days);
     }
     Ok(days)
 }
@@ -371,93 +404,6 @@ pub(crate) fn claude_block_from_dir(root: &Path, now: i64) -> Result<Option<Clau
         ends_at: end,
         tokens,
     }))
-}
-
-fn codex_limits_from_default() -> Result<Option<CodexRateLimits>, String> {
-    let root = home_dir()?.join(".codex/sessions");
-    codex_limits_from_dir(&root)
-}
-
-pub(crate) fn codex_limits_from_dir(root: &Path) -> Result<Option<CodexRateLimits>, String> {
-    if !root.exists() {
-        return Ok(None);
-    }
-    let mut files = Vec::new();
-    collect_jsonl_files(root, &mut files)?;
-    // Sort by mtime desc so we scan the newest sessions first and stop at the
-    // first rate_limits payload we find.
-    let mut with_mtime: Vec<(PathBuf, SystemTime)> = files
-        .into_iter()
-        .filter_map(|p| {
-            let modified = std::fs::metadata(&p).and_then(|m| m.modified()).ok()?;
-            Some((p, modified))
-        })
-        .collect();
-    with_mtime.sort_by_key(|entry| std::cmp::Reverse(entry.1));
-    for (path, _) in with_mtime {
-        if let Some(limits) = codex_limits_from_file(&path) {
-            return Ok(Some(limits));
-        }
-    }
-    Ok(None)
-}
-
-fn codex_limits_from_file(path: &Path) -> Option<CodexRateLimits> {
-    let file = File::open(path).ok()?;
-    // Keep the LAST rate_limits seen in the file: sessions may report the
-    // snapshot several times as usage progresses.
-    let mut best: Option<(String, CodexRateLimits)> = None;
-    for line in BufReader::new(file).lines().map_while(Result::ok) {
-        let Ok(event) = serde_json::from_str::<Value>(&line) else {
-            continue;
-        };
-        if event.get("type").and_then(Value::as_str) != Some("event_msg") {
-            continue;
-        }
-        let Some(payload) = event.get("payload") else {
-            continue;
-        };
-        if payload.get("type").and_then(Value::as_str) != Some("token_count") {
-            continue;
-        }
-        let Some(rate_limits) = payload.get("rate_limits") else {
-            continue;
-        };
-        let ts = event
-            .get("timestamp")
-            .and_then(Value::as_str)
-            .unwrap_or("")
-            .to_string();
-        let limits = CodexRateLimits {
-            plan_type: rate_limits
-                .get("plan_type")
-                .and_then(Value::as_str)
-                .map(str::to_string),
-            captured_at: (!ts.is_empty()).then(|| ts.clone()),
-            primary: parse_codex_window(rate_limits.get("primary")),
-            secondary: parse_codex_window(rate_limits.get("secondary")),
-            source: "snapshot".to_string(),
-        };
-        match &best {
-            None => best = Some((ts, limits)),
-            Some((prev_ts, _)) if ts >= *prev_ts => best = Some((ts, limits)),
-            _ => {}
-        }
-    }
-    best.map(|(_, limits)| limits)
-}
-
-fn parse_codex_window(value: Option<&Value>) -> Option<CodexRateWindow> {
-    let window = value?;
-    if window.is_null() {
-        return None;
-    }
-    let used_percent = window.get("used_percent").and_then(Value::as_f64)?;
-    Some(CodexRateWindow {
-        used_percent,
-        window_minutes: window.get("window_minutes").and_then(Value::as_u64),
-        resets_at: window.get("resets_at").and_then(Value::as_i64),
-    })
 }
 
 fn collect_jsonl_files(dir: &Path, files: &mut Vec<PathBuf>) -> Result<(), String> {
@@ -563,55 +509,6 @@ fn claude_usage_tokens(usage: &Value) -> TokenTotals {
     let cache_read = as_u64(usage.get("cache_read_input_tokens"));
     let cache_write = as_u64(usage.get("cache_creation_input_tokens"));
     let reasoning = as_u64(usage.pointer("/output_tokens_details/thinking_tokens"));
-    let mut tokens = TokenTotals {
-        input,
-        output,
-        cache_read,
-        cache_write,
-        reasoning,
-        total: 0,
-    };
-    tokens.recompute_total();
-    tokens
-}
-
-fn parse_codex_file(path: &Path, days: &mut BTreeMap<String, TokenTotals>) {
-    let Ok(file) = File::open(path) else {
-        return;
-    };
-    for line in BufReader::new(file).lines().map_while(Result::ok) {
-        let Ok(event) = serde_json::from_str::<Value>(&line) else {
-            continue;
-        };
-        if event.get("type").and_then(Value::as_str) != Some("event_msg") {
-            continue;
-        }
-        if event.pointer("/payload/type").and_then(Value::as_str) != Some("token_count") {
-            continue;
-        }
-        let Some(last) = event.pointer("/payload/info/last_token_usage") else {
-            continue;
-        };
-        let date = event
-            .get("timestamp")
-            .and_then(Value::as_str)
-            .and_then(date_from_iso)
-            .unwrap_or_else(unknown_date);
-        let tokens = codex_last_usage_tokens(last);
-        days.entry(date).or_default().add(&tokens);
-    }
-}
-
-fn codex_last_usage_tokens(usage: &Value) -> TokenTotals {
-    // Codex reports `input_tokens` as the full input (cached + fresh) and
-    // `cached_input_tokens` as the cached subset. Split them so `input` here
-    // means fresh input only, matching how Claude reports it.
-    let total_input = as_u64(usage.get("input_tokens"));
-    let cache_read = as_u64(usage.get("cached_input_tokens")).min(total_input);
-    let input = total_input.saturating_sub(cache_read);
-    let cache_write = as_u64(usage.get("cache_write_input_tokens"));
-    let output = as_u64(usage.get("output_tokens"));
-    let reasoning = as_u64(usage.get("reasoning_output_tokens"));
     let mut tokens = TokenTotals {
         input,
         output,

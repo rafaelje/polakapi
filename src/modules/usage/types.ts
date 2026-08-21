@@ -11,11 +11,13 @@ export interface DailyBucket {
   date: string;
   claude: TokenTotals;
   codex: TokenTotals;
+  cursor: TokenTotals;
 }
 
 export interface ProviderTotals {
   claude: TokenTotals;
   codex: TokenTotals;
+  cursor: TokenTotals;
 }
 
 export interface UsageWarning {
@@ -55,6 +57,18 @@ export interface ClaudeAuthoritative {
   fableWeekly: AuthoritativeWindow | null;
 }
 
+export interface CursorWindow {
+  usedPercent: number;
+  resetsAt: number | null;
+}
+
+export interface CursorSummary {
+  membershipType: string | null;
+  plan: CursorWindow | null;
+  auto: CursorWindow | null;
+  api: CursorWindow | null;
+}
+
 export interface UsageReport {
   daily: DailyBucket[];
   totals: ProviderTotals;
@@ -62,6 +76,7 @@ export interface UsageReport {
   codexLimits: CodexRateLimits | null;
   claudeBlock: ClaudeBlock | null;
   claudeAuthoritative: ClaudeAuthoritative | null;
+  cursorSummary: CursorSummary | null;
   nowSeconds: number;
 }
 

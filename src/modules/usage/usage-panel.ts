@@ -8,18 +8,21 @@ import {
   claudePlanCard,
   codexPlanCard,
   codexResetText,
+  cursorPlanCard,
 } from "./plan-cards";
-import type {
-  AuthoritativeWindow,
-  ClaudePlanTier,
-  DailyBucket,
-  TokenTotals,
-  UsageReport,
-  UsageWarning,
+import {
+  sumTotals,
+  type AuthoritativeWindow,
+  type ClaudePlanTier,
+  type DailyBucket,
+  type TokenTotals,
+  type UsageReport,
+  type UsageWarning,
 } from "./types";
 
-// The "usage" tab of the bottom panel. Two plan-status cards on top (Claude,
-// Codex), then window totals (today/7d/30d/all) and a per-day breakdown.
+// The "usage" tab of the bottom panel. Plan-status cards on top (Claude,
+// Codex, Cursor), then window totals (today/7d/30d/all) and a per-day
+// breakdown.
 // Data comes from the Rust `usage_summary` command; the plan-cards module
 // owns the two cards' DOM.
 
@@ -199,6 +202,7 @@ function renderReport(ctx: RenderContext, state: PanelState): void {
     ctx.plans.append(card);
   }
   ctx.plans.append(codexPlanCard(report));
+  ctx.plans.append(cursorPlanCard(report));
   renderSummary(ctx.summary, report);
   renderTable(ctx.table, report.daily);
   renderStatus(ctx.status, report);
@@ -228,6 +232,18 @@ function updateCountdowns(host: HTMLElement, report: UsageReport): void {
   if (codexSecondary && report.codexLimits?.secondary) {
     codexSecondary.textContent = codexResetText(report.codexLimits.secondary, now);
   }
+  if (report.cursorSummary) {
+    const pairs: [string, AuthoritativeWindow | null][] = [
+      ["cursor-plan-countdown", report.cursorSummary.plan],
+      ["cursor-auto-countdown", report.cursorSummary.auto],
+      ["cursor-api-countdown", report.cursorSummary.api],
+    ];
+    for (const [role, window] of pairs) {
+      if (!window) continue;
+      const el = host.querySelector<HTMLElement>(`[data-role='${role}']`);
+      if (el) el.textContent = authoritativeResetText(window, now);
+    }
+  }
 }
 
 const fetchedAtByReport = new WeakMap<UsageReport, number>();
@@ -254,11 +270,17 @@ function renderSummary(host: HTMLElement, report: UsageReport): void {
   for (const window of windows) {
     const claude = sumLastDays(report.daily, window.days, (b) => b.claude, nowMs);
     const codex = sumLastDays(report.daily, window.days, (b) => b.codex, nowMs);
-    host.append(summaryCard(window.label, claude, codex));
+    const cursor = sumLastDays(report.daily, window.days, (b) => b.cursor, nowMs);
+    host.append(summaryCard(window.label, claude, codex, cursor));
   }
 }
 
-function summaryCard(label: string, claude: TokenTotals, codex: TokenTotals): HTMLElement {
+function summaryCard(
+  label: string,
+  claude: TokenTotals,
+  codex: TokenTotals,
+  cursor: TokenTotals,
+): HTMLElement {
   const card = document.createElement("div");
   card.className = "usage-card";
 
@@ -269,11 +291,12 @@ function summaryCard(label: string, claude: TokenTotals, codex: TokenTotals): HT
 
   card.append(providerRow("claude", claude));
   card.append(providerRow("codex", codex));
+  card.append(providerRow("cursor", cursor));
 
   return card;
 }
 
-function providerRow(provider: "claude" | "codex", totals: TokenTotals): HTMLElement {
+function providerRow(provider: "claude" | "codex" | "cursor", totals: TokenTotals): HTMLElement {
   const row = document.createElement("div");
   row.className = `usage-card-row usage-provider-${provider}`;
 
@@ -305,7 +328,7 @@ function renderTable(host: HTMLElement, daily: readonly DailyBucket[]): void {
   if (daily.length === 0) {
     const empty = document.createElement("div");
     empty.className = "usage-empty";
-    empty.textContent = "No local usage data found in ~/.claude or ~/.codex.";
+    empty.textContent = "No usage data found for Claude, Codex or Cursor.";
     host.append(empty);
     return;
   }
@@ -314,7 +337,7 @@ function renderTable(host: HTMLElement, daily: readonly DailyBucket[]): void {
   table.className = "usage-daily";
   const thead = document.createElement("thead");
   const headRow = document.createElement("tr");
-  for (const label of ["Date", "Claude", "Codex", "Total"]) {
+  for (const label of ["Date", "Claude", "Codex", "Cursor", "Total"]) {
     const th = document.createElement("th");
     th.textContent = label;
     headRow.append(th);
@@ -330,16 +353,10 @@ function renderTable(host: HTMLElement, daily: readonly DailyBucket[]): void {
 
     const claude = tokenCell(bucket.claude);
     const codex = tokenCell(bucket.codex);
-    const total = tokenCell({
-      input: bucket.claude.input + bucket.codex.input,
-      output: bucket.claude.output + bucket.codex.output,
-      cacheRead: bucket.claude.cacheRead + bucket.codex.cacheRead,
-      cacheWrite: bucket.claude.cacheWrite + bucket.codex.cacheWrite,
-      reasoning: bucket.claude.reasoning + bucket.codex.reasoning,
-      total: bucket.claude.total + bucket.codex.total,
-    });
+    const cursor = tokenCell(bucket.cursor);
+    const total = tokenCell(sumTotals(sumTotals(bucket.claude, bucket.codex), bucket.cursor));
 
-    row.append(date, claude, codex, total);
+    row.append(date, claude, codex, cursor, total);
     tbody.append(row);
   }
   table.append(tbody);
@@ -357,7 +374,7 @@ function tokenCell(totals: TokenTotals): HTMLTableCellElement {
 function renderStatus(host: HTMLElement, report: UsageReport): void {
   const parts: string[] = [];
   if (report.daily.length === 0 && report.warnings.length === 0) {
-    parts.push("No usage data yet — run Claude Code or Codex CLI first.");
+    parts.push("No usage data yet — run Claude Code, Codex CLI or Cursor first.");
   } else if (report.daily.length > 0) {
     parts.push(`${report.daily.length} day${report.daily.length === 1 ? "" : "s"} of history.`);
   }
