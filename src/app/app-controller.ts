@@ -370,11 +370,23 @@ export class AppController {
     const notesGutter = this.elements.notesGutter;
     if (notesGutter) {
       notesGutter.addEventListener("mousedown", (e) =>
-        startFlexDrag(e, notesGutter, "v", () => {
-          this.router.getActive()?.refit();
-          this.bottomPanel?.refit();
-          this.persistCurrentNotesHeight();
-        }),
+        startFlexDrag(
+          e,
+          notesGutter,
+          "v",
+          () => {
+            this.router.getActive()?.refit();
+            this.bottomPanel?.refit();
+            this.persistCurrentNotesHeight();
+          },
+          () => {
+            // The drag pins both siblings to fixed px. Keep only the notes
+            // panel pinned: with the layout pane back on its CSS `flex: 1`
+            // the geometry is identical, and hiding the notes panel lets the
+            // layout pane reclaim the space instead of leaving a hole.
+            this.elements.layoutEl.style.flex = "";
+          },
+        ),
       );
     }
   }
