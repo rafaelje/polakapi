@@ -1,0 +1,77 @@
+/* ---------------------------------------------------------------------------
+ * /memory — Claude auto-memory reviewer. Reuses the agents-modal shell at a
+ * larger size (the user reviews full markdown files) and adds project group
+ * headers plus the two-step delete button.
+ * ------------------------------------------------------------------------- */
+
+.memory-modal {
+  width: min(1500px, 80vw);
+  height: 80vh;
+  max-height: 80vh;
+}
+
+.memory-modal .agents-modal-body {
+  flex: 1;
+  min-height: 0;
+}
+
+.memory-modal-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px 4px;
+  position: sticky;
+  top: 0;
+  background: var(--panel);
+  z-index: 1;
+}
+
+.memory-modal-group-name {
+  font:
+    10px ui-monospace,
+    Menlo,
+    monospace;
+  color: #8a8a8a;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+  text-align: left;
+}
+
+.memory-modal-active-badge,
+.memory-modal-index-badge {
+  font:
+    10px ui-monospace,
+    Menlo,
+    monospace;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 1px 7px;
+  white-space: nowrap;
+}
+
+.memory-modal-active-badge {
+  color: #d97757;
+  border-color: rgba(217, 119, 87, 0.45);
+}
+
+.memory-modal-index-badge {
+  color: #56ccf2;
+  border-color: rgba(86, 204, 242, 0.45);
+}
+
+.memory-modal-btn-danger {
+  color: #e57373;
+  border-color: rgba(229, 115, 115, 0.45);
+}
+
+.memory-modal-btn-danger.memory-modal-btn-armed {
+  background: rgba(229, 115, 115, 0.18);
+  color: #ef9a9a;
+}
+
+.memory-modal-editor-content {
+  min-height: 0;
+  height: 100%;
+}

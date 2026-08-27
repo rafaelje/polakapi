@@ -15,6 +15,7 @@ mod git_worktree;
 mod loop_cli;
 mod loop_prompts;
 mod memory;
+mod memory_review;
 mod notification_command;
 mod notifications;
 mod open;
@@ -63,6 +64,7 @@ use crate::loop_prompts::{
     loop_write_run_prompt, loop_write_state_file,
 };
 use crate::memory::pty_memory_stats;
+use crate::memory_review::{memory_delete, memory_list, memory_read, memory_write};
 use crate::paste_image::save_pasted_image;
 use crate::pty::PtyStore;
 use crate::skills::{skill_explain, skill_read, skill_write, skills_list};
@@ -228,6 +230,10 @@ pub fn run() {
             adv_ensure_run_prompt,
             adv_read_run_prompt,
             adv_write_run_prompt,
+            memory_list,
+            memory_read,
+            memory_write,
+            memory_delete,
             skills_list,
             skill_read,
             skill_write,

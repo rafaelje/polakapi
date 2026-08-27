@@ -55,6 +55,10 @@ import {
   mountSkillsButton,
   type SkillsButtonHandle,
 } from "../modules/skills-library/skills-button";
+import {
+  mountMemoryButton,
+  type MemoryButtonHandle,
+} from "../modules/memory-library/memory-button";
 import { flushSaveAgents } from "../shared/persistence/agents-store";
 import { bootstrapWorkspaces, type WorkspacesBootstrapHandle } from "./workspaces-bootstrap";
 import { wireWindowLifecycle } from "./lifecycle";
@@ -85,6 +89,7 @@ export class AppController {
   private agentsButton: AgentsButtonHandle | null = null;
   private agentsController: AgentsController | null = null;
   private skillsButton: SkillsButtonHandle | null = null;
+  private memoryButton: MemoryButtonHandle | null = null;
   private unwireShortcuts: (() => void) | null = null;
   private unwireWindowLifecycle: (() => void) | null = null;
   private memoryGuard: MemoryGuardHandle | null = null;
@@ -149,6 +154,13 @@ export class AppController {
       },
     });
     this.skillsButton = mountSkillsButton();
+    this.memoryButton = mountMemoryButton({
+      getActiveProjectPath: () => this.workspaces?.controller.getActiveProject()?.path ?? null,
+      getKnownProjectPaths: () =>
+        this.workspaces?.controller
+          .getState()
+          .workspaces.flatMap((ws) => ws.projects.map((p) => p.path)) ?? [],
+    });
     await this.wirePtyEvents();
     this.wireGutters();
     this.wirePanelToggles();
@@ -238,6 +250,8 @@ export class AppController {
 
     this.skillsButton?.dispose();
     this.skillsButton = null;
+    this.memoryButton?.dispose();
+    this.memoryButton = null;
 
     const agentsController = this.agentsController;
     this.agentsController = null;
