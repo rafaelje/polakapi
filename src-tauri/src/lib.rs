@@ -15,6 +15,7 @@ mod loop_cli;
 mod loop_prompts;
 mod memory;
 mod open;
+mod paste_image;
 mod platform_command;
 mod pty;
 mod shell_integration;
@@ -57,6 +58,7 @@ use crate::loop_prompts::{
     loop_write_run_prompt, loop_write_state_file,
 };
 use crate::memory::pty_memory_stats;
+use crate::paste_image::save_pasted_image;
 use crate::pty::PtyStore;
 use crate::usage::usage_summary;
 
@@ -158,6 +160,7 @@ pub fn run() {
             pty_resize,
             pty_kill,
             pty_memory_stats,
+            save_pasted_image,
             keep_awake_set,
             app_exit,
             fs_validate_path,

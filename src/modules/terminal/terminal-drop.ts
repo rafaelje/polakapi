@@ -190,7 +190,7 @@ function shellQuote(path: string, platform: TerminalShellPlatform): string {
   return `'${path.replace(/'/g, "'\\''")}'`;
 }
 
-function detectShellPlatform(): TerminalShellPlatform {
+export function detectShellPlatform(): TerminalShellPlatform {
   if (typeof navigator === "undefined") return "posix";
   const userAgentData = Reflect.get(navigator, "userAgentData") as
     | { platform?: unknown }
