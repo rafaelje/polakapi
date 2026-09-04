@@ -123,7 +123,7 @@ fn prune(dir: &Path, retention: Duration, keep_files: usize, keep_bytes: u64) {
             fresh.push((modified, metadata.len(), entry.path()));
         }
     }
-    fresh.sort_by(|a, b| b.0.cmp(&a.0));
+    fresh.sort_by_key(|entry| std::cmp::Reverse(entry.0));
     let mut kept_files = 0usize;
     let mut kept_bytes = 0u64;
     for (_, len, path) in fresh {
