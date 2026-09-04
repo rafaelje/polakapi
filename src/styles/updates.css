@@ -4,6 +4,10 @@
   gap: 2px;
 }
 
+.update-indicator[hidden] {
+  display: none;
+}
+
 .toolbar .update-chip {
   display: inline-flex;
   align-items: center;
