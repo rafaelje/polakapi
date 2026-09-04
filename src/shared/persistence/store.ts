@@ -17,6 +17,8 @@ export interface PersistedLayout {
   keepAwakeEnabled?: boolean;
   /** Selected Claude Code plan tier for the usage panel's 5-hour block bar. */
   claudePlanTier?: ClaudePlanTier;
+  /** Release version the user hid from the toolbar update chip. */
+  dismissedUpdateVersion?: string;
   /**
    * @deprecated F3: notes content is now stored per-project in workspaces.json.
    * Kept in the type so older layout.json files still load without runtime

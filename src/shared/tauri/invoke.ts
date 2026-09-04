@@ -29,6 +29,8 @@ export interface InvokeOptions {
   toastOnError?: boolean;
   /** Custom message shown in the toast (falls back to a generic one). */
   errorMessage?: string;
+  /** Request headers, used with raw binary bodies (ArrayBuffer / Uint8Array args). */
+  headers?: Record<string, string>;
 }
 
 /**
@@ -41,7 +43,11 @@ export async function invoke<T>(
   opts: InvokeOptions = {},
 ): Promise<T> {
   try {
-    return await tauriInvoke<T>(command, args);
+    return await tauriInvoke<T>(
+      command,
+      args,
+      opts.headers ? { headers: opts.headers } : undefined,
+    );
   } catch (cause) {
     const err = new InvokeError(command, cause);
     console.error(err);

@@ -28,6 +28,10 @@ import {
 import { mountBottomPanel, type BottomPanelHandle } from "../modules/bottom-panel/bottom-panel";
 import { isBottomTab } from "../modules/bottom-panel/types";
 import { mountUsageToolbar, type UsageToolbarHandle } from "../modules/usage/usage-toolbar";
+import {
+  mountUpdateIndicatorWithDefaults,
+  type UpdateIndicatorHandle,
+} from "../modules/updates/update-check";
 import { mountLoopButton, type LoopButtonHandle } from "../modules/agents-flow/loop-window";
 import {
   mountSessionsButton,
@@ -65,6 +69,7 @@ export class AppController {
   private palette: CommandPaletteHandle | null = null;
   private bottomPanel: BottomPanelHandle | null = null;
   private usageToolbar: UsageToolbarHandle | null = null;
+  private updateIndicator: UpdateIndicatorHandle | null = null;
   private loopButton: LoopButtonHandle | null = null;
   private sessionsButton: SessionsButtonHandle | null = null;
   private adversarialButton: AdversarialButtonHandle | null = null;
@@ -110,6 +115,10 @@ export class AppController {
     const usageHost = document.getElementById("usage-indicators");
     if (usageHost) {
       this.usageToolbar = mountUsageToolbar({ host: usageHost });
+    }
+    const updateHost = document.getElementById("update-indicator");
+    if (updateHost) {
+      this.updateIndicator = mountUpdateIndicatorWithDefaults(updateHost);
     }
     this.loopButton = mountLoopButton();
     await this.wireSessionResume();
@@ -188,6 +197,8 @@ export class AppController {
 
     this.usageToolbar?.dispose();
     this.usageToolbar = null;
+    this.updateIndicator?.dispose();
+    this.updateIndicator = null;
     const bottomPanel = this.bottomPanel;
     this.bottomPanel = null;
     if (bottomPanel) {

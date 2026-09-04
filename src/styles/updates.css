@@ -1,0 +1,44 @@
+.update-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.update-indicator[hidden] {
+  display: none;
+}
+
+.toolbar .update-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 8px;
+  border-radius: 8px;
+  border-color: var(--accent);
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.toolbar .update-chip:hover {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+.toolbar .update-chip-dismiss {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border-color: transparent;
+  border-radius: 50%;
+  font-size: 12px;
+  line-height: 1;
+  color: #8a8a8a;
+}
+
+.toolbar .update-chip-dismiss:hover {
+  color: var(--text);
+  border-color: transparent;
+  background: var(--border);
+}

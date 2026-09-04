@@ -11,6 +11,7 @@ import {
   copyTerminalSelection,
   pasteIntoTerminal,
 } from "./terminal-clipboard";
+import { attachTerminalImagePaste } from "./terminal-image-paste";
 import { attachTerminalKeybindings } from "./terminal-keybindings";
 import {
   classifyLinkText,
@@ -148,6 +149,7 @@ export class TerminalPane {
       ),
     );
     this.disposables.push(attachTerminalClipboard(this.term));
+    this.disposables.push(attachTerminalImagePaste(this.term));
     this.disposables.push(
       attachTerminalContextMenuGuard(this.bodyEl, (at) => this.openContextMenu(at)),
     );

@@ -15,9 +15,11 @@ mod loop_cli;
 mod loop_prompts;
 mod memory;
 mod open;
+mod paste_image;
 mod platform_command;
 mod pty;
 mod shell_integration;
+mod update_check;
 mod usage;
 
 use std::sync::{Arc, Mutex};
@@ -57,7 +59,9 @@ use crate::loop_prompts::{
     loop_write_run_prompt, loop_write_state_file,
 };
 use crate::memory::pty_memory_stats;
+use crate::paste_image::save_pasted_image;
 use crate::pty::PtyStore;
+use crate::update_check::update_check;
 use crate::usage::usage_summary;
 
 #[cfg(target_os = "windows")]
@@ -158,6 +162,7 @@ pub fn run() {
             pty_resize,
             pty_kill,
             pty_memory_stats,
+            save_pasted_image,
             keep_awake_set,
             app_exit,
             fs_validate_path,
@@ -215,7 +220,8 @@ pub fn run() {
             adv_ensure_run_prompt,
             adv_read_run_prompt,
             adv_write_run_prompt,
-            usage_summary
+            usage_summary,
+            update_check
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
