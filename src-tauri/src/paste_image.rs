@@ -142,7 +142,9 @@ mod tests {
         let stale = tmp.path().join("stale.png");
         std::fs::write(&stale, b"x").unwrap();
         let old = SystemTime::now() - Duration::from_secs(60);
-        std::fs::File::open(&stale)
+        std::fs::OpenOptions::new()
+            .write(true)
+            .open(&stale)
             .unwrap()
             .set_modified(old)
             .unwrap();
