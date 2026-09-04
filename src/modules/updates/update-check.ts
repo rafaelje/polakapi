@@ -48,14 +48,14 @@ export function mountUpdateIndicator(
   button.className = "update-chip";
   const label = document.createElement("span");
   label.className = "update-chip-label";
-  const dismiss = document.createElement("span");
+  button.append(label);
+  const dismiss = document.createElement("button");
+  dismiss.type = "button";
   dismiss.className = "update-chip-dismiss";
   dismiss.textContent = "×";
   dismiss.title = "Hide until the next release";
-  dismiss.setAttribute("role", "button");
   dismiss.setAttribute("aria-label", "Hide update notice");
-  button.append(label, dismiss);
-  host.append(button);
+  host.append(button, dismiss);
 
   let disposed = false;
   let inFlight = false;
@@ -97,15 +97,14 @@ export function mountUpdateIndicator(
     }
   };
 
-  button.addEventListener("click", (event) => {
+  button.addEventListener("click", () => {
+    if (latest) void deps.openUrl(latest.releaseUrl);
+  });
+  dismiss.addEventListener("click", () => {
     if (!latest) return;
-    if (event.target === dismiss) {
-      dismissedVersion = latest.latestVersion;
-      deps.saveDismissed(latest.latestVersion);
-      render();
-      return;
-    }
-    void deps.openUrl(latest.releaseUrl);
+    dismissedVersion = latest.latestVersion;
+    deps.saveDismissed(latest.latestVersion);
+    render();
   });
 
   const ready = deps.loadDismissed().then((version) => {

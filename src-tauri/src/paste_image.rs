@@ -9,6 +9,10 @@ const MAX_IMAGE_BYTES: usize = 64 * 1024 * 1024;
 /// Pasted images are scratch files: anything older than this is pruned on the
 /// next paste so the temp dir does not grow forever.
 const RETENTION: Duration = Duration::from_secs(24 * 60 * 60);
+/// Fresh files are also bounded so a burst of large pastes cannot fill the
+/// temp volume within the retention window; the oldest ones go first.
+const MAX_FILES: usize = 50;
+const MAX_DIR_BYTES: u64 = 512 * 1024 * 1024;
 
 /// Images pasted into a terminal land here so their path can be handed to the
 /// shell — agent CLIs (Claude Code, Codex, ...) read image files by path.
@@ -45,12 +49,46 @@ pub fn save_image(dir: &Path, bytes: &[u8], extension: &str) -> Result<PathBuf, 
             bytes.len()
         ));
     }
-    std::fs::create_dir_all(dir).map_err(|e| format!("could not create {}: {e}", dir.display()))?;
-    prune_stale(dir, RETENTION);
+    create_private_dir(dir).map_err(|e| format!("could not create {}: {e}", dir.display()))?;
+    prune(
+        dir,
+        RETENTION,
+        MAX_FILES.saturating_sub(1),
+        MAX_DIR_BYTES.saturating_sub(bytes.len() as u64),
+    );
 
     let dest = dir.join(unique_file_name(extension));
-    std::fs::write(&dest, bytes).map_err(|e| format!("could not write {}: {e}", dest.display()))?;
+    write_private_file(&dest, bytes)
+        .map_err(|e| format!("could not write {}: {e}", dest.display()))?;
     Ok(dest)
+}
+
+#[cfg(unix)]
+fn create_private_dir(dir: &Path) -> std::io::Result<()> {
+    use std::os::unix::fs::DirBuilderExt;
+    std::fs::DirBuilder::new()
+        .recursive(true)
+        .mode(0o700)
+        .create(dir)
+}
+
+#[cfg(not(unix))]
+fn create_private_dir(dir: &Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(dir)
+}
+
+fn write_private_file(dest: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    use std::io::Write;
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let mut file = options.open(dest)?;
+    file.write_all(bytes)?;
+    file.flush()
 }
 
 fn unique_file_name(extension: &str) -> String {
@@ -62,11 +100,14 @@ fn unique_file_name(extension: &str) -> String {
     format!("paste-{millis}-{}.{extension}", &suffix[..8])
 }
 
-fn prune_stale(dir: &Path, retention: Duration) {
+/// Removes files older than `retention`, then the oldest of the rest until at
+/// most `keep_files` files and `keep_bytes` bytes remain.
+fn prune(dir: &Path, retention: Duration, keep_files: usize, keep_bytes: u64) {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return;
     };
     let now = SystemTime::now();
+    let mut fresh: Vec<(SystemTime, u64, PathBuf)> = Vec::new();
     for entry in entries.flatten() {
         let Ok(metadata) = entry.metadata() else {
             continue;
@@ -74,14 +115,24 @@ fn prune_stale(dir: &Path, retention: Duration) {
         if !metadata.is_file() {
             continue;
         }
-        let Ok(modified) = metadata.modified() else {
-            continue;
-        };
-        let Ok(age) = now.duration_since(modified) else {
-            continue;
-        };
+        let modified = metadata.modified().unwrap_or(UNIX_EPOCH);
+        let age = now.duration_since(modified).unwrap_or(Duration::ZERO);
         if age > retention {
             let _ = std::fs::remove_file(entry.path());
+        } else {
+            fresh.push((modified, metadata.len(), entry.path()));
+        }
+    }
+    fresh.sort_by(|a, b| b.0.cmp(&a.0));
+    let mut kept_files = 0usize;
+    let mut kept_bytes = 0u64;
+    for (_, len, path) in fresh {
+        let within_quota = kept_files < keep_files && kept_bytes.saturating_add(len) <= keep_bytes;
+        if within_quota {
+            kept_files += 1;
+            kept_bytes += len;
+        } else {
+            let _ = std::fs::remove_file(path);
         }
     }
 }
@@ -149,7 +200,46 @@ mod tests {
             .set_modified(old)
             .unwrap();
 
-        prune_stale(tmp.path(), Duration::from_secs(1));
+        prune(tmp.path(), Duration::from_secs(1), usize::MAX, u64::MAX);
         assert!(!stale.exists());
+    }
+
+    #[test]
+    fn prunes_oldest_fresh_files_beyond_the_quota() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut paths = Vec::new();
+        for index in 0..4 {
+            let path = tmp.path().join(format!("paste-{index}.png"));
+            std::fs::write(&path, [0u8; 10]).unwrap();
+            let modified = SystemTime::now() - Duration::from_secs(100 - index);
+            std::fs::OpenOptions::new()
+                .write(true)
+                .open(&path)
+                .unwrap()
+                .set_modified(modified)
+                .unwrap();
+            paths.push(path);
+        }
+
+        prune(tmp.path(), RETENTION, 3, 25);
+
+        assert!(!paths[0].exists(), "oldest file exceeds both quotas");
+        assert!(!paths[1].exists(), "second oldest exceeds the byte quota");
+        assert!(paths[2].exists());
+        assert!(paths[3].exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn creates_owner_only_dir_and_files() {
+        use std::os::unix::fs::PermissionsExt;
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("pasted-images");
+        let file = save_image(&dir, b"png", "png").unwrap();
+
+        let dir_mode = std::fs::metadata(&dir).unwrap().permissions().mode() & 0o777;
+        let file_mode = std::fs::metadata(&file).unwrap().permissions().mode() & 0o777;
+        assert_eq!(dir_mode, 0o700);
+        assert_eq!(file_mode, 0o600);
     }
 }

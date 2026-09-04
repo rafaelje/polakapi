@@ -1,4 +1,5 @@
 import { invoke } from "../../shared/tauri/invoke";
+import { showToast } from "../../shared/ui/toast";
 import {
   detectShellPlatform,
   formatPathsForShell,
@@ -6,6 +7,9 @@ import {
 } from "./terminal-drop";
 
 const IMAGE_MIME = /^image\//i;
+// Mirrors MAX_IMAGE_BYTES in paste_image.rs; checked here first so an oversized
+// blob is never read into memory or shipped over IPC.
+const MAX_IMAGE_BYTES = 64 * 1024 * 1024;
 // Paths made only of these characters are written unquoted so CLIs that
 // detect bare image paths in pasted text (Claude Code, Codex) keep working.
 const BARE_SAFE_PATH = /^[A-Za-z0-9_\-./:\\~]+$/;
@@ -40,6 +44,10 @@ function readPlainText(dt: DataTransfer): string {
 
 /** Persists the image via Rust and resolves with its absolute path. */
 export async function savePastedImage(image: Blob): Promise<string> {
+  if (image.size > MAX_IMAGE_BYTES) {
+    showToast("Pasted image is too large (max 64 MiB)", "error");
+    throw new Error(`pasted image too large: ${image.size} bytes`);
+  }
   const bytes = new Uint8Array(await image.arrayBuffer());
   return invoke<string>("save_pasted_image", bytes, {
     headers: { "x-image-mime": image.type },

@@ -1,9 +1,12 @@
-/* Toolbar chip shown only when a newer GitHub release exists. Click opens
-   the release page; the × hides that version until a newer one ships. */
+.update-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
 .toolbar .update-chip {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
   padding: 3px 8px;
   border-radius: 8px;
   border-color: var(--accent);
@@ -16,19 +19,22 @@
   background: color-mix(in srgb, var(--accent) 14%, transparent);
 }
 
-.update-chip-dismiss {
+.toolbar .update-chip-dismiss {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 14px;
-  height: 14px;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border-color: transparent;
   border-radius: 50%;
   font-size: 12px;
   line-height: 1;
   color: #8a8a8a;
 }
 
-.update-chip-dismiss:hover {
+.toolbar .update-chip-dismiss:hover {
   color: var(--text);
+  border-color: transparent;
   background: var(--border);
 }

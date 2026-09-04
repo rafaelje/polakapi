@@ -1,7 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const invokeMock = vi.hoisted(() => vi.fn());
+const showToast = vi.hoisted(() => vi.fn());
 vi.mock("../../shared/tauri/invoke", () => ({ invoke: invokeMock }));
+vi.mock("../../shared/ui/toast", () => ({ showToast }));
 
 import {
   attachTerminalImagePaste,
@@ -94,6 +96,16 @@ describe("savePastedImage", () => {
     expect(body).toBeInstanceOf(Uint8Array);
     expect(Array.from(body as Uint8Array)).toEqual([137, 80, 78, 71]);
     expect(opts).toMatchObject({ headers: { "x-image-mime": "image/png" } });
+  });
+
+  it("rejects oversized images before reading them", async () => {
+    const huge = { size: 64 * 1024 * 1024 + 1, type: "image/png", arrayBuffer: vi.fn() };
+
+    await expect(savePastedImage(huge as unknown as Blob)).rejects.toThrow(/too large/);
+
+    expect(huge.arrayBuffer).not.toHaveBeenCalled();
+    expect(invokeMock).not.toHaveBeenCalled();
+    expect(showToast).toHaveBeenCalledWith(expect.stringContaining("too large"), "error");
   });
 });
 
