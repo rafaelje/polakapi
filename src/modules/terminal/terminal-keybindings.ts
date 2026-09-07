@@ -18,6 +18,7 @@ export function resolveTerminalKeyInput(event: KeyboardEvent, isMac: boolean): s
 
   if (isMac && event.key === "ArrowLeft") return "\x01";
   if (isMac && event.key === "ArrowRight") return "\x05";
+  if (event.key === "Backspace") return "\x15";
   return null;
 }
 
