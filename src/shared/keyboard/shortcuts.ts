@@ -1,5 +1,6 @@
 export interface ShortcutHandlers {
   newPane: () => void;
+  splitPane: (position: "right" | "bottom") => void;
   closeFocused: () => void;
   focusByIndex: (idx: number) => void;
   focusPrev: () => void;
@@ -10,6 +11,7 @@ export interface ShortcutHandlers {
 
 export type AppShortcut =
   | { kind: "new-pane" }
+  | { kind: "split-pane"; position: "right" | "bottom" }
   | { kind: "close-focused" }
   | { kind: "toggle-palette" }
   | { kind: "focus-prev" }
@@ -46,6 +48,9 @@ export function resolveAppShortcut(e: ShortcutKeyEvent, isMac: boolean): AppShor
   if (direction) return { kind: "focus-direction", direction };
 
   if (isMac) {
+    if (e.key.toLowerCase() === "d") {
+      return { kind: "split-pane", position: e.shiftKey ? "bottom" : "right" };
+    }
     if (e.shiftKey) return null;
     if (e.key.toLowerCase() === "t") return { kind: "new-pane" };
     if (e.key.toLowerCase() === "w") return { kind: "close-focused" };
@@ -77,6 +82,9 @@ export function wireShortcuts(handlers: ShortcutHandlers): () => void {
     switch (shortcut.kind) {
       case "new-pane":
         handlers.newPane();
+        return;
+      case "split-pane":
+        handlers.splitPane(shortcut.position);
         return;
       case "close-focused":
         handlers.closeFocused();

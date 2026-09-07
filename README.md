@@ -68,6 +68,13 @@ pnpm tauri dev
 
 AI coding CLIs are optional and must be installed separately and available on your `PATH`.
 
+### Split Terminals
+
+In the main project workspace on macOS, **Cmd + D** splits the focused terminal
+into equal left/right panes. **Cmd + Shift + D** splits it into equal top/bottom
+panes, opening the new terminal below. Further splits divide the focused pane
+without rearranging its neighbors. Drag a divider to resize the panes.
+
 ### Build on Windows
 
 Build the NSIS installer from PowerShell:

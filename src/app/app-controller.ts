@@ -54,6 +54,7 @@ import { bootstrapWorkspaces, type WorkspacesBootstrapHandle } from "./workspace
 import { wireWindowLifecycle } from "./lifecycle";
 import { wireQuitConfirm } from "./quit-confirm";
 import { TerminalRouter } from "./terminal-router";
+import { splitFocusedTerminal } from "../modules/terminal/terminal-splits";
 import { type AppElements } from "./elements";
 import {
   AGENT_SESSION_RESUME_EVENT,
@@ -386,6 +387,10 @@ export class AppController {
   private wireKeyboardShortcuts(): void {
     this.unwireShortcuts = wireShortcuts({
       newPane: () => void this.router.getActive()?.addPane(),
+      splitPane: (position) => {
+        const manager = this.router.getActive();
+        if (manager) void splitFocusedTerminal(manager, position);
+      },
       closeFocused: () => this.router.getActive()?.closeFocused(),
       focusByIndex: (idx) => this.router.getActive()?.focusByIndex(idx),
       focusPrev: () => this.router.getActive()?.focusRelative(-1),
