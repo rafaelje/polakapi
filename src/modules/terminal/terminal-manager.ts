@@ -33,7 +33,7 @@ import {
   type NotificationContext,
 } from "./terminal-notifications";
 import { layoutTerminalSplits } from "./terminal-split-layout";
-import { type TerminalSpec } from "./types";
+import { type PaneAddOptions, type TerminalSpec } from "./types";
 
 function errorMessage(error: unknown): string {
   if (typeof error === "string") return error;
@@ -209,10 +209,7 @@ export class TerminalManager {
    * Spawn a pane backed by the given spec. When `spec.cwd` is undefined the
    * manager substitutes `defaultCwd` (the owning project's path).
    */
-  async addPane(
-    spec?: Partial<TerminalSpec>,
-    opts?: { silent?: boolean; extraArgs?: string[]; skipStartupCmd?: boolean },
-  ): Promise<TerminalPane | null> {
+  async addPane(spec?: Partial<TerminalSpec>, opts?: PaneAddOptions): Promise<TerminalPane | null> {
     const pane = new TerminalPane();
     const anchorId = this.focusedId;
     pane.el.style.visibility = "hidden";
@@ -252,7 +249,8 @@ export class TerminalManager {
     };
     this.panes.set(ptyId, pane);
     this.order.push(ptyId);
-    this.layout = appendTerminalPane(this.layout, ptyId, anchorId);
+    this.layout = appendTerminalPane(this.layout, ptyId, anchorId, opts?.splitPosition);
+    this.syncOrderToLayout();
     if (!spawnError) this.liveIds.add(ptyId);
     this.specsById.set(ptyId, finalSpec);
     pane.el.dataset.ptyId = ptyId;

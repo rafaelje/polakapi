@@ -5,6 +5,13 @@ export interface PaneCreateOptions {
   cliId?: string;
 }
 
+export interface PaneAddOptions {
+  silent?: boolean;
+  extraArgs?: string[];
+  skipStartupCmd?: boolean;
+  splitPosition?: "right" | "bottom";
+}
+
 /**
  * Persisted, user-visible description of a terminal that belongs to a project.
  *

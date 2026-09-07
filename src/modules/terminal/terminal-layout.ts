@@ -46,13 +46,14 @@ export function appendTerminalPane(
   layout: TerminalLayoutNode | null,
   paneId: string,
   targetId?: string | null,
+  position: "right" | "bottom" = "right",
 ): TerminalLayoutNode {
   if (!layout) return terminalPaneLayout(paneId);
   if (terminalLayoutPaneIds(layout).includes(paneId)) return layout;
   if (targetId && terminalLayoutPaneIds(layout).includes(targetId)) {
-    return insertByTarget(layout, targetId, terminalPaneLayout(paneId), "right") ?? layout;
+    return insertByTarget(layout, targetId, terminalPaneLayout(paneId), position) ?? layout;
   }
-  return splitLayout("row", layout, terminalPaneLayout(paneId));
+  return splitLayout(axisForPosition(position), layout, terminalPaneLayout(paneId));
 }
 
 export function removeTerminalPane(

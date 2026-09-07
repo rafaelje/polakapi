@@ -1,6 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
-import { resolveAppShortcut, type ShortcutKeyEvent } from "./shortcuts";
+import { resolveAppShortcut, wireShortcuts, type ShortcutKeyEvent } from "./shortcuts";
 
 function ev(overrides: Partial<ShortcutKeyEvent>): ShortcutKeyEvent {
   return {
@@ -81,6 +81,58 @@ describe("resolveAppShortcut on Linux/Windows (Ctrl+Shift)", () => {
 
 describe("resolveAppShortcut on macOS (Cmd)", () => {
   const isMac = true;
+
+  it("splits to the right with Cmd+D and below with Cmd+Shift+D", () => {
+    expect(resolveAppShortcut(ev({ key: "d", metaKey: true }), true)).toEqual({
+      kind: "split-pane",
+      position: "right",
+    });
+    expect(resolveAppShortcut(ev({ key: "D", metaKey: true, shiftKey: true }), true)).toEqual({
+      kind: "split-pane",
+      position: "bottom",
+    });
+    expect(resolveAppShortcut(ev({ key: "d", ctrlKey: true }), false)).toBeNull();
+    expect(resolveAppShortcut(ev({ key: "d", metaKey: true, altKey: true }), true)).toBeNull();
+    expect(resolveAppShortcut(ev({ key: "d", metaKey: true, ctrlKey: true }), true)).toBeNull();
+  });
+
+  it("dispatches both splits before the keystrokes reach terminal input", () => {
+    const platform = vi.spyOn(navigator, "platform", "get").mockReturnValue("MacIntel");
+    const splitPane = vi.fn();
+    const dispose = wireShortcuts({
+      newPane: vi.fn(),
+      splitPane,
+      closeFocused: vi.fn(),
+      focusByIndex: vi.fn(),
+      focusPrev: vi.fn(),
+      focusNext: vi.fn(),
+      focusDirection: vi.fn(),
+      togglePalette: vi.fn(),
+    });
+    const input = document.createElement("textarea");
+    const terminalInput = vi.fn();
+    input.addEventListener("keydown", terminalInput);
+    document.body.append(input);
+    try {
+      for (const shiftKey of [false, true]) {
+        const event = new KeyboardEvent("keydown", {
+          key: shiftKey ? "D" : "d",
+          metaKey: true,
+          shiftKey,
+          bubbles: true,
+          cancelable: true,
+        });
+        input.dispatchEvent(event);
+        expect(event.defaultPrevented).toBe(true);
+      }
+      expect(splitPane.mock.calls).toEqual([["right"], ["bottom"]]);
+      expect(terminalInput).not.toHaveBeenCalled();
+    } finally {
+      dispose();
+      platform.mockRestore();
+      input.remove();
+    }
+  });
 
   it("keeps the shift-less Cmd combos", () => {
     expect(resolveAppShortcut(ev({ metaKey: true, key: "t" }), isMac)).toEqual({
