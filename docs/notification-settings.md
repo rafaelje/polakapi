@@ -15,3 +15,13 @@ Preferences are saved in `notifications.json` in the app configuration directory
 On macOS, sounds are discovered in `/System/Library/Sounds`, `/Library/Sounds`, and `~/Library/Sounds`. Windows lists its Media directory and uses WAV files. Linux lists standard freedesktop/GNOME sounds and requires `paplay` for previews/custom playback; the system-settings shortcut targets GNOME. Focus modes and OS notification settings control whether a banner is visible. Custom sounds remain independent of the desktop-delivery toggle.
 
 **polakapi → Check for updates...** checks the existing GitHub release source on demand, reports success or failure, and offers to open the download page when a newer release exists. It does not install updates automatically.
+
+## Screenshots
+
+App settings with a system notification sound selected:
+
+![App settings](screenshots/app-settings.png)
+
+Custom notification sound controls:
+
+![Custom notification sound](screenshots/custom-notification-sound.png)
