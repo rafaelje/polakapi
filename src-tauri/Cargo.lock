@@ -3271,6 +3271,8 @@ name = "polakapi"
 version = "0.10.1"
 dependencies = [
  "keepawake",
+ "objc2",
+ "objc2-app-kit",
  "parking_lot",
  "portable-pty",
  "reqwest 0.12.28",

@@ -30,6 +30,14 @@ describe("resolveAppShortcut on Linux/Windows (Ctrl+Shift)", () => {
     expect(resolveAppShortcut(ev({ ctrlKey: true, shiftKey: true, key: "K" }), isMac)).toBeNull();
   });
 
+  it("maps Ctrl+Shift+M to the menu bar toggle only on Linux/Windows", () => {
+    expect(resolveAppShortcut(ev({ ctrlKey: true, shiftKey: true, key: "M" }), isMac)).toEqual({
+      kind: "toggle-menu-bar",
+    });
+    expect(resolveAppShortcut(ev({ ctrlKey: true, key: "m" }), isMac)).toBeNull();
+    expect(resolveAppShortcut(ev({ metaKey: true, shiftKey: true, key: "M" }), true)).toBeNull();
+  });
+
   it("maps Ctrl+Shift+brackets and digits via physical key codes", () => {
     expect(
       resolveAppShortcut(
@@ -94,6 +102,7 @@ describe("resolveAppShortcut on macOS (Cmd)", () => {
       focusNext: vi.fn(),
       focusDirection,
       togglePalette: vi.fn(),
+      toggleMenuBar: vi.fn(),
     });
     const input = document.createElement("textarea");
     const terminalInput = vi.fn();
@@ -160,6 +169,7 @@ describe("resolveAppShortcut on macOS (Cmd)", () => {
       focusNext: vi.fn(),
       focusDirection: vi.fn(),
       togglePalette: vi.fn(),
+      toggleMenuBar: vi.fn(),
     });
     const input = document.createElement("textarea");
     const terminalInput = vi.fn();

@@ -1,3 +1,5 @@
+import { startAgentNotifier } from "../modules/settings/agent-notifier";
+import { checkForUpdatesManually } from "../modules/updates/manual-check";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
@@ -65,6 +67,8 @@ import {
 import type { AgentSessionResumeRequest } from "../modules/sessions/types";
 
 export class AppController {
+  private stopAgentNotifier: (() => void) | null = null;
+  private unlistenUpdateMenu: UnlistenFn | null = null;
   private readonly router: TerminalRouter;
   private workspaces: WorkspacesBootstrapHandle | null = null;
   private palette: CommandPaletteHandle | null = null;
@@ -107,6 +111,10 @@ export class AppController {
   }
 
   async start(): Promise<void> {
+    this.unlistenUpdateMenu = await listen("check-updates", () => {
+      void checkForUpdatesManually();
+    });
+    this.stopAgentNotifier = await startAgentNotifier();
     const layout = await this.loadSavedLayout();
     this.applyLayout(layout);
     this.bottomPanel = mountBottomPanel({
@@ -175,6 +183,8 @@ export class AppController {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
+    this.stopAgentNotifier?.();
+    this.unlistenUpdateMenu?.();
 
     this.unlistenData?.();
     this.unlistenData = null;
@@ -398,6 +408,7 @@ export class AppController {
       focusDirection: (direction) => this.router.getActive()?.focusDirection(direction),
       // Resolved lazily so the keybinding is harmless before bootstrap mounts.
       togglePalette: () => this.palette?.toggle(),
+      toggleMenuBar: () => void invoke("toggle_menu_bar", undefined, { toastOnError: false }),
     });
   }
 

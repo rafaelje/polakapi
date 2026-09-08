@@ -7,6 +7,7 @@ export interface ShortcutHandlers {
   focusNext: () => void;
   focusDirection: (direction: "left" | "right" | "up" | "down") => void;
   togglePalette: () => void;
+  toggleMenuBar: () => void;
 }
 
 export type AppShortcut =
@@ -14,6 +15,7 @@ export type AppShortcut =
   | { kind: "split-pane"; position: "right" | "bottom" }
   | { kind: "close-focused" }
   | { kind: "toggle-palette" }
+  | { kind: "toggle-menu-bar" }
   | { kind: "focus-prev" }
   | { kind: "focus-next" }
   | { kind: "focus-index"; index: number }
@@ -69,6 +71,7 @@ export function resolveAppShortcut(e: ShortcutKeyEvent, isMac: boolean): AppShor
   if (e.key.toLowerCase() === "t") return { kind: "new-pane" };
   if (e.key.toLowerCase() === "w") return { kind: "close-focused" };
   if (e.key.toLowerCase() === "p") return { kind: "toggle-palette" };
+  if (e.key.toLowerCase() === "m") return { kind: "toggle-menu-bar" };
   if (e.code === "BracketLeft") return { kind: "focus-prev" };
   if (e.code === "BracketRight") return { kind: "focus-next" };
   const digit = /^Digit([1-9])$/.exec(e.code);
@@ -95,6 +98,9 @@ export function wireShortcuts(handlers: ShortcutHandlers): () => void {
         return;
       case "toggle-palette":
         handlers.togglePalette();
+        return;
+      case "toggle-menu-bar":
+        handlers.toggleMenuBar();
         return;
       case "focus-prev":
         handlers.focusPrev();

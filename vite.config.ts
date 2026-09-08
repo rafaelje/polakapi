@@ -38,6 +38,7 @@ export default defineConfig(async () => ({
     rollupOptions: {
       input: {
         main: resolve(projectRoot, "index.html"),
+        settings: resolve(projectRoot, "settings.html"),
         loop: resolve(projectRoot, "loop.html"),
         sessions: resolve(projectRoot, "sessions.html"),
         adversarial: resolve(projectRoot, "adversarial.html"),

@@ -3,6 +3,7 @@
 
 mod adv_review;
 mod agent_sessions;
+mod app_menu;
 mod awake;
 pub mod capture;
 mod commands;
@@ -14,6 +15,7 @@ mod git_worktree;
 mod loop_cli;
 mod loop_prompts;
 mod memory;
+mod notifications;
 mod open;
 mod paste_image;
 mod platform_command;
@@ -120,8 +122,10 @@ pub fn run() {
         .setup({
             let store = store.clone();
             move |app| {
+                app_menu::install(app)?;
                 app.manage(store);
                 app.manage(ShellRegistry::default());
+                app.manage(notifications::SoundPlayback::default());
                 app.manage(AwakeState::default());
                 // Open the prompts history DB at <app_config_dir>/polakapi.db
                 // and register it as `State<Mutex<Db>>` for the read commands.
@@ -221,7 +225,14 @@ pub fn run() {
             adv_read_run_prompt,
             adv_write_run_prompt,
             usage_summary,
-            update_check
+            update_check,
+            app_menu::toggle_menu_bar,
+            notifications::notification_events,
+            notifications::notification_send,
+            notifications::notification_sounds,
+            notifications::notification_play_sound,
+            notifications::notification_stop_sound,
+            notifications::notification_open_settings
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

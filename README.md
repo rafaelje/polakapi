@@ -80,6 +80,11 @@ direction. Focus stays in place when there is no terminal in that direction.
 **Cmd + Shift + arrow keys** also works; on Windows and Linux, use
 **Ctrl + Shift + arrow keys**.
 
+**View → Toggle Menu Bar** hides or shows the menu bar: **Cmd + Shift + M** on
+macOS auto-hides the system menu bar and Dock until the pointer reaches the
+screen edge, and **Ctrl + Shift + M** on Windows and Linux hides the in-window
+menu bar. The choice persists across restarts.
+
 ### Build on Windows
 
 Build the NSIS installer from PowerShell:
