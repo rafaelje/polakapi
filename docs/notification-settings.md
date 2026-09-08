@@ -6,7 +6,7 @@ Open **polakapi → Settings…** (`Cmd+,` on macOS, `Ctrl+,` elsewhere). The se
 - **Agent Finished**: Never, Immediately, or When idle. Idle delivery waits for tracked terminal agents, Claude subagents, and active loop runs.
 - **Agent Waiting for Input**: idle-input alerts from Claude hooks, suppressed while other tracked work is active.
 - **Desktop Notifications**: enable desktop delivery, inspect plugin permission status, open system notification settings, or send a test.
-- **Notification Sound**: system default, no sound, installed system sounds, or a custom audio file, with preview and clear actions.
+- **Notification Sound**: system default, no sound, installed system sounds, or a custom audio file, with preview, stop, and clear actions. Starting a new preview replaces the one still playing.
 
 Use **Enable agent hooks** once and restart existing Claude/Codex sessions. It installs or updates polakapi-managed hooks while preserving user hooks. Claude supports permission, waiting, completion, and subagent tracking; Codex uses the existing completion hook integration. Agents without compatible hooks still have terminal-bell notifications. Completion of a loop run also uses these preferences.
 

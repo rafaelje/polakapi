@@ -125,6 +125,7 @@ pub fn run() {
                 app_menu::install(app)?;
                 app.manage(store);
                 app.manage(ShellRegistry::default());
+                app.manage(notifications::SoundPlayback::default());
                 app.manage(AwakeState::default());
                 // Open the prompts history DB at <app_config_dir>/polakapi.db
                 // and register it as `State<Mutex<Db>>` for the read commands.
@@ -230,6 +231,7 @@ pub fn run() {
             notifications::notification_send,
             notifications::notification_sounds,
             notifications::notification_play_sound,
+            notifications::notification_stop_sound,
             notifications::notification_open_settings
         ])
         .run(tauri::generate_context!())

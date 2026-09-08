@@ -198,15 +198,38 @@ async function start(): Promise<void> {
       renderSound();
     }
   });
-  const preview = button("▶", async () => {
-    if (p.sound === "default")
-      await deliverNotification("polakapi", "Notification sound preview", {
-        ...p,
-        desktop: true,
-      });
-    else await invoke("notification_play_sound", { path: p.sound });
+  const preview = document.createElement("button");
+  preview.type = "button";
+  let playing = false;
+  function renderPreview(): void {
+    preview.textContent = playing ? "⏹" : "▶";
+    preview.setAttribute(
+      "aria-label",
+      playing ? "Stop notification sound" : "Preview notification sound",
+    );
+  }
+  preview.addEventListener("click", () => {
+    if (playing) {
+      action(() => invoke("notification_stop_sound"));
+      return;
+    }
+    playing = true;
+    renderPreview();
+    action(async () => {
+      try {
+        if (p.sound === "default")
+          await deliverNotification("polakapi", "Notification sound preview", {
+            ...p,
+            desktop: true,
+          });
+        else await invoke("notification_play_sound", { path: p.sound });
+      } finally {
+        playing = false;
+        renderPreview();
+      }
+    });
   });
-  preview.setAttribute("aria-label", "Preview notification sound");
+  renderPreview();
   const clear = button("Clear", () => {
     save({ sound: "default" });
     renderSound();

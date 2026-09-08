@@ -3,9 +3,13 @@ use serde::Serialize;
 use serde_json::Value;
 use std::{
     path::{Path, PathBuf},
-    time::Duration,
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Mutex,
+    },
+    time::{Duration, Instant},
 };
-use tauri::AppHandle;
+use tauri::{AppHandle, State};
 use tauri_plugin_notification::NotificationExt;
 
 #[derive(Debug, Serialize)]
@@ -168,7 +172,10 @@ fn is_audio(path: &Path) -> bool {
 }
 
 #[tauri::command]
-pub async fn notification_play_sound(path: String) -> Result<(), String> {
+pub async fn notification_play_sound(
+    path: String,
+    playback: State<'_, SoundPlayback>,
+) -> Result<(), String> {
     let file = Path::new(&path);
     if !file.is_absolute() || !file.is_file() || !is_audio(file) {
         return Err("Choose an existing audio file".into());
@@ -198,14 +205,96 @@ pub async fn notification_play_sound(path: String) -> Result<(), String> {
         c
     };
     cmd.kill_on_drop(true);
-    let status = tokio::time::timeout(Duration::from_secs(30), cmd.status())
-        .await
-        .map_err(|_| "Sound playback timed out".to_string())?
-        .map_err(|e| e.to_string())?;
-    if status.success() {
-        Ok(())
-    } else {
-        Err("Could not play sound".into())
+    let child = cmd.spawn().map_err(|e| e.to_string())?;
+    let generation = playback.start(child);
+    let started = Instant::now();
+    loop {
+        match playback.poll(generation) {
+            Playback::Stopped => return Ok(()),
+            Playback::Exited(true) => return Ok(()),
+            Playback::Exited(false) => return Err("Could not play sound".into()),
+            Playback::Failed(error) => return Err(error),
+            Playback::Running if started.elapsed() > Duration::from_secs(30) => {
+                playback.stop(Some(generation));
+                return Err("Sound playback timed out".into());
+            }
+            Playback::Running => tokio::time::sleep(Duration::from_millis(100)).await,
+        }
+    }
+}
+
+/// Stops the sound started by `notification_play_sound`, if any.
+#[tauri::command]
+pub fn notification_stop_sound(playback: State<'_, SoundPlayback>) {
+    playback.stop(None);
+}
+
+/// The single preview/alert sound process. A new playback replaces (and
+/// kills) the previous one; `stop` ends it early.
+#[derive(Default)]
+pub struct SoundPlayback {
+    current: Mutex<Option<(u64, tokio::process::Child)>>,
+    generation: AtomicU64,
+}
+
+enum Playback {
+    Running,
+    Exited(bool),
+    Stopped,
+    Failed(String),
+}
+
+impl SoundPlayback {
+    fn start(&self, child: tokio::process::Child) -> u64 {
+        let generation = self.generation.fetch_add(1, Ordering::SeqCst) + 1;
+        let previous = self
+            .current
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .replace((generation, child));
+        if let Some((_, mut previous)) = previous {
+            let _ = previous.start_kill();
+        }
+        generation
+    }
+
+    /// Kills the current playback. With a generation, only that playback is
+    /// stopped, so a superseded caller cannot kill its replacement.
+    fn stop(&self, generation: Option<u64>) {
+        let mut current = self
+            .current
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if generation.is_some_and(|wanted| current.as_ref().is_some_and(|(g, _)| *g != wanted)) {
+            return;
+        }
+        if let Some((_, mut child)) = current.take() {
+            let _ = child.start_kill();
+        }
+    }
+
+    fn poll(&self, generation: u64) -> Playback {
+        let mut current = self
+            .current
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let Some((g, child)) = current.as_mut() else {
+            return Playback::Stopped;
+        };
+        if *g != generation {
+            return Playback::Stopped;
+        }
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                current.take();
+                Playback::Exited(status.success())
+            }
+            Ok(None) => Playback::Running,
+            Err(error) => {
+                current.take();
+                Playback::Failed(error.to_string())
+            }
+        }
     }
 }
 
