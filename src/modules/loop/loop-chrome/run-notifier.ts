@@ -2,6 +2,8 @@
 // Tracks prior snapshots to dedupe — the scheduler emits many events per
 // agent and we only want one toast per phase/batch.
 
+import { emitTo } from "@tauri-apps/api/event";
+import type { AgentEvent } from "../../settings/agent-notifier";
 import { showToast } from "../../../shared/ui/toast";
 import type { RunScheduler, RunSchedulerState } from "../core/run-scheduler";
 
@@ -24,6 +26,28 @@ function createMemo(): NotifierMemo {
 }
 
 function notify(state: RunSchedulerState, memo: NotifierMemo): void {
+  if (
+    state.settings &&
+    state.status !== memo.status &&
+    (memo.status !== null || state.status === "running")
+  ) {
+    const kind =
+      state.status === "running"
+        ? "started"
+        : state.status === "completed"
+          ? "finished"
+          : state.status === "paused"
+            ? "waiting"
+            : "ended";
+    const event: AgentEvent = {
+      ptyId: `loop:${state.settings.projectPath}:${state.settings.runId}`,
+      kind,
+      cli: "loop",
+    };
+    void emitTo("main", "agent-lifecycle", event).catch((error: unknown) =>
+      console.warn("Run notification failed", error),
+    );
+  }
   if (state.status === "completed" && memo.status !== "completed") {
     const phaseCount = state.phases.length;
     const warningCount = state.phases.filter((p) => p.reviewerExhausted).length;
@@ -69,5 +93,16 @@ export function attachRunNotifier(scheduler: RunScheduler): NotifierHandle {
       console.error("loop run-notifier: notify failed", err);
     }
   });
-  return { dispose: unsubscribe };
+  return {
+    dispose: () => {
+      unsubscribe();
+      const settings = scheduler.getState().settings;
+      if (settings)
+        void emitTo("main", "agent-lifecycle", {
+          ptyId: `loop:${settings.projectPath}:${settings.runId}`,
+          kind: "ended",
+          cli: "loop",
+        }).catch((error: unknown) => console.warn("Run notification cleanup failed", error));
+    },
+  };
 }

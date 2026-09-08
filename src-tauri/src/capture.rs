@@ -39,7 +39,9 @@ pub fn run() -> i32 {
     let started = std::time::SystemTime::now();
     match try_run() {
         Ok(event) => {
-            log_line(&LogPayload::ok(&event, started));
+            if let Some(event) = event {
+                log_line(&LogPayload::ok(&event, started));
+            }
             0
         }
         Err(msg) => {
@@ -50,7 +52,7 @@ pub fn run() -> i32 {
     }
 }
 
-fn try_run() -> Result<CaptureEvent, String> {
+fn try_run() -> Result<Option<CaptureEvent>, String> {
     let db_path =
         std::env::var("POLAKAPI_DB_PATH").map_err(|_| "POLAKAPI_DB_PATH not set".to_string())?;
     let mut buf = String::new();
@@ -62,6 +64,15 @@ fn try_run() -> Result<CaptureEvent, String> {
     }
     let v: serde_json::Value =
         serde_json::from_str(&buf).map_err(|e| format!("parse json: {e}"))?;
+    if let Err(error) = crate::notifications::capture_hook(std::path::Path::new(&db_path), &v) {
+        eprintln!("polakapi notification capture: {error}");
+    }
+    if matches!(
+        v.get("hook_event_name").and_then(serde_json::Value::as_str),
+        Some("Notification" | "SubagentStart" | "SubagentStop" | "PostToolUse")
+    ) {
+        return Ok(None);
+    }
     let event = if v.get("kind").is_some() {
         serde_json::from_value::<CaptureEvent>(v).map_err(|e| format!("capture event: {e}"))?
     } else {
@@ -73,11 +84,11 @@ fn try_run() -> Result<CaptureEvent, String> {
     // `Stop` / `AssistantStop` events still arrive (so the log shows the
     // CLI is healthy and the hook fired) but are dropped before any DB write.
     if matches!(event, CaptureEvent::AssistantStop { .. }) {
-        return Ok(event);
+        return Ok(Some(event));
     }
     let db = Db::open(std::path::Path::new(&db_path))?;
     apply_event(&db, &event)?;
-    Ok(event)
+    Ok(Some(event))
 }
 
 /// Resolves the log path: `$POLAKAPI_LOG_PATH` if set, otherwise

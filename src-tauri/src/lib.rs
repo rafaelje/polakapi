@@ -3,6 +3,7 @@
 
 mod adv_review;
 mod agent_sessions;
+mod app_menu;
 mod awake;
 pub mod capture;
 mod commands;
@@ -14,6 +15,7 @@ mod git_worktree;
 mod loop_cli;
 mod loop_prompts;
 mod memory;
+mod notifications;
 mod open;
 mod paste_image;
 mod platform_command;
@@ -120,6 +122,7 @@ pub fn run() {
         .setup({
             let store = store.clone();
             move |app| {
+                app_menu::install(app)?;
                 app.manage(store);
                 app.manage(ShellRegistry::default());
                 app.manage(AwakeState::default());
@@ -221,7 +224,13 @@ pub fn run() {
             adv_read_run_prompt,
             adv_write_run_prompt,
             usage_summary,
-            update_check
+            update_check,
+            notifications::notification_events,
+            notifications::notification_send,
+            notifications::notification_sounds,
+            notifications::notification_play_sound,
+            notifications::notification_run_command,
+            notifications::notification_open_settings
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
