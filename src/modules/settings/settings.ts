@@ -203,7 +203,6 @@ async function start(): Promise<void> {
       await deliverNotification("polakapi", "Notification sound preview", {
         ...p,
         desktop: true,
-        command: "",
       });
     else await invoke("notification_play_sound", { path: p.sound });
   });
@@ -214,17 +213,6 @@ async function start(): Promise<void> {
   });
   soundControls.append(sound, preview, filename, button("Choose…", choose), clear);
   renderSound();
-  const command = document.createElement("input");
-  command.type = "text";
-  command.className = "command-input";
-  command.placeholder = 'say "done"';
-  command.value = p.command;
-  command.setAttribute("aria-label", "Notification Command");
-  command.addEventListener("change", () => save({ command: command.value }));
-  row(
-    "Notification Command",
-    "Run a shell command on notification. POLAKAPI_NOTIFICATION_TITLE and POLAKAPI_NOTIFICATION_BODY are available as environment variables.",
-  ).append(command);
 }
 
 void start().catch((error: unknown) => {

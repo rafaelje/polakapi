@@ -229,7 +229,6 @@ pub fn run() {
             notifications::notification_send,
             notifications::notification_sounds,
             notifications::notification_play_sound,
-            notifications::notification_run_command,
             notifications::notification_open_settings
         ])
         .run(tauri::generate_context!())

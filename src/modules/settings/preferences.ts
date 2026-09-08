@@ -7,7 +7,6 @@ export interface NotificationPreferences {
   waiting: boolean;
   desktop: boolean;
   sound: string;
-  command: string;
 }
 
 export const defaults: NotificationPreferences = {
@@ -16,7 +15,6 @@ export const defaults: NotificationPreferences = {
   waiting: true,
   desktop: true,
   sound: "default",
-  command: "",
 };
 
 export function normalizePreferences(value: unknown): NotificationPreferences {
@@ -27,7 +25,6 @@ export function normalizePreferences(value: unknown): NotificationPreferences {
     waiting: typeof p.waiting === "boolean" ? p.waiting : defaults.waiting,
     desktop: typeof p.desktop === "boolean" ? p.desktop : defaults.desktop,
     sound: typeof p.sound === "string" ? p.sound : defaults.sound,
-    command: typeof p.command === "string" ? p.command : defaults.command,
   };
 }
 

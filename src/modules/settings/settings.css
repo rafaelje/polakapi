@@ -82,8 +82,7 @@ p {
   max-width: 48%;
 }
 button,
-select,
-.command-input {
+select {
   font: inherit;
   font-size: 11px;
   color: inherit;
@@ -156,10 +155,6 @@ select {
 .sound-filename:empty {
   display: none;
 }
-.command-input {
-  width: 220px;
-  max-width: 100%;
-}
 .settings-note {
   margin-top: 14px;
 }
@@ -192,8 +187,7 @@ select {
     color: #626a70;
   }
   button,
-  select,
-  .command-input {
+  select {
     background: #f1f2f3;
     border-color: #c9cdd0;
   }

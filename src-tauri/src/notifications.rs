@@ -210,44 +210,6 @@ pub async fn notification_play_sound(path: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub async fn notification_run_command(
-    command: String,
-    title: String,
-    body: String,
-) -> Result<(), String> {
-    if command.trim().is_empty() {
-        return Ok(());
-    }
-    #[cfg(not(target_os = "windows"))]
-    let mut cmd = {
-        let mut c = crate::platform_command::tokio_command("/bin/sh")?;
-        c.args(["-c", &command]);
-        c
-    };
-    #[cfg(target_os = "windows")]
-    let mut cmd = {
-        let mut c = crate::platform_command::tokio_command("cmd.exe")?;
-        c.args(["/C", &command]);
-        c
-    };
-    cmd.env("POLAKAPI_NOTIFICATION_TITLE", title)
-        .env("POLAKAPI_NOTIFICATION_BODY", body)
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .kill_on_drop(true);
-    let status = tokio::time::timeout(Duration::from_secs(15), cmd.status())
-        .await
-        .map_err(|_| "Notification command timed out".to_string())?
-        .map_err(|e| e.to_string())?;
-    if status.success() {
-        Ok(())
-    } else {
-        Err(format!("Notification command exited with {status}"))
-    }
-}
-
-#[tauri::command]
 pub async fn notification_open_settings() -> Result<(), String> {
     #[cfg(target_os = "macos")]
     let mut cmd = {

@@ -26,15 +26,6 @@ export async function deliverNotification(
   if (p.sound !== "default" && p.sound !== "none") {
     tasks.push(invoke("notification_play_sound", { path: p.sound }, { toastOnError: false }));
   }
-  if (p.command.trim()) {
-    tasks.push(
-      invoke(
-        "notification_run_command",
-        { command: p.command, title, body },
-        { toastOnError: false },
-      ),
-    );
-  }
   const results = await Promise.allSettled(tasks);
   const failed = results.find((result) => result.status === "rejected");
   if (failed?.status === "rejected") throw failed.reason;

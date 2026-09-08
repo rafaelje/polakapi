@@ -22,11 +22,10 @@ describe("notification delivery", () => {
       { toastOnError: false },
     );
   });
-  it("plays a custom file and runs the saved command separately from a silent banner", async () => {
+  it("plays a custom file separately from a silent banner", async () => {
     await deliverNotification("Agent", "Done", {
       ...defaults,
       sound: "/tmp/my sound.aiff",
-      command: "notify-me",
     });
     expect(invoke).toHaveBeenCalledWith(
       "notification_send",
@@ -38,11 +37,7 @@ describe("notification delivery", () => {
       { path: "/tmp/my sound.aiff" },
       { toastOnError: false },
     );
-    expect(invoke).toHaveBeenCalledWith(
-      "notification_run_command",
-      { command: "notify-me", title: "Agent", body: "Done" },
-      { toastOnError: false },
-    );
+    expect(invoke).toHaveBeenCalledTimes(2);
   });
   it("skips desktop permission and delivery when disabled", async () => {
     await deliverNotification("Agent", "Done", { ...defaults, desktop: false, sound: "none" });
