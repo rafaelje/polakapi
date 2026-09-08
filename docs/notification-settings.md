@@ -20,8 +20,8 @@ On macOS, sounds are discovered in `/System/Library/Sounds`, `/Library/Sounds`, 
 
 App settings with a system notification sound selected:
 
-![App settings](screenshots/app-settings.png)
+![App settings](screenshots/app-settings.jpg)
 
 Custom notification sound controls:
 
-![Custom notification sound](screenshots/custom-notification-sound.png)
+![Custom notification sound](screenshots/custom-notification-sound.jpg)
