@@ -75,6 +75,11 @@ into equal left/right panes. **Cmd + Shift + D** splits it into equal top/bottom
 panes, opening the new terminal below. Further splits divide the focused pane
 without rearranging its neighbors. Drag a divider to resize the panes.
 
+Use **Cmd + Option + arrow keys** on macOS to focus the nearest terminal in that
+direction. Focus stays in place when there is no terminal in that direction.
+**Cmd + Shift + arrow keys** also works; on Windows and Linux, use
+**Ctrl + Shift + arrow keys**.
+
 ### Build on Windows
 
 Build the NSIS installer from PowerShell:
