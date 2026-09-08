@@ -408,6 +408,7 @@ export class AppController {
       focusDirection: (direction) => this.router.getActive()?.focusDirection(direction),
       // Resolved lazily so the keybinding is harmless before bootstrap mounts.
       togglePalette: () => this.palette?.toggle(),
+      toggleMenuBar: () => void invoke("toggle_menu_bar", undefined, { toastOnError: false }),
     });
   }
 

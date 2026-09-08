@@ -225,6 +225,7 @@ pub fn run() {
             adv_write_run_prompt,
             usage_summary,
             update_check,
+            app_menu::toggle_menu_bar,
             notifications::notification_events,
             notifications::notification_send,
             notifications::notification_sounds,
