@@ -49,8 +49,18 @@ fn install_hooks_at_home(cli: &str, bin: &str, home: &Path) -> Result<InstallHoo
     let mut root = read_settings(&path)?;
     let already_installed = has_marker(&root);
 
-    if !already_installed {
-        let desired = desired_hooks(bin);
+    {
+        let mut desired = desired_hooks(bin);
+        if cli != "claude" {
+            for event in [
+                "Notification",
+                "SubagentStart",
+                "SubagentStop",
+                "PostToolUse",
+            ] {
+                desired.as_object_mut().unwrap().remove(event);
+            }
+        }
         if let Some(hooks) = root.as_object_mut().and_then(|object| {
             object
                 .entry("hooks")
@@ -72,7 +82,7 @@ fn install_hooks_at_home(cli: &str, bin: &str, home: &Path) -> Result<InstallHoo
         message: format!(
             "{} hooks in {}",
             if already_installed {
-                "kept"
+                "updated"
             } else {
                 "installed"
             },
@@ -108,6 +118,13 @@ fn desired_hooks(bin: &str) -> serde_json::Value {
             "hooks": [{ "type": "command", "command": command, "_polakapi": POLAKAPI_HOOK_MARKER }]
         }],
         "Stop": [{
+            "hooks": [{ "type": "command", "command": command, "_polakapi": POLAKAPI_HOOK_MARKER }]
+        }],
+        "SubagentStart": [{ "hooks": [{ "type": "command", "command": command, "_polakapi": POLAKAPI_HOOK_MARKER }] }],
+        "SubagentStop": [{ "hooks": [{ "type": "command", "command": command, "_polakapi": POLAKAPI_HOOK_MARKER }] }],
+        "PostToolUse": [{ "hooks": [{ "type": "command", "command": command, "_polakapi": POLAKAPI_HOOK_MARKER }] }],
+        "Notification": [{
+            "matcher": "permission_prompt|idle_prompt",
             "hooks": [{ "type": "command", "command": command, "_polakapi": POLAKAPI_HOOK_MARKER }]
         }],
         "SessionEnd": [{
@@ -184,6 +201,46 @@ mod tests {
         assert_eq!(stop.len(), 2);
         assert_eq!(stop[0]["hooks"][0]["command"], "user-command");
         assert_eq!(stop[1]["hooks"][0]["_polakapi"], POLAKAPI_HOOK_MARKER);
+    }
+
+    #[test]
+    fn upgrades_managed_hooks_without_duplicating_or_removing_user_hooks() {
+        let home = tempfile::tempdir().unwrap();
+        install_hooks_at_home("claude", "/old/polakapi", home.path()).unwrap();
+        let path = home.path().join(".claude/settings.json");
+        let mut root = read_settings(&path).unwrap();
+        root["hooks"]
+            .as_object_mut()
+            .unwrap()
+            .remove("Notification");
+        root["hooks"]["Stop"]
+            .as_array_mut()
+            .unwrap()
+            .push(serde_json::json!({"hooks":[{"type":"command","command":"user-command"}]}));
+        std::fs::write(&path, serde_json::to_vec(&root).unwrap()).unwrap();
+        install_hooks_at_home("claude", "/new/polakapi", home.path()).unwrap();
+        install_hooks_at_home("claude", "/new/polakapi", home.path()).unwrap();
+        let root = read_settings(&path).unwrap();
+        assert_eq!(root["hooks"]["Stop"].as_array().unwrap().len(), 2);
+        assert_eq!(root["hooks"]["Notification"].as_array().unwrap().len(), 1);
+        assert_eq!(
+            root["hooks"]["Stop"][0]["hooks"][0]["command"],
+            "user-command"
+        );
+        assert_eq!(
+            root["hooks"]["Stop"][1]["hooks"][0]["command"],
+            "\"/new/polakapi\" capture"
+        );
+    }
+
+    #[test]
+    fn codex_keeps_only_supported_lifecycle_hooks() {
+        let home = tempfile::tempdir().unwrap();
+        install_hooks_at_home("codex", "/tmp/polakapi", home.path()).unwrap();
+        let root = read_settings(&home.path().join(".codex/hooks.json")).unwrap();
+        assert!(root["hooks"].get("Notification").is_none());
+        assert!(root["hooks"].get("SubagentStart").is_none());
+        assert!(root["hooks"].get("Stop").is_some());
     }
 
     #[test]

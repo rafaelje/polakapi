@@ -1,8 +1,4 @@
-import {
-  isPermissionGranted,
-  requestPermission,
-  sendNotification,
-} from "@tauri-apps/plugin-notification";
+import { deliverNotification } from "../settings/notifications";
 import type { ProjectId } from "../workspaces/state/types";
 import type { TerminalPane } from "./terminal-pane";
 
@@ -20,9 +16,6 @@ import type { TerminalPane } from "./terminal-pane";
  * throttle — every bell should still light the row up; the bootstrap clears
  * it when the project becomes active.
  *
- * Permission handling: `requestPermission` is awaited lazily on the first
- * bell that needs an OS notification. The result is cached in a module-level
- * boolean; a denial logs once and degrades silently to badge-only.
  */
 export interface BellNotificationOptions {
   pane: TerminalPane;
@@ -86,45 +79,6 @@ export function registerManagerBell(opts: {
 
 const DEFAULT_THROTTLE_MS = 3000;
 
-/** Cached permission state. `null` ⇒ not asked yet. */
-let permissionGranted: boolean | null = null;
-let permissionDeniedWarned = false;
-let pendingPermissionRequest: Promise<boolean> | null = null;
-
-async function ensurePermission(): Promise<boolean> {
-  if (permissionGranted !== null) return permissionGranted;
-  if (pendingPermissionRequest) return pendingPermissionRequest;
-  pendingPermissionRequest = (async () => {
-    try {
-      let granted = await isPermissionGranted();
-      if (!granted) {
-        const result = await requestPermission();
-        granted = result === "granted";
-      }
-      permissionGranted = granted;
-      if (!granted && !permissionDeniedWarned) {
-        permissionDeniedWarned = true;
-        console.warn(
-          "[terminal-notifications] OS notification permission denied — degrading to in-app badge only.",
-        );
-      }
-      return granted;
-    } catch (error) {
-      // Linux notify-osd / dunst quirks can throw here; treat as denied but
-      // do not block the bell pipeline.
-      if (!permissionDeniedWarned) {
-        permissionDeniedWarned = true;
-        console.warn("[terminal-notifications] permission probe failed", error);
-      }
-      permissionGranted = false;
-      return false;
-    } finally {
-      pendingPermissionRequest = null;
-    }
-  })();
-  return pendingPermissionRequest;
-}
-
 export function registerBellNotification(opts: BellNotificationOptions): BellNotificationHandle {
   const throttleMs = opts.throttleMs ?? DEFAULT_THROTTLE_MS;
   let lastOsNotificationTs = 0;
@@ -150,13 +104,12 @@ export function registerBellNotification(opts: BellNotificationOptions): BellNot
     lastOsNotificationTs = now;
 
     void (async () => {
-      const granted = await ensurePermission();
-      if (!granted || disposed) return;
+      if (disposed) return;
       try {
-        sendNotification({
-          title: `${opts.getProjectName()} · ${opts.getTerminalTitle()}`,
-          body: "Terminal bell",
-        });
+        await deliverNotification(
+          `${opts.getProjectName()} · ${opts.getTerminalTitle()}`,
+          "Terminal bell",
+        );
       } catch (error) {
         console.error("[terminal-notifications] sendNotification failed", error);
       }

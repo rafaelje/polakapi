@@ -75,6 +75,11 @@ into equal left/right panes. **Cmd + Shift + D** splits it into equal top/bottom
 panes, opening the new terminal below. Further splits divide the focused pane
 without rearranging its neighbors. Drag a divider to resize the panes.
 
+**View → Toggle Menu Bar** hides or shows the menu bar: **Cmd + Shift + M** on
+macOS auto-hides the system menu bar and Dock until the pointer reaches the
+screen edge, and **Ctrl + Shift + M** on Windows and Linux hides the in-window
+menu bar. The choice persists across restarts.
+
 ### Build on Windows
 
 Build the NSIS installer from PowerShell:
