@@ -42,9 +42,13 @@ export function isMacPlatform(): boolean {
 }
 
 export function resolveAppShortcut(e: ShortcutKeyEvent, isMac: boolean): AppShortcut | null {
-  if (e.altKey) return null;
   const cmdHeld = isMac ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey;
   if (!cmdHeld) return null;
+
+  if (e.altKey) {
+    const direction = isMac && !e.shiftKey ? ARROW_DIRECTIONS[e.key] : undefined;
+    return direction ? { kind: "focus-direction", direction } : null;
+  }
 
   const direction = e.shiftKey ? ARROW_DIRECTIONS[e.key] : undefined;
   if (direction) return { kind: "focus-direction", direction };

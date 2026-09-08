@@ -90,6 +90,59 @@ describe("resolveAppShortcut on Linux/Windows (Ctrl+Shift)", () => {
 describe("resolveAppShortcut on macOS (Cmd)", () => {
   const isMac = true;
 
+  it("dispatches Cmd+Option+arrows before they reach terminal input", () => {
+    const platform = vi.spyOn(navigator, "platform", "get").mockReturnValue("MacIntel");
+    const focusDirection = vi.fn();
+    const dispose = wireShortcuts({
+      newPane: vi.fn(),
+      splitPane: vi.fn(),
+      closeFocused: vi.fn(),
+      focusByIndex: vi.fn(),
+      focusPrev: vi.fn(),
+      focusNext: vi.fn(),
+      focusDirection,
+      togglePalette: vi.fn(),
+      toggleMenuBar: vi.fn(),
+    });
+    const input = document.createElement("textarea");
+    const terminalInput = vi.fn();
+    input.addEventListener("keydown", terminalInput);
+    document.body.append(input);
+    try {
+      for (const key of ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"]) {
+        const event = new KeyboardEvent("keydown", {
+          key,
+          metaKey: true,
+          altKey: true,
+          bubbles: true,
+          cancelable: true,
+        });
+        input.dispatchEvent(event);
+        expect(event.defaultPrevented).toBe(true);
+      }
+      expect(focusDirection.mock.calls).toEqual([["left"], ["right"], ["up"], ["down"]]);
+      expect(terminalInput).not.toHaveBeenCalled();
+    } finally {
+      dispose();
+      platform.mockRestore();
+      input.remove();
+    }
+  });
+
+  it.each([
+    { altKey: true },
+    { metaKey: true },
+    { metaKey: true, altKey: true, shiftKey: true },
+    { metaKey: true, altKey: true, ctrlKey: true },
+    { ctrlKey: true, altKey: true },
+    { ctrlKey: true, altKey: true, shiftKey: true },
+  ])("leaves other arrow modifiers unbound: %j", (modifiers) => {
+    for (const key of ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"]) {
+      expect(resolveAppShortcut(ev({ key, ...modifiers }), isMac)).toBeNull();
+      expect(resolveAppShortcut(ev({ key, ...modifiers }), false)).toBeNull();
+    }
+  });
+
   it("splits to the right with Cmd+D and below with Cmd+Shift+D", () => {
     expect(resolveAppShortcut(ev({ key: "d", metaKey: true }), true)).toEqual({
       kind: "split-pane",
