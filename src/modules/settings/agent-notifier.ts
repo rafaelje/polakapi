@@ -63,14 +63,16 @@ export async function startAgentNotifier(): Promise<() => void> {
     preferences = p;
   });
   preferences = await loadPreferences();
-  const unlisten = await listen<{ id: string }>("pty:exit", (event) => {
-    policy
-      .process([{ ptyId: event.payload.id, kind: "ended", cli: "Agent" }], preferences)
-      .forEach(notify);
-  });
-  const unlistenLoop = await listen<AgentEvent>("agent-lifecycle", (event) => {
-    if (!disposed) policy.process([event.payload], preferences).forEach(notify);
-  });
+  const [unlisten, unlistenLoop] = await Promise.all([
+    listen<{ id: string }>("pty:exit", (event) => {
+      policy
+        .process([{ ptyId: event.payload.id, kind: "ended", cli: "Agent" }], preferences)
+        .forEach(notify);
+    }),
+    listen<AgentEvent>("agent-lifecycle", (event) => {
+      if (!disposed) policy.process([event.payload], preferences).forEach(notify);
+    }),
+  ]);
   function notify(event: AgentEvent): void {
     const message =
       event.kind === "permission"
