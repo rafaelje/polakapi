@@ -1,3 +1,5 @@
+@import "../../styles/form-controls.css";
+
 /*
  * Styles for the /adversarial review window. Shares the token set with /loop
  * so the look stays consistent; tokens are duplicated here because the window
@@ -5,6 +7,7 @@
  */
 
 :root {
+  color-scheme: dark;
   --bg: #0d0d10;
   --panel: #15161a;
   --panel-elev: #1b1d22;

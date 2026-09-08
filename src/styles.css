@@ -1,4 +1,5 @@
 @import "./styles/app-base.css";
+@import "./styles/form-controls.css";
 @import "./styles/workspaces.css";
 @import "./styles/project-pane.css";
 @import "./styles/pane-badge.css";

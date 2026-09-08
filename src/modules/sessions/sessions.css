@@ -1,4 +1,7 @@
+@import "../../styles/form-controls.css";
+
 :root {
+  color-scheme: dark;
   --bg: #0d0d10;
   --panel: #15161a;
   --panel-elev: #1b1d22;
