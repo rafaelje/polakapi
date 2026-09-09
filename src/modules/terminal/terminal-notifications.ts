@@ -109,6 +109,8 @@ export function registerBellNotification(opts: BellNotificationOptions): BellNot
         await deliverNotification(
           `${opts.getProjectName()} · ${opts.getTerminalTitle()}`,
           "Terminal bell",
+          undefined,
+          "bell",
         );
       } catch (error) {
         console.error("[terminal-notifications] sendNotification failed", error);

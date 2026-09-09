@@ -82,7 +82,8 @@ p {
   max-width: 48%;
 }
 button,
-select {
+select,
+.notification-command {
   font: inherit;
   font-size: 11px;
   color: inherit;
@@ -108,6 +109,15 @@ button:disabled {
 }
 select {
   max-width: 200px;
+}
+.notification-command {
+  min-width: 0;
+  width: 200px;
+  flex: 1;
+}
+.notification-command-help {
+  width: 100%;
+  overflow-wrap: anywhere;
 }
 .settings-switch {
   appearance: none;
@@ -187,7 +197,8 @@ select {
     color: #626a70;
   }
   button,
-  select {
+  select,
+  .notification-command {
     background: #f1f2f3;
     border-color: #c9cdd0;
   }
