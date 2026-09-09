@@ -98,7 +98,7 @@ pub fn install(app: &tauri::App) -> tauri::Result<()> {
                 tauri::WebviewUrl::App("settings.html".into()),
             )
             .title("polakapi Settings")
-            .inner_size(960.0, 640.0)
+            .inner_size(960.0, 740.0)
             .min_inner_size(740.0, 490.0)
             .build()
             {

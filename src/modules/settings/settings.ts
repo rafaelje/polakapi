@@ -1,8 +1,8 @@
 import { open } from "@tauri-apps/plugin-dialog";
 import { isPermissionGranted, requestPermission } from "@tauri-apps/plugin-notification";
-import { invoke } from "../../shared/tauri/invoke";
+import { invoke, InvokeError } from "../../shared/tauri/invoke";
 import { loadPreferences, savePreferences, type NotificationPreferences } from "./preferences";
-import { deliverNotification } from "./notifications";
+import { deliverNotification, runNotificationCommand } from "./notifications";
 import "./settings.css";
 
 interface SystemSound {
@@ -33,7 +33,8 @@ async function start(): Promise<void> {
   }
   function action(operation: () => Promise<unknown>): void {
     void operation().catch((error: unknown) => {
-      status.textContent = error instanceof Error ? error.message : String(error);
+      const detail = error instanceof InvokeError ? error.cause : error;
+      status.textContent = detail instanceof Error ? detail.message : String(detail);
     });
   }
   function row(title: string, description: string): HTMLDivElement {
@@ -131,10 +132,15 @@ async function start(): Promise<void> {
     button("Send Test", async () => {
       await requestPermission();
       await refreshPermission();
-      await deliverNotification("polakapi", "Your agent notifications are ready.", {
-        ...p,
-        desktop: true,
-      });
+      await deliverNotification(
+        "polakapi",
+        "Your agent notifications are ready.",
+        {
+          ...p,
+          desktop: true,
+        },
+        "test",
+      );
       status.textContent =
         "Test sent. Your system’s Focus and notification settings control banner visibility.";
     }),
@@ -221,6 +227,7 @@ async function start(): Promise<void> {
           await deliverNotification("polakapi", "Notification sound preview", {
             ...p,
             desktop: true,
+            command: "",
           });
         else await invoke("notification_play_sound", { path: p.sound });
       } finally {
@@ -236,6 +243,52 @@ async function start(): Promise<void> {
   });
   soundControls.append(sound, preview, filename, button("Choose…", choose), clear);
   renderSound();
+
+  const commandControls = row(
+    "Notification Command",
+    "Optionally run a shell command when an alert fires. Leave empty to disable.",
+  );
+  const command = document.createElement("input");
+  command.type = "text";
+  command.className = "notification-command";
+  command.setAttribute("aria-label", "Notification Command");
+  command.placeholder = navigator.userAgent.includes("Windows")
+    ? 'Write-Output "done"'
+    : navigator.userAgent.includes("Mac")
+      ? 'say "done"'
+      : 'echo "done"';
+  command.maxLength = 4096;
+  command.value = p.command;
+  command.spellcheck = false;
+  const commandTest = button("Test", async () => {
+    command.disabled = true;
+    try {
+      await saving;
+      await runNotificationCommand(
+        command.value,
+        "polakapi",
+        "Your agent notifications are ready.",
+        "test",
+        false,
+      );
+      status.textContent = "Notification command completed successfully.";
+    } finally {
+      command.disabled = false;
+    }
+  });
+  commandTest.setAttribute("aria-label", "Test notification command");
+  commandTest.disabled = !command.value.trim();
+  command.addEventListener("input", () => {
+    commandTest.disabled = !command.value.trim();
+  });
+  command.addEventListener("change", () => save({ command: command.value }));
+  const commandHelp = document.createElement("p");
+  commandHelp.id = "notification-command-help";
+  commandHelp.className = "notification-command-help";
+  commandHelp.textContent =
+    "Receives POLAKAPI_NOTIFICATION_TITLE, POLAKAPI_NOTIFICATION_BODY, and POLAKAPI_NOTIFICATION_EVENT. Commands run with your account’s access and stop after 10 seconds.";
+  command.setAttribute("aria-describedby", commandHelp.id);
+  commandControls.append(command, commandTest, commandHelp);
 }
 
 void start().catch((error: unknown) => {

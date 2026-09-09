@@ -74,13 +74,14 @@ export async function startAgentNotifier(): Promise<() => void> {
     }),
   ]);
   function notify(event: AgentEvent): void {
+    if (event.kind === "started" || event.kind === "ended") return;
     const message =
       event.kind === "permission"
         ? "Agent needs permission"
         : event.kind === "waiting"
           ? "Agent waiting for input"
           : "Agent finished";
-    void deliverNotification(`polakapi · ${event.cli}`, message, preferences).catch(
+    void deliverNotification(`polakapi · ${event.cli}`, message, preferences, event.kind).catch(
       (error: unknown) => console.warn("Agent notification failed", error),
     );
   }

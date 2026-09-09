@@ -2,13 +2,42 @@ import { isPermissionGranted, requestPermission } from "@tauri-apps/plugin-notif
 import { invoke } from "../../shared/tauri/invoke";
 import { loadPreferences, type NotificationPreferences } from "./preferences";
 
+export type NotificationEvent =
+  | "notification"
+  | "permission"
+  | "finished"
+  | "waiting"
+  | "bell"
+  | "test";
+
+export function runNotificationCommand(
+  command: string,
+  title: string,
+  body: string,
+  event: NotificationEvent,
+  toastOnError = true,
+): Promise<void> {
+  return invoke(
+    "notification_run_command",
+    { command, title, body, event },
+    {
+      toastOnError,
+      errorMessage: "Notification command failed. Check App Settings.",
+    },
+  );
+}
+
 export async function deliverNotification(
   title: string,
   body: string,
   preferences?: NotificationPreferences,
+  event: NotificationEvent = "notification",
 ): Promise<void> {
   const p = preferences ?? (await loadPreferences());
   const tasks: Promise<unknown>[] = [];
+  if (p.command.trim()) {
+    tasks.push(runNotificationCommand(p.command, title, body, event));
+  }
   if (p.desktop) {
     tasks.push(
       (async () => {

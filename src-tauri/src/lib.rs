@@ -15,6 +15,7 @@ mod git_worktree;
 mod loop_cli;
 mod loop_prompts;
 mod memory;
+mod notification_command;
 mod notifications;
 mod open;
 mod paste_image;
@@ -126,6 +127,7 @@ pub fn run() {
                 app.manage(store);
                 app.manage(ShellRegistry::default());
                 app.manage(notifications::SoundPlayback::default());
+                app.manage(notification_command::NotificationCommandState::default());
                 app.manage(AwakeState::default());
                 // Open the prompts history DB at <app_config_dir>/polakapi.db
                 // and register it as `State<Mutex<Db>>` for the read commands.
@@ -228,6 +230,7 @@ pub fn run() {
             update_check,
             app_menu::toggle_menu_bar,
             notifications::notification_events,
+            notification_command::notification_run_command,
             notifications::notification_send,
             notifications::notification_sounds,
             notifications::notification_play_sound,
