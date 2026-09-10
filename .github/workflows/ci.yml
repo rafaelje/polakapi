@@ -9,6 +9,28 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  changeset:
+    name: Changeset version bump
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: pnpm/action-setup@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run changeset:check
+        env:
+          CHANGESET_BASE_REF: ${{ github.event.pull_request.base.sha }}
+      - run: pnpm run versions:check
+
   frontend:
     name: Frontend
     runs-on: ubuntu-latest
@@ -20,6 +42,7 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - run: pnpm run versions:check
       - run: pnpm run typecheck
       - run: pnpm run lint
       - run: pnpm run format:check

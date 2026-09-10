@@ -15,7 +15,7 @@ By participating, you agree to follow the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 Requirements:
 
-- Node.js 22.
+- Node.js 22.11 or later in the Node.js 22 LTS line.
 - pnpm 11.8.0.
 - Rust stable with `rustfmt` and `clippy`.
 - The Tauri system dependencies listed in `.github/workflows/ci.yml` when developing on Linux.
@@ -38,6 +38,40 @@ pnpm tauri dev
 6. Update documentation when commands, configuration, permissions, or user-facing behavior changes.
 
 Prefer Conventional Commit-style messages such as `feat:`, `fix:`, `docs:`, `test:`, `refactor:`, or `chore:`.
+
+## Changesets and Versions
+
+Every pull request must add a Changeset with a release note and a version bump for
+`polakapi`, including maintenance and documentation changes. Use patch for fixes
+and maintenance, minor for new capabilities, and major for breaking changes:
+
+```sh
+pnpm changeset --patch polakapi --message "Describe the change for users."
+git add .changeset
+pnpm changeset:status
+pnpm changeset:check
+```
+
+The check defaults to `origin/main`. Set `CHANGESET_BASE_REF` to a different base
+ref or SHA when needed. CI compares against the pull request's actual base and
+rejects missing, empty, or invalid version bumps. Fetch the base before checking
+locally. Changesets already present on the base do not count for a new PR.
+
+Changesets record pending releases; adding one does not immediately change the
+app version. When preparing an authorized desktop release, run:
+
+```sh
+pnpm version:apply
+pnpm versions:check
+pnpm run check
+```
+
+This consumes the pending changesets, updates the changelog and npm version, and
+synchronizes the Tauri configuration, Cargo manifest, and Cargo lockfile. Commit
+those release changes before using the existing desktop release process. The
+package stays private and is not published to npm. A release commit that consumes
+changesets has no pending bump; the PR check is intended for contribution PRs,
+so it must pass before applying the release on the release branch.
 
 ## Quality Checks
 
