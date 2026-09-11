@@ -39,39 +39,22 @@ pnpm tauri dev
 
 Prefer Conventional Commit-style messages such as `feat:`, `fix:`, `docs:`, `test:`, `refactor:`, or `chore:`.
 
-## Changesets and Versions
+## Package Versions
 
-Every pull request must add a Changeset with a release note and a version bump for
-`polakapi`, including maintenance and documentation changes. Use patch for fixes
-and maintenance, minor for new capabilities, and major for breaking changes:
+Every pull request must increase the version in `package.json`, including
+maintenance and documentation changes. Use patch for fixes and maintenance,
+minor for new capabilities, and major for breaking changes.
 
-```sh
-pnpm changeset --patch polakapi --message "Describe the change for users."
-git add .changeset
-pnpm changeset:status
-pnpm changeset:check
-```
+The CI `Package version bump` check compares `package.json` with the same file
+at the pull request's base SHA using semantic version ordering. Unchanged,
+lower, or invalid versions fail. For example, if the base is `0.11.0`, a patch
+PR should contain `0.11.1`. If the base version advances before merging, update
+the PR version again.
 
-The check defaults to `origin/main`. Set `CHANGESET_BASE_REF` to a different base
-ref or SHA when needed. CI compares against the pull request's actual base and
-rejects missing, empty, or invalid version bumps. Fetch the base before checking
-locally. Changesets already present on the base do not count for a new PR.
-
-Changesets record pending releases; adding one does not immediately change the
-app version. When preparing an authorized desktop release, run:
-
-```sh
-pnpm version:apply
-pnpm versions:check
-pnpm run check
-```
-
-This consumes the pending changesets, updates the changelog and npm version, and
-synchronizes the Tauri configuration, Cargo manifest, and Cargo lockfile. Commit
-those release changes before using the existing desktop release process. The
-package stays private and is not published to npm. A release commit that consumes
-changesets has no pending bump; the PR check is intended for contribution PRs,
-so it must pass before applying the release on the release branch.
+Set the matching desktop version in `src-tauri/tauri.conf.json`, the package
+entry in `src-tauri/Cargo.toml`, and the `polakapi` entry in
+`src-tauri/Cargo.lock`. Commit these version changes with the PR. The existing
+desktop release workflow builds and publishes the committed version after merge.
 
 ## Quality Checks
 

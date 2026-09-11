@@ -9,14 +9,14 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  changeset:
-    name: Changeset version bump
+  version:
+    name: Package version bump
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -26,10 +26,23 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm run changeset:check
+      - name: Require a package version greater than the PR base
         env:
-          CHANGESET_BASE_REF: ${{ github.event.pull_request.base.sha }}
-      - run: pnpm run versions:check
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          node --input-type=module <<'NODE'
+          import { execFileSync } from 'node:child_process';
+          import { readFileSync } from 'node:fs';
+          import semver from 'semver';
+
+          const base = JSON.parse(execFileSync('git', ['show', `${process.env.BASE_SHA}:package.json`], { encoding: 'utf8' })).version;
+          const current = JSON.parse(readFileSync('package.json', 'utf8')).version;
+          if (!semver.valid(base) || !semver.valid(current) || !semver.gt(current, base)) {
+            console.error(`package.json version (${current}) must be a valid version greater than the PR base (${base}).`);
+            process.exit(1);
+          }
+          console.log(`Package version: ${base} → ${current}`);
+          NODE
 
   frontend:
     name: Frontend
@@ -42,7 +55,6 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm run versions:check
       - run: pnpm run typecheck
       - run: pnpm run lint
       - run: pnpm run format:check
