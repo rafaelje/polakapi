@@ -6,3 +6,5 @@ updates:
       interval: weekly
     allow:
       - dependency-name: actions/checkout
+      - dependency-name: actions/setup-node
+      - dependency-name: pnpm/action-setup

@@ -45,16 +45,15 @@ Every pull request must increase the version in `package.json`, including
 maintenance and documentation changes. Use patch for fixes and maintenance,
 minor for new capabilities, and major for breaking changes.
 
-The CI `Package version bump` check compares `package.json` with the same file
-at the pull request's base SHA using semantic version ordering. Unchanged,
-lower, or invalid versions fail. For example, if the base is `0.11.0`, a patch
-PR should contain `0.11.1`. If the base version advances before merging, update
-the PR version again.
-
-Set the matching desktop version in `src-tauri/tauri.conf.json`, the package
-entry in `src-tauri/Cargo.toml`, and the `polakapi` entry in
-`src-tauri/Cargo.lock`. Commit these version changes with the PR. The existing
-desktop release workflow builds and publishes the committed version after merge.
+The CI `Package version bump` check validates `package.json`,
+`src-tauri/tauri.conf.json`, the package entry in `src-tauri/Cargo.toml`, and
+the `polakapi` entry in `src-tauri/Cargo.lock`. Each version must be valid
+semantic versioning and greater than its value at the pull request's base SHA,
+and all four current values must match. Unchanged, lower, invalid, or
+misaligned versions fail. For example, if the base is `0.11.0`, a patch PR
+should contain `0.11.1` in every file. If the base version advances before
+merging, update the PR version again. The existing desktop release workflow
+builds and publishes the committed version after merge.
 
 ## Quality Checks
 

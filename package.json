@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "tauri": "node scripts/tauri-dev.mjs",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run && node --test scripts/tauri-dev.test.mjs",
+    "test": "vitest run && node --test scripts/tauri-dev.test.mjs scripts/check-version-bump.test.mjs",
     "test:watch": "vitest",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
@@ -20,6 +20,7 @@
     "rs:fmt:check": "cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check",
     "rs:clippy": "cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings",
     "rs:test": "cargo test --manifest-path src-tauri/Cargo.toml",
+    "versions:check": "node scripts/check-version-bump.mjs",
     "check": "pnpm run typecheck && pnpm run lint && pnpm run format:check && pnpm run test && pnpm run rs:fmt:check && pnpm run rs:clippy && pnpm run rs:test"
   },
   "dependencies": {

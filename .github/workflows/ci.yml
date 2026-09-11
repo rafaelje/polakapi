@@ -20,29 +20,16 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - uses: pnpm/action-setup@v5
-      - uses: actions/setup-node@v5
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Require a package version greater than the PR base
+      - name: Require aligned desktop versions greater than the PR base
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        run: |
-          node --input-type=module <<'NODE'
-          import { execFileSync } from 'node:child_process';
-          import { readFileSync } from 'node:fs';
-          import semver from 'semver';
-
-          const base = JSON.parse(execFileSync('git', ['show', `${process.env.BASE_SHA}:package.json`], { encoding: 'utf8' })).version;
-          const current = JSON.parse(readFileSync('package.json', 'utf8')).version;
-          if (!semver.valid(base) || !semver.valid(current) || !semver.gt(current, base)) {
-            console.error(`package.json version (${current}) must be a valid version greater than the PR base (${base}).`);
-            process.exit(1);
-          }
-          console.log(`Package version: ${base} → ${current}`);
-          NODE
+        run: pnpm run versions:check
 
   frontend:
     name: Frontend
