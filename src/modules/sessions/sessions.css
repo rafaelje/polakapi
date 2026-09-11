@@ -103,8 +103,10 @@ select {
 }
 
 .sessions-btn {
+  flex: 0 0 auto;
   padding: 4px 11px;
   cursor: pointer;
+  white-space: nowrap;
 }
 
 .sessions-btn:hover:not(:disabled) {
@@ -248,13 +250,20 @@ select {
   border-bottom: 1px solid var(--border);
 }
 
+.sessions-detail-identity {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 .sessions-detail-heading h1 {
   margin: 0 0 6px;
   font-size: 17px;
   line-height: 1.35;
+  overflow-wrap: anywhere;
 }
 
 .sessions-detail-actions {
+  flex: 0 0 auto;
   gap: 8px;
 }
 
