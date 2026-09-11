@@ -13,6 +13,8 @@ Link the related issue, for example `Closes #123`, or explain why no issue is ne
 
 ## Validation
 
+Version: <!-- PR base version → new package.json version -->
+
 List the commands and manual checks used to validate the change.
 
 ```text
@@ -41,6 +43,7 @@ Describe any impact on permissions, filesystem access, process execution, stored
 - [ ] Comments are included only where necessary.
 - [ ] Tests cover new or changed behavior.
 - [ ] Documentation is updated where necessary.
+- [ ] The package version is greater than the PR base version, and the desktop version files match.
 - [ ] `pnpm run check` passes locally, or any limitation is explained above.
 - [ ] No credentials, private prompts, logs, local databases, or generated build artifacts are included.
 - [ ] I have read and agree to follow the Code of Conduct.

@@ -31,6 +31,28 @@ describe("TerminalManager CLI wiring", () => {
     fake.reset();
   });
 
+  it("shows the latest output when switching panes without stealing keyboard focus", async () => {
+    const manager = makeManager();
+    const first = await manager.addPane();
+    const second = await manager.addPane();
+    if (!first || !second) throw new Error("Expected two terminal panes");
+    const firstScroll = vi.spyOn(first, "scrollToLatest");
+    const secondScroll = vi.spyOn(second, "scrollToLatest");
+    const focus = vi.spyOn(first, "focus");
+
+    manager.setFocus(first.ptyId);
+
+    expect(firstScroll).toHaveBeenCalledOnce();
+    expect(secondScroll).not.toHaveBeenCalled();
+    expect(focus).not.toHaveBeenCalled();
+
+    manager.setFocus(first.ptyId);
+    expect(firstScroll).toHaveBeenCalledOnce();
+
+    manager.focusRelative(1);
+    expect(secondScroll).toHaveBeenCalledOnce();
+  });
+
   it("defaults to the shell profile when no spec and no activeCli set", async () => {
     const manager = makeManager();
     expect(manager.getActiveCli()).toBe("shell");

@@ -49,6 +49,7 @@ vi.mock("./terminal-pane", () => {
     suspended = false;
     fit(): void {}
     focus(): void {}
+    scrollToLatest(): void {}
     write(): void {}
     markExited(): void {}
     markSpawnFailed(): void {}

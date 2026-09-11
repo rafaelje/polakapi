@@ -15,7 +15,7 @@ By participating, you agree to follow the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 Requirements:
 
-- Node.js 22.
+- Node.js 22.11 or later in the Node.js 22 LTS line.
 - pnpm 11.8.0.
 - Rust stable with `rustfmt` and `clippy`.
 - The Tauri system dependencies listed in `.github/workflows/ci.yml` when developing on Linux.
@@ -38,6 +38,22 @@ pnpm tauri dev
 6. Update documentation when commands, configuration, permissions, or user-facing behavior changes.
 
 Prefer Conventional Commit-style messages such as `feat:`, `fix:`, `docs:`, `test:`, `refactor:`, or `chore:`.
+
+## Package Versions
+
+Every pull request must increase the version in `package.json`, including
+maintenance and documentation changes. Use patch for fixes and maintenance,
+minor for new capabilities, and major for breaking changes.
+
+The CI `Package version bump` check validates `package.json`,
+`src-tauri/tauri.conf.json`, the package entry in `src-tauri/Cargo.toml`, and
+the `polakapi` entry in `src-tauri/Cargo.lock`. Each version must be valid
+semantic versioning and greater than its value at the pull request's base SHA,
+and all four current values must match. Unchanged, lower, invalid, or
+misaligned versions fail. For example, if the base is `0.11.0`, a patch PR
+should contain `0.11.1` in every file. If the base version advances before
+merging, update the PR version again. The existing desktop release workflow
+builds and publishes the committed version after merge.
 
 ## Quality Checks
 

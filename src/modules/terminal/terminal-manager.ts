@@ -482,6 +482,7 @@ export class TerminalManager {
   }
 
   setFocus(ptyId: string, focusTerm = false): void {
+    if (this.focusedId !== ptyId) this.panes.get(ptyId)?.scrollToLatest();
     this.focusedId = ptyId;
     for (const [id, pane] of this.panes) {
       pane.el.classList.toggle("focused", id === ptyId);
