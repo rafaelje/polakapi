@@ -25,12 +25,10 @@ const ALLOWED_SHELL_BASENAMES: &[&str] =
     &["sh", "bash", "zsh", "fish", "dash", "ksh", "tcsh", "csh"];
 
 const ALLOWED_AI_CLI_BASENAMES: &[&str] = &["claude", "codex", "opencode", "cursor-agent"];
-const LEGACY_CAPTURE_ENV: &[&str] = &[
-    "POLAKAPI_PTY_ID",
-    "POLAKAPI_DB_PATH",
-    "POLAKAPI_HELPER",
-    "POLAKAPI_CLI",
-];
+const CAPTURE_PTY_ID_ENV: &str = "POLAKAPI_PTY_ID";
+const CAPTURE_DB_PATH_ENV: &str = "POLAKAPI_DB_PATH";
+const CAPTURE_CLI_ENV: &str = "POLAKAPI_CLI";
+const LEGACY_CAPTURE_HELPER_ENV: &str = "POLAKAPI_HELPER";
 
 const MAX_ARG_LEN: usize = 4096;
 const MAX_ARGS: usize = 64;
@@ -163,7 +161,12 @@ pub fn spawn_session(
             shell_integration::apply(&config_dir.join("shell-integration"), &mut cmd, &shell, &id);
         }
     }
-    strip_legacy_capture_env(&mut cmd);
+    configure_capture_environment(
+        &mut cmd,
+        &id,
+        &shell,
+        crate::db::Db::resolve_path(&app).ok().as_deref(),
+    );
 
     let child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
     drop(pair.slave);
@@ -321,10 +324,30 @@ fn default_working_dir() -> Option<PathBuf> {
     platform_command::user_home_dir().or_else(|| std::env::current_dir().ok())
 }
 
-fn strip_legacy_capture_env(cmd: &mut CommandBuilder) {
-    for key in LEGACY_CAPTURE_ENV {
-        cmd.env_remove(key);
+/// Exposes the terminal identity to the `polakapi capture` hook helper so
+/// agent lifecycle events can be attributed to this PTY.
+fn configure_capture_environment(
+    cmd: &mut CommandBuilder,
+    pty_id: &str,
+    command: &str,
+    db_path: Option<&Path>,
+) {
+    cmd.env(CAPTURE_PTY_ID_ENV, pty_id);
+    match db_path {
+        Some(path) => cmd.env(CAPTURE_DB_PATH_ENV, path),
+        None => cmd.env_remove(CAPTURE_DB_PATH_ENV),
     }
+    if basename_in(command, ALLOWED_AI_CLI_BASENAMES) {
+        let cli = Path::new(command)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or(command)
+            .to_ascii_lowercase();
+        cmd.env(CAPTURE_CLI_ENV, cli);
+    } else {
+        cmd.env_remove(CAPTURE_CLI_ENV);
+    }
+    cmd.env_remove(LEGACY_CAPTURE_HELPER_ENV);
 }
 
 /// Drains the longest valid UTF-8 prefix from `buf` and returns it as a String.
@@ -508,22 +531,46 @@ mod tests {
     }
 
     #[test]
-    fn removes_legacy_capture_environment() {
-        let mut command = CommandBuilder::new("codex");
-        for key in LEGACY_CAPTURE_ENV {
-            command.env(key, "legacy-value");
-        }
-        command.env("TERM", "xterm-256color");
+    fn capture_environment_identifies_the_pty_and_ai_cli() {
+        let mut command = CommandBuilder::new("claude");
+        command.env("POLAKAPI_HELPER", "legacy-value");
 
-        strip_legacy_capture_env(&mut command);
-
-        for key in LEGACY_CAPTURE_ENV {
-            assert!(command.get_env(key).is_none());
-        }
-        assert_eq!(
-            command.get_env("TERM"),
-            Some(std::ffi::OsStr::new("xterm-256color"))
+        configure_capture_environment(
+            &mut command,
+            "pty-1",
+            "/usr/local/bin/claude",
+            Some(Path::new("/tmp/polakapi.db")),
         );
+
+        assert_eq!(
+            command.get_env("POLAKAPI_PTY_ID"),
+            Some(std::ffi::OsStr::new("pty-1"))
+        );
+        assert_eq!(
+            command.get_env("POLAKAPI_DB_PATH"),
+            Some(std::ffi::OsStr::new("/tmp/polakapi.db"))
+        );
+        assert_eq!(
+            command.get_env("POLAKAPI_CLI"),
+            Some(std::ffi::OsStr::new("claude"))
+        );
+        assert!(command.get_env("POLAKAPI_HELPER").is_none());
+    }
+
+    #[test]
+    fn capture_environment_for_shells_drops_inherited_cli_identity() {
+        let mut command = CommandBuilder::new("zsh");
+        command.env("POLAKAPI_CLI", "inherited");
+        command.env("POLAKAPI_DB_PATH", "inherited");
+
+        configure_capture_environment(&mut command, "pty-2", "/bin/zsh", None);
+
+        assert_eq!(
+            command.get_env("POLAKAPI_PTY_ID"),
+            Some(std::ffi::OsStr::new("pty-2"))
+        );
+        assert!(command.get_env("POLAKAPI_CLI").is_none());
+        assert!(command.get_env("POLAKAPI_DB_PATH").is_none());
     }
 
     #[test]
