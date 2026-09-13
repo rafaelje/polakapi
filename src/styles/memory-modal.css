@@ -1,25 +1,14 @@
 /* ---------------------------------------------------------------------------
- * /memory — Claude auto-memory reviewer. Reuses the agents-modal shell at a
- * larger size (the user reviews full markdown files) and adds project group
- * headers plus the two-step delete button.
+ * /memory — Claude auto-memory reviewer. Reuses the agents-modal shell (sized
+ * and scaled by library-modal.css) and adds project group headers, the project
+ * filter and the two-step delete button.
  * ------------------------------------------------------------------------- */
-
-.memory-modal {
-  width: min(1500px, 80vw);
-  height: 80vh;
-  max-height: 80vh;
-}
-
-.memory-modal .agents-modal-body {
-  flex: 1;
-  min-height: 0;
-}
 
 .memory-modal-group {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 10px 4px;
+  padding: 10px 10px 5px;
   position: sticky;
   top: 0;
   background: var(--panel);
@@ -28,7 +17,7 @@
 
 .memory-modal-group-name {
   font:
-    10px ui-monospace,
+    12px ui-monospace,
     Menlo,
     monospace;
   color: #8a8a8a;
@@ -42,7 +31,7 @@
 .memory-modal-active-badge,
 .memory-modal-index-badge {
   font:
-    10px ui-monospace,
+    11.5px ui-monospace,
     Menlo,
     monospace;
   border: 1px solid var(--border);
@@ -62,7 +51,7 @@
 }
 
 .memory-modal-project-select {
-  max-width: 220px;
+  max-width: 260px;
 }
 
 .memory-modal-btn-danger {

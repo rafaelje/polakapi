@@ -14,8 +14,8 @@
 }
 
 .agents-modal {
-  width: min(760px, 92vw);
-  max-height: 78vh;
+  width: min(900px, 94vw);
+  max-height: 86vh;
   display: flex;
   flex-direction: column;
   background: var(--panel);
@@ -121,8 +121,8 @@
 .agents-modal-body {
   flex: 1 1 auto;
   display: grid;
-  grid-template-columns: 260px 1fr;
-  min-height: 260px;
+  grid-template-columns: 280px 1fr;
+  min-height: 320px;
   overflow: hidden;
 }
 

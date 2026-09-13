@@ -1,4 +1,4 @@
-import { confirmModal } from "../../shared/ui/modal";
+import { confirmModal, modalCloseButton } from "../../shared/ui/modal";
 import { showToast } from "../../shared/ui/toast";
 import { ptyWrite } from "../terminal/pty-client";
 import { DuplicateAgentNameError, type AgentsController } from "./agents-controller";
@@ -284,7 +284,7 @@ export function mountAgentsModal(opts: AgentsModalOptions): AgentsModalHandle {
     newBtn.textContent = "+ new agent";
     newBtn.addEventListener("click", () => beginCreate());
 
-    head.append(search, badge, newBtn);
+    head.append(search, badge, newBtn, modalCloseButton(close));
 
     const body = document.createElement("div");
     body.className = "agents-modal-body";
@@ -363,7 +363,7 @@ export function mountAgentsModal(opts: AgentsModalOptions): AgentsModalHandle {
     saveBtn.className = "agents-modal-btn agents-modal-btn-primary";
     saveBtn.textContent = "save";
     saveBtn.addEventListener("click", commitDraft);
-    head.append(title, spacer, cancelBtn, saveBtn);
+    head.append(title, spacer, cancelBtn, saveBtn, modalCloseButton(close));
 
     const body = document.createElement("div");
     body.className = "agents-modal-editor-body";

@@ -1,0 +1,100 @@
+/* ---------------------------------------------------------------------------
+ * Typography and sizing shared by the two reviewer panels (/skills, /memory).
+ * They show long markdown files rather than short forms, so they run wider and
+ * a few points larger than the /agents shell they are built on.
+ * ------------------------------------------------------------------------- */
+
+.skills-modal,
+.memory-modal {
+  width: min(1400px, 94vw);
+  height: 88vh;
+  max-height: 88vh;
+}
+
+.skills-modal .agents-modal-body,
+.memory-modal .agents-modal-body {
+  flex: 1;
+  min-height: 0;
+  grid-template-columns: 380px 1fr;
+}
+
+.skills-modal .agents-modal-search,
+.memory-modal .agents-modal-search {
+  font-size: 14px;
+  padding: 8px 11px;
+}
+
+.skills-modal .agents-modal-row,
+.memory-modal .agents-modal-row {
+  padding: 9px 10px;
+}
+
+.skills-modal .agents-modal-row-name,
+.memory-modal .agents-modal-row-name {
+  font-size: 15px;
+}
+
+/* Two lines instead of one: skill and memory descriptions are full sentences
+   and a single ellipsed line cut almost all of them off. */
+.skills-modal .agents-modal-row-desc,
+.memory-modal .agents-modal-row-desc {
+  font-size: 13px;
+  line-height: 1.45;
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.skills-modal .agents-modal-preview-body,
+.memory-modal .agents-modal-preview-body {
+  font:
+    13.5px/1.6 ui-monospace,
+    Menlo,
+    monospace;
+}
+
+.skills-modal .agents-modal-file-content,
+.memory-modal .agents-modal-file-content {
+  font:
+    13.5px/1.6 ui-monospace,
+    Menlo,
+    monospace;
+}
+
+.skills-modal .agents-modal-chip,
+.memory-modal .agents-modal-chip {
+  font:
+    12px ui-monospace,
+    Menlo,
+    monospace;
+  padding: 3px 10px;
+}
+
+.skills-modal .agents-modal-empty,
+.memory-modal .agents-modal-empty,
+.skills-modal .agents-modal-preview-empty,
+.memory-modal .agents-modal-preview-empty {
+  font-size: 14px;
+}
+
+.skills-modal .agents-modal-btn,
+.memory-modal .agents-modal-btn {
+  font-size: 13px;
+  padding: 6px 12px;
+}
+
+.skills-modal .agents-modal-editor-title,
+.memory-modal .agents-modal-editor-title {
+  font-size: 15px;
+}
+
+.skills-modal .agents-modal-hint,
+.memory-modal .agents-modal-hint {
+  font-size: 12px;
+}
+
+.skills-modal .agents-modal-hint kbd,
+.memory-modal .agents-modal-hint kbd {
+  font-size: 11.5px;
+}

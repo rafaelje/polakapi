@@ -1,6 +1,7 @@
 /* ---------------------------------------------------------------------------
- * /skills — installed-skills modal. Reuses the agents-modal shell and adds
- * cli badges, scope group headers, the explain view and the raw-file editor.
+ * /skills — installed-skills modal. Reuses the agents-modal shell (sized and
+ * scaled by library-modal.css) and adds cli badges, scope group headers, the
+ * explain view and the raw-file editor.
  * ------------------------------------------------------------------------- */
 
 .skills-modal-row-head {
@@ -11,7 +12,7 @@
 
 .skills-modal-cli-badge {
   font:
-    10px ui-monospace,
+    11.5px ui-monospace,
     Menlo,
     monospace;
   border: 1px solid var(--border);
@@ -45,7 +46,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 10px 4px;
+  padding: 10px 10px 5px;
   position: sticky;
   top: 0;
   background: var(--panel);
@@ -54,7 +55,7 @@
 
 .skills-modal-group-name {
   font:
-    10px ui-monospace,
+    12px ui-monospace,
     Menlo,
     monospace;
   color: #8a8a8a;
@@ -66,7 +67,7 @@
 .skills-modal-active-badge,
 .skills-modal-scope-badge {
   font:
-    10px ui-monospace,
+    11.5px ui-monospace,
     Menlo,
     monospace;
   border: 1px solid var(--border);
@@ -87,11 +88,11 @@
 }
 
 .skills-modal-scope-select {
-  max-width: 220px;
+  max-width: 260px;
 }
 
 .skills-modal-cli-label {
-  font-size: 11px;
+  font-size: 12.5px;
   color: #8a8a8a;
   align-self: center;
   margin-right: -2px;
@@ -102,8 +103,8 @@
   color: var(--text);
   border: 1px solid var(--border);
   border-radius: 6px;
-  padding: 5px 8px;
-  font-size: 12px;
+  padding: 6px 9px;
+  font-size: 13px;
   outline: none;
 }
 
@@ -135,17 +136,17 @@
 
 .skills-modal-explain-status {
   color: #8a8a8a;
-  font-size: 13px;
+  font-size: 14px;
   font-style: italic;
 }
 
 .skills-modal-explain-output {
-  font-size: 12px;
+  font-size: 13.5px;
 }
 
 .skills-modal-path {
   font:
-    10.5px ui-monospace,
+    12px ui-monospace,
     Menlo,
     monospace;
   color: #6a6a6a;

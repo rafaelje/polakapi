@@ -6,6 +6,7 @@
 @import "./styles/appearance.css";
 @import "./styles/command-palette.css";
 @import "./styles/agents-modal.css";
+@import "./styles/library-modal.css";
 @import "./styles/skills-modal.css";
 @import "./styles/memory-modal.css";
 @import "./styles/usage.css";
