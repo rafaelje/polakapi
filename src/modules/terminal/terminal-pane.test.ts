@@ -17,6 +17,9 @@ const terminalMocks = vi.hoisted(() => {
     }
 
     loadAddon(): void {}
+    onWriteParsed(): { dispose(): void } {
+      return { dispose: () => {} };
+    }
   }
 
   return {

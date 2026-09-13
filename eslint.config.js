@@ -47,7 +47,7 @@ export default tseslint.config(
     extends: [tseslint.configs.disableTypeChecked],
   },
   {
-    files: ["scripts/tauri-dev.mjs"],
+    files: ["scripts/*.mjs"],
     languageOptions: {
       globals: {
         console: "readonly",

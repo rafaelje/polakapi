@@ -16,7 +16,7 @@ polakapi is a cross-platform desktop workspace for running AI coding agents and 
 ### Requirements
 
 - Git
-- Node.js 22
+- Node.js 22.11 or later in the Node.js 22 LTS line
 - pnpm 11.8
 - Rust stable
 - [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/) for your operating system
@@ -67,6 +67,10 @@ pnpm tauri dev
 ```
 
 AI coding CLIs are optional and must be installed separately and available on your `PATH`.
+
+Terminals automatically scroll to the latest output when new text arrives, when
+you switch terminals or projects, and when panes resize. You can scroll up to
+read history while output is idle; the next output returns the view to the bottom.
 
 ### Split Terminals
 
