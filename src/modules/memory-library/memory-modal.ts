@@ -1,3 +1,4 @@
+import { modalCloseButton } from "../../shared/ui/modal";
 import { showToast } from "../../shared/ui/toast";
 import { deleteMemory, listMemories, readMemory, writeMemory } from "./memory-service";
 import {
@@ -276,7 +277,7 @@ export function mountMemoryModal(deps: MemoryModalDeps): MemoryModalHandle {
       void loadMemories();
     });
 
-    head.append(search, projectSelect, refreshBtn);
+    head.append(search, projectSelect, refreshBtn, modalCloseButton(close));
 
     const body = document.createElement("div");
     body.className = "agents-modal-body";
@@ -356,7 +357,7 @@ export function mountMemoryModal(deps: MemoryModalDeps): MemoryModalHandle {
     saveBtn.textContent = current.saving ? "saving…" : "save";
     saveBtn.disabled = current.saving;
     saveBtn.addEventListener("click", () => void saveEditor());
-    head.append(title, pathLabel, spacer, cancelBtn, saveBtn);
+    head.append(title, pathLabel, spacer, cancelBtn, saveBtn, modalCloseButton(close));
 
     const body = document.createElement("div");
     body.className = "agents-modal-editor-body";

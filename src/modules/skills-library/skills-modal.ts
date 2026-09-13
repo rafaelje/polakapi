@@ -1,3 +1,4 @@
+import { modalCloseButton } from "../../shared/ui/modal";
 import { showToast } from "../../shared/ui/toast";
 import {
   filterSkills,
@@ -321,7 +322,7 @@ export function mountSkillsModal(deps: SkillsModalDeps): SkillsModalHandle {
       void loadSkills();
     });
 
-    head.append(search, scopeSelect, refreshBtn);
+    head.append(search, scopeSelect, refreshBtn, modalCloseButton(close));
 
     const body = document.createElement("div");
     body.className = "agents-modal-body";
@@ -401,7 +402,7 @@ export function mountSkillsModal(deps: SkillsModalDeps): SkillsModalHandle {
     backBtn.className = "agents-modal-btn";
     backBtn.textContent = "back";
     backBtn.addEventListener("click", backToList);
-    head.append(title, badge, spacer, backBtn);
+    head.append(title, badge, spacer, backBtn, modalCloseButton(close));
 
     const body = document.createElement("div");
     body.className = "skills-modal-explain-body";
@@ -476,7 +477,7 @@ export function mountSkillsModal(deps: SkillsModalDeps): SkillsModalHandle {
     saveBtn.textContent = current.saving ? "saving…" : "save";
     saveBtn.disabled = current.saving;
     saveBtn.addEventListener("click", () => void saveEditor());
-    head.append(title, pathLabel, spacer, cancelBtn, saveBtn);
+    head.append(title, pathLabel, spacer, cancelBtn, saveBtn, modalCloseButton(close));
 
     const body = document.createElement("div");
     body.className = "agents-modal-editor-body";

@@ -49,6 +49,27 @@
   border-color: var(--accent);
 }
 
+.agents-modal-close {
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  color: #8a8a8a;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.agents-modal-close:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+
 .agents-modal-badge {
   font:
     11px ui-monospace,
