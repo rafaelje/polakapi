@@ -115,7 +115,6 @@ export class TerminalPane {
         },
       },
     });
-    this.disposables.push(this.term.onWriteParsed(() => this.scrollToLatest()));
     this.fitAddon = new FitAddon();
     this.term.loadAddon(this.fitAddon);
     // Plain-text URL detection; same Rust-routed activation as above.
@@ -254,17 +253,12 @@ export class TerminalPane {
 
   fit(): void {
     this.safeFit();
-    this.scrollToLatest();
     if (!this.ptyId) return;
     void ptyResize(this.ptyId, this.term.cols, this.term.rows);
   }
 
   focus(): void {
     this.term.focus();
-  }
-
-  scrollToLatest(): void {
-    this.term.scrollToBottom();
   }
 
   /**

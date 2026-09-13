@@ -68,10 +68,6 @@ pnpm tauri dev
 
 AI coding CLIs are optional and must be installed separately and available on your `PATH`.
 
-Terminals automatically scroll to the latest output when new text arrives, when
-you switch terminals or projects, and when panes resize. You can scroll up to
-read history while output is idle; the next output returns the view to the bottom.
-
 ### Split Terminals
 
 In the main project workspace on macOS, **Cmd + D** splits the focused terminal
