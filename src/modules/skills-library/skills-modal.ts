@@ -1,5 +1,11 @@
 import { showToast } from "../../shared/ui/toast";
-import { filterSkills } from "./filter";
+import {
+  filterSkills,
+  skillScopeOptions,
+  sortSkills,
+  SCOPE_ALL,
+  type SkillScopeFilter,
+} from "./filter";
 import { explainSkill, listSkills, readSkill, writeSkill } from "./skills-service";
 import { renderSkillList, renderSkillPreview, updateSkillSelection } from "./skills-modal-list";
 import {
@@ -9,6 +15,11 @@ import {
   type ExplainCli,
   type SkillEntry,
 } from "./types";
+
+export interface SkillsModalDeps {
+  getActiveProjectPath: () => string | null;
+  getKnownProjectPaths: () => string[];
+}
 
 export interface SkillsModalHandle {
   open(): void;
@@ -33,12 +44,14 @@ interface EditorState {
   saving: boolean;
 }
 
-export function mountSkillsModal(): SkillsModalHandle {
+export function mountSkillsModal(deps: SkillsModalDeps): SkillsModalHandle {
   let backdrop: HTMLDivElement | null = null;
   let disposed = false;
 
   let mode: ModalMode = "list";
   let query = "";
+  let scope: SkillScopeFilter = SCOPE_ALL;
+  let activeProjectPath: string | null = null;
   let selectedIdx = 0;
   let skills: SkillEntry[] = [];
   let filtered: SkillEntry[] = [];
@@ -54,15 +67,16 @@ export function mountSkillsModal(): SkillsModalHandle {
   const selectedSkill = (): SkillEntry | null => filtered[selectedIdx] ?? null;
 
   const rebuildFiltered = (): void => {
-    filtered = filterSkills(skills, query);
+    filtered = filterSkills(skills, query, scope);
     if (selectedIdx >= filtered.length) selectedIdx = Math.max(0, filtered.length - 1);
   };
 
   const loadSkills = async (): Promise<void> => {
     loading = true;
     renderBody();
+    activeProjectPath = deps.getActiveProjectPath();
     try {
-      skills = await listSkills();
+      skills = sortSkills(await listSkills(deps.getKnownProjectPaths()), activeProjectPath);
     } catch {
       skills = [];
     }
@@ -110,21 +124,27 @@ export function mountSkillsModal(): SkillsModalHandle {
       listEl.append(busy);
       renderSkillPreview(previewEl, null, null);
     } else {
-      renderSkillList(listEl, filtered, selectedIdx, {
-        onHover: (idx) => {
-          if (selectedIdx === idx) return;
-          selectedIdx = idx;
-          updateSkillSelection(listEl, selectedIdx);
-          syncPreview();
-          syncActionButtons();
+      renderSkillList(
+        listEl,
+        filtered,
+        selectedIdx,
+        {
+          onHover: (idx) => {
+            if (selectedIdx === idx) return;
+            selectedIdx = idx;
+            updateSkillSelection(listEl, selectedIdx);
+            syncPreview();
+            syncActionButtons();
+          },
+          onActivate: (idx) => {
+            selectedIdx = idx;
+            updateSkillSelection(listEl, selectedIdx);
+            syncPreview();
+            syncActionButtons();
+          },
         },
-        onActivate: (idx) => {
-          selectedIdx = idx;
-          updateSkillSelection(listEl, selectedIdx);
-          syncPreview();
-          syncActionButtons();
-        },
-      });
+        activeProjectPath,
+      );
       syncPreview();
     }
     syncActionButtons();
@@ -274,6 +294,24 @@ export function mountSkillsModal(): SkillsModalHandle {
     });
     search.addEventListener("keydown", onListKey);
 
+    const scopeSelect = document.createElement("select");
+    scopeSelect.className = "skills-modal-select skills-modal-scope-select";
+    scopeSelect.setAttribute("aria-label", "Filter skills by scope");
+    scopeSelect.dataset.skillsScope = "";
+    for (const option of skillScopeOptions(skills, activeProjectPath)) {
+      const el = document.createElement("option");
+      el.value = option.value;
+      el.textContent = `${option.label} (${option.count})`;
+      if (option.value === scope) el.selected = true;
+      scopeSelect.append(el);
+    }
+    scopeSelect.addEventListener("change", () => {
+      scope = scopeSelect.value;
+      rebuildFiltered();
+      selectedIdx = 0;
+      paintList();
+    });
+
     const refreshBtn = document.createElement("button");
     refreshBtn.type = "button";
     refreshBtn.className = "agents-modal-btn";
@@ -283,7 +321,7 @@ export function mountSkillsModal(): SkillsModalHandle {
       void loadSkills();
     });
 
-    head.append(search, refreshBtn);
+    head.append(search, scopeSelect, refreshBtn);
 
     const body = document.createElement("div");
     body.className = "agents-modal-body";
@@ -493,6 +531,7 @@ export function mountSkillsModal(): SkillsModalHandle {
 
     mode = "list";
     query = "";
+    scope = SCOPE_ALL;
     selectedIdx = 0;
     explain = null;
     editor = null;
@@ -521,6 +560,7 @@ export function mountSkillsModal(): SkillsModalHandle {
     backdrop?.remove();
     backdrop = null;
     query = "";
+    scope = SCOPE_ALL;
     selectedIdx = 0;
     filtered = [];
     explain = null;

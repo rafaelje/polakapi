@@ -1,3 +1,4 @@
+import { skillGroupLabel } from "./filter";
 import type { SkillEntry } from "./types";
 
 export interface SkillListCallbacks {
@@ -10,6 +11,7 @@ export function renderSkillList(
   skills: readonly SkillEntry[],
   selectedIdx: number,
   cb: SkillListCallbacks,
+  activeProjectPath: string | null = null,
 ): void {
   listEl.replaceChildren();
   if (skills.length === 0) {
@@ -19,7 +21,26 @@ export function renderSkillList(
     listEl.append(empty);
     return;
   }
+  let lastGroup: string | null = null;
   skills.forEach((s, idx) => {
+    const group = skillGroupLabel(s);
+    if (group !== lastGroup) {
+      lastGroup = group;
+      const header = document.createElement("div");
+      header.className = "skills-modal-group";
+      const name = document.createElement("span");
+      name.className = "skills-modal-group-name";
+      name.textContent = group;
+      name.title = s.scope === "project" ? (s.projectPath ?? group) : s.source;
+      header.append(name);
+      if (s.scope === "project" && s.projectPath === activeProjectPath) {
+        const badge = document.createElement("span");
+        badge.className = "skills-modal-active-badge";
+        badge.textContent = "current repo";
+        header.append(badge);
+      }
+      listEl.append(header);
+    }
     const row = document.createElement("div");
     row.className = "agents-modal-row";
     row.setAttribute("role", "option");
@@ -38,7 +59,12 @@ export function renderSkillList(
     badge.dataset.cli = s.cli;
     badge.textContent = s.cli;
 
-    head.append(name, badge);
+    const scopeBadge = document.createElement("span");
+    scopeBadge.className = "skills-modal-scope-badge";
+    scopeBadge.dataset.scope = s.scope;
+    scopeBadge.textContent = s.scope === "project" ? "project" : "general";
+
+    head.append(name, badge, scopeBadge);
 
     const desc = document.createElement("div");
     desc.className = "agents-modal-row-desc";
@@ -57,7 +83,8 @@ export function renderSkillList(
 
 export function updateSkillSelection(listEl: HTMLElement, selectedIdx: number): void {
   const rows = listEl.querySelectorAll<HTMLElement>(".agents-modal-row");
-  rows.forEach((row, idx) => {
+  rows.forEach((row) => {
+    const idx = Number(row.dataset.idx);
     if (idx === selectedIdx) {
       row.setAttribute("aria-selected", "true");
       row.scrollIntoView({ block: "nearest" });
@@ -82,9 +109,15 @@ export function renderSkillPreview(
   }
   const chips = document.createElement("div");
   chips.className = "agents-modal-chips";
+  const scopeChip = document.createElement("span");
+  scopeChip.className = "agents-modal-chip";
+  scopeChip.textContent = skillGroupLabel(skill);
+  chips.append(scopeChip);
+
   const sourceChip = document.createElement("span");
   sourceChip.className = "agents-modal-chip";
   sourceChip.textContent = skill.source;
+  sourceChip.title = skill.path;
   chips.append(sourceChip);
 
   const body = document.createElement("pre");

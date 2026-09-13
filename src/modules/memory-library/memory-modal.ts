@@ -1,6 +1,13 @@
 import { showToast } from "../../shared/ui/toast";
 import { deleteMemory, listMemories, readMemory, writeMemory } from "./memory-service";
-import { buildRows, filterRows, type MemoryRow } from "./types";
+import {
+  buildRows,
+  filterRows,
+  projectOptions,
+  ALL_PROJECTS,
+  type MemoryProjectFilter,
+  type MemoryRow,
+} from "./types";
 
 // /memory — reviewer for the auto-memory Claude Code keeps per project.
 // Groups every ~/.claude/projects/*/memory folder by project (the active
@@ -33,6 +40,7 @@ export function mountMemoryModal(deps: MemoryModalDeps): MemoryModalHandle {
 
   let mode: ModalMode = "list";
   let query = "";
+  let project: MemoryProjectFilter = ALL_PROJECTS;
   let selectedIdx = 0;
   let rows: MemoryRow[] = [];
   let filtered: MemoryRow[] = [];
@@ -48,7 +56,7 @@ export function mountMemoryModal(deps: MemoryModalDeps): MemoryModalHandle {
   const selectedRow = (): MemoryRow | null => filtered[selectedIdx] ?? null;
 
   const rebuildFiltered = (): void => {
-    filtered = filterRows(rows, query);
+    filtered = filterRows(rows, query, project);
     if (selectedIdx >= filtered.length) selectedIdx = Math.max(0, filtered.length - 1);
   };
 
@@ -60,6 +68,10 @@ export function mountMemoryModal(deps: MemoryModalDeps): MemoryModalHandle {
       rows = buildRows(groups, deps.getKnownProjectPaths(), deps.getActiveProjectPath());
     } catch {
       rows = [];
+    }
+    // A refresh can drop the project the filter pointed at.
+    if (project !== ALL_PROJECTS && !rows.some((row) => row.dirName === project)) {
+      project = ALL_PROJECTS;
     }
     loading = false;
     if (!isOpen()) return;
@@ -236,6 +248,25 @@ export function mountMemoryModal(deps: MemoryModalDeps): MemoryModalHandle {
     });
     search.addEventListener("keydown", onListKey);
 
+    const projectSelect = document.createElement("select");
+    projectSelect.className = "skills-modal-select memory-modal-project-select";
+    projectSelect.setAttribute("aria-label", "Filter memories by project");
+    projectSelect.dataset.memoryProject = "";
+    for (const option of projectOptions(rows)) {
+      const el = document.createElement("option");
+      el.value = option.value;
+      el.textContent = `${option.label} (${option.count})`;
+      if (option.value === project) el.selected = true;
+      projectSelect.append(el);
+    }
+    projectSelect.addEventListener("change", () => {
+      project = projectSelect.value;
+      rebuildFiltered();
+      selectedIdx = 0;
+      confirmingDelete = null;
+      paintList();
+    });
+
     const refreshBtn = document.createElement("button");
     refreshBtn.type = "button";
     refreshBtn.className = "agents-modal-btn";
@@ -245,7 +276,7 @@ export function mountMemoryModal(deps: MemoryModalDeps): MemoryModalHandle {
       void loadMemories();
     });
 
-    head.append(search, refreshBtn);
+    head.append(search, projectSelect, refreshBtn);
 
     const body = document.createElement("div");
     body.className = "agents-modal-body";
@@ -380,6 +411,7 @@ export function mountMemoryModal(deps: MemoryModalDeps): MemoryModalHandle {
 
     mode = "list";
     query = "";
+    project = ALL_PROJECTS;
     selectedIdx = 0;
     editor = null;
 
@@ -407,6 +439,7 @@ export function mountMemoryModal(deps: MemoryModalDeps): MemoryModalHandle {
     backdrop?.remove();
     backdrop = null;
     query = "";
+    project = ALL_PROJECTS;
     selectedIdx = 0;
     filtered = [];
     editor = null;

@@ -1,9 +1,14 @@
+/** `global` lives under the user's home, `project` is checked into a repo. */
+export type SkillScope = "global" | "project";
+
 export interface SkillEntry {
   cli: string;
   name: string;
   description: string;
   path: string;
   source: string;
+  scope: SkillScope;
+  projectPath: string | null;
 }
 
 export interface SkillExplainResult {

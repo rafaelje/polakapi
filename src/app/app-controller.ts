@@ -153,14 +153,16 @@ export class AppController {
         this.router.findPaneById(target.ptyId)?.manager.setFocus(target.ptyId, true);
       },
     });
-    this.skillsButton = mountSkillsButton();
-    this.memoryButton = mountMemoryButton({
-      getActiveProjectPath: () => this.workspaces?.controller.getActiveProject()?.path ?? null,
-      getKnownProjectPaths: () =>
+    const projectScope = {
+      getActiveProjectPath: (): string | null =>
+        this.workspaces?.controller.getActiveProject()?.path ?? null,
+      getKnownProjectPaths: (): string[] =>
         this.workspaces?.controller
           .getState()
           .workspaces.flatMap((ws) => ws.projects.map((p) => p.path)) ?? [],
-    });
+    };
+    this.skillsButton = mountSkillsButton(projectScope);
+    this.memoryButton = mountMemoryButton(projectScope);
     await this.wirePtyEvents();
     this.wireGutters();
     this.wirePanelToggles();

@@ -61,6 +61,10 @@
   border-color: rgba(86, 204, 242, 0.45);
 }
 
+.memory-modal-project-select {
+  max-width: 220px;
+}
+
 .memory-modal-btn-danger {
   color: #e57373;
   border-color: rgba(229, 115, 115, 0.45);

@@ -1,11 +1,14 @@
 //! Discovery and review of agent skills installed for the local AI CLIs.
 //!
-//! Scans the well-known global skill directories of each supported CLI
-//! (`claude`, `codex`, `opencode`, `cursor`), exposes read/write access scoped
-//! to those roots, and can ask any one-shot capable CLI to explain a skill.
+//! Scans the well-known skill directories of each supported CLI (`claude`,
+//! `codex`, `opencode`, `cursor`) in two scopes: the global ones under the
+//! user's home, and the ones a repository ships in its own tree. Exposes
+//! read/write access scoped to those roots, and can ask any one-shot capable
+//! CLI to explain a skill.
 
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 use std::time::Duration;
 
 use serde::Serialize;
@@ -15,6 +18,13 @@ use crate::platform_command;
 
 const EXPLAIN_TIMEOUT_SECS: u64 = 300;
 const MAX_INLINE_SKILL_BYTES: usize = 60_000;
+const SCOPE_GLOBAL: &str = "global";
+const SCOPE_PROJECT: &str = "project";
+
+/// Project roots reported by the last `skills_list` call. Read and write only
+/// accept paths under a global skill root or under one of these, so editing a
+/// repo-local skill never widens the reachable area beyond what was listed.
+static KNOWN_PROJECT_ROOTS: Mutex<Vec<PathBuf>> = Mutex::new(Vec::new());
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -24,9 +34,14 @@ pub struct SkillEntry {
     pub description: String,
     pub path: String,
     pub source: String,
+    /// `global` for the home directories every project sees, `project` for the
+    /// ones checked into a repository.
+    pub scope: String,
+    /// Root of the repository that ships the skill, only for `project` scope.
+    pub project_path: Option<String>,
 }
 
-fn skill_roots(home: &Path) -> Vec<(&'static str, PathBuf)> {
+fn global_skill_roots(home: &Path) -> Vec<(&'static str, PathBuf)> {
     vec![
         ("claude", home.join(".claude").join("skills")),
         ("codex", home.join(".codex").join("skills")),
@@ -41,6 +56,17 @@ fn skill_roots(home: &Path) -> Vec<(&'static str, PathBuf)> {
         ),
         ("cursor", home.join(".cursor").join("skills")),
         ("cursor", home.join(".cursor").join("skills-cursor")),
+    ]
+}
+
+fn project_skill_roots(project: &Path) -> Vec<(&'static str, PathBuf)> {
+    vec![
+        ("claude", project.join(".claude").join("skills")),
+        ("codex", project.join(".codex").join("skills")),
+        ("codex", project.join(".codex").join("prompts")),
+        ("opencode", project.join(".opencode").join("skill")),
+        ("opencode", project.join(".opencode").join("skills")),
+        ("cursor", project.join(".cursor").join("skills")),
     ]
 }
 
@@ -95,6 +121,18 @@ fn source_label(root: &Path, home: &Path) -> String {
         .unwrap_or_else(|_| root.display().to_string())
 }
 
+/// `<repo-name>/.claude/skills`, so two projects with the same layout stay
+/// distinguishable in the list.
+fn project_source_label(root: &Path, project: &Path) -> String {
+    let name = project
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| project.display().to_string());
+    root.strip_prefix(project)
+        .map(|p| format!("{name}/{}", p.display()))
+        .unwrap_or_else(|_| root.display().to_string())
+}
+
 fn skill_file_for(entry_path: &Path) -> Option<PathBuf> {
     if entry_path.is_dir() {
         let candidate = entry_path.join("SKILL.md");
@@ -113,11 +151,17 @@ fn fallback_name(entry_path: &Path) -> String {
         .unwrap_or_else(|| entry_path.display().to_string())
 }
 
-fn scan_root(cli: &str, root: &Path, home: &Path, out: &mut Vec<SkillEntry>) {
+fn scan_root(
+    cli: &str,
+    root: &Path,
+    source: &str,
+    scope: &str,
+    project_path: Option<&str>,
+    out: &mut Vec<SkillEntry>,
+) {
     let Ok(entries) = fs::read_dir(root) else {
         return;
     };
-    let source = source_label(root, home);
     for entry in entries.flatten() {
         let entry_path = entry.path();
         let Some(md_path) = skill_file_for(&entry_path) else {
@@ -130,19 +174,43 @@ fn scan_root(cli: &str, root: &Path, home: &Path, out: &mut Vec<SkillEntry>) {
             name: name.unwrap_or_else(|| fallback_name(&entry_path)),
             description: description.unwrap_or_default(),
             path: md_path.to_string_lossy().to_string(),
-            source: source.clone(),
+            source: source.to_string(),
+            scope: scope.to_string(),
+            project_path: project_path.map(str::to_string),
         });
     }
 }
 
-fn validate_skill_path(path: &str) -> Result<PathBuf, String> {
+fn allowed_roots() -> Result<Vec<PathBuf>, String> {
     let home = home_dir()?;
+    let mut roots: Vec<PathBuf> = global_skill_roots(&home)
+        .into_iter()
+        .map(|(_, root)| root)
+        .collect();
+    let known = KNOWN_PROJECT_ROOTS.lock().map_err(|e| e.to_string())?;
+    for project in known.iter() {
+        roots.extend(project_skill_roots(project).into_iter().map(|(_, r)| r));
+    }
+    Ok(roots)
+}
+
+/// Project root from the last listing that contains `file`, if any.
+fn owning_project_root(file: &Path) -> Option<PathBuf> {
+    let known = KNOWN_PROJECT_ROOTS.lock().ok()?;
+    known
+        .iter()
+        .filter(|root| file.starts_with(root))
+        .max_by_key(|root| root.components().count())
+        .cloned()
+}
+
+fn validate_skill_path(path: &str) -> Result<PathBuf, String> {
     let canonical =
         fs::canonicalize(path).map_err(|e| format!("invalid skill path {path}: {e}"))?;
     if !canonical.is_file() {
         return Err(format!("skill path is not a file: {path}"));
     }
-    let allowed = skill_roots(&home).into_iter().any(|(_, root)| {
+    let allowed = allowed_roots()?.into_iter().any(|root| {
         fs::canonicalize(&root)
             .map(|r| canonical.starts_with(&r))
             .unwrap_or(false)
@@ -181,16 +249,36 @@ fn build_explain_prompt(path: &Path, content: &str) -> String {
     )
 }
 
+/// `project_paths` are the repositories the workspace sidebar knows about;
+/// each contributes its own checked-in skill directories.
 #[tauri::command]
-pub async fn skills_list() -> Result<Vec<SkillEntry>, String> {
+pub async fn skills_list(project_paths: Vec<String>) -> Result<Vec<SkillEntry>, String> {
     let home = home_dir()?;
     let mut out = Vec::new();
-    for (cli, root) in skill_roots(&home) {
-        scan_root(cli, &root, &home, &mut out);
+    for (cli, root) in global_skill_roots(&home) {
+        let source = source_label(&root, &home);
+        scan_root(cli, &root, &source, SCOPE_GLOBAL, None, &mut out);
     }
+
+    let mut projects: Vec<String> = project_paths;
+    projects.sort();
+    projects.dedup();
+    for project in &projects {
+        let project_dir = PathBuf::from(project);
+        for (cli, root) in project_skill_roots(&project_dir) {
+            let source = project_source_label(&root, &project_dir);
+            scan_root(cli, &root, &source, SCOPE_PROJECT, Some(project), &mut out);
+        }
+    }
+    if let Ok(mut known) = KNOWN_PROJECT_ROOTS.lock() {
+        *known = projects.into_iter().map(PathBuf::from).collect();
+    }
+
     out.sort_by(|a, b| {
-        a.cli
-            .cmp(&b.cli)
+        a.scope
+            .cmp(&b.scope)
+            .then_with(|| a.project_path.cmp(&b.project_path))
+            .then_with(|| a.cli.cmp(&b.cli))
             .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
     });
     Ok(out)
@@ -217,8 +305,10 @@ pub async fn skill_explain(
     let file = validate_skill_path(&path)?;
     let content = fs::read_to_string(&file).map_err(|e| format!("could not read skill: {e}"))?;
     let prompt = build_explain_prompt(&file, &content);
-    let home = home_dir()?;
-    let cwd = platform_command::external_path(&home)
+    // Project skills are explained from their own repo so the agent can open
+    // whatever the skill references; global ones fall back to the home dir.
+    let base = owning_project_root(&file).map_or_else(home_dir, Ok)?;
+    let cwd = platform_command::external_path(&base)
         .to_string_lossy()
         .to_string();
     run_one_shot(
@@ -287,7 +377,8 @@ mod tests {
         fs::write(root.join("ignored.txt"), "nope").unwrap();
 
         let mut out = Vec::new();
-        scan_root("claude", &root, tmp.path(), &mut out);
+        let source = source_label(&root, tmp.path());
+        scan_root("claude", &root, &source, SCOPE_GLOBAL, None, &mut out);
         out.sort_by(|a, b| a.name.cmp(&b.name));
 
         assert_eq!(out.len(), 2);
@@ -296,6 +387,50 @@ mod tests {
         assert_eq!(out[1].name, "beta");
         assert_eq!(out[1].description, "");
         assert_eq!(out[0].source, "~/skills");
+        assert_eq!(out[0].scope, SCOPE_GLOBAL);
+        assert!(out[0].project_path.is_none());
+    }
+
+    #[test]
+    fn project_scan_tags_scope_and_owning_repo() {
+        let tmp = tempfile::tempdir().unwrap();
+        let project = tmp.path().join("my-repo");
+        let root = project.join(".claude").join("skills");
+        fs::create_dir_all(&root).unwrap();
+        fs::write(
+            root.join("deploy.md"),
+            "---\nname: deploy\ndescription: ship it\n---\n",
+        )
+        .unwrap();
+
+        let mut out = Vec::new();
+        let source = project_source_label(&root, &project);
+        let project_str = project.to_string_lossy().to_string();
+        scan_root(
+            "claude",
+            &root,
+            &source,
+            SCOPE_PROJECT,
+            Some(&project_str),
+            &mut out,
+        );
+
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].scope, SCOPE_PROJECT);
+        assert_eq!(out[0].project_path.as_deref(), Some(project_str.as_str()));
+        assert_eq!(out[0].source, "my-repo/.claude/skills");
+    }
+
+    #[test]
+    fn owning_project_root_picks_the_deepest_match() {
+        let tmp = tempfile::tempdir().unwrap();
+        let outer = tmp.path().join("outer");
+        let inner = outer.join("nested");
+        *KNOWN_PROJECT_ROOTS.lock().unwrap() = vec![outer.clone(), inner.clone()];
+        let file = inner.join(".claude").join("skills").join("a.md");
+        assert_eq!(owning_project_root(&file), Some(inner));
+        assert_eq!(owning_project_root(Path::new("/elsewhere/a.md")), None);
+        KNOWN_PROJECT_ROOTS.lock().unwrap().clear();
     }
 
     #[test]

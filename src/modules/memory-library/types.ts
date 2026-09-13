@@ -58,13 +58,59 @@ export function buildRows(
   return rows;
 }
 
-export function filterRows(rows: readonly MemoryRow[], query: string): MemoryRow[] {
+/** `all`, or the munged project dir the rows must belong to. */
+export type MemoryProjectFilter = string;
+
+export const ALL_PROJECTS = "all";
+
+export interface MemoryProjectOption {
+  value: MemoryProjectFilter;
+  label: string;
+  count: number;
+}
+
+export function filterRows(
+  rows: readonly MemoryRow[],
+  query: string,
+  project: MemoryProjectFilter = ALL_PROJECTS,
+): MemoryRow[] {
+  const inProject =
+    project === ALL_PROJECTS ? [...rows] : rows.filter((row) => row.dirName === project);
   const needle = query.trim().toLowerCase();
-  if (!needle) return [...rows];
-  return rows.filter((row) =>
+  if (!needle) return inProject;
+  return inProject.filter((row) =>
     [row.file.name, row.file.description, row.projectLabel]
       .join(" ")
       .toLowerCase()
       .includes(needle),
   );
+}
+
+/**
+ * One option per project that has memories, keeping the row order so the
+ * active project stays on top of the dropdown too.
+ */
+export function projectOptions(rows: readonly MemoryRow[]): MemoryProjectOption[] {
+  const seen = new Map<string, MemoryProjectOption>();
+  for (const row of rows) {
+    const existing = seen.get(row.dirName);
+    if (existing) {
+      existing.count += 1;
+      continue;
+    }
+    seen.set(row.dirName, {
+      value: row.dirName,
+      label: row.isActiveProject
+        ? `${shortLabel(row.projectLabel)} (current)`
+        : shortLabel(row.projectLabel),
+      count: 1,
+    });
+  }
+  return [{ value: ALL_PROJECTS, label: "all projects", count: rows.length }, ...seen.values()];
+}
+
+/** Last path segment, so the dropdown is not a wall of absolute paths. */
+function shortLabel(projectLabel: string): string {
+  const parts = projectLabel.split(/[\\/]/u).filter(Boolean);
+  return parts[parts.length - 1] ?? projectLabel;
 }
