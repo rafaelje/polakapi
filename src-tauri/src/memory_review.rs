@@ -207,16 +207,39 @@ pub async fn memory_delete(path: String) -> Result<(), String> {
     Ok(())
 }
 
+/// Destination of the first Markdown link in a bullet, normalized: an
+/// optional `"title"` dropped and a leading `./` removed. `None` when the
+/// bullet holds no link at all.
+fn bullet_link_target(line: &str) -> Option<&str> {
+    let after = line.split_once("](")?.1;
+    let close = after.find(')')?;
+    let inside = &after[..close];
+    let destination = inside.split_whitespace().next().unwrap_or(inside);
+    Some(
+        destination
+            .strip_prefix("./")
+            .unwrap_or(destination)
+            .trim_matches('<')
+            .trim_matches('>'),
+    )
+}
+
 /// Drop the index bullet that links to a deleted memory file so MEMORY.md
 /// doesn't keep advertising a fact that no longer exists.
+///
+/// Compares the link destination rather than searching the bullet for
+/// `(name.md)`: the substring form both missed legitimate spellings
+/// (`](./a.md)`, `](a.md "title")`) and removed unrelated bullets that merely
+/// mentioned the name in prose.
 fn prune_index_reference(index_path: &Path, file_name: &str) {
     let Ok(content) = fs::read_to_string(index_path) else {
         return;
     };
-    let needle = format!("({file_name})");
     let kept: Vec<&str> = content
         .lines()
-        .filter(|line| !(line.trim_start().starts_with("- ") && line.contains(&needle)))
+        .filter(|line| {
+            !(line.trim_start().starts_with("- ") && bullet_link_target(line) == Some(file_name))
+        })
         .collect();
     if kept.len() == content.lines().count() {
         return;
@@ -284,6 +307,37 @@ mod tests {
         assert!(!content.contains("(a.md)"));
         assert!(content.contains("(b.md)"));
         assert!(content.ends_with('\n'));
+    }
+
+    #[test]
+    fn prune_matches_the_link_target_not_the_bullet_text() {
+        let tmp = tempfile::tempdir().unwrap();
+        let index = tmp.path().join("MEMORY.md");
+        write(
+            &index,
+            "# Memory index\n\n             - [A](a.md) — plain\n             - [B](./a.md) — relative spelling\n             - [C](a.md \"quoted title\") — with a title\n             - [D](b.md) — mentions (a.md) in prose\n             - [E](ab.md) — a different file\n",
+        );
+        prune_index_reference(&index, "a.md");
+        let content = fs::read_to_string(&index).unwrap();
+
+        // Every spelling of a link to a.md is gone.
+        assert!(!content.contains("- [A]"));
+        assert!(!content.contains("- [B]"));
+        assert!(!content.contains("- [C]"));
+        // Bullets that only mention it in prose, or link elsewhere, survive —
+        // D still contains the literal "(a.md)", which is exactly the
+        // false positive the old substring match produced.
+        assert!(content.contains("- [D](b.md) — mentions (a.md) in prose"));
+        assert!(content.contains("- [E](ab.md)"));
+        assert!(content.ends_with('\n'));
+    }
+
+    #[test]
+    fn bullet_link_target_normalizes_spellings() {
+        assert_eq!(bullet_link_target("- [A](a.md) — hook"), Some("a.md"));
+        assert_eq!(bullet_link_target("- [A](./a.md)"), Some("a.md"));
+        assert_eq!(bullet_link_target("- [A](a.md \"t\")"), Some("a.md"));
+        assert_eq!(bullet_link_target("- plain text, no link"), None);
     }
 
     #[test]
