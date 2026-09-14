@@ -7,6 +7,7 @@ import {
   SCOPE_ALL,
   SCOPE_GLOBAL,
 } from "./filter";
+import { formatElapsed } from "./skills-modal";
 import type { SkillEntry } from "./types";
 
 function skill(partial: Partial<SkillEntry>): SkillEntry {
@@ -129,5 +130,20 @@ describe("skillScopeOptions", () => {
   it("lists only the scopes that exist", () => {
     const options = skillScopeOptions([skill({})], null);
     expect(options).toHaveLength(2);
+  });
+});
+
+describe("formatElapsed", () => {
+  it("counts seconds, then switches to m:ss past a minute", () => {
+    expect(formatElapsed(0)).toBe("0s");
+    expect(formatElapsed(12_400)).toBe("12s");
+    expect(formatElapsed(59_999)).toBe("59s");
+    expect(formatElapsed(60_000)).toBe("1:00");
+    expect(formatElapsed(65_000)).toBe("1:05");
+    expect(formatElapsed(3_605_000)).toBe("60:05");
+  });
+
+  it("never renders a negative reading from a clock skew", () => {
+    expect(formatElapsed(-5_000)).toBe("0s");
   });
 });

@@ -135,9 +135,43 @@
 }
 
 .skills-modal-explain-status {
+  display: flex;
+  align-items: center;
+  gap: 9px;
   color: #8a8a8a;
   font-size: 14px;
   font-style: italic;
+}
+
+.skills-modal-spinner {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent, #d97757);
+  border-radius: 50%;
+  animation: skills-modal-spin 0.7s linear infinite;
+}
+
+.skills-modal-explain-elapsed {
+  font:
+    12px ui-monospace,
+    Menlo,
+    monospace;
+  font-style: normal;
+  color: #6a6a6a;
+}
+
+@keyframes skills-modal-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skills-modal-spinner {
+    animation-duration: 2.4s;
+  }
 }
 
 .skills-modal-explain-output {

@@ -37,6 +37,8 @@ interface ExplainState {
   running: boolean;
   text: string | null;
   error: string | null;
+  /** Epoch ms the current run started, for the elapsed counter. */
+  startedAt: number;
 }
 
 interface EditorState {
@@ -62,6 +64,16 @@ export function mountSkillsModal(deps: SkillsModalDeps): SkillsModalHandle {
   let editor: EditorState | null = null;
   const contentCache = new Map<string, string>();
   let previewToken = 0;
+  /** Ticks the explain elapsed counter. Exactly one is ever live — renderBody
+   *  clears it before every re-render and only the running explain view starts
+   *  a new one. */
+  let elapsedTimer: ReturnType<typeof setInterval> | null = null;
+
+  const stopElapsedTimer = (): void => {
+    if (elapsedTimer === null) return;
+    clearInterval(elapsedTimer);
+    elapsedTimer = null;
+  };
 
   const isOpen = (): boolean => backdrop !== null;
 
@@ -168,7 +180,14 @@ export function mountSkillsModal(deps: SkillsModalDeps): SkillsModalHandle {
   };
 
   const beginExplain = (skill: SkillEntry): void => {
-    explain = { skill, cli: explainCli, running: false, text: null, error: null };
+    explain = {
+      skill,
+      cli: explainCli,
+      running: false,
+      text: null,
+      error: null,
+      startedAt: Date.now(),
+    };
     mode = "explain";
     renderBody();
     void runExplain();
@@ -180,6 +199,7 @@ export function mountSkillsModal(deps: SkillsModalDeps): SkillsModalHandle {
     current.running = true;
     current.text = null;
     current.error = null;
+    current.startedAt = Date.now();
     renderBody();
     try {
       const model = defaultExplainModelFor(current.cli);
@@ -250,6 +270,7 @@ export function mountSkillsModal(deps: SkillsModalDeps): SkillsModalHandle {
     if (!backdrop) return;
     const modal = backdrop.querySelector<HTMLElement>(".agents-modal");
     if (!modal) return;
+    stopElapsedTimer();
     modal.replaceChildren();
     if (mode === "list") {
       renderListMode(modal);
@@ -415,7 +436,26 @@ export function mountSkillsModal(deps: SkillsModalDeps): SkillsModalHandle {
     if (current.running) {
       const status = document.createElement("div");
       status.className = "skills-modal-explain-status";
-      status.textContent = `Asking ${current.cli} to read and explain this skill…`;
+
+      const spinner = document.createElement("span");
+      spinner.className = "skills-modal-spinner";
+      spinner.setAttribute("aria-hidden", "true");
+
+      const label = document.createElement("span");
+      label.textContent = `Asking ${current.cli} to read and explain this skill…`;
+
+      // A run can take minutes, so a static line reads as a hung window. The
+      // counter is what tells the user it is still going.
+      const elapsed = document.createElement("span");
+      elapsed.className = "skills-modal-explain-elapsed";
+      const paintElapsed = (): void => {
+        elapsed.textContent = formatElapsed(Date.now() - current.startedAt);
+      };
+      paintElapsed();
+      elapsedTimer = setInterval(paintElapsed, 1000);
+
+      status.append(spinner, label, elapsed);
+      status.setAttribute("role", "status");
       body.append(status);
     } else if (current.error) {
       const error = document.createElement("div");
@@ -562,6 +602,7 @@ export function mountSkillsModal(deps: SkillsModalDeps): SkillsModalHandle {
 
   const close = (): void => {
     if (!isOpen()) return;
+    stopElapsedTimer();
     window.removeEventListener("keydown", onGlobalKey, true);
     backdrop?.remove();
     backdrop = null;
@@ -584,4 +625,13 @@ export function mountSkillsModal(deps: SkillsModalDeps): SkillsModalHandle {
       close();
     },
   };
+}
+
+/** `12s`, then `1:05` once past a minute. */
+export function formatElapsed(ms: number): string {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  if (total < 60) return `${total}s`;
+  const minutes = Math.floor(total / 60);
+  const seconds = String(total % 60).padStart(2, "0");
+  return `${minutes}:${seconds}`;
 }
