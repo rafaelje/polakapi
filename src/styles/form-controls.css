@@ -2,12 +2,17 @@
  * Shared form-control chrome. WebKitGTK and WebView2 paint native <select>
  * boxes and number spinners with the OS theme, which is light on many
  * desktops and clashes with the dark UI. Every window imports this file so
- * those controls follow the app palette instead. Selectors carry `html` so
- * they beat per-window element rules and single-class rules for the arrow
- * and spinner properties without touching colors set by those rules.
+ * those controls follow the app palette instead.
+ *
+ * The arrow and spinner rules carry `html` so they beat per-window element
+ * and single-class rules. The colors below deliberately do NOT: `:where()`
+ * contributes no specificity, so they land at plain element weight and any
+ * window that styles `select` itself overrides them by source order (this
+ * file is imported first everywhere). Without that, this sheet would win
+ * over `settings.css` and break its `prefers-color-scheme: light` block.
  * ------------------------------------------------------------------------- */
 
-html select {
+:where(html) select {
   background-color: var(--panel-elev, #1b1d22);
   color: var(--text, #d8d8d8);
   border: 1px solid var(--border, #24262d);
