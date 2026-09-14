@@ -5,3 +5,5 @@ src-tauri/gen/
 pnpm-lock.yaml
 *.md
 .impeccable/
+pr-*-review-comments.md
+pr-*-review-responses.html
