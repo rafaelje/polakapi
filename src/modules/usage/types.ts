@@ -57,10 +57,8 @@ export interface ClaudeAuthoritative {
   fableWeekly: AuthoritativeWindow | null;
 }
 
-export interface CursorWindow {
-  usedPercent: number;
-  resetsAt: number | null;
-}
+/** Same shape as the Claude windows; kept as an alias so the two cannot drift. */
+export type CursorWindow = AuthoritativeWindow;
 
 export interface CursorSummary {
   membershipType: string | null;
