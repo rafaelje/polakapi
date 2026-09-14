@@ -8,7 +8,6 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
 use std::time::Duration;
 
 use serde::Serialize;
@@ -20,11 +19,6 @@ const EXPLAIN_TIMEOUT_SECS: u64 = 300;
 const MAX_INLINE_SKILL_BYTES: usize = 60_000;
 const SCOPE_GLOBAL: &str = "global";
 const SCOPE_PROJECT: &str = "project";
-
-/// Project roots reported by the last `skills_list` call. Read and write only
-/// accept paths under a global skill root or under one of these, so editing a
-/// repo-local skill never widens the reachable area beyond what was listed.
-static KNOWN_PROJECT_ROOTS: Mutex<Vec<PathBuf>> = Mutex::new(Vec::new());
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -115,9 +109,20 @@ fn parse_frontmatter(content: &str) -> (Option<String>, Option<String>) {
     (name, description)
 }
 
+/// Always joins with `/`, never the platform separator: these labels are
+/// shown next to each other in one list, so a Windows `\` would make the
+/// prefix we write by hand and the tail we take from the path disagree.
+fn join_with_slash(relative: &Path) -> String {
+    relative
+        .components()
+        .map(|component| component.as_os_str().to_string_lossy())
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
 fn source_label(root: &Path, home: &Path) -> String {
     root.strip_prefix(home)
-        .map(|p| format!("~/{}", p.display()))
+        .map(|relative| format!("~/{}", join_with_slash(relative)))
         .unwrap_or_else(|_| root.display().to_string())
 }
 
@@ -129,7 +134,7 @@ fn project_source_label(root: &Path, project: &Path) -> String {
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_else(|| project.display().to_string());
     root.strip_prefix(project)
-        .map(|p| format!("{name}/{}", p.display()))
+        .map(|relative| format!("{name}/{}", join_with_slash(relative)))
         .unwrap_or_else(|_| root.display().to_string())
 }
 
@@ -181,36 +186,36 @@ fn scan_root(
     }
 }
 
-fn allowed_roots() -> Result<Vec<PathBuf>, String> {
+/// The roots a single call may reach: always the global ones, plus the skill
+/// directories of `project_path` when the caller names a project. Scoping this
+/// to the argument of the call — rather than to whatever the last listing
+/// happened to report — keeps authorization tied to the request being made.
+fn allowed_roots(project_path: Option<&str>) -> Result<Vec<PathBuf>, String> {
     let home = home_dir()?;
     let mut roots: Vec<PathBuf> = global_skill_roots(&home)
         .into_iter()
         .map(|(_, root)| root)
         .collect();
-    let known = KNOWN_PROJECT_ROOTS.lock().map_err(|e| e.to_string())?;
-    for project in known.iter() {
-        roots.extend(project_skill_roots(project).into_iter().map(|(_, r)| r));
+    if let Some(project) = project_path {
+        let project = PathBuf::from(project);
+        if !project.is_dir() {
+            return Err(format!(
+                "project_path is not a directory: {}",
+                project.display()
+            ));
+        }
+        roots.extend(project_skill_roots(&project).into_iter().map(|(_, r)| r));
     }
     Ok(roots)
 }
 
-/// Project root from the last listing that contains `file`, if any.
-fn owning_project_root(file: &Path) -> Option<PathBuf> {
-    let known = KNOWN_PROJECT_ROOTS.lock().ok()?;
-    known
-        .iter()
-        .filter(|root| file.starts_with(root))
-        .max_by_key(|root| root.components().count())
-        .cloned()
-}
-
-fn validate_skill_path(path: &str) -> Result<PathBuf, String> {
+fn validate_skill_path(path: &str, project_path: Option<&str>) -> Result<PathBuf, String> {
     let canonical =
         fs::canonicalize(path).map_err(|e| format!("invalid skill path {path}: {e}"))?;
     if !canonical.is_file() {
         return Err(format!("skill path is not a file: {path}"));
     }
-    let allowed = allowed_roots()?.into_iter().any(|root| {
+    let allowed = allowed_roots(project_path)?.into_iter().any(|root| {
         fs::canonicalize(&root)
             .map(|r| canonical.starts_with(&r))
             .unwrap_or(false)
@@ -270,9 +275,6 @@ pub async fn skills_list(project_paths: Vec<String>) -> Result<Vec<SkillEntry>, 
             scan_root(cli, &root, &source, SCOPE_PROJECT, Some(project), &mut out);
         }
     }
-    if let Ok(mut known) = KNOWN_PROJECT_ROOTS.lock() {
-        *known = projects.into_iter().map(PathBuf::from).collect();
-    }
 
     out.sort_by(|a, b| {
         a.scope
@@ -284,15 +286,20 @@ pub async fn skills_list(project_paths: Vec<String>) -> Result<Vec<SkillEntry>, 
     Ok(out)
 }
 
+/// `project_path` is the repo that owns the skill, or `None` for a global one.
 #[tauri::command]
-pub async fn skill_read(path: String) -> Result<String, String> {
-    let file = validate_skill_path(&path)?;
+pub async fn skill_read(path: String, project_path: Option<String>) -> Result<String, String> {
+    let file = validate_skill_path(&path, project_path.as_deref())?;
     fs::read_to_string(&file).map_err(|e| format!("could not read skill: {e}"))
 }
 
 #[tauri::command]
-pub async fn skill_write(path: String, content: String) -> Result<(), String> {
-    let file = validate_skill_path(&path)?;
+pub async fn skill_write(
+    path: String,
+    content: String,
+    project_path: Option<String>,
+) -> Result<(), String> {
+    let file = validate_skill_path(&path, project_path.as_deref())?;
     fs::write(&file, content).map_err(|e| format!("could not write skill: {e}"))
 }
 
@@ -301,13 +308,17 @@ pub async fn skill_explain(
     cli: String,
     model: String,
     path: String,
+    project_path: Option<String>,
 ) -> Result<AgentResult, String> {
-    let file = validate_skill_path(&path)?;
+    let file = validate_skill_path(&path, project_path.as_deref())?;
     let content = fs::read_to_string(&file).map_err(|e| format!("could not read skill: {e}"))?;
     let prompt = build_explain_prompt(&file, &content);
     // Project skills are explained from their own repo so the agent can open
     // whatever the skill references; global ones fall back to the home dir.
-    let base = owning_project_root(&file).map_or_else(home_dir, Ok)?;
+    let base = match project_path {
+        Some(project) => PathBuf::from(project),
+        None => home_dir()?,
+    };
     let cwd = platform_command::external_path(&base)
         .to_string_lossy()
         .to_string();
@@ -422,15 +433,44 @@ mod tests {
     }
 
     #[test]
-    fn owning_project_root_picks_the_deepest_match() {
+    fn labels_always_join_with_a_forward_slash() {
+        let home = Path::new("/home/u");
+        assert_eq!(
+            source_label(&home.join(".claude").join("skills"), home),
+            "~/.claude/skills"
+        );
+        let project = Path::new("/home/u/my-repo");
+        assert_eq!(
+            project_source_label(&project.join(".codex").join("prompts"), project),
+            "my-repo/.codex/prompts"
+        );
+    }
+
+    #[test]
+    fn project_skill_is_reachable_only_when_its_project_is_named() {
         let tmp = tempfile::tempdir().unwrap();
-        let outer = tmp.path().join("outer");
-        let inner = outer.join("nested");
-        *KNOWN_PROJECT_ROOTS.lock().unwrap() = vec![outer.clone(), inner.clone()];
-        let file = inner.join(".claude").join("skills").join("a.md");
-        assert_eq!(owning_project_root(&file), Some(inner));
-        assert_eq!(owning_project_root(Path::new("/elsewhere/a.md")), None);
-        KNOWN_PROJECT_ROOTS.lock().unwrap().clear();
+        let project = tmp.path().join("my-repo");
+        let root = project.join(".claude").join("skills");
+        fs::create_dir_all(&root).unwrap();
+        let skill = root.join("deploy.md");
+        fs::write(&skill, "---\nname: deploy\n---\n").unwrap();
+        let skill_str = skill.to_str().unwrap();
+        let project_str = project.to_str().unwrap();
+
+        // Without the owning project the path is outside every allowed root.
+        assert!(validate_skill_path(skill_str, None).is_err());
+        assert!(validate_skill_path(skill_str, Some(project_str)).is_ok());
+        // Naming a different project does not grant access either.
+        let other = tmp.path().join("other-repo");
+        fs::create_dir_all(&other).unwrap();
+        assert!(validate_skill_path(skill_str, Some(other.to_str().unwrap())).is_err());
+    }
+
+    #[test]
+    fn allowed_roots_rejects_a_project_path_that_is_not_a_directory() {
+        let tmp = tempfile::tempdir().unwrap();
+        let missing = tmp.path().join("nope");
+        assert!(allowed_roots(Some(missing.to_str().unwrap())).is_err());
     }
 
     #[test]
@@ -438,7 +478,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let file = tmp.path().join("loose.md");
         fs::write(&file, "x").unwrap();
-        let result = validate_skill_path(file.to_str().unwrap());
+        let result = validate_skill_path(file.to_str().unwrap(), None);
         assert!(result.is_err());
     }
 }
