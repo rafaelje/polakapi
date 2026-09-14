@@ -63,6 +63,10 @@ export function sortSkills(
     if (byRank !== 0) return byRank;
     const byGroup = skillGroupLabel(a).localeCompare(skillGroupLabel(b));
     if (byGroup !== 0) return byGroup;
+    // Same label can still mean different repos; without this they interleave
+    // and the list renders alternating duplicate headers.
+    const byPath = (a.projectPath ?? "").localeCompare(b.projectPath ?? "");
+    if (byPath !== 0) return byPath;
     const byCli = a.cli.localeCompare(b.cli);
     if (byCli !== 0) return byCli;
     return a.name.toLowerCase().localeCompare(b.name.toLowerCase());

@@ -7,7 +7,7 @@ import {
   SCOPE_ALL,
   SCOPE_GLOBAL,
 } from "./filter";
-import { formatElapsed } from "./skills-modal";
+import { formatElapsed } from "./skills-modal-explain";
 import type { SkillEntry } from "./types";
 
 function skill(partial: Partial<SkillEntry>): SkillEntry {
@@ -145,5 +145,27 @@ describe("formatElapsed", () => {
 
   it("never renders a negative reading from a clock skew", () => {
     expect(formatElapsed(-5_000)).toBe("0s");
+  });
+});
+
+describe("same-basename projects", () => {
+  const at = (path: string, name: string) =>
+    skill({ scope: "project", projectPath: path, name, source: `${path}/.claude/skills` });
+
+  it("keeps entries of each repo contiguous instead of interleaving them", () => {
+    const sorted = sortSkills(
+      [at("/a/webapp", "zeta"), at("/b/webapp", "alpha"), at("/a/webapp", "beta")],
+      null,
+    );
+    expect(sorted.map((s) => s.projectPath)).toEqual(["/a/webapp", "/a/webapp", "/b/webapp"]);
+  });
+
+  it("still ranks the active repo ahead of a same-named one", () => {
+    const sorted = sortSkills([at("/b/webapp", "alpha"), at("/a/webapp", "zeta")], "/a/webapp");
+    expect(sorted[0].projectPath).toBe("/a/webapp");
+  });
+
+  it("produces the same label for both, which is why the header cannot key on it", () => {
+    expect(skillGroupLabel(at("/a/webapp", "x"))).toBe(skillGroupLabel(at("/b/webapp", "y")));
   });
 });

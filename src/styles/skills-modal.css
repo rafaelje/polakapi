@@ -87,6 +87,28 @@
   border-color: rgba(242, 201, 76, 0.45);
 }
 
+.skills-modal-model-input {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 9px;
+  font:
+    12.5px ui-monospace,
+    Menlo,
+    monospace;
+  min-width: 190px;
+  outline: none;
+}
+
+.skills-modal-model-input:focus {
+  border-color: var(--accent);
+}
+
+.skills-modal-model-input:disabled {
+  opacity: 0.45;
+}
+
 .skills-modal-scope-select {
   max-width: 260px;
 }

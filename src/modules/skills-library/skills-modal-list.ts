@@ -24,8 +24,12 @@ export function renderSkillList(
   let lastGroup: string | null = null;
   skills.forEach((s, idx) => {
     const group = skillGroupLabel(s);
-    if (group !== lastGroup) {
-      lastGroup = group;
+    // Key on identity, not on the label: two projects can share a basename,
+    // and keying on the label merged them under one header — which also
+    // meant a foreign repo's skills could sit under a "current repo" badge.
+    const groupKey = s.scope === "project" ? (s.projectPath ?? group) : "global";
+    if (groupKey !== lastGroup) {
+      lastGroup = groupKey;
       const header = document.createElement("div");
       header.className = "skills-modal-group";
       const name = document.createElement("span");

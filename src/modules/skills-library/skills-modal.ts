@@ -9,6 +9,7 @@ import {
 } from "./filter";
 import { explainSkill, listSkills, readSkill, writeSkill } from "./skills-service";
 import { renderSkillList, renderSkillPreview, updateSkillSelection } from "./skills-modal-list";
+import { renderExplainMode, type ExplainState } from "./skills-modal-explain";
 import {
   defaultExplainModelFor,
   isExplainCli,
@@ -31,20 +32,12 @@ export interface SkillsModalHandle {
 
 type ModalMode = "list" | "explain" | "editor";
 
-interface ExplainState {
-  skill: SkillEntry;
-  cli: ExplainCli;
-  running: boolean;
-  text: string | null;
-  error: string | null;
-  /** Epoch ms the current run started, for the elapsed counter. */
-  startedAt: number;
-}
-
 interface EditorState {
   skill: SkillEntry;
   content: string;
   saving: boolean;
+  /** True until the file content lands; saving meanwhile would truncate it. */
+  loading: boolean;
 }
 
 export function mountSkillsModal(deps: SkillsModalDeps): SkillsModalHandle {
@@ -184,6 +177,7 @@ export function mountSkillsModal(deps: SkillsModalDeps): SkillsModalHandle {
       skill,
       cli: explainCli,
       running: false,
+      model: defaultExplainModelFor(explainCli),
       text: null,
       error: null,
       startedAt: Date.now(),
@@ -202,10 +196,9 @@ export function mountSkillsModal(deps: SkillsModalDeps): SkillsModalHandle {
     current.startedAt = Date.now();
     renderBody();
     try {
-      const model = defaultExplainModelFor(current.cli);
       const result = await explainSkill(
         current.cli,
-        model,
+        current.model,
         current.skill.path,
         current.skill.projectPath,
       );
@@ -221,7 +214,7 @@ export function mountSkillsModal(deps: SkillsModalDeps): SkillsModalHandle {
 
   const beginEdit = (skill: SkillEntry): void => {
     const cached = contentCache.get(skill.path);
-    editor = { skill, content: cached ?? "", saving: false };
+    editor = { skill, content: cached ?? "", saving: false, loading: cached === undefined };
     mode = "editor";
     renderBody();
     if (cached === undefined) {
@@ -230,6 +223,7 @@ export function mountSkillsModal(deps: SkillsModalDeps): SkillsModalHandle {
           contentCache.set(skill.path, content);
           if (!isOpen() || mode !== "editor" || editor?.skill.path !== skill.path) return;
           editor.content = content;
+          editor.loading = false;
           renderBody();
         })
         .catch(() => {
@@ -242,7 +236,7 @@ export function mountSkillsModal(deps: SkillsModalDeps): SkillsModalHandle {
   };
 
   const saveEditor = async (): Promise<void> => {
-    if (!editor || editor.saving) return;
+    if (!editor || editor.saving || editor.loading) return;
     const current = editor;
     current.saving = true;
     renderBody();
@@ -276,7 +270,19 @@ export function mountSkillsModal(deps: SkillsModalDeps): SkillsModalHandle {
       renderListMode(modal);
       paintList();
     } else if (mode === "explain") {
-      renderExplainMode(modal);
+      const current = explain;
+      if (current) {
+        renderExplainMode(modal, current, {
+          makeCliSelect,
+          registerTicker: (paint) => {
+            elapsedTimer = setInterval(paint, 1000);
+          },
+          onRerun: () => void runExplain(),
+          onBack: backToList,
+          onEdit: () => beginEdit(current.skill),
+          onClose: close,
+        });
+      }
     } else {
       renderEditorMode(modal);
     }
@@ -408,94 +414,6 @@ export function mountSkillsModal(deps: SkillsModalDeps): SkillsModalHandle {
     requestAnimationFrame(() => search.focus());
   };
 
-  const renderExplainMode = (modal: HTMLElement): void => {
-    const current = explain;
-    if (!current) return;
-
-    const head = document.createElement("div");
-    head.className = "agents-modal-head";
-    const title = document.createElement("strong");
-    title.className = "agents-modal-editor-title";
-    title.textContent = `explain: ${current.skill.name}`;
-    const badge = document.createElement("span");
-    badge.className = "skills-modal-cli-badge";
-    badge.dataset.cli = current.skill.cli;
-    badge.textContent = current.skill.cli;
-    const spacer = document.createElement("span");
-    spacer.style.flex = "1";
-    const backBtn = document.createElement("button");
-    backBtn.type = "button";
-    backBtn.className = "agents-modal-btn";
-    backBtn.textContent = "back";
-    backBtn.addEventListener("click", backToList);
-    head.append(title, badge, spacer, backBtn, modalCloseButton(close));
-
-    const body = document.createElement("div");
-    body.className = "skills-modal-explain-body";
-
-    if (current.running) {
-      const status = document.createElement("div");
-      status.className = "skills-modal-explain-status";
-
-      const spinner = document.createElement("span");
-      spinner.className = "skills-modal-spinner";
-      spinner.setAttribute("aria-hidden", "true");
-
-      const label = document.createElement("span");
-      label.textContent = `Asking ${current.cli} to read and explain this skill…`;
-
-      // A run can take minutes, so a static line reads as a hung window. The
-      // counter is what tells the user it is still going.
-      const elapsed = document.createElement("span");
-      elapsed.className = "skills-modal-explain-elapsed";
-      const paintElapsed = (): void => {
-        elapsed.textContent = formatElapsed(Date.now() - current.startedAt);
-      };
-      paintElapsed();
-      elapsedTimer = setInterval(paintElapsed, 1000);
-
-      status.append(spinner, label, elapsed);
-      status.setAttribute("role", "status");
-      body.append(status);
-    } else if (current.error) {
-      const error = document.createElement("div");
-      error.className = "agents-modal-editor-error";
-      error.textContent = current.error;
-      body.append(error);
-    }
-    if (current.text) {
-      const output = document.createElement("pre");
-      output.className = "agents-modal-preview-body skills-modal-explain-output";
-      output.textContent = current.text;
-      body.append(output);
-    }
-
-    const actions = document.createElement("div");
-    actions.className = "agents-modal-actions";
-
-    const cliSelect = makeCliSelect((cli) => {
-      current.cli = cli;
-    });
-    cliSelect.disabled = current.running;
-
-    const rerunBtn = document.createElement("button");
-    rerunBtn.type = "button";
-    rerunBtn.className = "agents-modal-btn agents-modal-btn-primary";
-    rerunBtn.textContent = current.running ? "running…" : "run again";
-    rerunBtn.disabled = current.running;
-    rerunBtn.addEventListener("click", () => void runExplain());
-
-    const editBtn = document.createElement("button");
-    editBtn.type = "button";
-    editBtn.className = "agents-modal-btn";
-    editBtn.textContent = "edit skill";
-    editBtn.addEventListener("click", () => beginEdit(current.skill));
-
-    actions.append(cliSelect, rerunBtn, editBtn);
-
-    modal.append(head, body, actions);
-  };
-
   const renderEditorMode = (modal: HTMLElement): void => {
     const current = editor;
     if (!current) return;
@@ -520,7 +438,7 @@ export function mountSkillsModal(deps: SkillsModalDeps): SkillsModalHandle {
     saveBtn.type = "button";
     saveBtn.className = "agents-modal-btn agents-modal-btn-primary";
     saveBtn.textContent = current.saving ? "saving…" : "save";
-    saveBtn.disabled = current.saving;
+    saveBtn.disabled = current.saving || current.loading;
     saveBtn.addEventListener("click", () => void saveEditor());
     head.append(title, pathLabel, spacer, cancelBtn, saveBtn, modalCloseButton(close));
 
@@ -529,8 +447,8 @@ export function mountSkillsModal(deps: SkillsModalDeps): SkillsModalHandle {
 
     const textarea = document.createElement("textarea");
     textarea.className = "agents-modal-file-content skills-modal-editor-content";
-    textarea.value = current.content;
-    textarea.disabled = current.saving;
+    textarea.value = current.loading ? "Loading…" : current.content;
+    textarea.disabled = current.saving || current.loading;
     textarea.addEventListener("input", () => {
       current.content = textarea.value;
     });
@@ -585,7 +503,9 @@ export function mountSkillsModal(deps: SkillsModalDeps): SkillsModalHandle {
     backdrop = document.createElement("div");
     backdrop.className = "agents-modal-backdrop";
     backdrop.addEventListener("mousedown", (e) => {
-      if (e.target === backdrop) close();
+      // Only dismiss from the list — a stray click while editing or waiting
+      // on an explanation used to throw the work away with no confirmation.
+      if (e.target === backdrop && mode === "list") close();
     });
 
     const modal = document.createElement("div");
@@ -625,13 +545,4 @@ export function mountSkillsModal(deps: SkillsModalDeps): SkillsModalHandle {
       close();
     },
   };
-}
-
-/** `12s`, then `1:05` once past a minute. */
-export function formatElapsed(ms: number): string {
-  const total = Math.max(0, Math.floor(ms / 1000));
-  if (total < 60) return `${total}s`;
-  const minutes = Math.floor(total / 60);
-  const seconds = String(total % 60).padStart(2, "0");
-  return `${minutes}:${seconds}`;
 }
