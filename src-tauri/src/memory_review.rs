@@ -80,7 +80,8 @@ fn describe(path: &Path, content: &str, is_index: bool) -> String {
             .lines()
             .filter(|line| line.trim_start().starts_with("- "))
             .count();
-        return format!("Index loaded every session · {entries} entries");
+        let noun = if entries == 1 { "entry" } else { "entries" };
+        return format!("Index loaded every session · {entries} {noun}");
     }
     frontmatter_description(content)
         .or_else(|| first_heading(content))
@@ -173,7 +174,7 @@ pub async fn memory_list() -> Result<Vec<MemoryProjectGroup>, String> {
             })
         })
         .collect();
-    groups.sort_by(|a, b| a.dir_name.to_lowercase().cmp(&b.dir_name.to_lowercase()));
+    groups.sort_by_key(|group| group.dir_name.to_lowercase());
     Ok(groups)
 }
 
@@ -250,10 +251,7 @@ mod tests {
         let files = scan_memory_dir(&dir);
         assert_eq!(files.len(), 3);
         assert!(files[0].is_index);
-        assert_eq!(
-            files[0].description,
-            "Index loaded every session · 1 entries"
-        );
+        assert_eq!(files[0].description, "Index loaded every session · 1 entry");
         assert_eq!(files[1].name, "alpha.md");
         assert_eq!(files[1].description, "Alpha heading");
         assert_eq!(files[2].description, "A saved fact");
