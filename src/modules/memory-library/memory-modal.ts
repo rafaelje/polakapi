@@ -33,6 +33,9 @@ interface EditorState {
   row: MemoryRow;
   content: string;
   saving: boolean;
+  /** True until the file content lands. Saving an unloaded buffer would
+   *  truncate the real file, so the editor stays read-only meanwhile. */
+  loading: boolean;
 }
 
 export function mountMemoryModal(deps: MemoryModalDeps): MemoryModalHandle {
@@ -153,7 +156,7 @@ export function mountMemoryModal(deps: MemoryModalDeps): MemoryModalHandle {
 
   const beginEdit = (row: MemoryRow): void => {
     const cached = contentCache.get(row.file.path);
-    editor = { row, content: cached ?? "", saving: false };
+    editor = { row, content: cached ?? "", saving: false, loading: cached === undefined };
     mode = "editor";
     renderBody();
     if (cached === undefined) {
@@ -162,6 +165,7 @@ export function mountMemoryModal(deps: MemoryModalDeps): MemoryModalHandle {
           contentCache.set(row.file.path, content);
           if (!isOpen() || mode !== "editor" || editor?.row.file.path !== row.file.path) return;
           editor.content = content;
+          editor.loading = false;
           renderBody();
         })
         .catch(() => {
@@ -174,7 +178,7 @@ export function mountMemoryModal(deps: MemoryModalDeps): MemoryModalHandle {
   };
 
   const saveEditor = async (): Promise<void> => {
-    if (!editor || editor.saving) return;
+    if (!editor || editor.saving || editor.loading) return;
     const current = editor;
     current.saving = true;
     renderBody();
@@ -201,7 +205,10 @@ export function mountMemoryModal(deps: MemoryModalDeps): MemoryModalHandle {
     void (async () => {
       try {
         await deleteMemory(row.file.path);
-        contentCache.delete(row.file.path);
+        // The backend also prunes the bullet from MEMORY.md, so the cached
+        // index is stale the moment this resolves — drop everything rather
+        // than guess which index row belongs to this project.
+        contentCache.clear();
         showToast(`Deleted "${row.file.name}" (index entry pruned)`, "success");
         void loadMemories();
       } catch {
@@ -355,7 +362,7 @@ export function mountMemoryModal(deps: MemoryModalDeps): MemoryModalHandle {
     saveBtn.type = "button";
     saveBtn.className = "agents-modal-btn agents-modal-btn-primary";
     saveBtn.textContent = current.saving ? "saving…" : "save";
-    saveBtn.disabled = current.saving;
+    saveBtn.disabled = current.saving || current.loading;
     saveBtn.addEventListener("click", () => void saveEditor());
     head.append(title, pathLabel, spacer, cancelBtn, saveBtn, modalCloseButton(close));
 
@@ -364,8 +371,8 @@ export function mountMemoryModal(deps: MemoryModalDeps): MemoryModalHandle {
 
     const textarea = document.createElement("textarea");
     textarea.className = "agents-modal-file-content memory-modal-editor-content";
-    textarea.value = current.content;
-    textarea.disabled = current.saving;
+    textarea.value = current.loading ? "Loading…" : current.content;
+    textarea.disabled = current.saving || current.loading;
     textarea.addEventListener("input", () => {
       current.content = textarea.value;
     });
@@ -419,7 +426,9 @@ export function mountMemoryModal(deps: MemoryModalDeps): MemoryModalHandle {
     backdrop = document.createElement("div");
     backdrop.className = "agents-modal-backdrop";
     backdrop.addEventListener("mousedown", (e) => {
-      if (e.target === backdrop) close();
+      // Only dismiss from the list. A stray click while editing used to
+      // discard the buffer with no intent signal at all.
+      if (e.target === backdrop && mode === "list") close();
     });
 
     const modal = document.createElement("div");
