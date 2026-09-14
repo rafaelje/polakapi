@@ -290,33 +290,51 @@ fn csv_date(value: &str) -> String {
     unknown_date()
 }
 
-fn read_session_cookie() -> Result<Option<String>, String> {
-    let Some(token) = read_access_token() else {
-        return Ok(None);
-    };
-    if token_expires_within(&token, 60) {
+/// Cookie for `token`, or the reason it cannot be used.
+fn session_cookie_for(token: &str) -> Result<String, String> {
+    if token_expires_within(token, 60) {
         return Err("Cursor login expired — sign in to Cursor or run `cursor-agent login`".into());
     }
-    let Some(user_id) = user_id_from_jwt(&token) else {
+    let Some(user_id) = user_id_from_jwt(token) else {
         return Err("could not derive user id from Cursor access token".into());
     };
-    Ok(Some(format!(
-        "WorkosCursorSessionToken={user_id}%3A%3A{token}"
-    )))
+    Ok(format!("WorkosCursorSessionToken={user_id}%3A%3A{token}"))
 }
 
-fn read_access_token() -> Option<String> {
+/// Walks every credential source and returns the first that yields a usable
+/// cookie. Selecting before validating meant a stale token from the Cursor IDE
+/// masked a perfectly good `cursor-agent` login, and the usage panel reported
+/// an expired session while the working credential sat one candidate away.
+/// Only when every candidate fails is the last error surfaced.
+fn read_session_cookie() -> Result<Option<String>, String> {
+    let mut last_error: Option<String> = None;
+    for token in access_token_candidates() {
+        match session_cookie_for(&token) {
+            Ok(cookie) => return Ok(Some(cookie)),
+            Err(error) => last_error = Some(error),
+        }
+    }
+    match last_error {
+        Some(error) => Err(error),
+        None => Ok(None),
+    }
+}
+
+/// Every token found on disk, IDE state first, then the `cursor-agent` CLI.
+fn access_token_candidates() -> Vec<String> {
+    let mut tokens: Vec<String> = Vec::new();
     for path in state_vscdb_candidates() {
         if let Some(token) = read_token_from_vscdb(&path) {
-            return Some(token);
+            tokens.push(token);
         }
     }
     for path in auth_json_candidates() {
         if let Some(token) = read_token_from_auth_json(&path) {
-            return Some(token);
+            tokens.push(token);
         }
     }
-    None
+    tokens.dedup();
+    tokens
 }
 
 fn state_vscdb_candidates() -> Vec<PathBuf> {
@@ -462,6 +480,11 @@ fn base64url_decode(input: &str) -> Option<Vec<u8>> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn session_cookie_rejects_a_token_without_a_usable_sub_claim() {
+        assert!(session_cookie_for("not-a-jwt").is_err());
+    }
+
     use super::*;
     use serde_json::json;
 
