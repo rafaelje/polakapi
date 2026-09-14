@@ -9,14 +9,24 @@ export function listSkills(projectPaths: readonly string[]): Promise<SkillEntry[
   );
 }
 
-export function readSkill(path: string): Promise<string> {
-  return invoke<string>("skill_read", { path }, { errorMessage: "Could not read skill file" });
+// `projectPath` names the repo that owns a project-scoped skill; the backend
+// only widens the reachable roots for the project the call itself names.
+export function readSkill(path: string, projectPath: string | null): Promise<string> {
+  return invoke<string>(
+    "skill_read",
+    { path, projectPath },
+    { errorMessage: "Could not read skill file" },
+  );
 }
 
-export function writeSkill(path: string, content: string): Promise<void> {
+export function writeSkill(
+  path: string,
+  content: string,
+  projectPath: string | null,
+): Promise<void> {
   return invoke<void>(
     "skill_write",
-    { path, content },
+    { path, content, projectPath },
     { errorMessage: "Could not save skill file" },
   );
 }
@@ -25,6 +35,11 @@ export function explainSkill(
   cli: string,
   model: string,
   path: string,
+  projectPath: string | null,
 ): Promise<SkillExplainResult> {
-  return invoke<SkillExplainResult>("skill_explain", { cli, model, path }, { toastOnError: false });
+  return invoke<SkillExplainResult>(
+    "skill_explain",
+    { cli, model, path, projectPath },
+    { toastOnError: false },
+  );
 }

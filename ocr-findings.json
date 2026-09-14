@@ -1,0 +1,61 @@
+{
+  "findings": [
+    {
+      "path": "src/styles/form-controls.css",
+      "start_line": 10,
+      "end_line": 16,
+      "severity": "medium",
+      "category": "bug",
+      "content": "`html select` has specificity (0,0,2), which beats the bare `select` rules used by the settings window (`settings.css:86-96` and the light-theme override at `settings.css:201-206`, both specificity (0,0,1)). As a result the settings `<select>` no longer uses its own palette (`#35393b` / `#45494b` / `color: inherit` / `border-radius: 5px`) and, more importantly, the `prefers-color-scheme: light` override stops working: the select keeps the dark `--panel-elev` fallback `#1b1d22` with `#d8d8d8` text inside an otherwise light UI. The file header comment (\"without touching colors set by those rules\") is therefore inaccurate for element-level rules.",
+      "suggestion": "Either restrict the shared rule to the arrow/appearance properties only (leaving colors to each window), or keep the color block at plain `select` specificity so per-window `select` rules still win, e.g. move `background-color`/`color`/`border` out of `html select` or guard them with `:where(html) select`.",
+      "anchor": "html select {",
+      "snapped_from": 11
+    },
+    {
+      "path": "src-tauri/src/skills.rs",
+      "start_line": 26,
+      "end_line": 26,
+      "severity": "medium",
+      "category": "bug",
+      "content": "The allowlist used by `validate_skill_path` lives in a process-global `Mutex<Vec<PathBuf>>` that is only populated as a side effect of `skills_list`. This makes the read/write/explain commands order-dependent: `skill_read`/`skill_write` on a repo-local skill fail with \"path is outside the known skill roots\" if no listing ran before (e.g. after a window reload that restores a previously opened skill), and a later `skills_list` with a different `project_paths` set silently invalidates paths that were valid a moment earlier. It also means the reachable area for writes is decided by whatever unvalidated `project_paths` the frontend last sent, rather than by the argument of the call being authorized. Passing the owning project path explicitly to `skill_read`/`skill_write`/`skill_explain` (and validating it there) would remove both the hidden state and the ordering dependency.",
+      "suggestion": "",
+      "anchor": "+static KNOWN_PROJECT_ROOTS: Mutex<Vec<PathBuf>> = Mutex::new(Vec::new());"
+    },
+    {
+      "path": "src-tauri/src/memory_review.rs",
+      "start_line": 85,
+      "end_line": 85,
+      "severity": "low",
+      "category": "style",
+      "content": "The user-facing description is always pluralized, so an index with a single bullet renders as \"Index loaded every session · 1 entries\" (the test even asserts that wording). Consider selecting the singular form when `entries == 1`.",
+      "suggestion": "",
+      "anchor": "+        return format!(\"Index loaded every session · {entries} entries\");"
+    },
+    {
+      "path": "src/modules/memory-library/memory-modal.ts",
+      "start_line": 38,
+      "severity": "medium",
+      "category": "maintainability",
+      "content": "`mountMemoryModal` is an almost line-by-line copy of `mountSkillsModal` (`src/modules/skills-library/skills-modal.ts`): the same state block (`backdrop`, `mode`, `query`, `selectedIdx`, `filtered`, `contentCache`, `previewToken`), the same `loadPreview` / `paintList` / `beginEdit` / `saveEditor` / `backToList` / `open` / `close` flow, and the local `renderRowList`, `updateSelection` and `renderPreview` helpers duplicate `renderSkillList`, `updateSkillSelection` and `renderSkillPreview` from `skills-modal-list.ts`. Two copies of this logic will drift (they already differ: skills `saveEditor` only re-renders, memory reloads the list). Consider extracting the shared list/preview/editor shell into a reusable module parameterised by row type and data source.",
+      "suggestion": "Extract a shared \"library modal\" helper (list + preview + editor shell) and build both /skills and /memory on top of it instead of duplicating ~500 lines.",
+      "anchor": "export function mountMemoryModal(deps: MemoryModalDeps): MemoryModalHandle {"
+    },
+    {
+      "path": "src/modules/usage/types.ts",
+      "start_line": 60,
+      "severity": "low",
+      "category": "maintainability",
+      "category_note": "duplicate type",
+      "content": "`CursorWindow` is structurally identical to the existing `AuthoritativeWindow` (`usedPercent` + `resetsAt`), and the consumers already treat them as the same type: `cursorPlanCard` passes `summary.plan` straight into `authoritativeWindowRow(window: AuthoritativeWindow, …)` and `updateCountdowns` types the cursor windows as `AuthoritativeWindow | null`. Keeping two names for one shape invites divergence.",
+      "suggestion": "Reuse `AuthoritativeWindow` in `CursorSummary` (or alias `export type CursorWindow = AuthoritativeWindow`).",
+      "anchor": "export interface CursorWindow {"
+    }
+  ],
+  "summary": {
+    "total_files": 45,
+    "reviewed_files": 45,
+    "skipped_files": 0,
+    "skipped": [],
+    "cost_usd": 1.3493275000000002
+  }
+}

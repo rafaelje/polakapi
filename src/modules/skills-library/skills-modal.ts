@@ -95,7 +95,7 @@ export function mountSkillsModal(deps: SkillsModalDeps): SkillsModalHandle {
     }
     renderSkillPreview(previewEl, skill, null);
     const token = ++previewToken;
-    void readSkill(skill.path)
+    void readSkill(skill.path, skill.projectPath)
       .then((content) => {
         contentCache.set(skill.path, content);
         if (token !== previewToken || !isOpen() || mode !== "list") return;
@@ -183,7 +183,12 @@ export function mountSkillsModal(deps: SkillsModalDeps): SkillsModalHandle {
     renderBody();
     try {
       const model = defaultExplainModelFor(current.cli);
-      const result = await explainSkill(current.cli, model, current.skill.path);
+      const result = await explainSkill(
+        current.cli,
+        model,
+        current.skill.path,
+        current.skill.projectPath,
+      );
       current.running = false;
       current.text = result.text || null;
       current.error = result.error ?? (result.text ? null : "The agent returned no output.");
@@ -200,7 +205,7 @@ export function mountSkillsModal(deps: SkillsModalDeps): SkillsModalHandle {
     mode = "editor";
     renderBody();
     if (cached === undefined) {
-      void readSkill(skill.path)
+      void readSkill(skill.path, skill.projectPath)
         .then((content) => {
           contentCache.set(skill.path, content);
           if (!isOpen() || mode !== "editor" || editor?.skill.path !== skill.path) return;
@@ -222,7 +227,7 @@ export function mountSkillsModal(deps: SkillsModalDeps): SkillsModalHandle {
     current.saving = true;
     renderBody();
     try {
-      await writeSkill(current.skill.path, current.content);
+      await writeSkill(current.skill.path, current.content, current.skill.projectPath);
       contentCache.set(current.skill.path, current.content);
       showToast(`Saved "${current.skill.name}"`, "success");
       editor = null;
