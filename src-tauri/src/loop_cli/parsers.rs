@@ -107,6 +107,57 @@ pub(super) fn unwrap_nested_json_message(msg: &str) -> String {
     msg.to_string()
 }
 
+/// `cursor-agent --output-format json` emits the same envelope shape as
+/// claude but with camelCase usage keys.
+pub(super) fn parse_cursor_json(raw: &str) -> Result<AgentResult, String> {
+    let value: serde_json::Value = match serde_json::from_str(raw.trim()) {
+        Ok(v) => v,
+        Err(e) => {
+            return Ok(AgentResult::empty_with_error(format!(
+                "malformed cursor JSON: {e}"
+            )));
+        }
+    };
+
+    let text = value
+        .get("result")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default()
+        .to_string();
+    let session_id = value
+        .get("session_id")
+        .and_then(|v| v.as_str())
+        .map(str::to_string);
+    let usage = value.get("usage");
+    let tokens_in = usage
+        .and_then(|u| u.get("inputTokens"))
+        .and_then(serde_json::Value::as_u64);
+    let tokens_out = usage
+        .and_then(|u| u.get("outputTokens"))
+        .and_then(serde_json::Value::as_u64);
+    let is_error = value
+        .get("is_error")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false);
+
+    let error = is_error.then(|| {
+        if text.is_empty() {
+            "cursor marked is_error=true".to_string()
+        } else {
+            text.clone()
+        }
+    });
+
+    Ok(AgentResult {
+        text,
+        tokens_in,
+        tokens_out,
+        cost_usd: None,
+        session_id,
+        error,
+    })
+}
+
 pub(super) fn parse_codex_jsonl(stdout: &str, last_message: &str) -> Result<AgentResult, String> {
     // codex --json emits a sequence of JSON objects (JSONL). We walk through
     // them trying to capture the last one that has usage. Tolerant to empty

@@ -54,6 +54,16 @@ export function renderExplainMode(
   const body = document.createElement("div");
   body.className = "skills-modal-explain-body";
 
+  // The skill is sent to an agent that runs in the skill's own directory. The
+  // run is read-only, but the content still reaches a model — say so plainly
+  // rather than leaving the user to infer it.
+  const notice = document.createElement("div");
+  notice.className = "skills-modal-explain-notice";
+  notice.textContent =
+    `Sends this file to ${current.cli}, which runs read-only in the skill's ` +
+    `directory. A skill from a source you do not trust is still worth reading yourself first.`;
+  body.append(notice);
+
   if (current.running) {
     const status = document.createElement("div");
     status.className = "skills-modal-explain-status";

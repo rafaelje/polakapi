@@ -156,6 +156,17 @@
   min-height: 260px;
 }
 
+.skills-modal-explain-notice {
+  flex: 0 0 auto;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: #c2a17a;
+  background: rgba(217, 119, 87, 0.08);
+  border: 1px solid rgba(217, 119, 87, 0.3);
+  border-radius: 6px;
+  padding: 8px 11px;
+}
+
 .skills-modal-explain-status {
   display: flex;
   align-items: center;

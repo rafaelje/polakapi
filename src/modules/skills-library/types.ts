@@ -20,7 +20,11 @@ export interface SkillExplainResult {
   error?: string | null;
 }
 
-export const EXPLAIN_CLIS = ["claude", "codex", "opencode"] as const;
+// Only CLIs with a verified read-only mode: claude `--allowedTools Read`,
+// codex `sandbox_mode=read-only`, cursor `--mode ask`. opencode is excluded
+// until its equivalent is confirmed — the explain path feeds the agent file
+// content the user did not author.
+export const EXPLAIN_CLIS = ["claude", "codex", "cursor"] as const;
 export type ExplainCli = (typeof EXPLAIN_CLIS)[number];
 
 export function isExplainCli(value: string): value is ExplainCli {
@@ -33,7 +37,9 @@ export function defaultExplainModelFor(cli: ExplainCli): string {
       return "claude-opus-4-7";
     case "codex":
       return "gpt-5.5";
-    case "opencode":
-      return "opencode-go/glm-5.2";
+    case "cursor":
+      // cursor-agent resolves `auto` against the user's plan, so it works
+      // without assuming which models they have access to.
+      return "auto";
   }
 }
