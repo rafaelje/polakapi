@@ -204,12 +204,13 @@ export function mountMemoryModal(deps: MemoryModalDeps): MemoryModalHandle {
     confirmingDelete = null;
     void (async () => {
       try {
-        await deleteMemory(row.file.path);
+        const result = await deleteMemory(row.file.path);
         // The backend also prunes the bullet from MEMORY.md, so the cached
         // index is stale the moment this resolves — drop everything rather
         // than guess which index row belongs to this project.
         contentCache.clear();
-        showToast(`Deleted "${row.file.name}" (index entry pruned)`, "success");
+        const suffix = result.indexPruned ? " (index entry pruned)" : "";
+        showToast(`Deleted "${row.file.name}"${suffix}`, "success");
         void loadMemories();
       } catch {
         // invoke() already surfaced the error toast

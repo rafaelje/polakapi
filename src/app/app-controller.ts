@@ -60,6 +60,7 @@ import {
   type MemoryButtonHandle,
 } from "../modules/memory-library/memory-button";
 import { flushSaveAgents } from "../shared/persistence/agents-store";
+import { flushSaveWorkspaces } from "../shared/persistence/workspaces-store";
 import { bootstrapWorkspaces, type WorkspacesBootstrapHandle } from "./workspaces-bootstrap";
 import { wireWindowLifecycle } from "./lifecycle";
 import { wireQuitConfirm } from "./quit-confirm";
@@ -160,6 +161,7 @@ export class AppController {
         this.workspaces?.controller
           .getState()
           .workspaces.flatMap((ws) => ws.projects.map((p) => p.path)) ?? [],
+      prepareProjectScope: (): Promise<void> => flushSaveWorkspaces(),
     };
     this.skillsButton = mountSkillsButton(projectScope);
     this.memoryButton = mountMemoryButton(projectScope);

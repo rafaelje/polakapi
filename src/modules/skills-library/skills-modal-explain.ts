@@ -54,14 +54,15 @@ export function renderExplainMode(
   const body = document.createElement("div");
   body.className = "skills-modal-explain-body";
 
-  // The skill is sent to an agent that runs in the skill's own directory. The
-  // run is read-only, but the content still reaches a model — say so plainly
-  // rather than leaving the user to infer it.
+  // The skill content reaches a model. Read-only mode prevents edits, but the
+  // CLI may still read other files available from its working directory.
   const notice = document.createElement("div");
   notice.className = "skills-modal-explain-notice";
+  const workingDirectory = current.skill.projectPath ?? "your home directory";
   notice.textContent =
-    `Sends this file to ${current.cli}, which runs read-only in the skill's ` +
-    `directory. A skill from a source you do not trust is still worth reading yourself first.`;
+    `Sends this file to ${current.cli}, which runs read-only with ${workingDirectory} as its ` +
+    `working directory. Read-only mode prevents changes but may allow reading other accessible ` +
+    `files. Review untrusted skills yourself first.`;
   body.append(notice);
 
   if (current.running) {
@@ -141,8 +142,6 @@ export function renderExplainMode(
   modelLabel.textContent = "model";
 
   actions.append(cliSelect, modelLabel, modelInput, rerunBtn, editBtn);
-
-  modal.append(head, body, actions);
 
   modal.append(head, body, actions);
 }

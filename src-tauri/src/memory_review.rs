@@ -36,6 +36,12 @@ pub struct MemoryProjectGroup {
     pub files: Vec<MemoryFileEntry>,
 }
 
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct MemoryDeleteResult {
+    pub index_pruned: bool,
+}
+
 fn home_dir() -> Result<PathBuf, String> {
     platform_command::user_home_dir().ok_or_else(|| "could not resolve home directory".to_string())
 }
@@ -191,7 +197,7 @@ pub async fn memory_write(path: String, content: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub async fn memory_delete(path: String) -> Result<(), String> {
+pub async fn memory_delete(path: String) -> Result<MemoryDeleteResult, String> {
     let file = validate_memory_path(&path)?;
     let name = file
         .file_name()
@@ -201,10 +207,15 @@ pub async fn memory_delete(path: String) -> Result<(), String> {
         return Err("MEMORY.md is the index — edit it instead of deleting it".to_string());
     }
     fs::remove_file(&file).map_err(|e| format!("could not delete memory file: {e}"))?;
-    if let Some(memory_dir) = file.parent() {
-        prune_index_reference(&memory_dir.join(INDEX_FILE), &name);
-    }
-    Ok(())
+    let index_pruned = match file.parent() {
+        Some(memory_dir) => {
+            prune_index_reference(&memory_dir.join(INDEX_FILE), &name).map_err(|error| {
+                format!("memory file was deleted, but the index could not be updated: {error}")
+            })?
+        }
+        None => false,
+    };
+    Ok(MemoryDeleteResult { index_pruned })
 }
 
 /// Destination of the first Markdown link in a bullet, normalized: an
@@ -231,9 +242,11 @@ fn bullet_link_target(line: &str) -> Option<&str> {
 /// `(name.md)`: the substring form both missed legitimate spellings
 /// (`](./a.md)`, `](a.md "title")`) and removed unrelated bullets that merely
 /// mentioned the name in prose.
-fn prune_index_reference(index_path: &Path, file_name: &str) {
-    let Ok(content) = fs::read_to_string(index_path) else {
-        return;
+fn prune_index_reference(index_path: &Path, file_name: &str) -> Result<bool, String> {
+    let content = match fs::read_to_string(index_path) {
+        Ok(content) => content,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(error) => return Err(format!("could not read {}: {error}", index_path.display())),
     };
     let kept: Vec<&str> = content
         .lines()
@@ -242,13 +255,15 @@ fn prune_index_reference(index_path: &Path, file_name: &str) {
         })
         .collect();
     if kept.len() == content.lines().count() {
-        return;
+        return Ok(false);
     }
     let mut next = kept.join("\n");
     if content.ends_with('\n') {
         next.push('\n');
     }
-    let _ = fs::write(index_path, next);
+    fs::write(index_path, next)
+        .map_err(|error| format!("could not write {}: {error}", index_path.display()))?;
+    Ok(true)
 }
 
 #[cfg(test)]
@@ -302,7 +317,7 @@ mod tests {
             &index,
             "# Memory index\n\n- [A](a.md) — first\n- [B](b.md) — second\n",
         );
-        prune_index_reference(&index, "a.md");
+        assert!(prune_index_reference(&index, "a.md").unwrap());
         let content = fs::read_to_string(&index).unwrap();
         assert!(!content.contains("(a.md)"));
         assert!(content.contains("(b.md)"));
@@ -317,7 +332,7 @@ mod tests {
             &index,
             "# Memory index\n\n             - [A](a.md) — plain\n             - [B](./a.md) — relative spelling\n             - [C](a.md \"quoted title\") — with a title\n             - [D](b.md) — mentions (a.md) in prose\n             - [E](ab.md) — a different file\n",
         );
-        prune_index_reference(&index, "a.md");
+        assert!(prune_index_reference(&index, "a.md").unwrap());
         let content = fs::read_to_string(&index).unwrap();
 
         // Every spelling of a link to a.md is gone.
@@ -338,6 +353,15 @@ mod tests {
         assert_eq!(bullet_link_target("- [A](./a.md)"), Some("a.md"));
         assert_eq!(bullet_link_target("- [A](a.md \"t\")"), Some("a.md"));
         assert_eq!(bullet_link_target("- plain text, no link"), None);
+    }
+
+    #[test]
+    fn prune_reports_an_unreadable_index() {
+        let tmp = tempfile::tempdir().unwrap();
+        let index = tmp.path().join("MEMORY.md");
+        fs::create_dir(&index).unwrap();
+
+        assert!(prune_index_reference(&index, "a.md").is_err());
     }
 
     #[test]

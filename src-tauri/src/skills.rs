@@ -11,6 +11,9 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use serde::Serialize;
+use serde_json::Value;
+use tauri::AppHandle;
+use tauri_plugin_store::StoreExt;
 
 use crate::loop_cli::{run_one_shot, AgentResult};
 use crate::platform_command;
@@ -19,6 +22,8 @@ const EXPLAIN_TIMEOUT_SECS: u64 = 300;
 const MAX_INLINE_SKILL_BYTES: usize = 60_000;
 const SCOPE_GLOBAL: &str = "global";
 const SCOPE_PROJECT: &str = "project";
+const WORKSPACES_STORE: &str = "workspaces.json";
+const WORKSPACES_STATE_KEY: &str = "state";
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -186,36 +191,86 @@ fn scan_root(
     }
 }
 
-/// The roots a single call may reach: always the global ones, plus the skill
-/// directories of `project_path` when the caller names a project. Scoping this
-/// to the argument of the call — rather than to whatever the last listing
-/// happened to report — keeps authorization tied to the request being made.
-fn allowed_roots(project_path: Option<&str>) -> Result<Vec<PathBuf>, String> {
+fn project_paths_from_state(state: &Value) -> Vec<PathBuf> {
+    state
+        .get("workspaces")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|workspace| workspace.get("projects").and_then(Value::as_array))
+        .flatten()
+        .filter_map(|project| project.get("path").and_then(Value::as_str))
+        .map(PathBuf::from)
+        .collect()
+}
+
+fn authorized_projects(app: &AppHandle) -> Result<Vec<PathBuf>, String> {
+    let store = app
+        .store(WORKSPACES_STORE)
+        .map_err(|error| format!("could not open workspace store: {error}"))?;
+    let Some(state) = store.get(WORKSPACES_STATE_KEY) else {
+        return Ok(Vec::new());
+    };
+    let mut projects: Vec<PathBuf> = project_paths_from_state(&state)
+        .into_iter()
+        .filter(|path| path.is_dir())
+        .collect();
+    projects.sort();
+    projects.dedup();
+    Ok(projects)
+}
+
+fn authorize_project(project_path: &str, authorized: &[PathBuf]) -> Result<PathBuf, String> {
+    let project = fs::canonicalize(project_path)
+        .map_err(|error| format!("invalid project path {project_path}: {error}"))?;
+    if !project.is_dir() {
+        return Err(format!("project path is not a directory: {project_path}"));
+    }
+    let is_authorized = authorized.iter().any(|allowed| {
+        fs::canonicalize(allowed)
+            .map(|canonical| canonical == project)
+            .unwrap_or(false)
+    });
+    if !is_authorized {
+        return Err(format!(
+            "project is not registered in polakapi: {project_path}"
+        ));
+    }
+    Ok(project)
+}
+
+/// Every request may reach global skill roots. Project roots are added only
+/// after matching the requested project against the backend workspace store.
+fn allowed_roots(
+    project_path: Option<&str>,
+    authorized: &[PathBuf],
+) -> Result<(Vec<PathBuf>, Option<PathBuf>), String> {
     let home = home_dir()?;
     let mut roots: Vec<PathBuf> = global_skill_roots(&home)
         .into_iter()
         .map(|(_, root)| root)
         .collect();
-    if let Some(project) = project_path {
-        let project = PathBuf::from(project);
-        if !project.is_dir() {
-            return Err(format!(
-                "project_path is not a directory: {}",
-                project.display()
-            ));
-        }
-        roots.extend(project_skill_roots(&project).into_iter().map(|(_, r)| r));
+    let project = project_path
+        .map(|path| authorize_project(path, authorized))
+        .transpose()?;
+    if let Some(project) = &project {
+        roots.extend(project_skill_roots(project).into_iter().map(|(_, r)| r));
     }
-    Ok(roots)
+    Ok((roots, project))
 }
 
-fn validate_skill_path(path: &str, project_path: Option<&str>) -> Result<PathBuf, String> {
+fn validate_skill_path(
+    path: &str,
+    project_path: Option<&str>,
+    authorized: &[PathBuf],
+) -> Result<(PathBuf, Option<PathBuf>), String> {
     let canonical =
         fs::canonicalize(path).map_err(|e| format!("invalid skill path {path}: {e}"))?;
     if !canonical.is_file() {
         return Err(format!("skill path is not a file: {path}"));
     }
-    let allowed = allowed_roots(project_path)?.into_iter().any(|root| {
+    let (roots, project) = allowed_roots(project_path, authorized)?;
+    let allowed = roots.into_iter().any(|root| {
         fs::canonicalize(&root)
             .map(|r| canonical.starts_with(&r))
             .unwrap_or(false)
@@ -223,7 +278,7 @@ fn validate_skill_path(path: &str, project_path: Option<&str>) -> Result<PathBuf
     if !allowed {
         return Err(format!("path is outside the known skill roots: {path}"));
     }
-    Ok(canonical)
+    Ok((canonical, project))
 }
 
 fn truncate_at_char_boundary(content: &str, max_bytes: usize) -> &str {
@@ -274,10 +329,8 @@ fn build_explain_prompt(path: &Path, content: &str) -> String {
     )
 }
 
-/// `project_paths` are the repositories the workspace sidebar knows about;
-/// each contributes its own checked-in skill directories.
 #[tauri::command]
-pub async fn skills_list(project_paths: Vec<String>) -> Result<Vec<SkillEntry>, String> {
+pub async fn skills_list(app: AppHandle) -> Result<Vec<SkillEntry>, String> {
     let home = home_dir()?;
     let mut out = Vec::new();
     for (cli, root) in global_skill_roots(&home) {
@@ -285,14 +338,19 @@ pub async fn skills_list(project_paths: Vec<String>) -> Result<Vec<SkillEntry>, 
         scan_root(cli, &root, &source, SCOPE_GLOBAL, None, &mut out);
     }
 
-    let mut projects: Vec<String> = project_paths;
-    projects.sort();
-    projects.dedup();
+    let projects = authorized_projects(&app)?;
     for project in &projects {
-        let project_dir = PathBuf::from(project);
-        for (cli, root) in project_skill_roots(&project_dir) {
-            let source = project_source_label(&root, &project_dir);
-            scan_root(cli, &root, &source, SCOPE_PROJECT, Some(project), &mut out);
+        let project_path = project.to_string_lossy();
+        for (cli, root) in project_skill_roots(project) {
+            let source = project_source_label(&root, project);
+            scan_root(
+                cli,
+                &root,
+                &source,
+                SCOPE_PROJECT,
+                Some(project_path.as_ref()),
+                &mut out,
+            );
         }
     }
 
@@ -308,35 +366,44 @@ pub async fn skills_list(project_paths: Vec<String>) -> Result<Vec<SkillEntry>, 
 
 /// `project_path` is the repo that owns the skill, or `None` for a global one.
 #[tauri::command]
-pub async fn skill_read(path: String, project_path: Option<String>) -> Result<String, String> {
-    let file = validate_skill_path(&path, project_path.as_deref())?;
+pub async fn skill_read(
+    app: AppHandle,
+    path: String,
+    project_path: Option<String>,
+) -> Result<String, String> {
+    let projects = authorized_projects(&app)?;
+    let (file, _) = validate_skill_path(&path, project_path.as_deref(), &projects)?;
     fs::read_to_string(&file).map_err(|e| format!("could not read skill: {e}"))
 }
 
 #[tauri::command]
 pub async fn skill_write(
+    app: AppHandle,
     path: String,
     content: String,
     project_path: Option<String>,
 ) -> Result<(), String> {
-    let file = validate_skill_path(&path, project_path.as_deref())?;
+    let projects = authorized_projects(&app)?;
+    let (file, _) = validate_skill_path(&path, project_path.as_deref(), &projects)?;
     fs::write(&file, content).map_err(|e| format!("could not write skill: {e}"))
 }
 
 #[tauri::command]
 pub async fn skill_explain(
+    app: AppHandle,
     cli: String,
     model: String,
     path: String,
     project_path: Option<String>,
 ) -> Result<AgentResult, String> {
-    let file = validate_skill_path(&path, project_path.as_deref())?;
+    let projects = authorized_projects(&app)?;
+    let (file, project) = validate_skill_path(&path, project_path.as_deref(), &projects)?;
     let content = fs::read_to_string(&file).map_err(|e| format!("could not read skill: {e}"))?;
     let prompt = build_explain_prompt(&file, &content);
     // Project skills are explained from their own repo so the agent can open
     // whatever the skill references; global ones fall back to the home dir.
-    let base = match project_path {
-        Some(project) => PathBuf::from(project),
+    let base = match project {
+        Some(project) => project,
         None => home_dir()?,
     };
     let cwd = platform_command::external_path(&base)
@@ -500,20 +567,28 @@ mod tests {
         let skill_str = skill.to_str().unwrap();
         let project_str = project.to_str().unwrap();
 
+        let authorized = vec![fs::canonicalize(&project).unwrap()];
         // Without the owning project the path is outside every allowed root.
-        assert!(validate_skill_path(skill_str, None).is_err());
-        assert!(validate_skill_path(skill_str, Some(project_str)).is_ok());
+        assert!(validate_skill_path(skill_str, None, &authorized).is_err());
+        assert!(validate_skill_path(skill_str, Some(project_str), &authorized).is_ok());
         // Naming a different project does not grant access either.
         let other = tmp.path().join("other-repo");
         fs::create_dir_all(&other).unwrap();
-        assert!(validate_skill_path(skill_str, Some(other.to_str().unwrap())).is_err());
+        assert!(
+            validate_skill_path(skill_str, Some(other.to_str().unwrap()), &authorized).is_err()
+        );
     }
 
     #[test]
-    fn allowed_roots_rejects_a_project_path_that_is_not_a_directory() {
+    fn allowed_roots_rejects_a_project_that_is_not_registered() {
         let tmp = tempfile::tempdir().unwrap();
-        let missing = tmp.path().join("nope");
-        assert!(allowed_roots(Some(missing.to_str().unwrap())).is_err());
+        let registered = tmp.path().join("registered");
+        let unregistered = tmp.path().join("unregistered");
+        fs::create_dir_all(&registered).unwrap();
+        fs::create_dir_all(&unregistered).unwrap();
+        let authorized = vec![fs::canonicalize(registered).unwrap()];
+
+        assert!(allowed_roots(Some(unregistered.to_str().unwrap()), &authorized).is_err());
     }
 
     #[test]
@@ -521,7 +596,23 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let file = tmp.path().join("loose.md");
         fs::write(&file, "x").unwrap();
-        let result = validate_skill_path(file.to_str().unwrap(), None);
+        let result = validate_skill_path(file.to_str().unwrap(), None, &[]);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn extracts_project_paths_from_workspace_state() {
+        let state = serde_json::json!({
+            "schemaVersion": 1,
+            "workspaces": [
+                { "projects": [{ "path": "/repos/one" }, { "path": "/repos/two" }] },
+                { "projects": [{ "name": "missing path" }] }
+            ]
+        });
+
+        assert_eq!(
+            project_paths_from_state(&state),
+            vec![PathBuf::from("/repos/one"), PathBuf::from("/repos/two")]
+        );
     }
 }

@@ -253,6 +253,7 @@ export class WorkspacesController {
       return null;
     }
     this.setActiveProject(created.id);
+    this.emit({ type: "project-cloned", project: created });
     showToast(`Cloned into ${path}`, "success");
     return created;
   }

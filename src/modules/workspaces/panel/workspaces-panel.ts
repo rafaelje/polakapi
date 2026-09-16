@@ -239,6 +239,14 @@ export function mountWorkspacesPanel(opts: WorkspacesPanelOptions): WorkspacesPa
   render();
 
   const unsubscribeController = controller.on((event) => {
+    if (event.type === "project-cloned") {
+      query = "";
+      search.value = "";
+      activeOnly = false;
+      activeOnlyToggle.checked = false;
+      render();
+      return;
+    }
     if (event.type !== "state-changed") return;
     // GC selection: drop ids that no longer exist (project deleted, moved
     // workspace deleted, etc.) before re-rendering.

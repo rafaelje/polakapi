@@ -10,6 +10,10 @@ export interface MemoryProjectGroup {
   files: MemoryFileEntry[];
 }
 
+export interface MemoryDeleteResult {
+  indexPruned: boolean;
+}
+
 export interface MemoryRow {
   /** Munged ~/.claude/projects dir name this file belongs to. */
   dirName: string;

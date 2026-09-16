@@ -20,7 +20,7 @@ import {
 
 export interface SkillsModalDeps {
   getActiveProjectPath: () => string | null;
-  getKnownProjectPaths: () => string[];
+  prepareProjectScope: () => Promise<void>;
 }
 
 export interface SkillsModalHandle {
@@ -82,7 +82,8 @@ export function mountSkillsModal(deps: SkillsModalDeps): SkillsModalHandle {
     renderBody();
     activeProjectPath = deps.getActiveProjectPath();
     try {
-      skills = sortSkills(await listSkills(deps.getKnownProjectPaths()), activeProjectPath);
+      await deps.prepareProjectScope();
+      skills = sortSkills(await listSkills(), activeProjectPath);
     } catch {
       skills = [];
     }
@@ -100,7 +101,9 @@ export function mountSkillsModal(deps: SkillsModalDeps): SkillsModalHandle {
     }
     renderSkillPreview(previewEl, skill, null);
     const token = ++previewToken;
-    void readSkill(skill.path, skill.projectPath)
+    void deps
+      .prepareProjectScope()
+      .then(() => readSkill(skill.path, skill.projectPath))
       .then((content) => {
         contentCache.set(skill.path, content);
         if (token !== previewToken || !isOpen() || mode !== "list") return;
@@ -196,6 +199,7 @@ export function mountSkillsModal(deps: SkillsModalDeps): SkillsModalHandle {
     current.startedAt = Date.now();
     renderBody();
     try {
+      await deps.prepareProjectScope();
       const result = await explainSkill(
         current.cli,
         current.model,
@@ -218,7 +222,9 @@ export function mountSkillsModal(deps: SkillsModalDeps): SkillsModalHandle {
     mode = "editor";
     renderBody();
     if (cached === undefined) {
-      void readSkill(skill.path, skill.projectPath)
+      void deps
+        .prepareProjectScope()
+        .then(() => readSkill(skill.path, skill.projectPath))
         .then((content) => {
           contentCache.set(skill.path, content);
           if (!isOpen() || mode !== "editor" || editor?.skill.path !== skill.path) return;
@@ -241,6 +247,7 @@ export function mountSkillsModal(deps: SkillsModalDeps): SkillsModalHandle {
     current.saving = true;
     renderBody();
     try {
+      await deps.prepareProjectScope();
       await writeSkill(current.skill.path, current.content, current.skill.projectPath);
       contentCache.set(current.skill.path, current.content);
       showToast(`Saved "${current.skill.name}"`, "success");

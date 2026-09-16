@@ -1,5 +1,5 @@
 import { invoke } from "../../shared/tauri/invoke";
-import type { MemoryProjectGroup } from "./types";
+import type { MemoryDeleteResult, MemoryProjectGroup } from "./types";
 
 export function listMemories(): Promise<MemoryProjectGroup[]> {
   return invoke<MemoryProjectGroup[]>("memory_list", undefined, {
@@ -19,6 +19,10 @@ export function writeMemory(path: string, content: string): Promise<void> {
   );
 }
 
-export function deleteMemory(path: string): Promise<void> {
-  return invoke<void>("memory_delete", { path }, { errorMessage: "Could not delete memory file" });
+export function deleteMemory(path: string): Promise<MemoryDeleteResult> {
+  return invoke<MemoryDeleteResult>(
+    "memory_delete",
+    { path },
+    { errorMessage: "Could not delete memory file" },
+  );
 }

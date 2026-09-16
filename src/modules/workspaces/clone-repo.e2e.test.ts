@@ -131,8 +131,7 @@ describe("clone repo end to end", () => {
     handle.unmount();
   });
 
-  // Documents the defect: the clone lands in state but the sidebar filters it out.
-  it("clone lands in state but stays hidden while the active-only filter is on", async () => {
+  it("shows a fresh clone by clearing the active-only filter", async () => {
     const { controller, root, activeOnlyToggle, handle } = await boot(seeded());
     activeOnlyToggle.checked = true;
     activeOnlyToggle.dispatchEvent(new Event("change"));
@@ -145,13 +144,12 @@ describe("clone repo end to end", () => {
 
     expect(created).not.toBeNull();
     expect(controller.getState().workspaces[0].projects).toHaveLength(2);
-    // The project exists, yet nothing renders: a fresh clone has no live terminal.
-    expect(renderedNames(root)).not.toContain("repo");
+    expect(activeOnlyToggle.checked).toBe(false);
+    expect(renderedNames(root)).toContain("repo");
     handle.unmount();
   });
 
-  // Documents the defect: a leftover search query hides the freshly cloned project.
-  it("clone lands in state but stays hidden while a search filter is typed", async () => {
+  it("shows a fresh clone by clearing the current search", async () => {
     const { controller, root, handle } = await boot(seeded());
     const search = root.querySelector<HTMLInputElement>(".ws-panel-search");
     if (!search) throw new Error("search input missing");
@@ -165,7 +163,8 @@ describe("clone repo end to end", () => {
     const created = await controller.cloneRepoInteractive("w1" as WorkspaceId);
 
     expect(created).not.toBeNull();
-    expect(renderedNames(root)).toEqual(["existing"]);
+    expect(search.value).toBe("");
+    expect(renderedNames(root)).toContain("repo");
     handle.unmount();
   });
 
