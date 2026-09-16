@@ -130,7 +130,7 @@ function renderDetail(): void {
 
   const article = makeElement("article", "sessions-detail-card");
   const header = makeElement("header", "sessions-detail-heading");
-  const identity = makeElement("div");
+  const identity = makeElement("div", "sessions-detail-identity");
   identity.append(makeElement("h1", undefined, session.title), createBadge(session));
 
   const actions = makeElement("div", "sessions-detail-actions");

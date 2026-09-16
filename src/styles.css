@@ -1,9 +1,13 @@
 @import "./styles/app-base.css";
+@import "./styles/form-controls.css";
 @import "./styles/workspaces.css";
 @import "./styles/project-pane.css";
 @import "./styles/pane-badge.css";
 @import "./styles/appearance.css";
 @import "./styles/command-palette.css";
 @import "./styles/agents-modal.css";
+@import "./styles/library-modal.css";
+@import "./styles/skills-modal.css";
+@import "./styles/memory-modal.css";
 @import "./styles/usage.css";
 @import "./styles/updates.css";

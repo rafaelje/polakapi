@@ -115,4 +115,5 @@ export interface CreateProjectInput {
 
 export type WorkspacesEvent =
   | { type: "state-changed"; state: WorkspacesState }
-  | { type: "active-project-changed"; project: Project | null };
+  | { type: "active-project-changed"; project: Project | null }
+  | { type: "project-cloned"; project: Project };

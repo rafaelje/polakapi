@@ -1,9 +1,9 @@
 //! `polakapi-capture` helper subcommand.
 //!
 //! Invoked by Claude / Codex hooks (which inherit the PTY env). Reads one
-//! JSON event from stdin and writes it into `polakapi.db`. Open its own
-//! connection in WAL mode — it does not talk to the running Tauri
-//! backend.
+//! JSON event from stdin and queues the matching agent notification event
+//! in `polakapi.db`. Opens its own connection — it does not talk to the
+//! running Tauri backend.
 //!
 //! Two input schemas are accepted:
 //! - Internal `CaptureEvent` JSON tagged by `kind` (used by tests and by
@@ -29,7 +29,7 @@ use std::fs::OpenOptions;
 use std::io::{Read, Write};
 use std::path::PathBuf;
 
-use crate::db::{apply_event, CaptureEvent, Db};
+use crate::db::CaptureEvent;
 
 const LOG_ENV: &str = "POLAKAPI_LOG_PATH";
 
@@ -78,16 +78,8 @@ fn try_run() -> Result<Option<CaptureEvent>, String> {
     } else {
         translate_cli_hook(&v)?
     };
-    // Policy: only persist user-authored prompts. The assistant's response
-    // text is intentionally NOT stored — sees the user's written prompts as
-    // a recall/history aid, not a transcript of what the model said. The
-    // `Stop` / `AssistantStop` events still arrive (so the log shows the
-    // CLI is healthy and the hook fired) but are dropped before any DB write.
-    if matches!(event, CaptureEvent::AssistantStop { .. }) {
-        return Ok(Some(event));
-    }
-    let db = Db::open(std::path::Path::new(&db_path))?;
-    apply_event(&db, &event)?;
+    // Prompt and session capture was replaced by the global agent sessions
+    // view, so lifecycle events are only translated for the diagnostics log.
     Ok(Some(event))
 }
 

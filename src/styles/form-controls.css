@@ -1,0 +1,43 @@
+/* ---------------------------------------------------------------------------
+ * Shared form-control chrome. WebKitGTK and WebView2 paint native <select>
+ * boxes and number spinners with the OS theme, which is light on many
+ * desktops and clashes with the dark UI. Every window imports this file so
+ * those controls follow the app palette instead.
+ *
+ * The arrow and spinner rules carry `html` so they beat per-window element
+ * and single-class rules. The colors below deliberately do NOT: `:where()`
+ * contributes no specificity, so they land at plain element weight and any
+ * window that styles `select` itself overrides them by source order (this
+ * file is imported first everywhere). Without that, this sheet would win
+ * over `settings.css` and break its `prefers-color-scheme: light` block.
+ * ------------------------------------------------------------------------- */
+
+:where(html) select {
+  background-color: var(--panel-elev, #1b1d22);
+  color: var(--text, #d8d8d8);
+  border: 1px solid var(--border, #24262d);
+  border-radius: 6px;
+}
+
+html select,
+html select[class] {
+  appearance: none;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path d='M1 1l4 4 4-4' fill='none' stroke='%23a0a0a0' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  background-size: 10px 6px;
+  padding-right: 26px;
+  cursor: pointer;
+}
+
+html select:disabled,
+html select[class]:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+html input[type="number"]::-webkit-inner-spin-button,
+html input[type="number"]::-webkit-outer-spin-button {
+  appearance: none;
+  margin: 0;
+}

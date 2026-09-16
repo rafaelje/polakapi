@@ -8,6 +8,7 @@ import {
   type ClaudePlanTier,
   type CodexRateLimits,
   type CodexRateWindow,
+  type CursorSummary,
   type UsageReport,
 } from "./types";
 
@@ -61,6 +62,7 @@ function authoritativeWindowRow(
   window: AuthoritativeWindow,
   now: number,
   role: string,
+  barClass = "usage-bar-claude",
 ): HTMLElement {
   const wrap = document.createElement("div");
   wrap.className = "usage-plan-window";
@@ -77,7 +79,7 @@ function authoritativeWindowRow(
   head.append(label, value);
   wrap.append(head);
 
-  wrap.append(progressBar(percent, "usage-bar-claude"));
+  wrap.append(progressBar(percent, barClass));
 
   const meta = document.createElement("div");
   meta.className = "usage-plan-meta";
@@ -185,6 +187,61 @@ export function codexPlanCard(report: UsageReport): HTMLElement {
   card.append(note);
 
   return card;
+}
+
+export function cursorPlanCard(report: UsageReport): HTMLElement {
+  const card = document.createElement("div");
+  card.className = "usage-plan-card usage-plan-cursor";
+
+  const head = document.createElement("div");
+  head.className = "usage-plan-head";
+  const label = document.createElement("div");
+  label.className = "usage-plan-label";
+  label.textContent = "Cursor — plan usage";
+  const badge = document.createElement("span");
+  badge.className = "usage-plan-badge";
+  badge.textContent = cursorPlanLabel(report.cursorSummary);
+  head.append(label, badge);
+  card.append(head);
+
+  const summary = report.cursorSummary;
+  if (!summary || !summary.plan) {
+    const empty = document.createElement("div");
+    empty.className = "usage-plan-empty";
+    empty.textContent =
+      "No Cursor usage data — sign in to the Cursor IDE or run `cursor-agent login`.";
+    card.append(empty);
+    return card;
+  }
+
+  const row = (title: string, window: AuthoritativeWindow, role: string): HTMLElement =>
+    authoritativeWindowRow(title, window, report.nowSeconds, role, "usage-bar-cursor");
+  card.append(row("Billing cycle", summary.plan, "cursor-plan"));
+  if (summary.auto) card.append(row("Auto (agent)", summary.auto, "cursor-auto"));
+  if (summary.api) card.append(row("API", summary.api, "cursor-api"));
+
+  const note = document.createElement("div");
+  note.className = "usage-plan-note";
+  note.textContent = "Live from the cursor.com usage API.";
+  card.append(note);
+
+  return card;
+}
+
+function cursorPlanLabel(summary: CursorSummary | null): string {
+  const raw = summary?.membershipType ?? "";
+  const nice: Record<string, string> = {
+    free: "Free",
+    free_trial: "Free trial",
+    pro: "Pro",
+    "pro-plus": "Pro+",
+    pro_plus: "Pro+",
+    ultra: "Ultra",
+    business: "Business",
+    team: "Team",
+    enterprise: "Enterprise",
+  };
+  return nice[raw] ?? (raw || "unknown");
 }
 
 function codexWindowRow(

@@ -312,3 +312,19 @@ export function confirmModal(opts: ConfirmModalOptions): Promise<boolean> {
     });
   });
 }
+
+/**
+ * "✕" button for the head of the library modals (/skills, /memory). Those
+ * cover most of the window, so the backdrop is barely visible and Escape is
+ * the only other way out — the explicit button makes closing discoverable.
+ */
+export function modalCloseButton(onClose: () => void): HTMLButtonElement {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "agents-modal-close";
+  btn.textContent = "✕";
+  btn.title = "Close";
+  btn.setAttribute("aria-label", "Close");
+  btn.addEventListener("click", onClose);
+  return btn;
+}

@@ -51,7 +51,16 @@ import {
   createAgentsController,
   type AgentsController,
 } from "../modules/agents-library/agents-controller";
+import {
+  mountSkillsButton,
+  type SkillsButtonHandle,
+} from "../modules/skills-library/skills-button";
+import {
+  mountMemoryButton,
+  type MemoryButtonHandle,
+} from "../modules/memory-library/memory-button";
 import { flushSaveAgents } from "../shared/persistence/agents-store";
+import { flushSaveWorkspaces } from "../shared/persistence/workspaces-store";
 import { bootstrapWorkspaces, type WorkspacesBootstrapHandle } from "./workspaces-bootstrap";
 import { wireWindowLifecycle } from "./lifecycle";
 import { wireQuitConfirm } from "./quit-confirm";
@@ -80,6 +89,8 @@ export class AppController {
   private adversarialButton: AdversarialButtonHandle | null = null;
   private agentsButton: AgentsButtonHandle | null = null;
   private agentsController: AgentsController | null = null;
+  private skillsButton: SkillsButtonHandle | null = null;
+  private memoryButton: MemoryButtonHandle | null = null;
   private unwireShortcuts: (() => void) | null = null;
   private unwireWindowLifecycle: (() => void) | null = null;
   private memoryGuard: MemoryGuardHandle | null = null;
@@ -143,6 +154,17 @@ export class AppController {
         this.router.findPaneById(target.ptyId)?.manager.setFocus(target.ptyId, true);
       },
     });
+    const projectScope = {
+      getActiveProjectPath: (): string | null =>
+        this.workspaces?.controller.getActiveProject()?.path ?? null,
+      getKnownProjectPaths: (): string[] =>
+        this.workspaces?.controller
+          .getState()
+          .workspaces.flatMap((ws) => ws.projects.map((p) => p.path)) ?? [],
+      prepareProjectScope: (): Promise<void> => flushSaveWorkspaces(),
+    };
+    this.skillsButton = mountSkillsButton(projectScope);
+    this.memoryButton = mountMemoryButton(projectScope);
     await this.wirePtyEvents();
     this.wireGutters();
     this.wirePanelToggles();
@@ -229,6 +251,11 @@ export class AppController {
 
     this.agentsButton?.dispose();
     this.agentsButton = null;
+
+    this.skillsButton?.dispose();
+    this.skillsButton = null;
+    this.memoryButton?.dispose();
+    this.memoryButton = null;
 
     const agentsController = this.agentsController;
     this.agentsController = null;
@@ -347,11 +374,23 @@ export class AppController {
     const notesGutter = this.elements.notesGutter;
     if (notesGutter) {
       notesGutter.addEventListener("mousedown", (e) =>
-        startFlexDrag(e, notesGutter, "v", () => {
-          this.router.getActive()?.refit();
-          this.bottomPanel?.refit();
-          this.persistCurrentNotesHeight();
-        }),
+        startFlexDrag(
+          e,
+          notesGutter,
+          "v",
+          () => {
+            this.router.getActive()?.refit();
+            this.bottomPanel?.refit();
+            this.persistCurrentNotesHeight();
+          },
+          () => {
+            // The drag pins both siblings to fixed px. Keep only the notes
+            // panel pinned: with the layout pane back on its CSS `flex: 1`
+            // the geometry is identical, and hiding the notes panel lets the
+            // layout pane reclaim the space instead of leaving a hole.
+            this.elements.layoutEl.style.flex = "";
+          },
+        ),
       );
     }
   }

@@ -1,0 +1,230 @@
+/* ---------------------------------------------------------------------------
+ * /skills — installed-skills modal. Reuses the agents-modal shell (sized and
+ * scaled by library-modal.css) and adds cli badges, scope group headers, the
+ * explain view and the raw-file editor.
+ * ------------------------------------------------------------------------- */
+
+.skills-modal-row-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.skills-modal-cli-badge {
+  font:
+    11.5px ui-monospace,
+    Menlo,
+    monospace;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 1px 7px;
+  color: #8a8a8a;
+  white-space: nowrap;
+}
+
+.skills-modal-cli-badge[data-cli="claude"] {
+  color: #d97757;
+  border-color: rgba(217, 119, 87, 0.45);
+}
+
+.skills-modal-cli-badge[data-cli="codex"] {
+  color: #6fcf97;
+  border-color: rgba(111, 207, 151, 0.45);
+}
+
+.skills-modal-cli-badge[data-cli="opencode"] {
+  color: #56ccf2;
+  border-color: rgba(86, 204, 242, 0.45);
+}
+
+.skills-modal-cli-badge[data-cli="cursor"] {
+  color: #bb86fc;
+  border-color: rgba(187, 134, 252, 0.45);
+}
+
+.skills-modal-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 10px 5px;
+  position: sticky;
+  top: 0;
+  background: var(--panel);
+  z-index: 1;
+}
+
+.skills-modal-group-name {
+  font:
+    12px ui-monospace,
+    Menlo,
+    monospace;
+  color: #8a8a8a;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.skills-modal-active-badge,
+.skills-modal-scope-badge {
+  font:
+    11.5px ui-monospace,
+    Menlo,
+    monospace;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 1px 7px;
+  color: #8a8a8a;
+  white-space: nowrap;
+}
+
+.skills-modal-active-badge {
+  color: #d97757;
+  border-color: rgba(217, 119, 87, 0.45);
+}
+
+.skills-modal-scope-badge[data-scope="project"] {
+  color: #f2c94c;
+  border-color: rgba(242, 201, 76, 0.45);
+}
+
+.skills-modal-model-input {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 9px;
+  font:
+    12.5px ui-monospace,
+    Menlo,
+    monospace;
+  min-width: 190px;
+  outline: none;
+}
+
+.skills-modal-model-input:focus {
+  border-color: var(--accent);
+}
+
+.skills-modal-model-input:disabled {
+  opacity: 0.45;
+}
+
+.skills-modal-scope-select {
+  max-width: 260px;
+}
+
+.skills-modal-cli-label {
+  font-size: 12.5px;
+  color: #8a8a8a;
+  align-self: center;
+  margin-right: -2px;
+}
+
+.skills-modal-select {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 9px;
+  font-size: 13px;
+  outline: none;
+}
+
+.skills-modal-select:focus {
+  border-color: var(--accent);
+}
+
+.skills-modal-select:disabled {
+  opacity: 0.4;
+}
+
+.skills-modal .agents-modal-actions {
+  justify-content: flex-start;
+}
+
+.skills-modal .agents-modal-actions .agents-modal-btn:last-child {
+  margin-left: auto;
+}
+
+.skills-modal-explain-body {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+  overflow: hidden;
+  min-height: 260px;
+}
+
+.skills-modal-explain-notice {
+  flex: 0 0 auto;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: #c2a17a;
+  background: rgba(217, 119, 87, 0.08);
+  border: 1px solid rgba(217, 119, 87, 0.3);
+  border-radius: 6px;
+  padding: 8px 11px;
+}
+
+.skills-modal-explain-status {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: #8a8a8a;
+  font-size: 14px;
+  font-style: italic;
+}
+
+.skills-modal-spinner {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent, #d97757);
+  border-radius: 50%;
+  animation: skills-modal-spin 0.7s linear infinite;
+}
+
+.skills-modal-explain-elapsed {
+  font:
+    12px ui-monospace,
+    Menlo,
+    monospace;
+  font-style: normal;
+  color: #6a6a6a;
+}
+
+@keyframes skills-modal-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skills-modal-spinner {
+    animation-duration: 2.4s;
+  }
+}
+
+.skills-modal-explain-output {
+  font-size: 13.5px;
+}
+
+.skills-modal-path {
+  font:
+    12px ui-monospace,
+    Menlo,
+    monospace;
+  color: #6a6a6a;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 40%;
+}
+
+.skills-modal-editor-content {
+  flex: 1 1 auto;
+  min-height: 320px;
+  resize: none;
+}

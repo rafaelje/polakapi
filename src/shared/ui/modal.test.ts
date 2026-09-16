@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 
-import { selectModal } from "./modal";
+import { modalCloseButton, selectModal } from "./modal";
 
 describe("selectModal", () => {
   afterEach(() => {
@@ -20,5 +20,20 @@ describe("selectModal", () => {
 
     document.querySelector<HTMLButtonElement>(".modal-btn")?.click();
     await expect(result).resolves.toBeNull();
+  });
+});
+
+describe("modalCloseButton", () => {
+  it("is a labelled button that closes on click", () => {
+    let closed = 0;
+    const btn = modalCloseButton(() => {
+      closed += 1;
+    });
+
+    expect(btn.type).toBe("button");
+    expect(btn.getAttribute("aria-label")).toBe("Close");
+    expect(btn.title).toBe("Close");
+    btn.click();
+    expect(closed).toBe(1);
   });
 });

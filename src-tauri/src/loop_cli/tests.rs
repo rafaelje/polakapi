@@ -214,3 +214,31 @@ fn normalizes_effort_values() {
     assert_eq!(normalize_effort(Some("nonsense")), None);
     assert_eq!(normalize_effort(None), None);
 }
+
+#[test]
+fn parses_cursor_json_envelope() {
+    // Captured verbatim from `cursor-agent -p ... --mode ask --output-format json`.
+    let raw = r#"{"type":"result","subtype":"success","is_error":false,"duration_ms":2758,"result":"OK","session_id":"a2836e54-4394-449e-83e3-504cb349854c","usage":{"inputTokens":14018,"outputTokens":30,"cacheReadTokens":512,"cacheWriteTokens":0}}"#;
+    let parsed = parse_cursor_json(raw).unwrap();
+    assert_eq!(parsed.text, "OK");
+    assert_eq!(parsed.tokens_in, Some(14018));
+    assert_eq!(parsed.tokens_out, Some(30));
+    assert_eq!(
+        parsed.session_id.as_deref(),
+        Some("a2836e54-4394-449e-83e3-504cb349854c")
+    );
+    assert!(parsed.error.is_none());
+}
+
+#[test]
+fn cursor_error_envelope_surfaces_the_message() {
+    let raw = r#"{"type":"result","is_error":true,"result":"model not available"}"#;
+    let parsed = parse_cursor_json(raw).unwrap();
+    assert_eq!(parsed.error.as_deref(), Some("model not available"));
+}
+
+#[test]
+fn malformed_cursor_json_becomes_an_error_not_a_panic() {
+    let parsed = parse_cursor_json("not json").unwrap();
+    assert!(parsed.error.unwrap().contains("malformed cursor JSON"));
+}
