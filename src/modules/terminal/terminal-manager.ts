@@ -561,10 +561,7 @@ export class TerminalManager {
     const idMap = await executeTemplatePlan(
       planTemplateApplication(template.specs, live),
       async (spec) => {
-        const pane = await this.addPane(
-          { title: spec.title, startupCmd: spec.startupCmd, cliId: spec.cliId },
-          { silent: true },
-        );
+        const pane = await this.addPane(spec, { silent: true });
         return pane?.el.dataset.ptyId ?? null;
       },
     );

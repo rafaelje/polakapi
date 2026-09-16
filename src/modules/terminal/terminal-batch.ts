@@ -1,4 +1,7 @@
 import { invoke } from "../../shared/tauri/invoke";
+import type { LayoutTemplate } from "../workspaces/state/types";
+import { buildLayoutTemplate } from "./layout-templates";
+import type { TerminalLayoutNode } from "./terminal-layout";
 import type { TerminalSpec } from "./types";
 
 // Batch operations over every terminal of a project: closing them all, and
@@ -15,8 +18,11 @@ export interface BatchTarget {
   ids(): string[];
   specs(): TerminalSpec[];
   isLive(id: string): boolean;
+  /** The split tree, including each split's axis and ratio. */
+  readonly layoutSnapshot: TerminalLayoutNode | null;
   close(id: string, opts?: { silent?: boolean }): Promise<void>;
   addPane(spec?: Partial<TerminalSpec>): Promise<unknown>;
+  applyTemplate(template: LayoutTemplate): Promise<void>;
 }
 
 export function fetchRunningPanes(): Promise<RunningPane[]> {
@@ -65,13 +71,41 @@ export async function closeAllPanes(target: BatchTarget): Promise<void> {
   }
 }
 
+/**
+ * The current arrangement as a template: every pane with its directory, CLI,
+ * title and startup command, plus the split tree with its axes and ratios.
+ * Spec ids are the live pane ids the tree refers to, which is what lets the
+ * template map each old position onto the pane that replaces it.
+ */
+export function reloadTemplate(
+  specs: readonly TerminalSpec[],
+  layout: TerminalLayoutNode | null,
+): LayoutTemplate | null {
+  const base = buildLayoutTemplate("reload", specs, layout);
+  if (!base) return null;
+  const cwdById = new Map(specs.map((spec) => [spec.id, spec.cwd]));
+  return {
+    ...base,
+    specs: base.specs.map((spec) => {
+      const cwd = cwdById.get(spec.id);
+      return cwd ? { ...spec, cwd } : spec;
+    }),
+  };
+}
+
 export async function reloadAllPanes(target: BatchTarget): Promise<void> {
-  // Snapshot first: closing drops each spec from the manager.
-  const specs = target.specs().map(reloadSpec);
+  // Capture before closing: each close drops its spec and prunes the tree.
+  const specs = target.specs();
+  const template = reloadTemplate(specs, target.layoutSnapshot);
   for (const id of [...target.ids()]) {
     await target.close(id, { silent: true });
   }
+  if (template) {
+    await target.applyTemplate(template);
+    return;
+  }
+  // No tree to restore, so there are no positions to keep: reopen in order.
   for (const spec of specs) {
-    await target.addPane(spec);
+    await target.addPane(reloadSpec(spec));
   }
 }
