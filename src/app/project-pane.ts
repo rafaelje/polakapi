@@ -16,6 +16,8 @@ export interface ProjectPaneCallbacks {
   onSuspendAll(this: void): void;
   onResumeAll(this: void): void;
   onRunInAll(this: void): void;
+  onCloseAll(this: void): void;
+  onReloadAll(this: void): void;
   onRevealFolder(this: void, path: string): void;
   onOpenInEditor(this: void, path: string): void;
   onOpenInShell(this: void, path: string): void;
@@ -167,6 +169,8 @@ export function mountProjectPane(opts: ProjectPaneOptions): ProjectPaneHandle {
           label: showResume ? "Resume all" : "Suspend all",
           onSelect: showResume ? callbacks.onResumeAll : callbacks.onSuspendAll,
         },
+        { id: "reload-all", label: "Reload all", onSelect: callbacks.onReloadAll },
+        { id: "close-all", label: "Close all", onSelect: callbacks.onCloseAll },
         {
           label: "Reveal in file manager",
           separatorBefore: true,

@@ -10,6 +10,8 @@ function callbacks(): ProjectPaneCallbacks {
     onSuspendAll: vi.fn(),
     onResumeAll: vi.fn(),
     onRunInAll: vi.fn(),
+    onCloseAll: vi.fn(),
+    onReloadAll: vi.fn(),
     onRevealFolder: vi.fn(),
     onOpenInEditor: vi.fn(),
     onOpenInShell: vi.fn(),
@@ -105,6 +107,32 @@ describe("project toolbar", () => {
     actions?.click();
     menuItem("Layouts…").click();
     expect(handlers.onOpenLayoutsMenu).toHaveBeenCalledExactlyOnceWith(actions);
+  });
+
+  it("offers close all and reload all from the actions menu", () => {
+    const { handlers, pane } = mount();
+    pane.setActiveProject(project());
+
+    const actions = document.querySelector<HTMLButtonElement>("#project-actions-menu");
+    actions?.click();
+    menuItem("Reload all").click();
+    expect(handlers.onReloadAll).toHaveBeenCalledOnce();
+
+    actions?.click();
+    menuItem("Close all").click();
+    expect(handlers.onCloseAll).toHaveBeenCalledOnce();
+  });
+
+  it("leaves suspend all as the only batch action with its own button", () => {
+    const { pane } = mount();
+    pane.setActiveProject(project());
+
+    const labels = [...document.querySelectorAll(".project-pane-toolbar button")].map(
+      (button) => button.textContent ?? "",
+    );
+    expect(labels).toContain("⏸ Suspend all");
+    expect(labels.some((label) => label.includes("Close all"))).toBe(false);
+    expect(labels.some((label) => label.includes("Reload all"))).toBe(false);
   });
 
   it("keeps the toolbar focused on terminal controls", () => {

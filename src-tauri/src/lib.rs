@@ -23,6 +23,7 @@ mod open;
 mod paste_image;
 mod platform_command;
 mod pty;
+mod pty_activity;
 mod shell_integration;
 mod skills;
 mod update_check;
@@ -71,6 +72,7 @@ use crate::memory::pty_memory_stats;
 use crate::memory_review::{memory_delete, memory_list, memory_read, memory_write};
 use crate::paste_image::save_pasted_image;
 use crate::pty::PtyStore;
+use crate::pty_activity::pty_running_commands;
 use crate::skills::{skill_explain, skill_read, skill_write, skills_list};
 use crate::update_check::update_check;
 use crate::usage::usage_summary;
@@ -180,6 +182,7 @@ pub fn run() {
             pty_resize,
             pty_kill,
             pty_memory_stats,
+            pty_running_commands,
             save_pasted_image,
             keep_awake_set,
             app_exit,
