@@ -20,7 +20,7 @@ async function start(): Promise<void> {
     </aside>
     <main>
       <section class="settings-panel" data-panel="app"><h2>App</h2><div class="settings-group"></div><p class="settings-note">Agent alerts require CLI hooks. Permission and input alerts are available for Claude; completion alerts work with Claude and Codex hooks. Restart agent sessions after enabling hooks.</p></section>
-      <section class="settings-panel" data-panel="context" hidden><h2>Context Mode</h2><div class="settings-group settings-group-context"></div><p class="settings-note">These settings are stored now; the routing engine that acts on them is still being built, so turning context mode on does not change agent behaviour yet.</p></section>
+      <section class="settings-panel" data-panel="context" hidden><h2>Context Mode</h2><div class="settings-group settings-group-context"></div><p class="settings-note">The engine is built and works today through <code>polakapi ctx</code> and the <code>polakapi ctx-mcp</code> server. What is not connected yet is this panel: the toggles are saved, but agents are not told the tools exist, so switching them on does not change agent behaviour yet.</p></section>
       <p class="settings-status" role="status"></p>
     </main>`;
   const group = host.querySelector<HTMLDivElement>(".settings-group")!;
