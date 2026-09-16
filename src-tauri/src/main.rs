@@ -25,6 +25,12 @@ fn main() {
     if args.len() >= 2 && args[1] == "capture" {
         std::process::exit(polakapi_lib::capture::run());
     }
+    if args.len() >= 2 && args[1] == "ctx-mcp" {
+        std::process::exit(polakapi_lib::ctx::mcp::run());
+    }
+    if args.len() >= 2 && args[1] == "ctx" {
+        std::process::exit(polakapi_lib::ctx::cli::run(&args[2..]));
+    }
     if args.len() >= 3 && args[1] == "install-hooks" {
         match polakapi_lib::db::install_hooks_for_cli(&args[2]) {
             Ok(r) => {

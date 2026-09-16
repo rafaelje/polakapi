@@ -1,0 +1,24 @@
+// Context mode: tool output is diverted into a local store and the model gets a
+// searchable pointer instead of the raw bytes. See docs/context-mode-plan.md.
+//
+// The pieces, in the order data flows through them:
+//   router    — decide: leave it alone, summarise it, or index it
+//   chunk     — split indexable text without breaking code blocks
+//   summarize — compute what to say about aggregate data
+//   store     — SQLite + FTS5, one row per source plus its chunks
+//   paths     — where the store lives, and when it moves into the project
+//   session   — one agent session's store, including promotion
+//   offload   — ties the above together for one tool result
+//   config    — the Context Mode settings the UI writes
+//   mcp       — the stdio server that exposes ctx_* to every CLI
+
+pub mod chunk;
+pub mod cli;
+pub mod config;
+pub mod mcp;
+pub mod offload;
+pub mod paths;
+pub mod router;
+pub mod session;
+pub mod store;
+pub mod summarize;

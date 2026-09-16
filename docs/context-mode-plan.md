@@ -7,6 +7,17 @@ License 2.0), reimplemented natively rather than vendored — see §12.
 
 ---
 
+## 0. Status
+
+Built and covered by tests: the store (SQLite + FTS5), the routing policy,
+chunking, summarising, the storage tiers with promotion, the settings section,
+and **two** ways for an agent to reach the tools — the MCP server and a plain
+`polakapi ctx` subcommand.
+
+Not built: hook enforcement (P5) and the savings line in the agent-context panel
+(P6). Until P5 lands, routing depends on the agent choosing to use the tools,
+which is what the per-CLI enforcement column in §4 is about.
+
 ## 1. What the concept actually is
 
 The framing "dump tool output to a file" undersells it. The mechanism has three
@@ -116,9 +127,11 @@ than promise one behaviour for four targets.
 
 Two consequences:
 
-1. **MCP is the only universal layer.** All four speak MCP, so the `ctx_*` tools
-   must be delivered as an MCP server, with hooks as an *enforcement* layer on
-   top where the CLI allows it — not the other way round.
+1. **Delivery must not depend on hooks.** The agent has to be able to query what
+   was offloaded, and hooks cannot provide that. Two routes reach all four CLIs:
+   MCP, which all four speak, and a plain subcommand, which any CLI with a shell
+   tool can call (§5.0). Hooks sit on top as an *enforcement* layer where the CLI
+   allows it — never as the delivery mechanism.
 2. Soft enforcement is genuinely weaker. Upstream reports roughly 60% compliance
    on instruction-only platforms versus 98% with hooks. The settings UI must say
    which mode a given CLI is running in, rather than implying parity.
@@ -133,20 +146,38 @@ for binary `cursor-agent` (`cli-registry.ts:17-40`), while
 
 ```
 src-tauri/src/ctx/
-  mod.rs          # ctx_* Tauri commands (panel + settings read paths)
-  store.rs        # SQLite + FTS5: sources, chunks, artifacts
+  mod.rs          # module map
   router.rs       # routing policy: bypass | summarize | index  (pure, tested)
-  summarize.rs    # per-kind summarizers: log, csv, json, diff, html  (pure)
-  chunk.rs        # heading/code-aware chunking                  (pure)
-  exec.rs         # sandboxed subprocess runner for ctx_exec
+  chunk.rs        # heading/code-aware chunking                 (pure, tested)
+  summarize.rs    # what to say about aggregate data            (pure, tested)
+  store.rs        # SQLite + FTS5: sources, chunks, savings
+  paths.rs        # temp vs project store, promotion, self-ignoring dir, sweep
+  session.rs      # one session's store, including promotion
+  offload.rs      # route -> summarise or index -> what the model sees
+  config.rs       # reads the Context Mode settings the UI writes
   mcp.rs          # stdio MCP server: `polakapi ctx-mcp`
-  paths.rs        # tmp vs project-local resolution + promotion
+  cli.rs          # shell surface:    `polakapi ctx …`
 
-src/modules/context-mode/
-  types.ts        # wire types
-  policy.ts       # thresholds shown/edited in settings   (pure, tested)
-  settings-section.ts
+src/modules/settings/
+  context-mode-preferences.ts   # store, defaults, validation  (pure, tested)
+  context-mode-section.ts       # the settings section
+  controls.ts                   # row/toggle/select/number factories
 ```
+
+### 5.0 Two surfaces, one store
+
+MCP is **not** required. What the design actually needs is that the agent can
+*query* what was offloaded; a pointer it cannot resolve is worse than useless.
+Two surfaces provide that, and both talk to the same store:
+
+| Surface | Reach | Cost |
+| --- | --- | --- |
+| `polakapi ctx …` subcommand | every CLI that can run a shell command — all four | no registration; the syntax has to be taught in the routing instructions, and arguments go through shell quoting |
+| `polakapi ctx-mcp` MCP server | every CLI that speaks MCP | schema discovery and typed arguments, but it must be registered per CLI |
+
+The subcommand is the floor: it works everywhere, needs no config, and lets the
+user inspect the store by hand. MCP is the better experience where registering
+it is easy. Shipping both costs one extra module.
 
 ### 5.1 The MCP server (`polakapi ctx-mcp`)
 
@@ -261,9 +292,9 @@ CREATE VIRTUAL TABLE ctx_fts USING fts5(
 `raw_bytes` and `context_bytes` are what the panel turns into a savings figure —
 measured, not claimed.
 
-**To verify:** that the bundled `libsqlite3-sys` in `rusqlite 0.32` ships FTS5.
-It normally does, but the whole index path depends on it; check before Phase 2
-and fall back to a LIKE-based index if not.
+**Verified:** the bundled `libsqlite3-sys` in `rusqlite 0.32` ships FTS5 with
+the `porter` tokenizer. The chunk bodies live *only* in the FTS5 table, keyed by
+the chunk rowid, so the text is never stored twice.
 
 ---
 
@@ -356,10 +387,10 @@ user sees it immediately, rather than trusting a marketing number.
 | Phase | Scope | Done when |
 | --- | --- | --- |
 | **P0** | Verify the capture path end to end (env reaches the CLI, `SessionStart` writes a `sessions` row); surface per-CLI hook status in settings instead of a blind "Enable agent hooks" button | a fresh claude pane produces a `sessions` row; settings shows which CLIs have hooks installed |
-| **P1** | `ctx/store.rs` + `router.rs` + `chunk.rs` + `summarize.rs`, all pure logic with unit tests; no CLI integration yet | `cargo test` green; round-trip offload→search→read verified against fixtures |
-| **P2** | `polakapi ctx-mcp` stdio server + `ctx_exec`/`ctx_search`/`ctx_read`/`ctx_list`; MCP registration written at hook-install time | a Claude pane can call `ctx_exec` and query the result back |
-| **P3** | Storage tiers + promotion + self-ignoring `.polakapi/` | long session promotes into the project; `git status` stays clean |
-| **P4** | Settings section nav + Context Mode section + persistence | settings survive restart; live panes react |
+| **P1** ✅ | `ctx/store.rs` + `router.rs` + `chunk.rs` + `summarize.rs`, all pure logic with unit tests; no CLI integration yet | `cargo test` green; round-trip offload→search→read verified against fixtures |
+| **P2** ✅ | `polakapi ctx-mcp` stdio server + `ctx_exec`/`ctx_search`/`ctx_read`/`ctx_list`; MCP registration written at hook-install time | a Claude pane can call `ctx_exec` and query the result back |
+| **P3** ✅ | Storage tiers + promotion + self-ignoring `.polakapi/` | long session promotes into the project; `git status` stays clean |
+| **P4** ✅ | Settings section nav + Context Mode section + persistence | settings survive restart; live panes react |
 | **P5** | Hook enforcement: `PreToolUse` for claude (rewrite) and codex (deny) with a conservative matcher | oversized `gh --json` is intercepted; small commands untouched |
 | **P6** | Savings line in the agent-context panel; opencode/cursor soft mode via opt-in rules file | savings visible per pane |
 
@@ -407,7 +438,9 @@ links every logo to `#` with no case studies.
 
 1. Does the installed Claude Code build support `updatedInput` in `PreToolUse`?
    The entire hard-enforcement path depends on it.
-2. Does `rusqlite 0.32`'s bundled SQLite include FTS5?
+2. ~~Does `rusqlite 0.32`'s bundled SQLite include FTS5?~~ **Yes** — verified by
+   `ctx::store::tests::fts5_is_available_and_indexes_chunks`, including the
+   `porter` tokenizer, so stemming works.
 3. Does `cursor-agent` (the CLI binary, not the IDE) expose any hook mechanism?
    Nothing was found documented.
 4. Should offloaded data survive across sessions for `--continue` / `resume`

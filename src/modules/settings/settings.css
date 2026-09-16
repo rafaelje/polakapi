@@ -98,6 +98,48 @@ button {
   cursor: pointer;
   white-space: nowrap;
 }
+/* Sidebar navigation. Declared after the generic `button` rule so it wins the
+   border and background it needs to look like a list item, not a control. */
+.settings-nav-item {
+  display: flex;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: inherit;
+  font-size: 13px;
+  text-align: left;
+}
+.settings-nav-item + .settings-nav-item {
+  margin-top: 4px;
+}
+.settings-nav-item:hover {
+  background: #2e3336;
+}
+.settings-nav-item.selected {
+  background: #424648;
+  font-weight: 600;
+}
+.settings-panel[hidden] {
+  display: none;
+}
+.settings-number {
+  font: inherit;
+  font-size: 11px;
+  color: inherit;
+  border: 1px solid #45494b;
+  border-radius: 5px;
+  background: #35393b;
+  padding: 5px 8px;
+  width: 84px;
+}
+input:disabled,
+select:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
 button:hover {
   background: #464c50;
 }

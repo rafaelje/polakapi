@@ -8,6 +8,7 @@ mod app_menu;
 mod awake;
 pub mod capture;
 mod commands;
+pub mod ctx;
 pub mod db;
 mod fs;
 mod git_clone;
@@ -139,6 +140,13 @@ pub fn run() {
                 app.manage(notifications::SoundPlayback::default());
                 app.manage(notification_command::NotificationCommandState::default());
                 app.manage(AwakeState::default());
+                // Ephemeral context stores whose pane died never clean up after
+                // themselves, and temp directories survive reboots.
+                if let Err(error) =
+                    ctx::paths::sweep_temp(&[], std::time::Duration::from_secs(24 * 3600))
+                {
+                    eprintln!("polakapi: could not sweep context stores: {error}");
+                }
                 // Open the prompts history DB at <app_config_dir>/polakapi.db
                 // and register it as `State<Mutex<Db>>` for the read commands.
                 // If opening fails we still boot the app — the read commands

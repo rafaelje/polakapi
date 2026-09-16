@@ -3,6 +3,8 @@ import { isPermissionGranted, requestPermission } from "@tauri-apps/plugin-notif
 import { invoke, InvokeError } from "../../shared/tauri/invoke";
 import { loadPreferences, savePreferences, type NotificationPreferences } from "./preferences";
 import { deliverNotification, runNotificationCommand } from "./notifications";
+import { settingsRow, settingsToggle } from "./controls";
+import { mountContextModeSection } from "./context-mode-section";
 import "./settings.css";
 
 interface SystemSound {
@@ -12,8 +14,15 @@ interface SystemSound {
 
 async function start(): Promise<void> {
   const host = document.querySelector<HTMLDivElement>("#settings")!;
-  host.innerHTML = `<aside><h1>Settings</h1><div class="selected" aria-current="page"><span aria-hidden="true">⚙</span> App</div></aside>
-    <main><h2>App</h2><div class="settings-group"></div><p class="settings-note">Agent alerts require CLI hooks. Permission and input alerts are available for Claude; completion alerts work with Claude and Codex hooks. Restart agent sessions after enabling hooks.</p><p class="settings-status" role="status"></p></main>`;
+  host.innerHTML = `<aside><h1>Settings</h1>
+      <button type="button" class="settings-nav-item selected" data-section="app" aria-current="page"><span aria-hidden="true">⚙</span> App</button>
+      <button type="button" class="settings-nav-item" data-section="context" aria-current="false"><span aria-hidden="true">◫</span> Context Mode</button>
+    </aside>
+    <main>
+      <section class="settings-panel" data-panel="app"><h2>App</h2><div class="settings-group"></div><p class="settings-note">Agent alerts require CLI hooks. Permission and input alerts are available for Claude; completion alerts work with Claude and Codex hooks. Restart agent sessions after enabling hooks.</p></section>
+      <section class="settings-panel" data-panel="context" hidden><h2>Context Mode</h2><div class="settings-group settings-group-context"></div><p class="settings-note">These settings are stored now; the routing engine that acts on them is still being built, so turning context mode on does not change agent behaviour yet.</p></section>
+      <p class="settings-status" role="status"></p>
+    </main>`;
   const group = host.querySelector<HTMLDivElement>(".settings-group")!;
   const status = host.querySelector<HTMLParagraphElement>(".settings-status")!;
   let p = await loadPreferences();
@@ -37,35 +46,9 @@ async function start(): Promise<void> {
       status.textContent = detail instanceof Error ? detail.message : String(detail);
     });
   }
-  function row(title: string, description: string): HTMLDivElement {
-    const element = document.createElement("section");
-    element.className = "settings-row";
-    const copy = document.createElement("div");
-    const label = document.createElement("h3");
-    label.textContent = title;
-    const help = document.createElement("p");
-    help.textContent = description;
-    copy.append(label, help);
-    const controls = document.createElement("div");
-    controls.className = "settings-controls";
-    element.append(copy, controls);
-    group.append(element);
-    return controls;
-  }
-  function toggle(
-    title: string,
-    checked: boolean,
-    change: (checked: boolean) => void,
-  ): HTMLInputElement {
-    const input = document.createElement("input");
-    input.type = "checkbox";
-    input.role = "switch";
-    input.className = "settings-switch";
-    input.checked = checked;
-    input.setAttribute("aria-label", title);
-    input.addEventListener("change", () => change(input.checked));
-    return input;
-  }
+  const row = (title: string, description: string): HTMLDivElement =>
+    settingsRow(group, title, description);
+  const toggle = settingsToggle;
   function button(label: string, click: () => unknown): HTMLButtonElement {
     const b = document.createElement("button");
     b.type = "button";
@@ -289,6 +272,37 @@ async function start(): Promise<void> {
     "Receives POLAKAPI_NOTIFICATION_TITLE, POLAKAPI_NOTIFICATION_BODY, and POLAKAPI_NOTIFICATION_EVENT. Commands run with your account’s access and stop after 10 seconds.";
   command.setAttribute("aria-describedby", commandHelp.id);
   commandControls.append(command, commandTest, commandHelp);
+
+  wireSectionNav(host);
+  // A store failure here must not take the whole settings window down with it.
+  try {
+    await mountContextModeSection({
+      group: host.querySelector<HTMLDivElement>(".settings-group-context")!,
+      onError: (message) => {
+        status.textContent = message;
+      },
+      onSaved: () => {
+        status.textContent = "";
+      },
+    });
+  } catch (error) {
+    status.textContent = `Could not load context mode settings: ${String(error)}`;
+  }
+}
+
+function wireSectionNav(host: HTMLElement): void {
+  const panels = [...host.querySelectorAll<HTMLElement>(".settings-panel")];
+  const items = [...host.querySelectorAll<HTMLButtonElement>(".settings-nav-item")];
+  for (const item of items) {
+    item.addEventListener("click", () => {
+      for (const nav of items) {
+        const active = nav === item;
+        nav.classList.toggle("selected", active);
+        nav.setAttribute("aria-current", active ? "page" : "false");
+      }
+      for (const panel of panels) panel.hidden = panel.dataset.panel !== item.dataset.section;
+    });
+  }
 }
 
 void start().catch((error: unknown) => {
