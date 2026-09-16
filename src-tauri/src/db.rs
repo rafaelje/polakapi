@@ -232,6 +232,24 @@ impl Db {
         Ok(())
     }
 
+    /// Newest `cli_session_id` the capture hooks recorded for a PTY, used to
+    /// locate that pane's transcript on disk. `None` when the hooks are not
+    /// installed, which is why callers keep a filesystem fallback.
+    pub fn cli_session_id_for_pty(&self, pty_id: &str) -> Result<Option<String>, String> {
+        let row = self.conn.query_row(
+            "SELECT cli_session_id FROM sessions
+             WHERE pty_id = ?1 AND cli_session_id IS NOT NULL
+             ORDER BY id DESC LIMIT 1",
+            params![pty_id],
+            |r| r.get::<_, Option<String>>(0),
+        );
+        match row {
+            Ok(value) => Ok(value),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(format!("cli_session_id for pty {pty_id}: {e}")),
+        }
+    }
+
     fn list_sessions(&self) -> Result<Vec<SessionRow>, String> {
         let mut stmt = self
             .conn

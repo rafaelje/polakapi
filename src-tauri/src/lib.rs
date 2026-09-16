@@ -2,6 +2,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod adv_review;
+mod agent_context;
 mod agent_sessions;
 mod app_menu;
 mod awake;
@@ -39,6 +40,7 @@ use crate::adv_review::{
     adv_create_run, adv_ensure_run_prompt, adv_read_run_file, adv_read_run_prompt,
     adv_read_state_file, adv_write_run_file, adv_write_run_prompt, adv_write_state_file,
 };
+use crate::agent_context::agent_context;
 use crate::agent_sessions::agent_list_sessions;
 use crate::commands::{
     app_exit, create_project_folder, fs_validate_path, open_file_in_editor, open_in_editor,
@@ -167,6 +169,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             agent_list_sessions,
+            agent_context,
             pty_spawn,
             pty_write,
             pty_resize,
