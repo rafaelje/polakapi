@@ -1,47 +1,31 @@
 import { describe, expect, it } from "vitest";
 import {
+  breakdownRows,
   contextBar,
+  contextLabel,
   contextLevel,
   contextPercent,
-  fileSummary,
-  formatCost,
+  isSortMode,
+  sortEntries,
+  formatBytes,
+  formatClock,
   formatCpu,
   formatRam,
   formatTokens,
   formatUptime,
-  groupByProject,
+  kindLabel,
   shortModel,
-  toolSummary,
 } from "./format";
-import type { ContextRow, PaneContext } from "./types";
-import type { ProjectId } from "../workspaces/state/types";
+import type { ContextBreakdown, ContextEntry } from "./types";
 
-const projectId = (value: string): ProjectId => value as ProjectId;
-
-function context(patch: Partial<PaneContext> = {}): PaneContext {
-  return {
-    ptyId: "p1",
-    source: "claude",
-    model: "claude-opus-5",
-    contextTokens: 0,
-    contextLimit: 200_000,
-    inputTokens: 0,
-    outputTokens: 0,
-    cacheReadTokens: 0,
-    cacheWriteTokens: 0,
-    reasoningTokens: 0,
-    costUsd: null,
-    turns: 0,
-    tools: [],
-    files: [],
-    sessionId: null,
-    rssMb: 0,
-    cpuPercent: 0,
-    uptimeSecs: 0,
-    pid: null,
-    ...patch,
-  };
-}
+const breakdown = (patch: Partial<ContextBreakdown> = {}): ContextBreakdown => ({
+  instructions: 0,
+  files: 0,
+  toolOutput: 0,
+  messages: 0,
+  thinking: 0,
+  ...patch,
+});
 
 describe("formatTokens", () => {
   it("keeps small counts exact and abbreviates larger ones", () => {
@@ -49,7 +33,7 @@ describe("formatTokens", () => {
     expect(formatTokens(999)).toBe("999");
     expect(formatTokens(1_234)).toBe("1.2k");
     expect(formatTokens(118_000)).toBe("118k");
-    expect(formatTokens(2_400_000)).toBe("2.4M");
+    expect(formatTokens(1_000_000)).toBe("1.0M");
   });
 
   it("treats non-finite and negative input as zero", () => {
@@ -58,10 +42,20 @@ describe("formatTokens", () => {
   });
 });
 
+describe("formatBytes", () => {
+  it("scales by magnitude", () => {
+    expect(formatBytes(0)).toBe("0 B");
+    expect(formatBytes(512)).toBe("512 B");
+    expect(formatBytes(2048)).toBe("2.0 KB");
+    expect(formatBytes(3 * 1024 * 1024)).toBe("3.0 MB");
+  });
+});
+
 describe("contextPercent", () => {
   it("computes a clamped percentage", () => {
     expect(contextPercent(100_000, 200_000)).toBe(50);
     expect(contextPercent(300_000, 200_000)).toBe(100);
+    expect(contextPercent(250_000, 1_000_000)).toBe(25);
   });
 
   it("returns zero when the limit is unknown", () => {
@@ -109,13 +103,6 @@ describe("process formatters", () => {
     expect(formatUptime(3_700)).toBe("1h 1m");
     expect(formatUptime(90_000)).toBe("1d 1h");
   });
-
-  it("hides zero and sub-cent cost distinctly", () => {
-    expect(formatCost(null)).toBeNull();
-    expect(formatCost(0)).toBeNull();
-    expect(formatCost(0.004)).toBe("<$0.01");
-    expect(formatCost(1.5)).toBe("$1.50");
-  });
 });
 
 describe("shortModel", () => {
@@ -126,54 +113,105 @@ describe("shortModel", () => {
   });
 });
 
-describe("summaries", () => {
-  it("joins the busiest tools", () => {
-    expect(
-      toolSummary(
-        context({
-          tools: [
-            { name: "Read", count: 9 },
-            { name: "Edit", count: 3 },
-          ],
-        }),
-      ),
-    ).toBe("Read·Edit");
-    expect(toolSummary(context())).toBeNull();
-  });
-
-  it("counts the files it does not show", () => {
-    expect(fileSummary(context({ files: ["a.ts", "b.ts", "c.ts"] }), 2)).toBe("a.ts, b.ts +1");
-    expect(fileSummary(context({ files: ["a.ts"] }), 2)).toBe("a.ts");
-    expect(fileSummary(context())).toBeNull();
+describe("kindLabel", () => {
+  it("gives every entry kind a human label", () => {
+    expect(kindLabel("instructions")).toBe("injected");
+    expect(kindLabel("user-prompt")).toBe("you");
+    expect(kindLabel("file-content")).toBe("file");
+    expect(kindLabel("tool-output")).toBe("output");
   });
 });
 
-describe("groupByProject", () => {
-  const row = (ptyId: string, project: string): ContextRow => ({
-    ptyId,
-    projectId: projectId(project),
-    label: ptyId,
-    cliId: "claude",
-    lastActivityAt: 0,
-    context: null,
-  });
-
-  it("groups rows preserving first-seen project order", () => {
-    const names = new Map([
-      [projectId("a"), "polakapi"],
-      [projectId("b"), "simple-c"],
+describe("breakdownRows", () => {
+  it("sorts by weight and shares out the percentage", () => {
+    const rows = breakdownRows(breakdown({ files: 60, messages: 30, instructions: 10 }));
+    expect(rows.map((row) => row.key)).toEqual([
+      "files",
+      "messages",
+      "instructions",
+      "toolOutput",
+      "thinking",
     ]);
-    const groups = groupByProject([row("1", "a"), row("2", "b"), row("3", "a")], names);
-    expect(groups.map((g) => g.projectName)).toEqual(["polakapi", "simple-c"]);
-    expect(groups[0].rows.map((r) => r.ptyId)).toEqual(["1", "3"]);
+    expect(rows[0].percent).toBe(60);
+    expect(rows[1].percent).toBe(30);
   });
 
-  it("falls back to a placeholder name for unknown projects", () => {
-    const groups = groupByProject([row("1", "ghost")], new Map());
-    expect(groups[0].projectName).toBe("unknown project");
+  it("keeps empty buckets so a missing category is visible", () => {
+    const rows = breakdownRows(breakdown({ messages: 5 }));
+    expect(rows).toHaveLength(5);
+    expect(rows.find((row) => row.key === "files")?.tokens).toBe(0);
   });
 
-  it("returns nothing when there are no live panes", () => {
-    expect(groupByProject([], new Map())).toEqual([]);
+  it("reports zero percent rather than dividing by zero", () => {
+    expect(breakdownRows(breakdown()).every((row) => row.percent === 0)).toBe(true);
+  });
+});
+
+describe("sortEntries", () => {
+  const entry = (id: number, estTokens: number): ContextEntry => ({
+    id,
+    kind: "user-prompt",
+    label: "user",
+    detail: null,
+    timestamp: null,
+    chars: estTokens * 4,
+    estTokens,
+    preview: "",
+    truncated: false,
+  });
+  const entries = [entry(0, 50), entry(1, 200), entry(2, 10)];
+
+  it("defaults to transcript order", () => {
+    expect(sortEntries(entries, "oldest").map((e) => e.id)).toEqual([0, 1, 2]);
+  });
+
+  it("reverses for newest first", () => {
+    expect(sortEntries(entries, "newest").map((e) => e.id)).toEqual([2, 1, 0]);
+  });
+
+  it("sorts by size in both directions", () => {
+    expect(sortEntries(entries, "largest").map((e) => e.id)).toEqual([1, 0, 2]);
+    expect(sortEntries(entries, "smallest").map((e) => e.id)).toEqual([2, 0, 1]);
+  });
+
+  it("does not mutate the input", () => {
+    const original = [...entries];
+    sortEntries(entries, "newest");
+    expect(entries).toEqual(original);
+  });
+
+  it("breaks size ties by transcript order", () => {
+    const tied = [entry(2, 7), entry(0, 7), entry(1, 7)];
+    expect(sortEntries(tied, "largest").map((e) => e.id)).toEqual([0, 1, 2]);
+  });
+});
+
+describe("isSortMode", () => {
+  it("accepts only the known modes", () => {
+    expect(isSortMode("oldest")).toBe(true);
+    expect(isSortMode("largest")).toBe(true);
+    expect(isSortMode("sideways")).toBe(false);
+  });
+});
+
+describe("contextLabel", () => {
+  it("shows a percentage only when the window size is known", () => {
+    expect(contextLabel(312_000, 1_000_000)).toBe("312k / 1.0M (31%)");
+  });
+
+  it("refuses to invent a denominator", () => {
+    expect(contextLabel(4_200, 0)).toBe("4.2k · window size unknown");
+    expect(contextLabel(0, 0)).toBe("no token data");
+  });
+});
+
+describe("formatClock", () => {
+  it("renders hours and minutes", () => {
+    expect(formatClock("2026-09-15T14:02:00.000Z")).toMatch(/^\d{2}:\d{2}$/);
+  });
+
+  it("is empty for missing or unparseable input", () => {
+    expect(formatClock(null)).toBe("");
+    expect(formatClock("not a date")).toBe("");
   });
 });

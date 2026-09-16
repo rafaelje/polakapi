@@ -1,7 +1,32 @@
-import type { ContextGroup, ContextRow, PaneContext } from "./types";
-import type { ProjectId } from "../workspaces/state/types";
+import type {
+  BreakdownKey,
+  BreakdownRow,
+  ContextBreakdown,
+  ContextEntry,
+  EntryKind,
+  SortMode,
+} from "./types";
 
 const BAR_WIDTH = 10;
+const SORT_MODES: readonly SortMode[] = ["oldest", "newest", "largest", "smallest"];
+
+const BREAKDOWN_LABELS: Record<BreakdownKey, string> = {
+  instructions: "instructions",
+  files: "file contents",
+  toolOutput: "tool output",
+  messages: "messages",
+  thinking: "thinking",
+};
+
+const KIND_LABELS: Record<EntryKind, string> = {
+  instructions: "injected",
+  "user-prompt": "you",
+  "assistant-text": "agent",
+  thinking: "thinking",
+  "tool-call": "tool call",
+  "file-content": "file",
+  "tool-output": "output",
+};
 
 /** Compact token count: 1_234 -> "1.2k", 118_000 -> "118k". */
 export function formatTokens(tokens: number): string {
@@ -13,23 +38,11 @@ export function formatTokens(tokens: number): string {
   return `${(tokens / 1_000_000).toFixed(1)}M`;
 }
 
-export function contextPercent(used: number, limit: number): number {
-  if (!Number.isFinite(used) || !Number.isFinite(limit) || limit <= 0) return 0;
-  return Math.max(0, Math.min(100, Math.round((used / limit) * 100)));
-}
-
-/** Text progress bar, matching the monospace look of the sidebar. */
-export function contextBar(percent: number, width = BAR_WIDTH): string {
-  const clamped = Math.max(0, Math.min(100, percent));
-  const filled = Math.round((clamped / 100) * width);
-  return "█".repeat(filled) + "░".repeat(width - filled);
-}
-
-/** Severity band driving the bar colour. */
-export function contextLevel(percent: number): "ok" | "warn" | "high" {
-  if (percent >= 85) return "high";
-  if (percent >= 60) return "warn";
-  return "ok";
+export function formatBytes(chars: number): string {
+  if (!Number.isFinite(chars) || chars <= 0) return "0 B";
+  if (chars < 1024) return `${Math.round(chars)} B`;
+  if (chars < 1024 * 1024) return `${(chars / 1024).toFixed(1)} KB`;
+  return `${(chars / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 export function formatRam(mb: number): string {
@@ -55,53 +68,96 @@ export function formatUptime(seconds: number): string {
   return `${total}s`;
 }
 
-export function formatCost(cost: number | null): string | null {
-  if (cost === null || !Number.isFinite(cost) || cost <= 0) return null;
-  return cost < 0.01 ? "<$0.01" : `$${cost.toFixed(2)}`;
+export function contextPercent(used: number, limit: number): number {
+  if (!Number.isFinite(used) || !Number.isFinite(limit) || limit <= 0) return 0;
+  return Math.max(0, Math.min(100, Math.round((used / limit) * 100)));
 }
 
-/** Drops the vendor prefix and date suffix: "claude-opus-5" -> "opus-5". */
+/** Text progress bar, matching the monospace look of the window. */
+export function contextBar(percent: number, width = BAR_WIDTH): string {
+  const clamped = Math.max(0, Math.min(100, percent));
+  const filled = Math.round((clamped / 100) * width);
+  return "█".repeat(filled) + "░".repeat(width - filled);
+}
+
+/**
+ * Occupancy as text. A zero limit means we do not know the model's window —
+ * show the raw count rather than a confident-looking percentage computed from
+ * an invented denominator.
+ */
+export function contextLabel(tokens: number, limit: number): string {
+  const used = Number.isFinite(tokens) && tokens > 0 ? tokens : 0;
+  if (limit <= 0) {
+    return used > 0 ? `${formatTokens(used)} · window size unknown` : "no token data";
+  }
+  return `${formatTokens(used)} / ${formatTokens(limit)} (${contextPercent(used, limit)}%)`;
+}
+
+/** Severity band driving the bar colour. */
+export function contextLevel(percent: number): "ok" | "warn" | "high" {
+  if (percent >= 85) return "high";
+  if (percent >= 60) return "warn";
+  return "ok";
+}
+
+/** Strips the vendor prefix and date suffix: "claude-opus-5" -> "opus-5". */
 export function shortModel(model: string | null): string | null {
   if (!model) return null;
   return model.replace(/^claude-/, "").replace(/-\d{8}$/, "");
 }
 
-export function toolSummary(context: PaneContext, max = 4): string | null {
-  if (context.tools.length === 0) return null;
-  return context.tools
-    .slice(0, max)
-    .map((tool) => tool.name)
-    .join("·");
-}
-
-export function fileSummary(context: PaneContext, max = 2): string | null {
-  if (context.files.length === 0) return null;
-  const shown = context.files.slice(0, max).join(", ");
-  const rest = context.files.length - max;
-  return rest > 0 ? `${shown} +${rest}` : shown;
+export function kindLabel(kind: EntryKind): string {
+  return KIND_LABELS[kind] ?? kind;
 }
 
 /**
- * Groups live panes by project, preserving the caller's project order and
- * dropping projects with no live pane. Rows keep their incoming order so the
- * panel matches the pane order in the grid.
+ * Breakdown as rows sorted by weight, each with its share of the estimated
+ * total. Zero rows are kept: "no file contents loaded" is itself an answer to
+ * "is the agent missing something".
  */
-export function groupByProject(
-  rows: readonly ContextRow[],
-  projectNames: ReadonlyMap<ProjectId, string>,
-): ContextGroup[] {
-  const groups = new Map<ProjectId, ContextGroup>();
-  for (const row of rows) {
-    let group = groups.get(row.projectId);
-    if (!group) {
-      group = {
-        projectId: row.projectId,
-        projectName: projectNames.get(row.projectId) ?? "unknown project",
-        rows: [],
+export function breakdownRows(breakdown: ContextBreakdown): BreakdownRow[] {
+  const keys = Object.keys(BREAKDOWN_LABELS) as BreakdownKey[];
+  const total = keys.reduce((sum, key) => sum + (breakdown[key] || 0), 0);
+  return keys
+    .map((key) => {
+      const tokens = breakdown[key] || 0;
+      return {
+        key,
+        label: BREAKDOWN_LABELS[key],
+        tokens,
+        percent: total > 0 ? Math.round((tokens / total) * 100) : 0,
       };
-      groups.set(row.projectId, group);
-    }
-    group.rows.push(row);
+    })
+    .sort((a, b) => b.tokens - a.tokens);
+}
+
+/**
+ * Sorts a copy of the entries. Chronological order is the entry id, which is
+ * the order the transcript produced them — timestamps repeat within a turn and
+ * would shuffle blocks that belong together.
+ */
+export function sortEntries(entries: readonly ContextEntry[], mode: SortMode): ContextEntry[] {
+  const sorted = [...entries];
+  switch (mode) {
+    case "newest":
+      return sorted.sort((a, b) => b.id - a.id);
+    case "largest":
+      return sorted.sort((a, b) => b.estTokens - a.estTokens || a.id - b.id);
+    case "smallest":
+      return sorted.sort((a, b) => a.estTokens - b.estTokens || a.id - b.id);
+    default:
+      return sorted.sort((a, b) => a.id - b.id);
   }
-  return [...groups.values()];
+}
+
+export function isSortMode(value: string): value is SortMode {
+  return SORT_MODES.includes(value as SortMode);
+}
+
+export function formatClock(timestamp: string | null): string {
+  if (!timestamp) return "";
+  const parsed = new Date(timestamp);
+  if (Number.isNaN(parsed.getTime())) return "";
+  const pad = (value: number): string => String(value).padStart(2, "0");
+  return `${pad(parsed.getHours())}:${pad(parsed.getMinutes())}`;
 }

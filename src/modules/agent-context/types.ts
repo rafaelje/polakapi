@@ -1,59 +1,78 @@
-import type { ProjectId } from "../workspaces/state/types";
+/** Wire types mirroring the Rust `agent_context_*` commands (serde camelCase). */
 
-/** Wire types mirroring the Rust `agent_context` command (serde camelCase). */
+export type EntryKind =
+  | "instructions"
+  | "user-prompt"
+  | "assistant-text"
+  | "thinking"
+  | "tool-call"
+  | "file-content"
+  | "tool-output";
 
-export interface ToolCount {
-  name: string;
-  count: number;
-}
-
-export interface PaneContext {
-  ptyId: string;
-  /** "claude" or "codex" when a transcript was parsed, "none" when there is none. */
-  source: "claude" | "codex" | "none";
-  model: string | null;
-  contextTokens: number;
-  contextLimit: number;
-  inputTokens: number;
-  outputTokens: number;
-  cacheReadTokens: number;
-  cacheWriteTokens: number;
-  reasoningTokens: number;
-  costUsd: number | null;
-  turns: number;
-  tools: ToolCount[];
-  files: string[];
-  sessionId: string | null;
+export interface ProcessStats {
   rssMb: number;
   cpuPercent: number;
   uptimeSecs: number;
   pid: number | null;
 }
 
-export interface AgentContextReport {
-  panes: PaneContext[];
-  totalMb: number;
-  availableMb: number;
+export interface AgentSummary {
+  ptyId: string;
+  cli: string;
+  cwd: string | null;
+  /** Last path component of the cwd, used to group the list by project. */
+  project: string | null;
+  model: string | null;
+  contextTokens: number;
+  contextLimit: number;
+  /** False when no transcript could be read for this pane. */
+  readable: boolean;
+  /** RSS, CPU and uptime of the pane's whole process tree. */
+  process: ProcessStats;
 }
 
-export interface PaneQuery {
-  ptyId: string;
-  cliId?: string;
-  cwd?: string;
+export interface ContextBreakdown {
+  instructions: number;
+  files: number;
+  toolOutput: number;
+  messages: number;
+  thinking: number;
 }
 
-/** A live pane joined with the project it belongs to, ready to render. */
-export interface ContextRow {
-  ptyId: string;
-  projectId: ProjectId;
+export interface ContextEntry {
+  id: number;
+  kind: EntryKind;
   label: string;
-  cliId: string;
-  lastActivityAt: number;
-  context: PaneContext | null;
+  detail: string | null;
+  timestamp: string | null;
+  chars: number;
+  estTokens: number;
+  preview: string;
+  truncated: boolean;
 }
 
-export interface ContextGroup {
-  projectId: ProjectId;
-  projectName: string;
-  rows: ContextRow[];
+export interface ContextDetail {
+  summary: AgentSummary;
+  breakdown: ContextBreakdown;
+  entries: ContextEntry[];
+  /** Set when there is nothing to read, explaining why. */
+  note: string | null;
+}
+
+export type SortMode = "oldest" | "newest" | "largest" | "smallest";
+
+export interface SearchHit {
+  entryId: number;
+  matches: number;
+  /** Text around the first match, newlines flattened. */
+  snippet: string;
+}
+
+export type BreakdownKey = keyof ContextBreakdown;
+
+export interface BreakdownRow {
+  key: BreakdownKey;
+  label: string;
+  tokens: number;
+  percent: number;
 }

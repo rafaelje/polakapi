@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "context",
+  "description": "Capability for the floating /context window.",
+  "windows": ["context"],
+  "permissions": ["core:default"]
+}

@@ -38,6 +38,23 @@ pub struct PtySession {
     pub writer: Mutex<Box<dyn Write + Send>>,
     pub master: Mutex<Box<dyn MasterPty + Send>>,
     pub child: Mutex<Box<dyn Child + Send + Sync>>,
+    /// Lowercased basename, set only for panes running an allowlisted AI CLI.
+    /// `None` for plain shells, which is what lets `agent_panes` filter them out
+    /// without the frontend having to say which pane is which.
+    pub cli: Option<String>,
+    /// Working directory the process was actually spawned in, after falling
+    /// back to the default when the request carried none.
+    pub cwd: Option<String>,
+}
+
+/// A live pane running an AI CLI. Enough for the /context window to locate the
+/// pane's transcript without reaching into the main window's state.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentPane {
+    pub pty_id: String,
+    pub cli: String,
+    pub cwd: Option<String>,
 }
 
 #[derive(Default)]
@@ -62,6 +79,21 @@ impl PtyStore {
         if let Some(session) = self.remove_session(id) {
             kill_and_wait(session);
         }
+    }
+
+    /// Live panes running an AI CLI, shells excluded.
+    pub fn agent_panes(&self) -> Vec<AgentPane> {
+        self.sessions
+            .lock()
+            .iter()
+            .filter_map(|(id, session)| {
+                Some(AgentPane {
+                    pty_id: id.clone(),
+                    cli: session.cli.clone()?,
+                    cwd: session.cwd.clone(),
+                })
+            })
+            .collect()
     }
 
     pub fn session_pids(&self) -> Vec<(String, u32)> {
@@ -149,9 +181,9 @@ pub fn spawn_session(
 
     let mut cmd =
         platform_command::portable_command(&program, &validated_args, !is_allowed_shell(&shell))?;
-    if let Some(dir) = validated_cwd {
-        cmd.cwd(dir);
-    } else if let Some(dir) = default_working_dir() {
+    let effective_cwd: Option<String> = validated_cwd
+        .or_else(|| default_working_dir().map(|dir| dir.to_string_lossy().into_owned()));
+    if let Some(dir) = &effective_cwd {
         cmd.cwd(dir);
     }
     configure_terminal_environment(&mut cmd);
@@ -178,6 +210,8 @@ pub fn spawn_session(
         writer: Mutex::new(writer),
         master: Mutex::new(pair.master),
         child: Mutex::new(child),
+        cli: ai_cli_basename(&shell),
+        cwd: effective_cwd,
     });
     store.insert_session(id.clone(), session);
 
@@ -249,6 +283,21 @@ fn resolve_command(command: Option<String>) -> Result<String, String> {
         }
         None => Ok(default_shell()),
     }
+}
+
+/// Lowercased basename when `command` is one of the allowlisted AI CLIs, so the
+/// capture env and the pane registry agree on what counts as an agent.
+fn ai_cli_basename(command: &str) -> Option<String> {
+    if !basename_in(command, ALLOWED_AI_CLI_BASENAMES) {
+        return None;
+    }
+    Some(
+        Path::new(command)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or(command)
+            .to_ascii_lowercase(),
+    )
 }
 
 fn basename_in(cmd: &str, list: &[&str]) -> bool {
@@ -337,15 +386,9 @@ fn configure_capture_environment(
         Some(path) => cmd.env(CAPTURE_DB_PATH_ENV, path),
         None => cmd.env_remove(CAPTURE_DB_PATH_ENV),
     }
-    if basename_in(command, ALLOWED_AI_CLI_BASENAMES) {
-        let cli = Path::new(command)
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or(command)
-            .to_ascii_lowercase();
-        cmd.env(CAPTURE_CLI_ENV, cli);
-    } else {
-        cmd.env_remove(CAPTURE_CLI_ENV);
+    match ai_cli_basename(command) {
+        Some(cli) => cmd.env(CAPTURE_CLI_ENV, cli),
+        None => cmd.env_remove(CAPTURE_CLI_ENV),
     }
     cmd.env_remove(LEGACY_CAPTURE_HELPER_ENV);
 }

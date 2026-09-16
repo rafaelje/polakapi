@@ -1,248 +1,364 @@
-use std::fs::File;
-use std::io::{BufRead, BufReader};
-use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex as StdMutex, OnceLock};
-use std::time::{SystemTime, UNIX_EPOCH};
+mod process;
+mod transcript;
 
-use parking_lot::Mutex;
-use serde::{Deserialize, Serialize};
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex as StdMutex};
+use std::time::SystemTime;
+
+use serde::Serialize;
 use serde_json::Value;
-use sysinfo::{ProcessesToUpdate, System};
 use tauri::State;
 
 use crate::db::Db;
-use crate::memory::tree_maps;
 use crate::platform_command;
 use crate::pty::PtyStore;
 
-// Per-pane "what is this agent holding right now" snapshot for the agent
-// context panel in the right sidebar.
-//
-// Two independent halves, deliberately decoupled so one failing never blanks
-// the other:
-//   - conversation: parsed from the CLI's own transcript. Claude Code writes
-//     one per project (~/.claude/projects/<cwd-slug>/<session>.jsonl) and Codex
-//     one rollout per session (~/.codex/sessions/<y>/<m>/<d>/), so any other
-//     CLI reports `source: "none"` and the UI hides that half.
-//   - process: RSS of the whole PTY process tree plus CPU and uptime, from
-//     sysinfo. Available for every pane regardless of CLI.
-//
-// Claude transcripts are located by the `cli_session_id` the capture hooks
-// record in the `sessions` table, falling back to the most recently modified
-// file in the directory matching the pane's cwd when hooks are not installed.
-// Codex records the cwd inside the rollout instead, so its files are scanned
-// newest-first until one reports a matching cwd.
+pub use process::ProcessStats;
+pub use transcript::{ContextBreakdown, ContextEntry, SearchHit};
 
-const MB: u64 = 1024 * 1024;
+// Backs the /context window: what each running agent CLI currently holds in its
+// context, read from the transcript that CLI writes to disk.
+//
+// Claude Code keeps one transcript per project directory
+// (~/.claude/projects/<cwd-slug>/<session>.jsonl) and Codex one rollout per
+// session (~/.codex/sessions/<y>/<m>/<d>/). Claude's is parsed into readable
+// entries; for Codex only the token totals are read, because its rollout layout
+// has not been verified against a real file.
+//
+// Only panes running an allowlisted AI CLI appear here — `PtyStore::agent_panes`
+// filters shells out at the source, so the window never has to guess.
+
 const DEFAULT_CONTEXT_LIMIT: u64 = 200_000;
-/// Cap on transcript bytes parsed per pane so a very long session cannot
-/// stall the poll. Reading the tail would truncate mid-line, so we read from
-/// the start and stop once the budget is spent, keeping the newest usage seen.
-const MAX_TRANSCRIPT_BYTES: u64 = 16 * 1024 * 1024;
-const MAX_FILES: usize = 8;
-const MAX_TOOLS: usize = 8;
 /// Codex records the cwd inside the rollout, so attaching a pane to one means
 /// opening candidates newest-first. Both bounds keep that scan cheap.
 const MAX_CODEX_SCAN: usize = 200;
 const MAX_SCAN_DEPTH: usize = 6;
 
-/// One live pane the frontend wants context for.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct PaneQuery {
+pub struct AgentSummary {
     pub pty_id: String,
-    pub cli_id: Option<String>,
+    pub cli: String,
     pub cwd: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ToolCount {
-    pub name: String,
-    pub count: u64,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PaneContext {
-    pub pty_id: String,
-    /// "claude" or "codex" when a transcript was parsed, "none" when the CLI
-    /// keeps no local transcript (opencode, cursor) or none was found.
-    pub source: String,
+    /// Last path component of the cwd, for grouping in the list.
+    pub project: Option<String>,
     pub model: Option<String>,
     pub context_tokens: u64,
     pub context_limit: u64,
-    pub input_tokens: u64,
-    pub output_tokens: u64,
-    pub cache_read_tokens: u64,
-    pub cache_write_tokens: u64,
-    pub reasoning_tokens: u64,
-    pub cost_usd: Option<f64>,
-    pub turns: u64,
-    pub tools: Vec<ToolCount>,
-    pub files: Vec<String>,
-    pub session_id: Option<String>,
-    pub rss_mb: u64,
-    pub cpu_percent: f32,
-    pub uptime_secs: u64,
-    pub pid: Option<u32>,
-}
-
-impl PaneContext {
-    fn empty(pty_id: String) -> Self {
-        Self {
-            pty_id,
-            source: "none".into(),
-            model: None,
-            context_tokens: 0,
-            context_limit: 0,
-            input_tokens: 0,
-            output_tokens: 0,
-            cache_read_tokens: 0,
-            cache_write_tokens: 0,
-            reasoning_tokens: 0,
-            cost_usd: None,
-            turns: 0,
-            tools: Vec::new(),
-            files: Vec::new(),
-            session_id: None,
-            rss_mb: 0,
-            cpu_percent: 0.0,
-            uptime_secs: 0,
-            pid: None,
-        }
-    }
+    /// False when no transcript could be located, or the CLI writes none we can
+    /// read. The window shows the row anyway, with the reason.
+    pub readable: bool,
+    /// RSS, CPU and uptime of the pane's whole process tree.
+    pub process: ProcessStats,
 }
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct AgentContextReport {
-    pub panes: Vec<PaneContext>,
-    pub total_mb: u64,
-    pub available_mb: u64,
-}
-
-/// Kept across calls so sysinfo can compute CPU as a delta between two polls.
-/// The first call therefore reports 0% for every pane, which is correct: there
-/// is no prior sample to diff against.
-fn system() -> &'static Mutex<System> {
-    static SYS: OnceLock<Mutex<System>> = OnceLock::new();
-    SYS.get_or_init(|| Mutex::new(System::new()))
+pub struct ContextDetail {
+    pub summary: AgentSummary,
+    pub breakdown: ContextBreakdown,
+    pub entries: Vec<ContextEntry>,
+    /// Set when there is nothing to read, explaining why.
+    pub note: Option<String>,
 }
 
 #[tauri::command]
-pub fn agent_context(
+pub fn agent_context_list(
     store: State<'_, Arc<PtyStore>>,
     db: State<'_, StdMutex<Db>>,
-    panes: Vec<PaneQuery>,
-) -> Result<AgentContextReport, String> {
-    let pids: std::collections::HashMap<String, u32> = store.session_pids().into_iter().collect();
-
-    let mut sys = system().lock();
-    sys.refresh_memory();
-    sys.refresh_processes(ProcessesToUpdate::All, true);
-    let (mem_by_pid, cpu_by_pid, children, start_by_pid) = process_maps(&sys);
-    let total_mb = sys.total_memory() / MB;
-    let available_mb = sys.available_memory() / MB;
-    drop(sys);
-
-    let now = now_seconds();
-    let out = panes
+) -> Result<Vec<AgentSummary>, String> {
+    let stats = process::sample(&store.session_pids());
+    let mut out: Vec<AgentSummary> = store
+        .agent_panes()
         .into_iter()
         .map(|pane| {
-            let session_id = db
-                .lock()
-                .ok()
-                .and_then(|db| db.cli_session_id_for_pty(&pane.pty_id).ok().flatten());
-            let mut ctx = transcript_context(&pane, session_id.as_deref())
-                .unwrap_or_else(|| PaneContext::empty(pane.pty_id.clone()));
-            if let Some(pid) = pids.get(&pane.pty_id).copied() {
-                ctx.pid = Some(pid);
-                ctx.rss_mb = tree_sum(pid, &mem_by_pid, &children) / MB;
-                ctx.cpu_percent = tree_cpu(pid, &cpu_by_pid, &children);
-                ctx.uptime_secs = start_by_pid
-                    .get(&pid)
-                    .map(|start| now.saturating_sub(*start))
-                    .unwrap_or(0);
-            }
-            ctx
+            let pane_stats = stats.get(&pane.pty_id).copied().unwrap_or_default();
+            summarize(
+                &pane.pty_id,
+                &pane.cli,
+                pane.cwd.as_deref(),
+                &db,
+                pane_stats,
+            )
         })
         .collect();
+    out.sort_by(|a, b| a.project.cmp(&b.project).then_with(|| a.cli.cmp(&b.cli)));
+    Ok(out)
+}
 
-    Ok(AgentContextReport {
-        panes: out,
-        total_mb,
-        available_mb,
+#[tauri::command]
+pub fn agent_context_detail(
+    store: State<'_, Arc<PtyStore>>,
+    db: State<'_, StdMutex<Db>>,
+    pty_id: String,
+) -> Result<ContextDetail, String> {
+    let pane = store
+        .agent_panes()
+        .into_iter()
+        .find(|pane| pane.pty_id == pty_id)
+        .ok_or_else(|| format!("no running agent for pane {pty_id}"))?;
+    let stats = process::sample(&store.session_pids())
+        .get(&pane.pty_id)
+        .copied()
+        .unwrap_or_default();
+    let summary = summarize(&pane.pty_id, &pane.cli, pane.cwd.as_deref(), &db, stats);
+
+    if pane.cli != "claude" {
+        return Ok(ContextDetail {
+            summary,
+            breakdown: ContextBreakdown::default(),
+            entries: Vec::new(),
+            note: Some(format!(
+                "Reading context content is implemented for Claude Code only. \
+                 {} writes a transcript in a layout polakapi has not verified yet.",
+                pane.cli
+            )),
+        });
+    }
+
+    let Some(path) = claude_transcript(&pane.pty_id, pane.cwd.as_deref(), &db) else {
+        return Ok(ContextDetail {
+            summary,
+            breakdown: ContextBreakdown::default(),
+            entries: Vec::new(),
+            note: Some(
+                "No transcript found for this pane's working directory yet. \
+                 It appears once the agent has taken its first turn."
+                    .to_string(),
+            ),
+        });
+    };
+    let Some(parsed) = transcript::parse(&path) else {
+        return Ok(ContextDetail {
+            summary,
+            breakdown: ContextBreakdown::default(),
+            entries: Vec::new(),
+            note: Some(format!("Could not read {}", path.display())),
+        });
+    };
+    Ok(ContextDetail {
+        summary,
+        breakdown: parsed.breakdown,
+        entries: parsed.entries,
+        note: None,
     })
 }
 
-type ProcMaps = (
-    std::collections::HashMap<u32, u64>,
-    std::collections::HashMap<u32, f32>,
-    std::collections::HashMap<u32, Vec<u32>>,
-    std::collections::HashMap<u32, u64>,
-);
+/// Regex search across the full entry bodies. Runs in Rust because the listing
+/// only carries 400-character previews — searching those in the window would
+/// silently miss every match past the cut.
+#[tauri::command]
+pub fn agent_context_search(
+    store: State<'_, Arc<PtyStore>>,
+    db: State<'_, StdMutex<Db>>,
+    pty_id: String,
+    pattern: String,
+) -> Result<Vec<SearchHit>, String> {
+    let pane = store
+        .agent_panes()
+        .into_iter()
+        .find(|pane| pane.pty_id == pty_id)
+        .ok_or_else(|| format!("no running agent for pane {pty_id}"))?;
+    let Some(path) = claude_transcript(&pane.pty_id, pane.cwd.as_deref(), &db) else {
+        return Ok(Vec::new());
+    };
+    transcript::search(&path, &pattern)
+}
 
-fn process_maps(sys: &System) -> ProcMaps {
-    let (mem_by_pid, children) = tree_maps(sys);
-    let mut cpu_by_pid = std::collections::HashMap::new();
-    let mut start_by_pid = std::collections::HashMap::new();
-    for (pid, process) in sys.processes() {
-        if process.thread_kind().is_some() {
+/// Full text of one entry, fetched on demand so the listing stays small.
+#[tauri::command]
+pub fn agent_context_entry(
+    store: State<'_, Arc<PtyStore>>,
+    db: State<'_, StdMutex<Db>>,
+    pty_id: String,
+    entry_id: usize,
+) -> Result<Option<String>, String> {
+    let pane = store
+        .agent_panes()
+        .into_iter()
+        .find(|pane| pane.pty_id == pty_id)
+        .ok_or_else(|| format!("no running agent for pane {pty_id}"))?;
+    let Some(path) = claude_transcript(&pane.pty_id, pane.cwd.as_deref(), &db) else {
+        return Ok(None);
+    };
+    Ok(transcript::entry_body(&path, entry_id))
+}
+
+fn summarize(
+    pty_id: &str,
+    cli: &str,
+    cwd: Option<&str>,
+    db: &State<'_, StdMutex<Db>>,
+    stats: ProcessStats,
+) -> AgentSummary {
+    let project = cwd
+        .and_then(|dir| Path::new(dir).file_name())
+        .and_then(|name| name.to_str())
+        .map(str::to_string);
+    let mut summary = AgentSummary {
+        pty_id: pty_id.to_string(),
+        cli: cli.to_string(),
+        cwd: cwd.map(str::to_string),
+        project,
+        model: None,
+        context_tokens: 0,
+        context_limit: 0,
+        readable: false,
+        process: stats,
+    };
+    match cli {
+        "claude" => {
+            if let Some(path) = claude_transcript(pty_id, cwd, db) {
+                if let Some((model, tokens)) = claude_head(&path) {
+                    summary.context_limit = claude_context_limit(model.as_deref());
+                    summary.model = model;
+                    summary.context_tokens = tokens;
+                    summary.readable = true;
+                }
+            }
+        }
+        "codex" => {
+            if let Some(path) = cwd.and_then(codex_transcript_path) {
+                if let Some(head) = codex_head(&path) {
+                    summary.model = head.model;
+                    summary.context_tokens = head.tokens;
+                    // Codex reports its own window, so there is nothing to guess.
+                    summary.context_limit = head.context_window.unwrap_or(0);
+                }
+            }
+        }
+        // cursor-agent keeps no token accounting in its session store; the only
+        // model on disk is the CLI's global selection.
+        "cursor-agent" => summary.model = cursor_model(),
+        _ => {}
+    }
+    summary
+}
+
+/// The model cursor-agent is configured to use, from `~/.cursor/cli-config.json`.
+/// Global rather than per-session, so it can lag a mid-session switch.
+fn cursor_model() -> Option<String> {
+    let path = platform_command::user_home_dir()?
+        .join(".cursor")
+        .join("cli-config.json");
+    let raw = std::fs::read_to_string(path).ok()?;
+    let config: Value = serde_json::from_str(&raw).ok()?;
+    for pointer in ["/model/displayName", "/model/modelId"] {
+        if let Some(name) = config.pointer(pointer).and_then(Value::as_str) {
+            return Some(name.to_string());
+        }
+    }
+    None
+}
+
+/// Context window for a **Claude** model id; `0` means unknown.
+///
+/// Matched by version prefix rather than family name on purpose: Sonnet 4.6 and
+/// later carry 1M while Sonnet 4.5 and earlier carry 200k, so a bare "sonnet"
+/// match would quintuple the reported window for older models.
+///
+/// Only `claude-*` ids get the 200k fallback. Every other vendor reports zero,
+/// because inventing a limit for a model we do not know produces a confident
+/// wrong percentage — the UI shows the raw token count instead.
+fn claude_context_limit(model: Option<&str>) -> u64 {
+    const MILLION: &[&str] = &[
+        "claude-fable-",
+        "claude-mythos-",
+        "claude-opus-5",
+        "claude-opus-4-6",
+        "claude-opus-4-7",
+        "claude-opus-4-8",
+        "claude-sonnet-5",
+        "claude-sonnet-4-6",
+    ];
+    let Some(model) = model else {
+        return DEFAULT_CONTEXT_LIMIT;
+    };
+    if MILLION.iter().any(|prefix| model.starts_with(prefix)) {
+        return 1_000_000;
+    }
+    if model.starts_with("claude-") {
+        return DEFAULT_CONTEXT_LIMIT;
+    }
+    0
+}
+
+/// Newest model and prompt size from the last assistant turn. The prompt size is
+/// what actually occupies the window on the next turn: fresh input plus both
+/// cache halves.
+fn claude_head(path: &Path) -> Option<(Option<String>, u64)> {
+    use std::io::{BufRead, BufReader};
+    let file = std::fs::File::open(path).ok()?;
+    let mut model = None;
+    let mut tokens = 0u64;
+    for line in BufReader::new(file).lines().map_while(Result::ok) {
+        let Ok(event) = serde_json::from_str::<Value>(&line) else {
+            continue;
+        };
+        if event.get("type").and_then(Value::as_str) != Some("assistant") {
             continue;
         }
-        cpu_by_pid.insert(pid.as_u32(), process.cpu_usage());
-        start_by_pid.insert(pid.as_u32(), process.start_time());
+        if let Some(found) = event.pointer("/message/model").and_then(Value::as_str) {
+            model = Some(found.to_string());
+        }
+        if let Some(usage) = event.pointer("/message/usage") {
+            tokens = as_u64(usage.get("input_tokens"))
+                .saturating_add(as_u64(usage.get("cache_read_input_tokens")))
+                .saturating_add(as_u64(usage.get("cache_creation_input_tokens")));
+        }
     }
-    (mem_by_pid, cpu_by_pid, children, start_by_pid)
+    Some((model, tokens))
 }
 
-fn tree_sum(
-    root: u32,
-    by_pid: &std::collections::HashMap<u32, u64>,
-    children: &std::collections::HashMap<u32, Vec<u32>>,
-) -> u64 {
-    let mut total = 0u64;
-    walk(root, children, &mut |pid| {
-        total = total.saturating_add(by_pid.get(&pid).copied().unwrap_or(0));
-    });
-    total
+struct CodexHead {
+    model: Option<String>,
+    tokens: u64,
+    context_window: Option<u64>,
 }
 
-fn tree_cpu(
-    root: u32,
-    by_pid: &std::collections::HashMap<u32, f32>,
-    children: &std::collections::HashMap<u32, Vec<u32>>,
-) -> f32 {
-    let mut total = 0.0f32;
-    walk(root, children, &mut |pid| {
-        total += by_pid.get(&pid).copied().unwrap_or(0.0);
-    });
-    total
-}
-
-fn walk(
-    root: u32,
-    children: &std::collections::HashMap<u32, Vec<u32>>,
-    visit: &mut impl FnMut(u32),
-) {
-    let mut seen = std::collections::HashSet::new();
-    let mut stack = vec![root];
-    while let Some(pid) = stack.pop() {
-        if !seen.insert(pid) {
+/// Codex reports `input_tokens` as the whole input including the cached part,
+/// so it is the window occupancy as-is. Matches `usage/codex_jsonl.rs`.
+///
+/// `model_context_window` is read straight from the rollout when codex writes
+/// it, which beats any table we could hardcode. Unverified against a real file:
+/// when the field is absent the limit stays unknown rather than being guessed.
+fn codex_head(path: &Path) -> Option<CodexHead> {
+    use std::io::{BufRead, BufReader};
+    let file = std::fs::File::open(path).ok()?;
+    let mut head = CodexHead {
+        model: None,
+        tokens: 0,
+        context_window: None,
+    };
+    for line in BufReader::new(file).lines().map_while(Result::ok) {
+        let Ok(event) = serde_json::from_str::<Value>(&line) else {
+            continue;
+        };
+        if event.get("type").and_then(Value::as_str) != Some("event_msg") {
             continue;
         }
-        visit(pid);
-        if let Some(kids) = children.get(&pid) {
-            stack.extend(kids.iter().copied());
+        if event.pointer("/payload/type").and_then(Value::as_str) != Some("token_count") {
+            continue;
+        }
+        if let Some(found) = event.pointer("/payload/info/model").and_then(Value::as_str) {
+            head.model = Some(found.to_string());
+        }
+        if let Some(window) = event
+            .pointer("/payload/info/model_context_window")
+            .and_then(Value::as_u64)
+        {
+            head.context_window = Some(window);
+        }
+        if let Some(last) = event.pointer("/payload/info/last_token_usage") {
+            head.tokens = as_u64(last.get("input_tokens"));
         }
     }
+    Some(head)
 }
 
-fn now_seconds() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs())
+fn as_u64(value: Option<&Value>) -> u64 {
+    value
+        .and_then(|v| v.as_u64().or_else(|| v.as_i64().map(|n| n.max(0) as u64)))
         .unwrap_or(0)
 }
 
@@ -255,11 +371,19 @@ fn cwd_slug(cwd: &str) -> String {
         .collect()
 }
 
-fn transcript_path(cwd: &str, session_id: Option<&str>) -> Option<PathBuf> {
+fn claude_transcript(
+    pty_id: &str,
+    cwd: Option<&str>,
+    db: &State<'_, StdMutex<Db>>,
+) -> Option<PathBuf> {
     let dir = platform_command::user_home_dir()?
         .join(".claude")
         .join("projects")
-        .join(cwd_slug(cwd));
+        .join(cwd_slug(cwd?));
+    let session_id = db
+        .lock()
+        .ok()
+        .and_then(|db| db.cli_session_id_for_pty(pty_id).ok().flatten());
     if let Some(id) = session_id {
         let direct = dir.join(format!("{id}.jsonl"));
         if direct.is_file() {
@@ -279,42 +403,13 @@ fn newest_jsonl(dir: &Path) -> Option<PathBuf> {
         let Ok(modified) = entry.metadata().and_then(|m| m.modified()) else {
             continue;
         };
-        if best.as_ref().is_none_or(|(best, _)| modified > *best) {
+        if best.as_ref().is_none_or(|(seen, _)| modified > *seen) {
             best = Some((modified, path));
         }
     }
     best.map(|(_, path)| path)
 }
 
-/// Claude Code and Codex each keep a local transcript, in different layouts.
-/// Any other CLI returns None so the caller falls back to a process-only row.
-fn transcript_context(pane: &PaneQuery, session_id: Option<&str>) -> Option<PaneContext> {
-    let cwd = pane.cwd.as_deref()?;
-    let mut ctx = PaneContext::empty(pane.pty_id.clone());
-    match pane.cli_id.as_deref()? {
-        "claude" => {
-            let path = transcript_path(cwd, session_id)?;
-            parse_transcript(&path, &mut ctx)?;
-            ctx.source = "claude".into();
-            ctx.session_id = session_id.map(str::to_string).or_else(|| file_stem(&path));
-            ctx.context_limit = context_limit_for(ctx.model.as_deref());
-        }
-        "codex" => {
-            let path = codex_transcript_path(cwd)?;
-            parse_codex_transcript(&path, &mut ctx)?;
-            ctx.source = "codex".into();
-            if ctx.context_limit == 0 {
-                ctx.context_limit = DEFAULT_CONTEXT_LIMIT;
-            }
-        }
-        _ => return None,
-    }
-    Some(ctx)
-}
-
-/// Codex stores rollouts under `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl`
-/// with the working directory recorded inside the file rather than in the path,
-/// so the newest rollouts are scanned until one reports a matching cwd.
 fn codex_transcript_path(cwd: &str) -> Option<PathBuf> {
     let root = platform_command::user_home_dir()?
         .join(".codex")
@@ -353,9 +448,12 @@ fn collect_jsonl(dir: &Path, out: &mut Vec<(SystemTime, PathBuf)>, depth: usize)
     }
 }
 
-/// Reads the `session_meta` header line and returns the cwd it recorded.
+/// Reads the `session_meta` header line and returns the cwd it recorded. Codex
+/// has moved this field between releases, so accept the shapes seen in the wild
+/// rather than binding to one.
 fn codex_cwd(path: &Path) -> Option<String> {
-    let file = File::open(path).ok()?;
+    use std::io::{BufRead, BufReader};
+    let file = std::fs::File::open(path).ok()?;
     for line in BufReader::new(file).lines().map_while(Result::ok).take(8) {
         let Ok(event) = serde_json::from_str::<Value>(&line) else {
             continue;
@@ -363,185 +461,13 @@ fn codex_cwd(path: &Path) -> Option<String> {
         if event.get("type").and_then(Value::as_str) != Some("session_meta") {
             continue;
         }
-        return codex_meta_cwd(&event);
-    }
-    None
-}
-
-/// Codex has moved this field between releases, so accept the shapes seen in
-/// the wild rather than binding to one.
-fn codex_meta_cwd(event: &Value) -> Option<String> {
-    for pointer in ["/payload/cwd", "/payload/workspace/cwd", "/cwd"] {
-        if let Some(cwd) = event.pointer(pointer).and_then(Value::as_str) {
-            return Some(cwd.to_string());
+        for pointer in ["/payload/cwd", "/payload/workspace/cwd", "/cwd"] {
+            if let Some(cwd) = event.pointer(pointer).and_then(Value::as_str) {
+                return Some(cwd.to_string());
+            }
         }
     }
     None
-}
-
-fn parse_codex_transcript(path: &Path, ctx: &mut PaneContext) -> Option<()> {
-    let file = File::open(path).ok()?;
-    let mut budget = MAX_TRANSCRIPT_BYTES;
-    for line in BufReader::new(file).lines().map_while(Result::ok) {
-        budget = budget.saturating_sub(line.len() as u64 + 1);
-        if budget == 0 {
-            break;
-        }
-        let Ok(event) = serde_json::from_str::<Value>(&line) else {
-            continue;
-        };
-        if event.get("type").and_then(Value::as_str) != Some("event_msg") {
-            continue;
-        }
-        if event.pointer("/payload/type").and_then(Value::as_str) != Some("token_count") {
-            continue;
-        }
-        if let Some(model) = event.pointer("/payload/info/model").and_then(Value::as_str) {
-            ctx.model = Some(model.to_string());
-        }
-        if let Some(window) = event
-            .pointer("/payload/info/model_context_window")
-            .and_then(Value::as_u64)
-        {
-            ctx.context_limit = window;
-        }
-        let Some(last) = event.pointer("/payload/info/last_token_usage") else {
-            continue;
-        };
-        ctx.turns += 1;
-        apply_codex_usage(last, ctx);
-    }
-    Some(())
-}
-
-/// Codex reports `input_tokens` as the whole input and `cached_input_tokens`
-/// as the cached subset, so the window occupancy is `input_tokens` as-is while
-/// `input` here means the fresh part — matching how the usage panel splits it.
-fn apply_codex_usage(usage: &Value, ctx: &mut PaneContext) {
-    let total_input = as_u64(usage.get("input_tokens"));
-    let cache_read = as_u64(usage.get("cached_input_tokens")).min(total_input);
-    ctx.input_tokens = total_input.saturating_sub(cache_read);
-    ctx.cache_read_tokens = cache_read;
-    ctx.cache_write_tokens = as_u64(usage.get("cache_write_input_tokens"));
-    ctx.output_tokens = as_u64(usage.get("output_tokens"));
-    ctx.reasoning_tokens = as_u64(usage.get("reasoning_output_tokens"));
-    ctx.context_tokens = total_input;
-}
-
-fn file_stem(path: &Path) -> Option<String> {
-    path.file_stem()
-        .and_then(|s| s.to_str())
-        .map(str::to_string)
-}
-
-/// Known context windows keyed by a substring of the model id. Anything
-/// unrecognised falls back to 200k, the current Claude default.
-fn context_limit_for(model: Option<&str>) -> u64 {
-    let Some(model) = model else {
-        return DEFAULT_CONTEXT_LIMIT;
-    };
-    const LIMITS: &[(&str, u64)] = &[
-        ("haiku", 200_000),
-        ("sonnet", 200_000),
-        ("opus", 200_000),
-        ("fable", 200_000),
-    ];
-    LIMITS
-        .iter()
-        .find(|(needle, _)| model.contains(needle))
-        .map(|(_, limit)| *limit)
-        .unwrap_or(DEFAULT_CONTEXT_LIMIT)
-}
-
-fn parse_transcript(path: &Path, ctx: &mut PaneContext) -> Option<()> {
-    let file = File::open(path).ok()?;
-    let mut tools: Vec<(String, u64)> = Vec::new();
-    let mut files: Vec<String> = Vec::new();
-    let mut budget = MAX_TRANSCRIPT_BYTES;
-
-    for line in BufReader::new(file).lines().map_while(Result::ok) {
-        budget = budget.saturating_sub(line.len() as u64 + 1);
-        if budget == 0 {
-            break;
-        }
-        let Ok(event) = serde_json::from_str::<Value>(&line) else {
-            continue;
-        };
-        match event.get("type").and_then(Value::as_str) {
-            Some("assistant") => {
-                ctx.turns += 1;
-                if let Some(model) = event.pointer("/message/model").and_then(Value::as_str) {
-                    ctx.model = Some(model.to_string());
-                }
-                // Each assistant turn reports the full prompt it was given, so
-                // the newest one — not the sum — is what the agent is holding.
-                if let Some(usage) = event.pointer("/message/usage") {
-                    apply_usage(usage, ctx);
-                }
-                collect_tools(&event, &mut tools, &mut files);
-            }
-            Some("cost-state") => {
-                if let Some(cost) = event.get("totalCostUSD").and_then(Value::as_f64) {
-                    ctx.cost_usd = Some(cost);
-                }
-            }
-            _ => {}
-        }
-    }
-
-    tools.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
-    tools.truncate(MAX_TOOLS);
-    ctx.tools = tools
-        .into_iter()
-        .map(|(name, count)| ToolCount { name, count })
-        .collect();
-    // Newest touched files first.
-    files.reverse();
-    files.truncate(MAX_FILES);
-    ctx.files = files;
-    Some(())
-}
-
-fn apply_usage(usage: &Value, ctx: &mut PaneContext) {
-    let input = as_u64(usage.get("input_tokens"));
-    let cache_read = as_u64(usage.get("cache_read_input_tokens"));
-    let cache_write = as_u64(usage.get("cache_creation_input_tokens"));
-    ctx.input_tokens = input;
-    ctx.cache_read_tokens = cache_read;
-    ctx.cache_write_tokens = cache_write;
-    ctx.output_tokens = as_u64(usage.get("output_tokens"));
-    ctx.reasoning_tokens = as_u64(usage.pointer("/output_tokens_details/thinking_tokens"));
-    // What actually occupies the window on the next turn: the prompt that was
-    // just sent, whether it was cached or not.
-    ctx.context_tokens = input.saturating_add(cache_read).saturating_add(cache_write);
-}
-
-fn as_u64(value: Option<&Value>) -> u64 {
-    value
-        .and_then(|v| v.as_u64().or_else(|| v.as_i64().map(|n| n.max(0) as u64)))
-        .unwrap_or(0)
-}
-
-fn collect_tools(event: &Value, tools: &mut Vec<(String, u64)>, files: &mut Vec<String>) {
-    let Some(blocks) = event.pointer("/message/content").and_then(Value::as_array) else {
-        return;
-    };
-    for block in blocks {
-        if block.get("type").and_then(Value::as_str) != Some("tool_use") {
-            continue;
-        }
-        if let Some(name) = block.get("name").and_then(Value::as_str) {
-            match tools.iter_mut().find(|(known, _)| known == name) {
-                Some((_, count)) => *count += 1,
-                None => tools.push((name.to_string(), 1)),
-            }
-        }
-        if let Some(path) = block.pointer("/input/file_path").and_then(Value::as_str) {
-            let short = path.rsplit('/').next().unwrap_or(path).to_string();
-            files.retain(|f| f != &short);
-            files.push(short);
-        }
-    }
 }
 
 #[cfg(test)]
@@ -556,57 +482,33 @@ mod tests {
     }
 
     #[test]
-    fn context_limit_falls_back_for_unknown_models() {
-        assert_eq!(context_limit_for(Some("claude-opus-5")), 200_000);
+    fn million_token_models_are_matched_by_version_not_by_family() {
+        for model in [
+            "claude-opus-5",
+            "claude-opus-4-8",
+            "claude-opus-4-6",
+            "claude-fable-5-1",
+            "claude-mythos-5-1",
+            "claude-sonnet-5",
+            "claude-sonnet-4-6",
+        ] {
+            assert_eq!(claude_context_limit(Some(model)), 1_000_000, "{model}");
+        }
+        // The versions that would break a bare family-name match.
+        for model in ["claude-sonnet-4-5", "claude-opus-4-5", "claude-haiku-4-5"] {
+            assert_eq!(claude_context_limit(Some(model)), 200_000, "{model}");
+        }
+        assert_eq!(claude_context_limit(None), DEFAULT_CONTEXT_LIMIT);
+    }
+
+    #[test]
+    fn non_claude_models_report_an_unknown_window_rather_than_a_guess() {
+        assert_eq!(claude_context_limit(Some("gpt-5-codex")), 0);
+        assert_eq!(claude_context_limit(Some("grok-4.6")), 0);
+        // An unrecognised Claude id still gets the conservative floor.
         assert_eq!(
-            context_limit_for(Some("something-else")),
+            claude_context_limit(Some("claude-something-new")),
             DEFAULT_CONTEXT_LIMIT
         );
-        assert_eq!(context_limit_for(None), DEFAULT_CONTEXT_LIMIT);
-    }
-
-    #[test]
-    fn context_tokens_are_the_last_prompt_not_the_sum() {
-        let mut ctx = PaneContext::empty("p".into());
-        apply_usage(
-            &serde_json::json!({
-                "input_tokens": 32,
-                "cache_read_input_tokens": 54_852,
-                "cache_creation_input_tokens": 1_304,
-                "output_tokens": 1_475,
-                "output_tokens_details": { "thinking_tokens": 521 }
-            }),
-            &mut ctx,
-        );
-        assert_eq!(ctx.context_tokens, 32 + 54_852 + 1_304);
-        assert_eq!(ctx.reasoning_tokens, 521);
-        assert_eq!(ctx.output_tokens, 1_475);
-    }
-
-    #[test]
-    fn tools_are_counted_and_files_deduped_newest_last() {
-        let mut tools = Vec::new();
-        let mut files = Vec::new();
-        let event = serde_json::json!({
-            "message": { "content": [
-                { "type": "tool_use", "name": "Read", "input": { "file_path": "/a/one.ts" } },
-                { "type": "tool_use", "name": "Read", "input": { "file_path": "/a/two.ts" } },
-                { "type": "text", "text": "ignored" },
-                { "type": "tool_use", "name": "Edit", "input": { "file_path": "/a/one.ts" } }
-            ]}
-        });
-        collect_tools(&event, &mut tools, &mut files);
-        assert_eq!(
-            tools,
-            vec![("Read".to_string(), 2), ("Edit".to_string(), 1)]
-        );
-        assert_eq!(files, vec!["two.ts".to_string(), "one.ts".to_string()]);
-    }
-
-    #[test]
-    fn tree_sum_includes_descendants_and_survives_cycles() {
-        let by_pid = [(1u32, 10u64), (2, 20), (3, 5)].into_iter().collect();
-        let children = [(1u32, vec![2u32]), (2, vec![3, 1])].into_iter().collect();
-        assert_eq!(tree_sum(1, &by_pid, &children), 35);
     }
 }

@@ -60,14 +60,12 @@ import {
   type MemoryButtonHandle,
 } from "../modules/memory-library/memory-button";
 import {
-  mountAgentContextPanel,
-  type AgentContextPanelHandle,
-} from "../modules/agent-context/context-panel";
+  mountContextButton,
+  type ContextButtonHandle,
+} from "../modules/agents-flow/context-window";
 import { flushSaveAgents } from "../shared/persistence/agents-store";
 import { flushSaveWorkspaces } from "../shared/persistence/workspaces-store";
 import { bootstrapWorkspaces, type WorkspacesBootstrapHandle } from "./workspaces-bootstrap";
-import type { WorkspacesController } from "../modules/workspaces/state/workspaces-controller";
-import type { ProjectId } from "../modules/workspaces/state/types";
 import { wireWindowLifecycle } from "./lifecycle";
 import { wireQuitConfirm } from "./quit-confirm";
 import { TerminalRouter } from "./terminal-router";
@@ -97,7 +95,7 @@ export class AppController {
   private agentsController: AgentsController | null = null;
   private skillsButton: SkillsButtonHandle | null = null;
   private memoryButton: MemoryButtonHandle | null = null;
-  private agentContextPanel: AgentContextPanelHandle | null = null;
+  private contextButton: ContextButtonHandle | null = null;
   private unwireShortcuts: (() => void) | null = null;
   private unwireWindowLifecycle: (() => void) | null = null;
   private memoryGuard: MemoryGuardHandle | null = null;
@@ -172,6 +170,7 @@ export class AppController {
     };
     this.skillsButton = mountSkillsButton(projectScope);
     this.memoryButton = mountMemoryButton(projectScope);
+    this.contextButton = mountContextButton();
     await this.wirePtyEvents();
     this.wireGutters();
     this.wirePanelToggles();
@@ -196,7 +195,6 @@ export class AppController {
     // handler resolves through `this.palette?` so the Cmd-P keybinding wired
     // earlier in start() is a no-op until this line runs.
     this.palette = mountCommandPalette({ controller: this.workspaces.controller });
-    this.mountAgentContext(this.workspaces.controller);
 
     this.wireMemoryGuard(layout);
 
@@ -207,30 +205,6 @@ export class AppController {
       router: this.router,
       getState: () => workspaces.controller.getState(),
       beforeQuit: () => this.flushBeforeQuit(),
-    });
-  }
-
-  /**
-   * Live per-agent context panel in the right sidebar. Mounted after
-   * workspaces so project names and paths already resolve on the first poll,
-   * and skipped silently when the host element is absent (other windows reuse
-   * this controller's modules but not its markup).
-   */
-  private mountAgentContext(controller: WorkspacesController): void {
-    const host = document.getElementById("agent-context-host");
-    if (!host) return;
-    this.agentContextPanel = mountAgentContextPanel({
-      host,
-      source: this.router,
-      getProjects: () => {
-        const projects = new Map<ProjectId, { name: string; path: string }>();
-        for (const workspace of controller.getState().workspaces) {
-          for (const project of workspace.projects) {
-            projects.set(project.id, { name: project.name, path: project.path });
-          }
-        }
-        return projects;
-      },
     });
   }
 
@@ -289,8 +263,8 @@ export class AppController {
     this.memoryButton?.dispose();
     this.memoryButton = null;
 
-    this.agentContextPanel?.dispose();
-    this.agentContextPanel = null;
+    this.contextButton?.dispose();
+    this.contextButton = null;
 
     const agentsController = this.agentsController;
     this.agentsController = null;

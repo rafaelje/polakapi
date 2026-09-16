@@ -40,7 +40,9 @@ use crate::adv_review::{
     adv_create_run, adv_ensure_run_prompt, adv_read_run_file, adv_read_run_prompt,
     adv_read_state_file, adv_write_run_file, adv_write_run_prompt, adv_write_state_file,
 };
-use crate::agent_context::agent_context;
+use crate::agent_context::{
+    agent_context_detail, agent_context_entry, agent_context_list, agent_context_search,
+};
 use crate::agent_sessions::agent_list_sessions;
 use crate::commands::{
     app_exit, create_project_folder, fs_validate_path, open_file_in_editor, open_in_editor,
@@ -169,7 +171,10 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             agent_list_sessions,
-            agent_context,
+            agent_context_list,
+            agent_context_detail,
+            agent_context_entry,
+            agent_context_search,
             pty_spawn,
             pty_write,
             pty_resize,
