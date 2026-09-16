@@ -2,11 +2,9 @@ import { invoke } from "../../shared/tauri/invoke";
 import type { SkillEntry, SkillExplainResult } from "./types";
 
 export function listSkills(): Promise<SkillEntry[]> {
-  return invoke<SkillEntry[]>(
-    "skills_list",
-    undefined,
-    { errorMessage: "Could not scan installed skills" },
-  );
+  return invoke<SkillEntry[]>("skills_list", undefined, {
+    errorMessage: "Could not scan installed skills",
+  });
 }
 
 // `projectPath` names the repo that owns a project-scoped skill; the backend
