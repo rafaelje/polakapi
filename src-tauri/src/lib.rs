@@ -33,6 +33,7 @@ mod usage;
 use std::sync::{Arc, Mutex};
 use tauri::Manager;
 
+use crate::ctx::install::ctx_sync_hooks;
 use crate::db::Db;
 use crate::open::ShellRegistry;
 
@@ -147,6 +148,11 @@ pub fn run() {
                 {
                     eprintln!("polakapi: could not sweep context stores: {error}");
                 }
+                // Re-sync on every start so the hooks point at this binary even
+                // after polakapi moved or was rebuilt elsewhere.
+                if let Err(error) = ctx::install::ctx_sync_hooks(app.handle().clone()) {
+                    eprintln!("polakapi: could not sync context mode hooks: {error}");
+                }
                 // Open the prompts history DB at <app_config_dir>/polakapi.db
                 // and register it as `State<Mutex<Db>>` for the read commands.
                 // If opening fails we still boot the app — the read commands
@@ -185,6 +191,7 @@ pub fn run() {
             agent_context_detail,
             agent_context_entry,
             agent_context_search,
+            ctx_sync_hooks,
             pty_spawn,
             pty_write,
             pty_resize,

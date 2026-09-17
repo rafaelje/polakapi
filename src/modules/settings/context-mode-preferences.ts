@@ -47,25 +47,26 @@ export const CONTEXT_MODE_CLIS: readonly ContextModeCliInfo[] = [
   {
     id: "claude",
     label: "Claude Code",
-    enforcement: "Full: hooks can redirect a tool call before it runs.",
+    enforcement:
+      "Active: a hook reroutes large shell output (git log, gh, cat, find…) before it reaches the model, and tells it how to search what was stored.",
   },
   {
     id: "codex",
     label: "Codex",
     enforcement:
-      "Partial: hooks can block a call but not rewrite it, so the agent is asked to retry.",
+      "Not connected yet: Codex's hook output format has not been verified, so no hook is installed and this toggle has no effect.",
   },
   {
     id: "opencode",
     label: "OpenCode",
     enforcement:
-      "Instructions only: polakapi installs no hooks for it, so compliance is not enforced.",
+      "Not connected yet: it has no hooks polakapi can use, so this toggle has no effect.",
   },
   {
     id: "cursor",
     label: "Cursor",
     enforcement:
-      "Instructions only: polakapi installs no hooks for it, so compliance is not enforced.",
+      "Not connected yet: it has no hooks polakapi can use, so this toggle has no effect.",
   },
 ];
 

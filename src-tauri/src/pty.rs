@@ -199,6 +199,9 @@ pub fn spawn_session(
         &shell,
         crate::db::Db::resolve_path(&app).ok().as_deref(),
     );
+    if let Some(path) = crate::ctx::config::config_path_for_app(&app) {
+        cmd.env(crate::ctx::config::CONFIG_ENV, path);
+    }
 
     let child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
     drop(pair.slave);

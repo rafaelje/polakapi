@@ -20,7 +20,7 @@ async function start(): Promise<void> {
     </aside>
     <main>
       <section class="settings-panel" data-panel="app"><h2>App</h2><div class="settings-group"></div><p class="settings-note">Agent alerts require CLI hooks. Permission and input alerts are available for Claude; completion alerts work with Claude and Codex hooks. Restart agent sessions after enabling hooks.</p></section>
-      <section class="settings-panel" data-panel="context" hidden><h2>Context Mode</h2><div class="settings-group settings-group-context"></div><p class="settings-note">The engine is built and works today through <code>polakapi ctx</code> and the <code>polakapi ctx-mcp</code> server. What is not connected yet is this panel: the toggles are saved, but agents are not told the tools exist, so switching them on does not change agent behaviour yet.</p></section>
+      <section class="settings-panel" data-panel="context" hidden><h2>Context Mode</h2><div class="settings-group settings-group-context"></div><p class="settings-note">Switching Claude Code on installs two hooks in <code>~/.claude/settings.json</code>: one reroutes large shell output, the other tells the agent how to search it. They only act inside polakapi terminals and are removed when you switch Claude Code off. Restart Claude sessions that were already open.</p></section>
       <p class="settings-status" role="status"></p>
     </main>`;
   const group = host.querySelector<HTMLDivElement>(".settings-group")!;
@@ -284,6 +284,7 @@ async function start(): Promise<void> {
       onSaved: () => {
         status.textContent = "";
       },
+      syncHooks: () => invoke("ctx_sync_hooks"),
     });
   } catch (error) {
     status.textContent = `Could not load context mode settings: ${String(error)}`;

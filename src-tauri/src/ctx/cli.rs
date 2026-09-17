@@ -14,7 +14,8 @@ use crate::ctx::session::CtxSession;
 const USAGE: &str = "\
 polakapi ctx — keep large tool output out of the agent's context
 
-  polakapi ctx exec <command…>      run a command, store its output, print a summary or pointer
+  polakapi ctx exec [--source <label>] <command…>
+                                    run a command, store its output, print a summary or pointer
   polakapi ctx search <query>       search this session's offloaded output
         [--source <label>] [--limit <n>]
   polakapi ctx read <source> <n>    print one section verbatim
@@ -23,6 +24,20 @@ polakapi ctx — keep large tool output out of the agent's context
 Scoped to $POLAKAPI_PTY_ID, the terminal polakapi spawned the agent in.";
 
 pub fn run(args: &[String]) -> i32 {
+    // `exec` answers with the wrapped command's own exit status, so an agent
+    // whose command was routed through here still sees a failure as a failure.
+    if args.first().map(String::as_str) == Some("exec") {
+        return match exec(&args[1..]) {
+            Ok((text, code)) => {
+                println!("{text}");
+                code
+            }
+            Err(message) => {
+                eprintln!("polakapi ctx: {message}");
+                1
+            }
+        };
+    }
     match dispatch(args) {
         Ok(output) => {
             println!("{output}");
@@ -41,7 +56,7 @@ fn dispatch(args: &[String]) -> Result<String, String> {
     };
     match command {
         "help" | "--help" | "-h" => Ok(USAGE.to_string()),
-        "exec" => exec(&args[1..]),
+        "exec" => exec(&args[1..]).map(|(text, _)| text),
         "search" => search(&args[1..]),
         "read" => read(&args[1..]),
         "list" => list(),
@@ -57,14 +72,21 @@ fn open() -> Result<CtxSession, String> {
     CtxSession::open(&session_id, project.as_deref(), config::load_from_env())
 }
 
-fn exec(args: &[String]) -> Result<String, String> {
+fn exec(args: &[String]) -> Result<(String, i32), String> {
+    let (source, args) = match args {
+        [flag, label, rest @ ..] if flag == "--source" => (Some(label.clone()), rest),
+        _ => (None, args),
+    };
     if args.is_empty() {
         return Err("exec needs a command".into());
     }
     let command = args.join(" ");
     let output = crate::ctx::mcp::run_shell(&command, std::env::current_dir().ok().as_deref())?;
-    let source = format!("exec:{}", crate::ctx::mcp::source_slug(&command));
-    Ok(open()?.offload(&source, &output)?.context_text)
+    let source =
+        source.unwrap_or_else(|| format!("exec:{}", crate::ctx::mcp::source_slug(&command)));
+    let context = open()?.offload(&source, &output.text)?.context_text;
+    let code = output.code.unwrap_or(1);
+    Ok((crate::ctx::mcp::with_status(context, &output), code))
 }
 
 fn search(args: &[String]) -> Result<String, String> {

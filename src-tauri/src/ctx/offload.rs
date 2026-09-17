@@ -89,8 +89,8 @@ pub fn pointer(source: &str, chunks: &[crate::ctx::store::NewChunk]) -> String {
     let with_code = chunks.iter().filter(|chunk| chunk.has_code).count();
     format!(
         "Indexed {} sections ({with_code} with code) from: {source}\n\
-         Use ctx_search(query: \"...\") to query this content.\n\
-         Use source: \"{source}\" to scope results.",
+         Search it with `polakapi ctx search <query> --source {source}` (or ctx_search),\n\
+         then read a section verbatim with `polakapi ctx read {source} <n>`.",
         chunks.len()
     )
 }

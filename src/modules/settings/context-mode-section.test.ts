@@ -25,12 +25,16 @@ async function mount(patch: Partial<ContextModePreferences> = {}): Promise<HTMLD
   document.body.innerHTML = '<div class="settings-group"></div>';
   const group = document.querySelector<HTMLDivElement>(".settings-group")!;
   vi.mocked(loadContextMode).mockResolvedValue({ ...contextModeDefaults, ...patch });
-  await mountContextModeSection({ group, onError: vi.fn(), onSaved: vi.fn() });
+  await mountContextModeSection({ group, onError, onSaved: vi.fn(), syncHooks });
   return group;
 }
 
+const syncHooks = vi.fn().mockResolvedValue(undefined);
+const onError = vi.fn();
+
 beforeEach(() => {
   vi.clearAllMocks();
+  syncHooks.mockResolvedValue(undefined);
 });
 
 describe("context mode section", () => {
@@ -99,6 +103,39 @@ describe("context mode section", () => {
     storage.value = "project";
     storage.dispatchEvent(new Event("change"));
     expect(control<HTMLInputElement>("Persist after").disabled).toBe(true);
+  });
+
+  it("syncs the agent hooks after every successful save", async () => {
+    await mount({ enabled: false });
+    const master = control<HTMLInputElement>("Context mode");
+    master.checked = true;
+    master.dispatchEvent(new Event("change"));
+    await vi.waitFor(() => expect(syncHooks).toHaveBeenCalledOnce());
+    // The save has to land first: the sync reads the saved file.
+    expect(vi.mocked(saveContextMode).mock.invocationCallOrder[0]).toBeLessThan(
+      syncHooks.mock.invocationCallOrder[0],
+    );
+  });
+
+  it("does not sync hooks when the save itself failed", async () => {
+    await mount({ enabled: false });
+    vi.mocked(saveContextMode).mockRejectedValueOnce(new Error("disk full"));
+    const master = control<HTMLInputElement>("Context mode");
+    master.checked = true;
+    master.dispatchEvent(new Event("change"));
+    await vi.waitFor(() => expect(onError).toHaveBeenCalled());
+    expect(syncHooks).not.toHaveBeenCalled();
+  });
+
+  it("reports a hook sync failure without hiding that the settings were saved", async () => {
+    await mount({ enabled: false });
+    syncHooks.mockRejectedValueOnce("could not parse settings.json");
+    const master = control<HTMLInputElement>("Context mode");
+    master.checked = true;
+    master.dispatchEvent(new Event("change"));
+    await vi.waitFor(() =>
+      expect(onError).toHaveBeenCalledWith(expect.stringContaining("Settings saved, but")),
+    );
   });
 
   it("clamps a threshold typed out of range", async () => {

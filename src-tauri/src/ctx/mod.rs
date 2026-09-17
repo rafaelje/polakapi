@@ -11,10 +11,16 @@
 //   offload   — ties the above together for one tool result
 //   config    — the Context Mode settings the UI writes
 //   mcp       — the stdio server that exposes ctx_* to every CLI
+//   intercept — which agent shell commands to reroute, and the rewrite
+//   hook      — `polakapi ctx-hook`, the Claude Code hook handler
+//   install   — keeps the hooks in Claude's settings in step with the toggles
 
 pub mod chunk;
 pub mod cli;
 pub mod config;
+pub mod hook;
+pub mod install;
+pub mod intercept;
 pub mod mcp;
 pub mod offload;
 pub mod paths;

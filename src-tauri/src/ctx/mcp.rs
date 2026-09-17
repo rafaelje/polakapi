@@ -109,8 +109,8 @@ impl Server {
             .unwrap_or_else(|| format!("exec:{}", source_slug(command)));
 
         let output = run_shell(command, self.project.as_deref())?;
-        let result = self.session()?.offload(&source, &output)?;
-        Ok(result.context_text)
+        let result = self.session()?.offload(&source, &output.text)?;
+        Ok(with_status(result.context_text, &output))
     }
 
     fn search(&mut self, args: &Value) -> Result<String, String> {
@@ -271,7 +271,30 @@ fn plural(count: usize, word: &str) -> String {
 /// Runs the command with the user's own privileges — the same reach the agent's
 /// shell tool already has. The output is capped so one runaway process cannot
 /// exhaust memory.
-pub fn run_shell(command: &str, cwd: Option<&std::path::Path>) -> Result<String, String> {
+pub struct ShellOutput {
+    /// stdout followed by stderr.
+    pub text: String,
+    /// `None` when the process was killed by a signal.
+    pub code: Option<i32>,
+}
+
+impl ShellOutput {
+    pub fn succeeded(&self) -> bool {
+        self.code == Some(0)
+    }
+
+    /// Appended to whatever reaches the model: a summary or a pointer hides the
+    /// output, so without this a failing build would read as a success.
+    pub fn status_note(&self) -> Option<String> {
+        match self.code {
+            Some(0) => None,
+            Some(code) => Some(format!("Exit status {code}.")),
+            None => Some("The command was terminated by a signal.".to_string()),
+        }
+    }
+}
+
+pub fn run_shell(command: &str, cwd: Option<&std::path::Path>) -> Result<ShellOutput, String> {
     let mut cmd = if cfg!(windows) {
         let mut cmd = std::process::Command::new("cmd");
         cmd.arg("/C").arg(command);
@@ -295,7 +318,18 @@ pub fn run_shell(command: &str, cwd: Option<&std::path::Path>) -> Result<String,
         text.truncate(MAX_EXEC_OUTPUT);
         text.push_str("\n… output truncated by polakapi");
     }
-    Ok(text)
+    Ok(ShellOutput {
+        text,
+        code: output.status.code(),
+    })
+}
+
+/// The offloaded text plus the exit status when the command failed.
+pub fn with_status(context_text: String, output: &ShellOutput) -> String {
+    match output.status_note() {
+        Some(note) => format!("{context_text}\n{note}"),
+        None => context_text,
+    }
 }
 
 /// Entry point for the `polakapi ctx-mcp` subcommand.
@@ -339,6 +373,7 @@ mod tests {
             Some(project.to_path_buf()),
             CtxConfig {
                 enabled: true,
+                clis: vec!["claude".to_string()],
                 storage: Storage::Ephemeral,
                 promote_after_sources: 99,
                 policy: Policy {

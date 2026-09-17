@@ -27,7 +27,14 @@ impl CtxSession {
         project: Option<&Path>,
         config: CtxConfig,
     ) -> Result<Self, String> {
-        let persist_now = paths::should_persist(config.storage, 0, config.promote_after_sources);
+        // A session promoted by an earlier process already lives in the project.
+        // Each hooked command runs as its own process, so this is the only way
+        // a later call finds what an earlier one stored.
+        let already_promoted = project
+            .and_then(|project| paths::project_store(project, session_id))
+            .is_some_and(|dir| dir.join("ctx.db").is_file());
+        let persist_now = already_promoted
+            || paths::should_persist(config.storage, 0, config.promote_after_sources);
         let dir = match (persist_now, project) {
             (true, Some(project)) => {
                 paths::ensure_self_ignored(project)?;
@@ -137,6 +144,7 @@ mod tests {
     fn config(storage: Storage, promote_after: u64) -> CtxConfig {
         CtxConfig {
             enabled: true,
+            clis: vec!["claude".to_string()],
             storage,
             promote_after_sources: promote_after,
             policy: Policy {
@@ -196,6 +204,24 @@ mod tests {
 
         // The data survived the move, and remains searchable.
         assert_eq!(session.list().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn a_later_process_finds_a_session_that_was_already_promoted() {
+        // Each hooked command is its own `polakapi ctx exec` process, so the
+        // store has to be found again from disk, not from in-memory state.
+        let project = tempfile::tempdir().unwrap();
+        let id = format!("sess-reopen-{}", uuid::Uuid::new_v4());
+        {
+            let mut first =
+                CtxSession::open(&id, Some(project.path()), config(Storage::Promote, 1)).unwrap();
+            first.offload("exec:one", &body("a")).unwrap();
+            assert!(first.dir().starts_with(project.path()), "promoted");
+        }
+        let mut second =
+            CtxSession::open(&id, Some(project.path()), config(Storage::Promote, 1)).unwrap();
+        assert!(second.dir().starts_with(project.path()));
+        assert_eq!(second.list().unwrap().len(), 1);
     }
 
     #[test]

@@ -16,6 +16,8 @@ export interface ContextModeSectionOptions {
   onError: (message: string) => void;
   /** Clears the status line after a successful write. */
   onSaved: () => void;
+  /** Installs or removes the agent hooks so they match what was just saved. */
+  syncHooks: () => Promise<unknown>;
 }
 
 const STORAGE_OPTIONS: ReadonlyArray<readonly [string, string]> = [
@@ -25,16 +27,22 @@ const STORAGE_OPTIONS: ReadonlyArray<readonly [string, string]> = [
 ];
 
 export async function mountContextModeSection(opts: ContextModeSectionOptions): Promise<void> {
-  const { group, onError, onSaved } = opts;
+  const { group, onError, onSaved, syncHooks } = opts;
   let preferences = await loadContextMode();
   let saving = Promise.resolve();
 
   function save(patch: Partial<ContextModePreferences>): void {
     preferences = { ...preferences, ...patch };
     const snapshot = { ...preferences };
+    // Hooks are synced only after the file is written: the sync reads the saved
+    // settings, so running it earlier would install yesterday's choice.
     saving = saving.catch(() => {}).then(() => saveContextMode(snapshot));
-    void saving.then(onSaved, () =>
-      onError("Could not save context mode settings. Try changing the setting again."),
+    void saving.then(
+      () =>
+        syncHooks().then(onSaved, (error: unknown) =>
+          onError(`Settings saved, but the agent hooks could not be updated: ${String(error)}`),
+        ),
+      () => onError("Could not save context mode settings. Try changing the setting again."),
     );
     refresh();
   }

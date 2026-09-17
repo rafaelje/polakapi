@@ -59,6 +59,10 @@ pub fn route(bytes: u64, kind: DataKind, policy: &Policy) -> Route {
 /// sample of the content.
 pub fn classify(source: &str, sample: &str) -> DataKind {
     let label = source.to_ascii_lowercase();
+    // A label set by the interceptor already knows what the command produces.
+    if label.starts_with("log:") {
+        return DataKind::Aggregate;
+    }
     // Anything fetched or read is reference material by default.
     if label.starts_with("fetch:") || label.starts_with("read:") || label.starts_with("docs:") {
         return DataKind::ExactText;
@@ -186,6 +190,14 @@ mod tests {
         assert_eq!(
             classify("read:src/main.rs", "plain prose"),
             DataKind::ExactText
+        );
+    }
+
+    #[test]
+    fn a_log_label_is_summarised_even_when_it_looks_like_prose() {
+        assert_eq!(
+            classify("log:docker-logs-web", "# Heading\n\nprose"),
+            DataKind::Aggregate
         );
     }
 

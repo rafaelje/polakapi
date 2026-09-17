@@ -9,14 +9,24 @@ License 2.0), reimplemented natively rather than vendored — see §12.
 
 ## 0. Status
 
-Built and covered by tests: the store (SQLite + FTS5), the routing policy,
-chunking, summarising, the storage tiers with promotion, the settings section,
-and **two** ways for an agent to reach the tools — the MCP server and a plain
-`polakapi ctx` subcommand.
+Working end to end for **Claude Code**, verified against a real session: the
+agent ran `git log --oneline` on a 400-commit repository, received a 253-byte
+pointer instead of 29 KB, then located a single commit with `polakapi ctx search`
+without re-running git.
 
-Not built: hook enforcement (P5) and the savings line in the agent-context panel
-(P6). Until P5 lands, routing depends on the agent choosing to use the tools,
-which is what the per-CLI enforcement column in §4 is about.
+- Engine: store (SQLite + FTS5), routing, chunking, summarising, storage tiers
+  with promotion, `polakapi ctx` and `polakapi ctx-mcp`.
+- Wiring: switching Claude Code on in Settings installs a `PreToolUse` hook that
+  rewrites large-output shell commands through `polakapi ctx exec`, and a
+  `SessionStart` hook that tells the model how to search what was stored. Both
+  act only inside polakapi terminals, and are removed when switched off.
+- `PostToolUse` is not used: for built-in tools it cannot replace output that
+  already reached the model.
+- The rewrite omits `permissionDecision`. Verified empirically that the rewrite
+  still applies, so the user's normal approval flow is kept rather than skipped.
+
+Not wired: Codex (hook output format unverified), OpenCode and Cursor (no hooks
+polakapi can use), and the "Add .polakapi/ to .gitignore" toggle.
 
 ## 1. What the concept actually is
 
