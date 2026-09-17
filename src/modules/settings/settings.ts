@@ -20,7 +20,7 @@ async function start(): Promise<void> {
     </aside>
     <main>
       <section class="settings-panel" data-panel="app"><h2>App</h2><div class="settings-group"></div><p class="settings-note">Agent alerts require CLI hooks. Permission and input alerts are available for Claude; completion alerts work with Claude and Codex hooks. Restart agent sessions after enabling hooks.</p></section>
-      <section class="settings-panel" data-panel="context" hidden><h2>Context Mode</h2><div class="settings-group settings-group-context"></div><p class="settings-note">Switching Claude Code on installs two hooks in <code>~/.claude/settings.json</code>: one reroutes large shell output, the other tells the agent how to search it. They only act inside polakapi terminals and are removed when you switch Claude Code off. Restart Claude sessions that were already open.</p></section>
+      <section class="settings-panel" data-panel="context" hidden><h2>Context Mode</h2><div class="settings-group settings-group-context"></div><p class="settings-note">Switching a CLI on installs two hooks — in <code>~/.claude/settings.json</code> for Claude Code, <code>~/.cursor/hooks.json</code> for Cursor: one reroutes large shell output, the other tells the agent how to search it. They only act inside polakapi terminals and are removed when you switch the CLI off. Restart agent sessions that were already open.</p></section>
       <p class="settings-status" role="status"></p>
     </main>`;
   const group = host.querySelector<HTMLDivElement>(".settings-group")!;

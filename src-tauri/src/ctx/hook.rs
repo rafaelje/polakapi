@@ -5,24 +5,80 @@ use serde_json::{json, Value};
 use crate::ctx::config::{self, CtxConfig};
 use crate::ctx::intercept;
 
-// `polakapi ctx-hook` — the Claude Code hook that puts context mode in the
-// agent's path.
+// `polakapi ctx-hook --for <cli>` — the hook that puts context mode in the
+// agent's path, for Claude Code and for the Cursor CLI.
 //
-//   PreToolUse   rewrites a Bash command known to produce large output so it
-//                runs through `polakapi ctx exec`, which stores the output and
-//                hands the model a summary or a pointer instead.
-//   SessionStart tells the model the offloaded output exists and how to query it,
-//                because a pointer it cannot resolve is worse than no pointer.
+//   pre-tool-use   rewrites a shell command known to produce large output so it
+//                  runs through `polakapi ctx exec`, which stores the output and
+//                  hands the model a summary or a pointer instead.
+//   session-start  tells the model the offloaded output exists and how to query
+//                  it, because a pointer it cannot resolve is worse than none.
 //
-// PostToolUse is deliberately absent: it runs after the output already reached
-// the model and cannot replace it for built-in tools.
+// Both CLIs were verified against real sessions: each honours the rewrite without
+// a permission decision, and each surfaces session-start context to the model.
+// They differ in spelling — Claude sends `PreToolUse`/`Bash` and expects
+// `hookSpecificOutput`; Cursor sends `preToolUse`/`Shell` and expects
+// `updated_input` / `additional_context` at the top level.
 //
-// The hook lives in the user's global settings, so it also fires in Claude
-// sessions started outside polakapi. Every path therefore fails open: no
-// polakapi terminal, context mode off for this CLI, unparsable input or any
-// error all mean "print nothing and exit 0", which leaves Claude untouched.
+// `--for` exists because the Cursor CLI also runs the hooks in Claude's settings
+// file. Each installed hook acts only under the CLI it was installed for, so
+// running both CLIs never applies a rewrite twice.
+//
+// Post-tool-use is deliberately absent: it runs after the output reached the
+// model and cannot replace it for built-in tools.
+//
+// The hooks live in global settings, so they also fire in sessions started
+// outside polakapi. Every path therefore fails open: no polakapi terminal,
+// context mode off, the wrong CLI, unparsable input or any error all leave the
+// agent's call untouched.
 
-pub fn run() -> i32 {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Target {
+    Claude,
+    Cursor,
+}
+
+impl Target {
+    pub fn from_arg(value: &str) -> Option<Self> {
+        match value {
+            "claude" => Some(Target::Claude),
+            "cursor" => Some(Target::Cursor),
+            _ => None,
+        }
+    }
+
+    /// The id under which Settings stores this CLI's toggle.
+    pub fn config_id(self) -> &'static str {
+        match self {
+            Target::Claude => "claude",
+            Target::Cursor => "cursor",
+        }
+    }
+
+    /// The `POLAKAPI_CLI` value the PTY layer sets for this CLI's binary.
+    fn binary(self) -> &'static str {
+        match self {
+            Target::Claude => "claude",
+            Target::Cursor => "cursor-agent",
+        }
+    }
+
+    fn shell_tool(self) -> &'static str {
+        match self {
+            Target::Claude => "Bash",
+            Target::Cursor => "Shell",
+        }
+    }
+}
+
+pub fn run(args: &[String]) -> i32 {
+    let target = match args {
+        [flag, value, ..] if flag == "--for" => Target::from_arg(value),
+        _ => Some(Target::Claude),
+    };
+    let Some(target) = target else {
+        return 0;
+    };
     let mut input = String::new();
     if std::io::stdin().read_to_string(&mut input).is_err() {
         return 0;
@@ -34,18 +90,25 @@ pub fn run() -> i32 {
         return 0;
     };
     let env = HookEnv {
+        target,
         in_polakapi_terminal: std::env::var_os("POLAKAPI_PTY_ID").is_some(),
         cli: std::env::var("POLAKAPI_CLI").unwrap_or_default(),
         config: config::load_from_env(),
         bin: bin.to_string_lossy().into_owned(),
     };
-    if let Some(reply) = respond(&event, &env) {
-        println!("{reply}");
+    match respond(&event, &env) {
+        Some(reply) => println!("{reply}"),
+        // Cursor documents that a malformed answer to a permission hook blocks
+        // the action. Empty output did not block in testing, but an empty JSON
+        // object is valid under any reading of that rule.
+        None if target == Target::Cursor => println!("{{}}"),
+        None => {}
     }
     0
 }
 
 pub struct HookEnv {
+    pub target: Target,
     pub in_polakapi_terminal: bool,
     pub cli: String,
     pub config: CtxConfig,
@@ -54,23 +117,39 @@ pub struct HookEnv {
 
 /// The whole decision, free of I/O so it can be tested directly.
 pub fn respond(event: &Value, env: &HookEnv) -> Option<Value> {
-    if !env.in_polakapi_terminal || !env.config.enabled_for(&env.cli) {
+    let target = env.target;
+    if !env.in_polakapi_terminal
+        || env.cli != target.binary()
+        || !env.config.enabled_for(target.config_id())
+    {
         return None;
     }
-    match event.get("hook_event_name").and_then(Value::as_str)? {
-        "PreToolUse" => pre_tool_use(event, &env.bin),
-        "SessionStart" => Some(json!({
-            "hookSpecificOutput": {
-                "hookEventName": "SessionStart",
-                "additionalContext": instructions(&env.bin),
-            }
-        })),
+    let name = event
+        .get("hook_event_name")
+        .and_then(Value::as_str)?
+        .to_ascii_lowercase();
+    match name.as_str() {
+        "pretooluse" => pre_tool_use(event, env),
+        "sessionstart" => {
+            let text = instructions(&env.bin);
+            Some(match target {
+                Target::Claude => json!({
+                    "hookSpecificOutput": {
+                        "hookEventName": "SessionStart",
+                        "additionalContext": text,
+                    }
+                }),
+                Target::Cursor => json!({ "additional_context": text }),
+            })
+        }
         _ => None,
     }
 }
 
-fn pre_tool_use(event: &Value, bin: &str) -> Option<Value> {
-    if event.get("tool_name").and_then(Value::as_str) != Some("Bash") {
+fn pre_tool_use(event: &Value, env: &HookEnv) -> Option<Value> {
+    let target = env.target;
+    let bin = env.bin.as_str();
+    if event.get("tool_name").and_then(Value::as_str) != Some(target.shell_tool()) {
         return None;
     }
     let input = event.get("tool_input")?;
@@ -82,17 +161,19 @@ fn pre_tool_use(event: &Value, bin: &str) -> Option<Value> {
     let kind = intercept::classify_command(command)?;
 
     // Send back the whole input with only the command replaced, so the result
-    // is the same whether Claude merges or replaces `updatedInput`. No
-    // permissionDecision: the rewritten command goes through the user's normal
-    // approval flow instead of skipping it.
+    // is the same whether the CLI merges or replaces it. No permission decision:
+    // the rewritten command goes through the user's normal approval flow.
     let mut updated = input.clone();
     updated["command"] = Value::String(intercept::rewrite(bin, command, kind));
-    Some(json!({
-        "hookSpecificOutput": {
-            "hookEventName": "PreToolUse",
-            "updatedInput": updated,
-        }
-    }))
+    Some(match target {
+        Target::Claude => json!({
+            "hookSpecificOutput": {
+                "hookEventName": "PreToolUse",
+                "updatedInput": updated,
+            }
+        }),
+        Target::Cursor => json!({ "updated_input": updated }),
+    })
 }
 
 fn instructions(bin: &str) -> String {
@@ -118,15 +199,73 @@ mod tests {
 
     fn env(enabled: bool, cli: &str) -> HookEnv {
         HookEnv {
+            target: Target::Claude,
             in_polakapi_terminal: true,
             cli: cli.to_string(),
             config: CtxConfig {
                 enabled,
-                clis: vec!["claude".to_string()],
+                clis: vec!["claude".to_string(), "cursor".to_string()],
                 ..CtxConfig::default()
             },
             bin: "/opt/polakapi".to_string(),
         }
+    }
+
+    fn cursor_env() -> HookEnv {
+        HookEnv {
+            target: Target::Cursor,
+            ..env(true, "cursor-agent")
+        }
+    }
+
+    fn cursor_shell(command: &str) -> Value {
+        // Shape captured from cursor-agent 2026.09.15.
+        json!({
+            "hook_event_name": "preToolUse",
+            "tool_name": "Shell",
+            "tool_input": { "command": command, "cwd": "", "timeout": 30000 },
+            "cursor_version": "2026.09.15-d2fe57e"
+        })
+    }
+
+    #[test]
+    fn rewrites_a_cursor_shell_command_in_cursors_own_format() {
+        let reply = respond(&cursor_shell("git log --oneline"), &cursor_env()).unwrap();
+        let command = reply["updated_input"]["command"].as_str().unwrap();
+        assert!(command.starts_with("'/opt/polakapi' ctx exec --source 'read:"));
+        assert_eq!(reply["updated_input"]["timeout"], 30000);
+        assert!(reply.get("hookSpecificOutput").is_none());
+        assert!(reply.get("permission").is_none());
+    }
+
+    #[test]
+    fn cursor_session_start_uses_top_level_additional_context() {
+        let reply = respond(&json!({ "hook_event_name": "sessionStart" }), &cursor_env()).unwrap();
+        assert!(reply["additional_context"]
+            .as_str()
+            .unwrap()
+            .contains("ctx search"));
+    }
+
+    #[test]
+    fn a_hook_acts_only_under_the_cli_it_was_installed_for() {
+        // Cursor also runs the hooks in Claude's settings: the Claude hook must
+        // stay quiet there, or the command would be rewritten twice.
+        let mut claude_hook_in_cursor = env(true, "cursor-agent");
+        claude_hook_in_cursor.target = Target::Claude;
+        assert!(respond(&cursor_shell("git log"), &claude_hook_in_cursor).is_none());
+        assert!(respond(&bash("git log"), &claude_hook_in_cursor).is_none());
+
+        let mut cursor_hook_in_claude = env(true, "claude");
+        cursor_hook_in_claude.target = Target::Cursor;
+        assert!(respond(&bash("git log"), &cursor_hook_in_claude).is_none());
+    }
+
+    #[test]
+    fn a_cli_switched_off_in_settings_is_left_alone() {
+        let mut only_claude = cursor_env();
+        only_claude.config.clis = vec!["claude".to_string()];
+        assert!(respond(&cursor_shell("git log"), &only_claude).is_none());
     }
 
     fn bash(command: &str) -> Value {
@@ -173,7 +312,9 @@ mod tests {
     #[test]
     fn does_nothing_when_context_mode_is_off_or_this_cli_is_not_enabled() {
         assert!(respond(&bash("git log"), &env(false, "claude")).is_none());
-        assert!(respond(&bash("git log"), &env(true, "codex")).is_none());
+        let mut claude_off = env(true, "claude");
+        claude_off.config.clis = vec!["cursor".to_string()];
+        assert!(respond(&bash("git log"), &claude_off).is_none());
     }
 
     #[test]

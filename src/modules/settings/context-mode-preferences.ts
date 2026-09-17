@@ -60,21 +60,20 @@ export const CONTEXT_MODE_CLIS: readonly ContextModeCliInfo[] = [
     id: "opencode",
     label: "OpenCode",
     enforcement:
-      "Not connected yet: it has no hooks polakapi can use, so this toggle has no effect.",
+      "Not connected yet: polakapi has not verified a hook for it, so this toggle has no effect.",
   },
   {
     id: "cursor",
     label: "Cursor",
     enforcement:
-      "Not connected yet: it has no hooks polakapi can use, so this toggle has no effect.",
+      "Active for the cursor-agent CLI: a hook reroutes large shell output before it reaches the model, and tells it how to search what was stored.",
   },
 ];
 
 export const contextModeDefaults: ContextModePreferences = {
   enabled: false,
-  // The two CLIs polakapi can install hooks for start on; the other two would
-  // rely on the agent choosing to obey, so they are opt-in.
-  clis: { claude: true, codex: true, opencode: false, cursor: false },
+  // The CLIs with verified hooks start on; the others would do nothing yet.
+  clis: { claude: true, codex: false, opencode: false, cursor: true },
   storage: "promote",
   promoteAfterSources: 20,
   bypassKb: 1,

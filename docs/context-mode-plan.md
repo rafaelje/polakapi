@@ -9,24 +9,43 @@ License 2.0), reimplemented natively rather than vendored — see §12.
 
 ## 0. Status
 
-Working end to end for **Claude Code**, verified against a real session: the
-agent ran `git log --oneline` on a 400-commit repository, received a 253-byte
-pointer instead of 29 KB, then located a single commit with `polakapi ctx search`
-without re-running git.
+Working end to end for **Claude Code** and the **Cursor CLI** (`cursor-agent`),
+each verified against a real session: the agent ran `git log --oneline` on a
+400-commit repository, received a 253-byte pointer instead of 29 KB, then found a
+single commit with `polakapi ctx search` and `ctx read` without re-running git.
 
 - Engine: store (SQLite + FTS5), routing, chunking, summarising, storage tiers
   with promotion, `polakapi ctx` and `polakapi ctx-mcp`.
-- Wiring: switching Claude Code on in Settings installs a `PreToolUse` hook that
+- Wiring: switching a CLI on in Settings installs a pre-tool-use hook that
   rewrites large-output shell commands through `polakapi ctx exec`, and a
-  `SessionStart` hook that tells the model how to search what was stored. Both
-  act only inside polakapi terminals, and are removed when switched off.
-- `PostToolUse` is not used: for built-in tools it cannot replace output that
+  session-start hook that tells the model how to search what was stored. Claude
+  Code's go in `~/.claude/settings.json`, Cursor's in `~/.cursor/hooks.json`.
+  They act only inside polakapi terminals and are removed when switched off.
+- Post-tool-use is not used: for built-in tools it cannot replace output that
   already reached the model.
-- The rewrite omits `permissionDecision`. Verified empirically that the rewrite
-  still applies, so the user's normal approval flow is kept rather than skipped.
+- Rewrites carry no permission decision. Verified empirically in both CLIs that
+  the rewrite still applies, so the user's approval flow is kept.
 
-Not wired: Codex (hook output format unverified), OpenCode and Cursor (no hooks
-polakapi can use), and the "Add .polakapi/ to .gitignore" toggle.
+### What the Cursor CLI does, verified against `cursor-agent` 2026.09.15
+
+Probed with throwaway hooks before any of this was built, because both Cursor's
+docs and the upstream context-mode project were ambiguous or out of date:
+
+| Question | Result |
+| --- | --- |
+| Does `preToolUse` rewrite a `Shell` command with `updated_input`? | Yes — also without `permission`, and also in Claude's `hookSpecificOutput` format |
+| Does `sessionStart` `additional_context` reach the model? | Yes. Upstream reports it does not; that bug does not reproduce in this version |
+| Does the CLI run the hooks in `~/.claude/settings.json` too? | Yes — which is why every hook takes `--for <cli>` and acts only under its own CLI |
+| Does empty hook output block a shell command? | No, but the hook answers `{}` under Cursor since the docs say invalid output may |
+| Is the `_polakapi` marker key accepted in `hooks.json`? | Yes |
+
+Cursor sends `preToolUse` / `Shell` and an empty `cwd`, and expects
+`updated_input` and `additional_context` at the top level; Claude sends
+`PreToolUse` / `Bash` and expects `hookSpecificOutput`.
+
+Not wired: Codex (hook format unverified — the CLI is not installed here to test
+against), OpenCode (no hook verified), and the "Add .polakapi/ to .gitignore"
+toggle.
 
 ## 1. What the concept actually is
 

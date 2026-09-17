@@ -179,6 +179,9 @@ impl CtxStore {
         source: Option<&str>,
         limit: usize,
     ) -> Result<Vec<SearchRow>, String> {
+        let Some(query) = fts_query(query) else {
+            return Ok(Vec::new());
+        };
         let sql = "
             SELECT s.source, c.ordinal, c.heading, c.has_code,
                    snippet(ctx_fts, 0, '', '', '…', 24)
@@ -277,6 +280,31 @@ impl CtxStore {
     }
 }
 
+/// Turns what an agent types into a literal FTS5 query.
+///
+/// FTS5 gives meaning to characters agents use all the time: `name:` is a column
+/// filter, a hyphen splits into a column reference, a bare quote opens a string,
+/// and AND/OR/NOT are operators. Quoting every word makes each one literal. Words
+/// are still ANDed, and a trailing `*` keeps working as a prefix search.
+fn fts_query(input: &str) -> Option<String> {
+    let terms: Vec<String> = input
+        .split_whitespace()
+        .filter_map(|word| {
+            let (word, prefix) = match word.strip_suffix('*') {
+                Some(stem) => (stem, true),
+                None => (word, false),
+            };
+            let word = word.replace('"', "");
+            if !word.chars().any(char::is_alphanumeric) {
+                return None;
+            }
+            let quoted = format!("\"{word}\"");
+            Some(if prefix { format!("{quoted}*") } else { quoted })
+        })
+        .collect();
+    (!terms.is_empty()).then(|| terms.join(" "))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -322,6 +350,39 @@ mod tests {
         assert_eq!(hits[0].source, "exec:shell");
         assert_eq!(hits[0].heading.as_deref(), Some("Cleanup"));
         assert!(hits[0].snippet.contains("cleanup"));
+    }
+
+    #[test]
+    fn plain_text_queries_never_hit_fts5_syntax() {
+        // What agents actually type: a colon reads as a column filter, a hyphen
+        // as a column too, and bare AND/NOT or a stray quote as broken syntax.
+        let store = seeded();
+        for query in [
+            "cleanup:",
+            "returns-a",
+            "\"unbalanced",
+            "cleanup AND",
+            "NOT",
+            "function)",
+        ] {
+            assert!(
+                store.search("s1", query, None, 10).is_ok(),
+                "{query:?} errored"
+            );
+        }
+        assert_eq!(store.search("s1", "cleanup:", None, 10).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn a_trailing_star_still_searches_by_prefix() {
+        let store = seeded();
+        assert_eq!(store.search("s1", "clean*", None, 10).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn a_query_with_no_words_returns_nothing_instead_of_failing() {
+        let store = seeded();
+        assert!(store.search("s1", "  \"  ", None, 10).unwrap().is_empty());
     }
 
     #[test]

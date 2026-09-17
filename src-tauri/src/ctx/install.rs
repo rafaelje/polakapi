@@ -5,13 +5,17 @@ use serde_json::{json, Map, Value};
 
 use crate::ctx::config::{self, CtxConfig};
 
-// Installs and removes the context mode hooks in Claude Code's user settings so
-// they follow the Settings toggles.
+// Installs and removes the context mode hooks so they follow the Settings
+// toggles: Claude Code in ~/.claude/settings.json, the Cursor CLI in
+// ~/.cursor/hooks.json. Both formats were verified against real sessions,
+// including that a rewrite without a permission decision is honoured.
 //
-// The hooks carry their own marker, separate from the capture hooks', so syncing
-// context mode never touches the notification hooks or anything the user wrote.
-// Only Claude Code is wired: its hook format was verified end to end, including
-// that a rewrite without `permissionDecision` keeps the user's approval flow.
+// The two files differ in shape. Claude nests handlers inside matcher groups;
+// Cursor lists flat entries under a versioned root. Each hook passes `--for`, so
+// the Claude hook stays quiet when the Cursor CLI reads Claude's file too.
+//
+// Hooks carry their own marker, separate from the capture hooks', so syncing
+// never touches the notification hooks or anything the user wrote.
 
 const MARKER_KEY: &str = "_polakapi";
 const MARKER: &str = "polakapi-context-mode";
@@ -22,9 +26,18 @@ const HOOK_TIMEOUT_SECS: u64 = 10;
 pub struct SyncResult {
     /// True when the hooks are now present for Claude Code.
     pub claude_hooks: bool,
-    /// False when the file already matched and nothing was written.
+    /// True when the hooks are now present for the Cursor CLI.
+    pub cursor_hooks: bool,
+    /// False when every file already matched and nothing was written.
     pub changed: bool,
-    pub settings_path: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Format {
+    /// `{"hooks": {"Event": [{"matcher", "hooks": [handler]}]}}`
+    Claude,
+    /// `{"version": 1, "hooks": {"event": [handler]}}`
+    Cursor,
 }
 
 #[tauri::command]
@@ -42,18 +55,40 @@ pub fn sync_for_current_binary(config: &CtxConfig) -> Result<SyncResult, String>
         .into_owned();
     let home = crate::platform_command::user_home_dir()
         .ok_or_else(|| "user home directory is unavailable".to_string())?;
-    sync(
-        &claude_settings_path(&home),
-        &bin,
-        config.enabled_for("claude"),
-    )
+    sync_home(&home, &bin, config)
+}
+
+pub fn sync_home(home: &Path, bin: &str, config: &CtxConfig) -> Result<SyncResult, String> {
+    let claude = config.enabled_for("claude");
+    let cursor = config.enabled_for("cursor");
+    let claude_changed = sync(&claude_settings_path(home), bin, claude)?;
+    let cursor_changed = sync_cursor(&cursor_hooks_path(home), bin, cursor)?;
+    Ok(SyncResult {
+        claude_hooks: claude,
+        cursor_hooks: cursor,
+        changed: claude_changed || cursor_changed,
+    })
 }
 
 fn claude_settings_path(home: &Path) -> PathBuf {
     home.join(".claude").join("settings.json")
 }
 
-pub fn sync(path: &Path, bin: &str, enabled: bool) -> Result<SyncResult, String> {
+fn cursor_hooks_path(home: &Path) -> PathBuf {
+    home.join(".cursor").join("hooks.json")
+}
+
+/// Claude Code. Returns whether the file was written.
+pub fn sync(path: &Path, bin: &str, enabled: bool) -> Result<bool, String> {
+    sync_file(path, bin, enabled, Format::Claude)
+}
+
+/// Cursor CLI. Returns whether the file was written.
+pub fn sync_cursor(path: &Path, bin: &str, enabled: bool) -> Result<bool, String> {
+    sync_file(path, bin, enabled, Format::Cursor)
+}
+
+fn sync_file(path: &Path, bin: &str, enabled: bool, format: Format) -> Result<bool, String> {
     let original = match std::fs::read_to_string(path) {
         Ok(text) if !text.trim().is_empty() => Some(text),
         _ => None,
@@ -64,22 +99,75 @@ pub fn sync(path: &Path, bin: &str, enabled: bool) -> Result<SyncResult, String>
             .map_err(|e| format!("could not parse {}: {e}", path.display()))?,
         None => json!({}),
     };
-    let result = |changed| SyncResult {
-        claude_hooks: enabled,
-        changed,
-        settings_path: path.display().to_string(),
-    };
-
     let before = root.clone();
-    apply(&mut root, bin, enabled)?;
+    match format {
+        Format::Claude => apply(&mut root, bin, enabled)?,
+        Format::Cursor => apply_cursor(&mut root, bin, enabled)?,
+    }
     if root == before && (original.is_some() || !enabled) {
-        return Ok(result(false));
+        return Ok(false);
     }
 
     let text = serde_json::to_string_pretty(&root)
         .map_err(|e| format!("serialize {}: {e}", path.display()))?;
     write_atomically(path, &format!("{text}\n"))?;
-    Ok(result(true))
+    Ok(true)
+}
+
+fn hook_command(bin: &str, target: &str) -> String {
+    format!(
+        "{} ctx-hook --for {target}",
+        crate::ctx::intercept::shell_quote(bin)
+    )
+}
+
+/// Cursor: flat handlers. Removes ours, then adds the current ones when enabled.
+fn apply_cursor(root: &mut Value, bin: &str, enabled: bool) -> Result<(), String> {
+    let object = root
+        .as_object_mut()
+        .ok_or_else(|| "hooks file root is not a JSON object".to_string())?;
+    let had_version = object.contains_key("version");
+    let hooks = object
+        .entry("hooks")
+        .or_insert_with(|| json!({}))
+        .as_object_mut()
+        .ok_or_else(|| "hooks file \"hooks\" is not a JSON object".to_string())?;
+
+    for handlers in hooks.values_mut() {
+        if let Some(list) = handlers.as_array_mut() {
+            list.retain(|handler| !is_managed(handler));
+        }
+    }
+    hooks.retain(|_, handlers| handlers.as_array().is_none_or(|list| !list.is_empty()));
+
+    if enabled {
+        let command = hook_command(bin, "cursor");
+        let entry = |matcher: Option<&str>| {
+            let mut handler = json!({
+                "command": command,
+                "timeout": HOOK_TIMEOUT_SECS,
+                MARKER_KEY: MARKER,
+            });
+            if let Some(matcher) = matcher {
+                handler["matcher"] = Value::String(matcher.to_string());
+            }
+            handler
+        };
+        for (event, matcher) in [("preToolUse", Some("Shell")), ("sessionStart", None)] {
+            if let Some(list) = hooks
+                .entry(event)
+                .or_insert_with(|| json!([]))
+                .as_array_mut()
+            {
+                list.push(entry(matcher));
+            }
+        }
+    }
+    // Cursor requires a version; add it only when the file needs one.
+    if !had_version && !hooks.is_empty() {
+        object.insert("version".to_string(), json!(1));
+    }
+    Ok(())
 }
 
 /// Removes every context mode hook group, then adds the current ones back when
@@ -97,7 +185,7 @@ fn apply(root: &mut Value, bin: &str, enabled: bool) -> Result<(), String> {
 
     remove_managed(hooks);
     if enabled {
-        let command = format!("{} ctx-hook", crate::ctx::intercept::shell_quote(bin));
+        let command = hook_command(bin, "claude");
         add_group(hooks, "PreToolUse", Some("Bash"), &command);
         add_group(
             hooks,
@@ -188,12 +276,15 @@ mod tests {
         let root = read(&path);
         let pre = &root["hooks"]["PreToolUse"][0];
         assert_eq!(pre["matcher"], "Bash");
-        assert_eq!(pre["hooks"][0]["command"], "'/opt/polakapi' ctx-hook");
+        assert_eq!(
+            pre["hooks"][0]["command"],
+            "'/opt/polakapi' ctx-hook --for claude"
+        );
         assert_eq!(pre["hooks"][0][MARKER_KEY], MARKER);
         assert!(root["hooks"]["SessionStart"][0]["hooks"][0]["command"]
             .as_str()
             .unwrap()
-            .ends_with("ctx-hook"));
+            .ends_with("ctx-hook --for claude"));
         // Too late to replace output, so it is never installed.
         assert!(root["hooks"].get("PostToolUse").is_none());
     }
@@ -237,8 +328,8 @@ mod tests {
     fn syncing_twice_does_not_duplicate_and_does_not_rewrite() {
         let home = tempfile::tempdir().unwrap();
         let path = settings(&home);
-        assert!(sync(&path, "/opt/polakapi", true).unwrap().changed);
-        assert!(!sync(&path, "/opt/polakapi", true).unwrap().changed);
+        assert!(sync(&path, "/opt/polakapi", true).unwrap());
+        assert!(!sync(&path, "/opt/polakapi", true).unwrap());
         assert_eq!(
             read(&path)["hooks"]["PreToolUse"].as_array().unwrap().len(),
             1
@@ -253,14 +344,17 @@ mod tests {
         sync(&path, "/new/polakapi", true).unwrap();
         let pre = read(&path)["hooks"]["PreToolUse"].clone();
         assert_eq!(pre.as_array().unwrap().len(), 1);
-        assert_eq!(pre[0]["hooks"][0]["command"], "'/new/polakapi' ctx-hook");
+        assert_eq!(
+            pre[0]["hooks"][0]["command"],
+            "'/new/polakapi' ctx-hook --for claude"
+        );
     }
 
     #[test]
     fn disabling_when_nothing_was_installed_creates_no_file() {
         let home = tempfile::tempdir().unwrap();
         let path = settings(&home);
-        assert!(!sync(&path, "/opt/polakapi", false).unwrap().changed);
+        assert!(!sync(&path, "/opt/polakapi", false).unwrap());
         assert!(!path.exists());
     }
 
@@ -272,6 +366,87 @@ mod tests {
         std::fs::write(&path, "{ // a comment\n}").unwrap();
         assert!(sync(&path, "/opt/polakapi", true).is_err());
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "{ // a comment\n}");
+    }
+
+    fn cursor_file(dir: &tempfile::TempDir) -> PathBuf {
+        dir.path().join(".cursor").join("hooks.json")
+    }
+
+    #[test]
+    fn cursor_gets_flat_versioned_entries() {
+        let home = tempfile::tempdir().unwrap();
+        let path = cursor_file(&home);
+        assert!(sync_cursor(&path, "/opt/polakapi", true).unwrap());
+
+        let root = read(&path);
+        assert_eq!(root["version"], 1);
+        let pre = &root["hooks"]["preToolUse"][0];
+        assert_eq!(pre["command"], "'/opt/polakapi' ctx-hook --for cursor");
+        assert_eq!(pre["matcher"], "Shell");
+        assert_eq!(pre[MARKER_KEY], MARKER);
+        assert_eq!(
+            root["hooks"]["sessionStart"][0]["command"],
+            "'/opt/polakapi' ctx-hook --for cursor"
+        );
+        assert!(root["hooks"]["sessionStart"][0].get("matcher").is_none());
+    }
+
+    #[test]
+    fn cursor_disable_keeps_the_users_own_hooks_and_version() {
+        let home = tempfile::tempdir().unwrap();
+        let path = cursor_file(&home);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(
+            &path,
+            serde_json::to_string(&json!({
+                "version": 1,
+                "hooks": { "preToolUse": [{ "command": "./guard.sh", "matcher": "Shell" }] }
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+
+        sync_cursor(&path, "/opt/polakapi", true).unwrap();
+        assert_eq!(
+            read(&path)["hooks"]["preToolUse"].as_array().unwrap().len(),
+            2
+        );
+
+        sync_cursor(&path, "/opt/polakapi", false).unwrap();
+        let root = read(&path);
+        assert_eq!(root["version"], 1);
+        let pre = root["hooks"]["preToolUse"].as_array().unwrap();
+        assert_eq!(pre.len(), 1);
+        assert_eq!(pre[0]["command"], "./guard.sh");
+        assert!(root["hooks"].get("sessionStart").is_none());
+    }
+
+    #[test]
+    fn cursor_sync_is_idempotent_and_follows_a_moved_binary() {
+        let home = tempfile::tempdir().unwrap();
+        let path = cursor_file(&home);
+        assert!(sync_cursor(&path, "/old/polakapi", true).unwrap());
+        assert!(!sync_cursor(&path, "/old/polakapi", true).unwrap());
+        sync_cursor(&path, "/new/polakapi", true).unwrap();
+        let pre = read(&path)["hooks"]["preToolUse"].clone();
+        assert_eq!(pre.as_array().unwrap().len(), 1);
+        assert_eq!(pre[0]["command"], "'/new/polakapi' ctx-hook --for cursor");
+    }
+
+    #[test]
+    fn each_toggle_controls_only_its_own_file() {
+        let home = tempfile::tempdir().unwrap();
+        let config = CtxConfig {
+            enabled: true,
+            clis: vec!["cursor".to_string()],
+            ..CtxConfig::default()
+        };
+        let result = sync_home(home.path(), "/opt/polakapi", &config).unwrap();
+        assert!(result.cursor_hooks);
+        assert!(!result.claude_hooks);
+        assert!(cursor_file(&home).exists());
+        // Claude was off and had no file, so none is created.
+        assert!(!settings(&home).exists());
     }
 
     #[test]

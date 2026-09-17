@@ -29,7 +29,7 @@ fn main() {
         std::process::exit(polakapi_lib::ctx::mcp::run());
     }
     if args.len() >= 2 && args[1] == "ctx-hook" {
-        std::process::exit(polakapi_lib::ctx::hook::run());
+        std::process::exit(polakapi_lib::ctx::hook::run(&args[2..]));
     }
     if args.len() >= 2 && args[1] == "ctx" {
         std::process::exit(polakapi_lib::ctx::cli::run(&args[2..]));
