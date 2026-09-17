@@ -334,7 +334,7 @@ pub fn with_status(context_text: String, output: &ShellOutput) -> String {
 
 /// Entry point for the `polakapi ctx-mcp` subcommand.
 pub fn run() -> i32 {
-    let session_id = std::env::var("POLAKAPI_PTY_ID").unwrap_or_else(|_| "unscoped".into());
+    let session_id = crate::ctx::paths::session_key_from_env().unwrap_or_else(|| "unscoped".into());
     let project = std::env::current_dir().ok();
     let mut server = Server::new(session_id, project, config::load_from_env());
 

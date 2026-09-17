@@ -12,6 +12,7 @@ function callbacks(): ProjectPaneCallbacks {
     onRunInAll: vi.fn(),
     onCloseAll: vi.fn(),
     onReloadAll: vi.fn(),
+    onClearContextData: vi.fn(),
     onRevealFolder: vi.fn(),
     onOpenInEditor: vi.fn(),
     onOpenInShell: vi.fn(),
@@ -27,14 +28,14 @@ function project(path = "/tmp/simple-c"): Project {
   };
 }
 
-function mount() {
+function mount(isContextModeActive?: () => boolean) {
   const host = document.createElement("div");
   const grid = document.createElement("div");
   grid.id = "grid";
   host.append(grid);
   document.body.append(host);
   const handlers = callbacks();
-  const pane = mountProjectPane({ host, gridEl: grid, callbacks: handlers });
+  const pane = mountProjectPane({ host, gridEl: grid, callbacks: handlers, isContextModeActive });
   return { host, grid, handlers, pane };
 }
 
@@ -121,6 +122,23 @@ describe("project toolbar", () => {
     actions?.click();
     menuItem("Close all").click();
     expect(handlers.onCloseAll).toHaveBeenCalledOnce();
+  });
+
+  it("offers clearing context mode data only while context mode is on", () => {
+    let active = false;
+    const { handlers, pane } = mount(() => active);
+    pane.setActiveProject(project());
+    const actions = document.querySelector<HTMLButtonElement>("#project-actions-menu");
+
+    actions?.click();
+    expect(document.querySelector("#clear-context-data")).toBeNull();
+    actions?.click();
+
+    // Switched on in Settings while the app is running: no reload needed.
+    active = true;
+    actions?.click();
+    menuItem("Clear context mode data…").click();
+    expect(handlers.onClearContextData).toHaveBeenCalledOnce();
   });
 
   it("leaves suspend all as the only batch action with its own button", () => {

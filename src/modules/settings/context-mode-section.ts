@@ -4,6 +4,7 @@ import {
   saveContextMode,
   type ContextModePreferences,
 } from "./context-mode-preferences";
+import { openContextModeInfo } from "./context-mode-info";
 import { settingsNumber, settingsRow, settingsSelect, settingsToggle } from "./controls";
 
 // The "Context Mode" settings section. Owns nothing but the configuration:
@@ -47,11 +48,20 @@ export async function mountContextModeSection(opts: ContextModeSectionOptions): 
     refresh();
   }
 
+  const explain = document.createElement("button");
+  explain.type = "button";
+  explain.textContent = "How it works";
+  explain.addEventListener("click", () => {
+    void openContextModeInfo(preferences, explain);
+  });
   settingsRow(
     group,
     "Context mode",
     "Divert large tool results into a local store and give the model a searchable pointer instead, so its context stays free for the work.",
-  ).append(settingsToggle("Context mode", preferences.enabled, (enabled) => save({ enabled })));
+  ).append(
+    explain,
+    settingsToggle("Context mode", preferences.enabled, (enabled) => save({ enabled })),
+  );
 
   const cliToggles: HTMLInputElement[] = [];
   for (const cli of CONTEXT_MODE_CLIS) {

@@ -93,6 +93,10 @@ fn sync_file(path: &Path, bin: &str, enabled: bool, format: Format) -> Result<bo
         Ok(text) if !text.trim().is_empty() => Some(text),
         _ => None,
     };
+    // Nothing to remove from a file that does not exist, and nothing to add.
+    if original.is_none() && !enabled {
+        return Ok(false);
+    }
     let mut root: Value = match &original {
         Some(text) => serde_json::from_str(text)
             // Refuse to rewrite a file we cannot parse rather than lose its contents.
@@ -127,6 +131,7 @@ fn apply_cursor(root: &mut Value, bin: &str, enabled: bool) -> Result<(), String
         .as_object_mut()
         .ok_or_else(|| "hooks file root is not a JSON object".to_string())?;
     let had_version = object.contains_key("version");
+    let had_hooks = object.contains_key("hooks");
     let hooks = object
         .entry("hooks")
         .or_insert_with(|| json!({}))
@@ -163,8 +168,13 @@ fn apply_cursor(root: &mut Value, bin: &str, enabled: bool) -> Result<(), String
             }
         }
     }
+    let now_empty = hooks.is_empty();
+    // Do not leave behind a "hooks" key this sync introduced for nothing.
+    if now_empty && !had_hooks {
+        object.remove("hooks");
+    }
     // Cursor requires a version; add it only when the file needs one.
-    if !had_version && !hooks.is_empty() {
+    if !had_version && !now_empty {
         object.insert("version".to_string(), json!(1));
     }
     Ok(())
@@ -389,6 +399,23 @@ mod tests {
             "'/opt/polakapi' ctx-hook --for cursor"
         );
         assert!(root["hooks"]["sessionStart"][0].get("matcher").is_none());
+    }
+
+    #[test]
+    fn a_disabled_cli_never_creates_its_hooks_file() {
+        // Found on a real start: Cursor off still produced {"hooks": {}}, a file
+        // the user never had and one without the version Cursor requires.
+        let home = tempfile::tempdir().unwrap();
+        let config = CtxConfig {
+            enabled: true,
+            clis: vec!["claude".to_string()],
+            ..CtxConfig::default()
+        };
+        sync_home(home.path(), "/opt/polakapi", &config).unwrap();
+        assert!(settings(&home).exists());
+        assert!(!cursor_file(&home).exists());
+        assert!(!sync_cursor(&cursor_file(&home), "/opt/polakapi", false).unwrap());
+        assert!(!cursor_file(&home).exists());
     }
 
     #[test]

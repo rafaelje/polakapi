@@ -65,7 +65,7 @@ fn dispatch(args: &[String]) -> Result<String, String> {
 }
 
 fn open() -> Result<CtxSession, String> {
-    let session_id = std::env::var("POLAKAPI_PTY_ID").map_err(|_| {
+    let session_id = crate::ctx::paths::session_key_from_env().ok_or_else(|| {
         "POLAKAPI_PTY_ID is not set — run this inside a polakapi terminal".to_string()
     })?;
     let project: Option<PathBuf> = std::env::current_dir().ok();

@@ -72,8 +72,9 @@ export const CONTEXT_MODE_CLIS: readonly ContextModeCliInfo[] = [
 
 export const contextModeDefaults: ContextModePreferences = {
   enabled: false,
-  // The CLIs with verified hooks start on; the others would do nothing yet.
-  clis: { claude: true, codex: false, opencode: false, cursor: true },
+  // Nothing is switched on for the user: every CLI writes hooks into a global
+  // settings file, so enabling one has to be their decision.
+  clis: { claude: false, codex: false, opencode: false, cursor: false },
   storage: "promote",
   promoteAfterSources: 20,
   bypassKb: 1,

@@ -14,6 +14,7 @@
 //   intercept — which agent shell commands to reroute, and the rewrite
 //   hook      — `polakapi ctx-hook`, the Claude Code hook handler
 //   install   — keeps the hooks in Claude's settings in step with the toggles
+//   project_data — lets the user delete what a project has stored
 
 pub mod chunk;
 pub mod cli;
@@ -24,6 +25,7 @@ pub mod intercept;
 pub mod mcp;
 pub mod offload;
 pub mod paths;
+pub mod project_data;
 pub mod router;
 pub mod session;
 pub mod store;

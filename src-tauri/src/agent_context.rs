@@ -384,13 +384,13 @@ fn claude_transcript(
         .lock()
         .ok()
         .and_then(|db| db.cli_session_id_for_pty(pty_id).ok().flatten());
-    if let Some(id) = session_id {
-        let direct = dir.join(format!("{id}.jsonl"));
-        if direct.is_file() {
-            return Some(direct);
-        }
+    // When the session is known, only its own transcript will do. A session
+    // that has not written one yet (a fresh `/clear`) shows as empty rather than
+    // borrowing the previous session's, which is what the newest file would be.
+    match session_id {
+        Some(id) => Some(dir.join(format!("{id}.jsonl"))).filter(|path| path.is_file()),
+        None => newest_jsonl(&dir),
     }
-    newest_jsonl(&dir)
 }
 
 fn newest_jsonl(dir: &Path) -> Option<PathBuf> {

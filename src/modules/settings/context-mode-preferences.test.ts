@@ -62,6 +62,19 @@ describe("normalizeContextMode", () => {
   });
 });
 
+describe("contextModeDefaults", () => {
+  it("switches nothing on until the user decides", () => {
+    expect(contextModeDefaults.enabled).toBe(false);
+    expect(Object.values(contextModeDefaults.clis).every((on) => !on)).toBe(true);
+    expect(normalizeContextMode(undefined).clis).toEqual({
+      claude: false,
+      codex: false,
+      opencode: false,
+      cursor: false,
+    });
+  });
+});
+
 describe("isCliEnabled", () => {
   const prefs = (patch: Partial<ContextModePreferences>): ContextModePreferences => ({
     ...contextModeDefaults,
@@ -69,8 +82,10 @@ describe("isCliEnabled", () => {
   });
 
   it("requires both the master switch and the per-CLI switch", () => {
-    expect(isCliEnabled(prefs({ enabled: true }), "claude")).toBe(true);
-    expect(isCliEnabled(prefs({ enabled: false }), "claude")).toBe(false);
-    expect(isCliEnabled(prefs({ enabled: true }), "opencode")).toBe(false);
+    const claudeOn = { ...contextModeDefaults.clis, claude: true };
+    expect(isCliEnabled(prefs({ enabled: true, clis: claudeOn }), "claude")).toBe(true);
+    expect(isCliEnabled(prefs({ enabled: false, clis: claudeOn }), "claude")).toBe(false);
+    expect(isCliEnabled(prefs({ enabled: true, clis: claudeOn }), "opencode")).toBe(false);
+    expect(isCliEnabled(prefs({ enabled: true }), "claude")).toBe(false);
   });
 });

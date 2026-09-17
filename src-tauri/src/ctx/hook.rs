@@ -89,6 +89,7 @@ pub fn run(args: &[String]) -> i32 {
     let Ok(bin) = std::env::current_exe() else {
         return 0;
     };
+    record_session_start(&event);
     let env = HookEnv {
         target,
         in_polakapi_terminal: std::env::var_os("POLAKAPI_PTY_ID").is_some(),
@@ -105,6 +106,40 @@ pub fn run(args: &[String]) -> i32 {
         None => {}
     }
     0
+}
+
+/// Notes which CLI session just started in this terminal, so the store and the
+/// /context window follow `/clear` and new sessions instead of showing the last
+/// one. Done here as well as in the capture hook because Cursor has no capture
+/// hook, and context mode must work for users who never enabled notifications.
+fn record_session_start(event: &Value) {
+    let starting = event
+        .get("hook_event_name")
+        .and_then(Value::as_str)
+        .is_some_and(|name| name.eq_ignore_ascii_case("sessionstart"));
+    if !starting {
+        return;
+    }
+    let (Ok(pty_id), Some(db_path), Some(session)) = (
+        std::env::var("POLAKAPI_PTY_ID"),
+        std::env::var_os("POLAKAPI_DB_PATH"),
+        event.get("session_id").and_then(Value::as_str),
+    ) else {
+        return;
+    };
+    let cli = std::env::var("POLAKAPI_CLI").unwrap_or_default();
+    let cwd = event
+        .get("cwd")
+        .and_then(Value::as_str)
+        .filter(|cwd| !cwd.is_empty());
+    // A failed record only costs the scoping; it must never break the session.
+    let _ = crate::db::agent_session::record_start(
+        std::path::Path::new(&db_path),
+        &pty_id,
+        &cli,
+        session,
+        cwd,
+    );
 }
 
 pub struct HookEnv {

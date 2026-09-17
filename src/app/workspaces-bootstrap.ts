@@ -13,6 +13,10 @@ import {
   reloadAllPanes,
 } from "../modules/terminal/terminal-batch";
 import { openInEditor, openInShell, revealFolder } from "../modules/workspaces/open-external";
+import {
+  clearProjectContextData,
+  trackContextModeActivity,
+} from "../modules/context-mode/project-data";
 import { WorkspacesController } from "../modules/workspaces/state/workspaces-controller";
 import {
   mountWorkspacesPanel,
@@ -170,7 +174,10 @@ export async function bootstrapWorkspaces(
     else await reloadAllPanes(manager);
   };
 
+  const contextMode = await trackContextModeActivity();
+
   const projectPane = mountProjectPane({
+    isContextModeActive: () => contextMode.isActive(),
     host: elements.projectPaneHost,
     gridEl: elements.gridEl,
     callbacks: {
@@ -206,6 +213,10 @@ export async function bootstrapWorkspaces(
       onRunInAll: () => void runCommandInActivePanes(router),
       onCloseAll: () => void runTerminalBatch("Close"),
       onReloadAll: () => void runTerminalBatch("Reload"),
+      onClearContextData: () => {
+        const project = controller.getActiveProject();
+        if (project) void clearProjectContextData(project);
+      },
       onRevealFolder: (path) => {
         void revealFolder(path);
       },
@@ -333,6 +344,7 @@ export async function bootstrapWorkspaces(
   const unwireActivation = wireActivationShortcuts(controller);
 
   const unsubscribe = (): void => {
+    contextMode.dispose();
     unwireActivation();
     terminalDrop.detach();
     unsubscribeController();

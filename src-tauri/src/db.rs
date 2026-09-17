@@ -25,10 +25,13 @@ use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager, State};
 
+pub mod agent_session;
 mod hooks;
 mod migrations;
 
-pub use hooks::{install_hooks_for_cli, prompt_install_hooks, InstallHooksResult};
+pub use hooks::{
+    install_hooks_for_cli, prompt_install_hooks, refresh_installed_hooks, InstallHooksResult,
+};
 
 const MIGRATIONS: &[(i64, &str)] = &[(1, migrations::M_0001_INIT)];
 

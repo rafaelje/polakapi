@@ -78,8 +78,24 @@ fn try_run() -> Result<Option<CaptureEvent>, String> {
     } else {
         translate_cli_hook(&v)?
     };
-    // Prompt and session capture was replaced by the global agent sessions
-    // view, so lifecycle events are only translated for the diagnostics log.
+    // Prompts and responses are not stored: the global agent sessions view
+    // replaced that. Which session is running in each terminal still is, because
+    // the /context window and the context mode store both depend on it.
+    if let CaptureEvent::SessionStart {
+        pty_id,
+        cli,
+        cli_session_id: Some(cli_session_id),
+        cwd,
+    } = &event
+    {
+        crate::db::agent_session::record_start(
+            std::path::Path::new(&db_path),
+            pty_id,
+            cli,
+            cli_session_id,
+            cwd.as_deref(),
+        )?;
+    }
     Ok(Some(event))
 }
 

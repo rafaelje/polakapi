@@ -34,6 +34,7 @@ use std::sync::{Arc, Mutex};
 use tauri::Manager;
 
 use crate::ctx::install::ctx_sync_hooks;
+use crate::ctx::project_data::{ctx_clear_project_data, ctx_project_data_summary};
 use crate::db::Db;
 use crate::open::ShellRegistry;
 
@@ -153,6 +154,9 @@ pub fn run() {
                 if let Err(error) = ctx::install::ctx_sync_hooks(app.handle().clone()) {
                     eprintln!("polakapi: could not sync context mode hooks: {error}");
                 }
+                if let Err(error) = db::refresh_installed_hooks() {
+                    eprintln!("polakapi: could not refresh capture hooks: {error}");
+                }
                 // Open the prompts history DB at <app_config_dir>/polakapi.db
                 // and register it as `State<Mutex<Db>>` for the read commands.
                 // If opening fails we still boot the app — the read commands
@@ -192,6 +196,8 @@ pub fn run() {
             agent_context_entry,
             agent_context_search,
             ctx_sync_hooks,
+            ctx_project_data_summary,
+            ctx_clear_project_data,
             pty_spawn,
             pty_write,
             pty_resize,

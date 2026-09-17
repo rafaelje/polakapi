@@ -38,6 +38,25 @@ pub fn is_safe_session(session: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
 }
 
+/// Stores are per CLI session, not per terminal: `/clear` in the same terminal
+/// must start empty, and resuming a session must bring its data back. Falls back
+/// to the terminal alone when no session was recorded.
+pub fn session_key(pty_id: &str, cli_session_id: Option<&str>) -> String {
+    match cli_session_id {
+        Some(session) if !session.is_empty() => format!("{pty_id}-{session}"),
+        _ => pty_id.to_string(),
+    }
+}
+
+/// The store key for the terminal this process runs in, from the environment
+/// the PTY layer injects.
+pub fn session_key_from_env() -> Option<String> {
+    let pty_id = std::env::var("POLAKAPI_PTY_ID").ok()?;
+    let session = std::env::var_os("POLAKAPI_DB_PATH")
+        .and_then(|db| crate::db::agent_session::current(std::path::Path::new(&db), &pty_id));
+    Some(session_key(&pty_id, session.as_deref()))
+}
+
 pub fn temp_store(session: &str) -> Option<PathBuf> {
     if !is_safe_session(session) {
         return None;
@@ -162,6 +181,16 @@ fn copy_dir(from: &Path, to: &Path) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_new_cli_session_in_the_same_terminal_gets_its_own_store() {
+        let before = session_key("pty-1", Some("session-a"));
+        let after_clear = session_key("pty-1", Some("session-b"));
+        assert_ne!(before, after_clear);
+        assert!(is_safe_session(&before));
+        assert_eq!(session_key("pty-1", None), "pty-1");
+        assert_eq!(session_key("pty-1", Some("")), "pty-1");
+    }
 
     #[test]
     fn promotion_waits_for_the_threshold() {
