@@ -6,6 +6,9 @@
   "permissions": [
     "core:default",
     "core:webview:allow-create-webview-window",
+    "core:window:allow-unminimize",
+    "core:window:allow-show",
+    "core:window:allow-set-focus",
     "store:default",
     "dialog:default",
     "notification:default",
