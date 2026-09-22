@@ -48,12 +48,13 @@ pub fn offload(
         .and_then(|dir| write_artifact(dir, source, text).ok())
         .map(|path| path.to_string_lossy().into_owned());
 
-    let (context_text, chunks) = match decision {
-        Route::Summarize => (summarize(source, text), Vec::new()),
-        _ => {
-            let chunks = chunk_default(text);
-            (pointer(source, &chunks), chunks)
-        }
+    // Everything offloaded is indexed, whatever the model is handed back. A
+    // summary is a convenience, never the only copy: the agent asked for this
+    // output and has to be able to get all of it, exactly as it was.
+    let chunks = chunk_default(text);
+    let context_text = match decision {
+        Route::Summarize => format!("{}\n{}", summarize(source, text), retrieval_hint(source)),
+        _ => pointer(source, &chunks),
     };
 
     store.put_source(
@@ -80,6 +81,15 @@ fn kind_label(kind: crate::ctx::router::DataKind) -> &'static str {
         crate::ctx::router::DataKind::ExactText => "exact",
         crate::ctx::router::DataKind::Aggregate => "aggregate",
     }
+}
+
+/// How to reach the full output, appended to a summary so the agent knows the
+/// lines behind it are still available.
+pub fn retrieval_hint(source: &str) -> String {
+    format!(
+        "Full output kept: `polakapi ctx search <query> --source {source}`, \
+         then `polakapi ctx read {source} <n>`."
+    )
 }
 
 /// What replaces the raw bytes in the context. Deliberately carries no file
@@ -159,6 +169,45 @@ mod tests {
         assert!(result.context_text.contains("fetch:react"));
         // The pointer must not leak a filesystem path.
         assert!(!result.context_text.contains('/'));
+    }
+
+    #[test]
+    fn summarised_output_is_still_there_in_full() {
+        // The user's point: we store everything, a summary is only what the
+        // model is handed. Losing the lines behind it would be a data loss.
+        let mut store = store();
+        let text: String = (0..300)
+            .map(|i| {
+                format!(
+                    "2026-09-16T10:00:00 INFO request {i} from tenant-{}\n",
+                    i % 7
+                )
+            })
+            .collect();
+        let result = offload(&mut store, None, "s1", "log:web", &text, &policy()).unwrap();
+        assert_eq!(result.route, Route::Summarize);
+        assert!(result.context_text.contains("300 lines"));
+        assert!(result.context_text.contains("ctx search"));
+
+        // Every line is retrievable, not just the summary.
+        let hits = store.search("s1", "tenant-3", None, 5).unwrap();
+        assert!(!hits.is_empty(), "summarised output must stay searchable");
+        let body = store.read_chunk("s1", "log:web", 0).unwrap().unwrap();
+        assert!(body.contains("request 3 from tenant-3"));
+    }
+
+    #[test]
+    fn nothing_offloaded_is_lost_whatever_the_route() {
+        let mut store = store();
+        let text: String = (0..200).map(|i| format!("plain line {i}\n")).collect();
+        offload(&mut store, None, "s1", "exec:thing", &text, &policy()).unwrap();
+        let stored: String = (0..)
+            .map_while(|n| store.read_chunk("s1", "exec:thing", n).unwrap())
+            .collect();
+        assert_eq!(
+            stored, text,
+            "the stored copy must match the output exactly"
+        );
     }
 
     #[test]

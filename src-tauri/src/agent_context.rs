@@ -117,15 +117,22 @@ pub fn agent_context_detail(
     }
 
     let Some(path) = claude_transcript(&pane.pty_id, pane.cwd.as_deref(), &db) else {
+        let session = current_session(&pane.pty_id, &db);
         return Ok(ContextDetail {
             summary,
             breakdown: ContextBreakdown::default(),
             entries: Vec::new(),
-            note: Some(
-                "No transcript found for this pane's working directory yet. \
-                 It appears once the agent has taken its first turn."
+            // Two different situations, and saying which one saves the user
+            // from reading an empty panel as a failure.
+            note: Some(match session {
+                Some(session) => format!(
+                    "Session {session} has not written anything yet — it starts empty after \
+                     /clear or a fresh start. Its content appears here after the first exchange."
+                ),
+                None => "No session recorded for this terminal yet. It appears once the agent \
+                         starts, which needs the polakapi hooks enabled in Settings."
                     .to_string(),
-            ),
+            }),
         });
     };
     let Some(parsed) = transcript::parse(&path) else {
@@ -371,6 +378,12 @@ fn cwd_slug(cwd: &str) -> String {
         .collect()
 }
 
+fn current_session(pty_id: &str, db: &State<'_, StdMutex<Db>>) -> Option<String> {
+    db.lock()
+        .ok()
+        .and_then(|db| db.cli_session_id_for_pty(pty_id).ok().flatten())
+}
+
 fn claude_transcript(
     pty_id: &str,
     cwd: Option<&str>,
@@ -380,10 +393,7 @@ fn claude_transcript(
         .join(".claude")
         .join("projects")
         .join(cwd_slug(cwd?));
-    let session_id = db
-        .lock()
-        .ok()
-        .and_then(|db| db.cli_session_id_for_pty(pty_id).ok().flatten());
+    let session_id = current_session(pty_id, db);
     // When the session is known, only its own transcript will do. A session
     // that has not written one yet (a fresh `/clear`) shows as empty rather than
     // borrowing the previous session's, which is what the newest file would be.

@@ -275,6 +275,18 @@ else                                         -> Summarize  (logs, csv, metrics)
 `BYPASS_MAX` earns its place: upstream measures only **13% savings on a 0.4 KB
 payload** — below ~1 KB the machinery costs more than it saves.
 
+### 6.1b Nothing offloaded is ever lost
+
+Whatever route it takes, the full output is chunked and indexed. A summary is
+only what the *model* is handed; the bytes behind it stay searchable with
+`ctx search` and come back verbatim with `ctx read`. Chunks are exact slices of
+the input, so concatenating them reproduces the original byte for byte — the
+contract an agent depends on when it asked to read a file it is about to edit.
+
+Two bugs found by writing that contract as a test: heading lines were dropped
+from the body, so `# install deps` vanished from a shell script; and summarised
+sources were stored but never indexed, leaving their lines unreachable.
+
 ### 6.2 What returns to context
 
 Summarize path — the summary only, no handle. The raw artifact stays on disk for

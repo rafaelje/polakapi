@@ -129,7 +129,10 @@ impl Server {
         if hits.is_empty() {
             return Ok(format!("No matches for {query:?}."));
         }
-        let mut out = vec![format!("{} for {query:?}:", plural(hits.len(), "match"))];
+        let mut out = vec![format!(
+            "{} for {query:?}:",
+            plural(hits.len(), "match", "matches")
+        )];
         for hit in hits {
             let heading = hit.heading.unwrap_or_else(|| "(untitled)".into());
             out.push(format!(
@@ -260,11 +263,13 @@ pub fn source_slug(command: &str) -> String {
     }
 }
 
-fn plural(count: usize, word: &str) -> String {
+/// English plurals are irregular enough that guessing with an "s" produced
+/// "4 matchs"; the caller passes both forms.
+fn plural(count: usize, one: &str, many: &str) -> String {
     if count == 1 {
-        format!("1 {word}")
+        format!("1 {one}")
     } else {
-        format!("{count} {word}s")
+        format!("{count} {many}")
     }
 }
 
@@ -473,7 +478,7 @@ mod tests {
             "ctx_search",
             json!({ "query": "needle" }),
         ));
-        assert!(found.contains("matches for"), "{found}");
+        assert!(found.contains("4 matches for"), "{found}");
     }
 
     #[cfg(unix)]
@@ -506,6 +511,13 @@ mod tests {
         let project = tempfile::tempdir().unwrap();
         let mut server = server(project.path());
         assert!(text(&call(&mut server, "ctx_list", json!({}))).contains("Nothing offloaded"));
+    }
+
+    #[test]
+    fn counts_read_as_english() {
+        assert_eq!(plural(1, "match", "matches"), "1 match");
+        assert_eq!(plural(4, "match", "matches"), "4 matches");
+        assert_eq!(plural(0, "match", "matches"), "0 matches");
     }
 
     #[test]

@@ -2,47 +2,53 @@ use crate::ctx::store::NewChunk;
 
 // Splits offloaded text into retrievable chunks.
 //
-// Two rules do most of the work: a markdown heading starts a new chunk, and a
-// fenced code block is never split. Returning half a code block would defeat
-// the reason exact text is indexed rather than summarised.
+// Chunks are exact slices of the input: concatenating them reproduces the
+// original byte for byte. That is the contract the index route rests on — an
+// agent that asked to read a file must be able to get that file back, not an
+// approximation of it. A markdown heading starts a new chunk and names it, but
+// the heading line itself stays in the body, because in a shell or Python file
+// that line is a comment, not a title. A fenced code block is never split.
 
 const DEFAULT_MAX_CHARS: usize = 2_000;
 
 pub fn chunk_text(text: &str, max_chars: usize) -> Vec<NewChunk> {
+    if text.trim().is_empty() {
+        return Vec::new();
+    }
     let max_chars = max_chars.max(200);
     let mut chunks = Vec::new();
     let mut heading: Option<String> = None;
-    let mut body = String::new();
+    let mut start = 0usize;
+    let mut offset = 0usize;
     let mut in_fence = false;
 
-    for line in text.lines() {
-        let fence = line.trim_start().starts_with("```");
+    // `split_inclusive` keeps the line endings, so the slices join back up.
+    for line in text.split_inclusive('\n') {
+        let trimmed = line.trim_end_matches(['\n', '\r']);
+        let fence = trimmed.trim_start().starts_with("```");
+        let title = (!in_fence && !fence)
+            .then(|| heading_title(trimmed))
+            .flatten();
+        let too_long = !in_fence
+            && !fence
+            && offset > start
+            && (text[start..offset].chars().count() + trimmed.chars().count()) > max_chars;
+
+        if title.is_some() || too_long {
+            push(&mut chunks, &text[start..offset], &heading);
+            start = offset;
+            // A size split continues under the same heading; a new heading
+            // replaces it.
+            if let Some(title) = title {
+                heading = Some(title);
+            }
+        }
         if fence {
             in_fence = !in_fence;
         }
-
-        if !in_fence && !fence {
-            if let Some(title) = heading_title(line) {
-                flush(&mut chunks, &mut heading, &mut body);
-                heading = Some(title);
-                continue;
-            }
-        }
-
-        // Only break on size outside a fence, so code survives intact. The
-        // closing fence has already flipped `in_fence` back off, so it has to
-        // be excluded explicitly or the block loses its last line.
-        if !in_fence
-            && !fence
-            && !body.is_empty()
-            && body.chars().count() + line.chars().count() > max_chars
-        {
-            flush(&mut chunks, &mut heading.clone(), &mut body);
-        }
-        body.push_str(line);
-        body.push('\n');
+        offset += line.len();
     }
-    flush(&mut chunks, &mut heading, &mut body);
+    push(&mut chunks, &text[start..], &heading);
     chunks
 }
 
@@ -67,23 +73,45 @@ fn heading_title(line: &str) -> Option<String> {
     Some(rest.to_string())
 }
 
-fn flush(chunks: &mut Vec<NewChunk>, heading: &mut Option<String>, body: &mut String) {
-    let text = body.trim_end();
-    if text.is_empty() {
-        body.clear();
+fn push(chunks: &mut Vec<NewChunk>, body: &str, heading: &Option<String>) {
+    if body.is_empty() {
         return;
     }
     chunks.push(NewChunk {
         heading: heading.clone(),
-        has_code: text.contains("```"),
-        body: text.to_string(),
+        has_code: body.contains("```"),
+        body: body.to_string(),
     });
-    body.clear();
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The whole point of the index route: what goes in must come out.
+    fn roundtrip(text: &str, max: usize) -> String {
+        chunk_text(text, max)
+            .iter()
+            .map(|chunk| chunk.body.as_str())
+            .collect()
+    }
+
+    #[test]
+    fn chunks_put_back_together_reproduce_the_file() {
+        let file = "# Title\n\nprose line\n\n```rust\nfn main() {\n    let x = 1;\n}\n```\n\n## Next\n\tindented\nlast line";
+        assert_eq!(roundtrip(file, 2_000), file);
+        // Same when the size limit forces several chunks.
+        assert_eq!(roundtrip(file, 200), file);
+    }
+
+    #[test]
+    fn a_long_source_file_survives_chunking_byte_for_byte() {
+        let file: String = (0..400)
+            .map(|i| format!("    let value_{i} = compute({i}); // keeps  double  spaces\n"))
+            .collect();
+        let file = format!("fn main() {{\n{file}}}\n");
+        assert_eq!(roundtrip(&file, 500), file);
+    }
 
     #[test]
     fn splits_on_markdown_headings() {
@@ -92,6 +120,8 @@ mod tests {
         assert_eq!(chunks.len(), 2);
         assert_eq!(chunks[0].heading.as_deref(), Some("One"));
         assert!(chunks[0].body.contains("alpha"));
+        // The line itself stays: in a shell script it is a comment, not a title.
+        assert!(chunks[0].body.starts_with("# One"));
         assert_eq!(chunks[1].heading.as_deref(), Some("Two"));
     }
 
@@ -144,6 +174,15 @@ mod tests {
         let chunks = chunk_text("# Real\n```sh\n# not a heading\necho hi\n```", 2_000);
         assert_eq!(chunks.len(), 1);
         assert_eq!(chunks[0].heading.as_deref(), Some("Real"));
+    }
+
+    #[test]
+    fn a_shell_script_keeps_its_comments() {
+        let script = "#!/bin/sh\n# install deps\nnpm ci\n# run\nnpm test\n";
+        assert_eq!(roundtrip(script, 2_000), script);
+        assert!(chunk_text(script, 2_000)
+            .iter()
+            .any(|chunk| chunk.body.contains("# install deps")));
     }
 
     #[test]
