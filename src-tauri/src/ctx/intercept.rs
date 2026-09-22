@@ -34,19 +34,35 @@ const BLOCKED_FRAGMENTS: &[&str] = &[
 ];
 
 pub fn classify_command(command: &str) -> Option<OutputKind> {
+    classify(command).ok()
+}
+
+/// Like `classify_command`, but says why a command is left alone. The reason
+/// goes to the diagnostics log, so "context mode did nothing" is never a
+/// mystery.
+pub fn classify(command: &str) -> Result<OutputKind, String> {
     let trimmed = command.trim();
-    if trimmed.is_empty() || trimmed.contains('\n') {
-        return None;
+    if trimmed.is_empty() {
+        return Err("empty command".into());
+    }
+    if trimmed.contains('\n') {
+        return Err("multi-line command".into());
     }
     let padded = format!(" {trimmed} ");
-    if BLOCKED_FRAGMENTS
+    if let Some(fragment) = BLOCKED_FRAGMENTS
         .iter()
-        .any(|fragment| padded.contains(fragment))
+        .find(|fragment| padded.contains(*fragment))
     {
-        return None;
+        return Err(match *fragment {
+            "polakapi" => "already goes through polakapi".into(),
+            _ => format!("contains {:?}", fragment.trim()),
+        });
     }
-    if trimmed.ends_with('&') || trimmed.ends_with(" -f") {
-        return None;
+    if trimmed.ends_with('&') {
+        return Err("runs in the background".into());
+    }
+    if trimmed.ends_with(" -f") {
+        return Err("follows output".into());
     }
 
     // Every segment of a compound command has to be safe, and the first one
@@ -56,13 +72,17 @@ pub fn classify_command(command: &str) -> Option<OutputKind> {
         .map(str::trim)
         .filter(|segment| !segment.is_empty())
         .collect();
-    if segments
+    if let Some(segment) = segments
         .iter()
-        .any(|segment| matches!(program(segment), "cd" | "sudo" | "pushd" | "popd"))
+        .find(|segment| matches!(program(segment), "cd" | "sudo" | "pushd" | "popd"))
     {
-        return None;
+        return Err(format!("uses {}", program(segment)));
     }
-    classify_segment(segments.first()?)
+    let first = segments
+        .first()
+        .ok_or_else(|| "empty command".to_string())?;
+    classify_segment(first)
+        .ok_or_else(|| format!("{} is not a command known to print a lot", program(first)))
 }
 
 fn program(segment: &str) -> &str {
@@ -123,6 +143,21 @@ pub fn rewrite(bin: &str, command: &str, kind: OutputKind) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_skipped_command_comes_with_its_reason() {
+        assert_eq!(classify("cd src && cat main.rs").unwrap_err(), "uses cd");
+        assert_eq!(
+            classify("git log | head").unwrap_err(),
+            "contains \"| head\""
+        );
+        assert_eq!(
+            classify("npm test").unwrap_err(),
+            "npm is not a command known to print a lot"
+        );
+        assert!(classify("tail -f app.log").unwrap_err().contains("-f"));
+        assert!(classify("git log --oneline").is_ok());
+    }
 
     #[test]
     fn routes_commands_known_to_produce_large_output() {

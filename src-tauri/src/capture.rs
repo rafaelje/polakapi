@@ -115,10 +115,15 @@ fn log_path() -> Option<PathBuf> {
 }
 
 fn log_line(payload: &LogPayload) {
+    append_log_line(&payload.format());
+}
+
+/// Appends one line to the diagnostics log next to the database. Shared with
+/// the context mode hook so every hook polakapi installs reports to one place.
+pub(crate) fn append_log_line(line: &str) {
     let Some(path) = log_path() else {
         return;
     };
-    let line = payload.format();
     if let Some(parent) = path.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
@@ -228,7 +233,7 @@ fn env_cli() -> String {
     std::env::var("POLAKAPI_CLI").unwrap_or_default()
 }
 
-fn now_ts() -> String {
+pub(crate) fn now_ts() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
     let secs = SystemTime::now()
         .duration_since(UNIX_EPOCH)

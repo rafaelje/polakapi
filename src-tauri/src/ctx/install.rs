@@ -210,8 +210,31 @@ fn apply(root: &mut Value, bin: &str, enabled: bool) -> Result<(), String> {
     Ok(())
 }
 
+/// Ours by marker, or by the exact command shape only polakapi writes.
+///
+/// The marker is not enough on its own: Claude Code re-serialises
+/// settings.json through its own schema when it saves (a `/model` change is
+/// enough) and drops keys it does not know, including the marker. Every start
+/// then appended another copy of each hook instead of replacing it.
 fn is_managed(handler: &Value) -> bool {
     handler.get(MARKER_KEY).and_then(Value::as_str) == Some(MARKER)
+        || handler
+            .get("command")
+            .and_then(Value::as_str)
+            .is_some_and(is_own_command)
+}
+
+fn is_own_command(command: &str) -> bool {
+    let Some((binary, rest)) = command.trim().rsplit_once(" ctx-hook") else {
+        return false;
+    };
+    let target_ok = matches!(rest.trim(), "" | "--for claude" | "--for cursor");
+    let binary = binary.trim().trim_matches(['\'', '"']);
+    target_ok
+        && !binary.contains(char::is_whitespace)
+        && std::path::Path::new(binary)
+            .file_stem()
+            .is_some_and(|stem| stem == "polakapi")
 }
 
 fn remove_managed(hooks: &mut Map<String, Value>) {
@@ -474,6 +497,72 @@ mod tests {
         assert!(cursor_file(&home).exists());
         // Claude was off and had no file, so none is created.
         assert!(!settings(&home).exists());
+    }
+
+    #[test]
+    fn collapses_copies_left_after_claude_stripped_the_marker() {
+        // Observed on a real machine: Claude Code rewrote settings.json on a
+        // `/model` change and dropped `_polakapi`; five starts later there
+        // were five copies of each hook.
+        let home = tempfile::tempdir().unwrap();
+        let path = settings(&home);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let stripped = |event: &str| {
+            json!({
+                "matcher": if event == "PreToolUse" { "Bash" } else { "startup|resume" },
+                "hooks": [{ "type": "command", "command": "'/old/polakapi' ctx-hook --for claude", "timeout": 10 }]
+            })
+        };
+        std::fs::write(
+            &path,
+            serde_json::to_string(&json!({
+                "hooks": {
+                    "PreToolUse": [
+                        stripped("PreToolUse"), stripped("PreToolUse"), stripped("PreToolUse"),
+                        { "hooks": [{ "type": "command", "command": "read -r input; echo mine" }] }
+                    ],
+                    "SessionStart": [stripped("SessionStart"), stripped("SessionStart")]
+                }
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+
+        assert!(sync(&path, "/new/polakapi", true).unwrap());
+        let root = read(&path);
+        let pre = root["hooks"]["PreToolUse"].as_array().unwrap();
+        let ours: Vec<&Value> = pre
+            .iter()
+            .filter(|group| {
+                group["hooks"][0]["command"]
+                    .as_str()
+                    .unwrap()
+                    .contains("ctx-hook")
+            })
+            .collect();
+        assert_eq!(ours.len(), 1);
+        assert_eq!(
+            ours[0]["hooks"][0]["command"],
+            "'/new/polakapi' ctx-hook --for claude"
+        );
+        // The user's own hook is not ours and stays.
+        assert!(pre
+            .iter()
+            .any(|g| g["hooks"][0]["command"] == "read -r input; echo mine"));
+        assert_eq!(root["hooks"]["SessionStart"].as_array().unwrap().len(), 1);
+        // Disabling removes them even without the marker.
+        sync(&path, "/new/polakapi", false).unwrap();
+        assert!(!read(&path).to_string().contains("ctx-hook"));
+    }
+
+    #[test]
+    fn only_polakapis_own_command_shape_counts_as_ours() {
+        assert!(is_own_command("'/a/b/polakapi' ctx-hook --for claude"));
+        assert!(is_own_command("\"/a/polakapi.exe\" ctx-hook --for cursor"));
+        assert!(is_own_command("/a/polakapi ctx-hook"));
+        assert!(!is_own_command("/a/other ctx-hook --for claude"));
+        assert!(!is_own_command("polakapi ctx-hook --for codex"));
+        assert!(!is_own_command("echo polakapi ctx-hook --for claude | tee"));
     }
 
     #[test]

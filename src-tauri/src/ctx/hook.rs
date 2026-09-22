@@ -97,15 +97,49 @@ pub fn run(args: &[String]) -> i32 {
         config: config::load_from_env(),
         bin: bin.to_string_lossy().into_owned(),
     };
-    match respond(&event, &env) {
-        Some(reply) => println!("{reply}"),
+    let decision = decide(&event, &env);
+    log_decision(&event, &env, &decision);
+    match decision {
+        Ok(reply) => println!("{reply}"),
         // Cursor documents that a malformed answer to a permission hook blocks
         // the action. Empty output did not block in testing, but an empty JSON
         // object is valid under any reading of that rule.
-        None if target == Target::Cursor => println!("{{}}"),
-        None => {}
+        Err(_) if target == Target::Cursor => println!("{{}}"),
+        Err(_) => {}
     }
     0
+}
+
+/// One line per invocation in polakapi.db.log, next to the capture hook's,
+/// saying what was done with the command and why. Whether context mode acted
+/// has to be checkable from the outside, not inferred from what the agent
+/// happened to print.
+fn log_decision(event: &Value, env: &HookEnv, decision: &Result<Value, String>) {
+    let name = event
+        .get("hook_event_name")
+        .and_then(Value::as_str)
+        .unwrap_or("?");
+    let command = event
+        .get("tool_input")
+        .and_then(|input| input.get("command"))
+        .and_then(Value::as_str)
+        .map(|command| {
+            let short: String = command.chars().take(80).collect();
+            format!(" | {short}")
+        })
+        .unwrap_or_default();
+    let outcome = match decision {
+        Ok(_) if name.eq_ignore_ascii_case("sessionstart") => "instructions sent".to_string(),
+        Ok(_) => "rewritten through polakapi ctx exec".to_string(),
+        Err(reason) => format!("left alone: {reason}"),
+    };
+    let pty = std::env::var("POLAKAPI_PTY_ID").unwrap_or_else(|_| "?".into());
+    crate::capture::append_log_line(&format!(
+        "{} [CTX] cli={} pty={} event={name} {outcome}{command}",
+        crate::capture::now_ts(),
+        env.cli,
+        pty
+    ));
 }
 
 /// Notes which CLI session just started in this terminal, so the store and the
@@ -152,22 +186,42 @@ pub struct HookEnv {
 
 /// The whole decision, free of I/O so it can be tested directly.
 pub fn respond(event: &Value, env: &HookEnv) -> Option<Value> {
+    decide(event, env).ok()
+}
+
+/// The reply to print, or the reason there is none.
+pub fn decide(event: &Value, env: &HookEnv) -> Result<Value, String> {
     let target = env.target;
-    if !env.in_polakapi_terminal
-        || env.cli != target.binary()
-        || !env.config.enabled_for(target.config_id())
-    {
-        return None;
+    if !env.in_polakapi_terminal {
+        return Err("outside a polakapi terminal (POLAKAPI_PTY_ID unset)".into());
+    }
+    if env.cli != target.binary() {
+        return Err(format!(
+            "installed for {}, but this session runs {}",
+            target.config_id(),
+            if env.cli.is_empty() {
+                "an unknown CLI"
+            } else {
+                &env.cli
+            }
+        ));
+    }
+    if !env.config.enabled_for(target.config_id()) {
+        return Err(format!(
+            "context mode is off for {} in settings",
+            target.config_id()
+        ));
     }
     let name = event
         .get("hook_event_name")
-        .and_then(Value::as_str)?
+        .and_then(Value::as_str)
+        .ok_or_else(|| "event has no hook_event_name".to_string())?
         .to_ascii_lowercase();
     match name.as_str() {
         "pretooluse" => pre_tool_use(event, env),
         "sessionstart" => {
             let text = instructions(&env.bin);
-            Some(match target {
+            Ok(match target {
                 Target::Claude => json!({
                     "hookSpecificOutput": {
                         "hookEventName": "SessionStart",
@@ -177,30 +231,39 @@ pub fn respond(event: &Value, env: &HookEnv) -> Option<Value> {
                 Target::Cursor => json!({ "additional_context": text }),
             })
         }
-        _ => None,
+        other => Err(format!("event {other} is not handled")),
     }
 }
 
-fn pre_tool_use(event: &Value, env: &HookEnv) -> Option<Value> {
+fn pre_tool_use(event: &Value, env: &HookEnv) -> Result<Value, String> {
     let target = env.target;
     let bin = env.bin.as_str();
-    if event.get("tool_name").and_then(Value::as_str) != Some(target.shell_tool()) {
-        return None;
+    let tool = event
+        .get("tool_name")
+        .and_then(Value::as_str)
+        .unwrap_or("?");
+    if tool != target.shell_tool() {
+        return Err(format!("tool {tool} is not the shell tool"));
     }
-    let input = event.get("tool_input")?;
+    let input = event
+        .get("tool_input")
+        .ok_or_else(|| "no tool_input".to_string())?;
     // A background command reports through a different channel; leave it be.
     if input.get("run_in_background").and_then(Value::as_bool) == Some(true) {
-        return None;
+        return Err("runs in the background".into());
     }
-    let command = input.get("command").and_then(Value::as_str)?;
-    let kind = intercept::classify_command(command)?;
+    let command = input
+        .get("command")
+        .and_then(Value::as_str)
+        .ok_or_else(|| "no command in tool_input".to_string())?;
+    let kind = intercept::classify(command)?;
 
     // Send back the whole input with only the command replaced, so the result
     // is the same whether the CLI merges or replaces it. No permission decision:
     // the rewritten command goes through the user's normal approval flow.
     let mut updated = input.clone();
     updated["command"] = Value::String(intercept::rewrite(bin, command, kind));
-    Some(match target {
+    Ok(match target {
         Target::Claude => json!({
             "hookSpecificOutput": {
                 "hookEventName": "PreToolUse",
@@ -261,6 +324,24 @@ mod tests {
             "tool_input": { "command": command, "cwd": "", "timeout": 30000 },
             "cursor_version": "2026.09.15-d2fe57e"
         })
+    }
+
+    #[test]
+    fn every_way_of_doing_nothing_names_its_reason() {
+        let mut outside = env(true, "claude");
+        outside.in_polakapi_terminal = false;
+        assert!(decide(&bash("git log"), &outside)
+            .unwrap_err()
+            .contains("outside a polakapi terminal"));
+        assert!(decide(&bash("git log"), &env(false, "claude"))
+            .unwrap_err()
+            .contains("off for claude"));
+        assert!(decide(&bash("npm test"), &env(true, "claude"))
+            .unwrap_err()
+            .contains("npm is not a command"));
+        assert!(decide(&bash("git log"), &env(true, "cursor-agent"))
+            .unwrap_err()
+            .contains("runs cursor-agent"));
     }
 
     #[test]
