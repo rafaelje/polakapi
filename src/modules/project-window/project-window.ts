@@ -96,12 +96,25 @@ async function start(): Promise<void> {
   await manager.restoreSpecs(payload.specs, { adopt: true });
   manager.refit();
   send({ liveCount: manager.size });
+  const navigation = performance.getEntriesByType("navigation")[0] as
+    | PerformanceNavigationTiming
+    | undefined;
+  const slowest = performance
+    .getEntriesByType("resource")
+    .sort((a, b) => b.duration - a.duration)
+    .slice(0, 3)
+    .map((entry) => `${Math.round(entry.duration)}ms ${entry.name.split("/").pop() ?? ""}`)
+    .join(", ");
   void invoke("project_window_ready", {
     timings: {
       scriptStarted,
       stateLoaded,
       panesAdopted: performance.now(),
       panes: payload.specs.length,
+      htmlReceived: navigation?.responseEnd ?? -1,
+      domLoaded: navigation?.domContentLoadedEventEnd ?? -1,
+      resources: performance.getEntriesByType("resource").length,
+      slowest,
     },
   });
   new ResizeObserver(() => manager.refit()).observe(host);

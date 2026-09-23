@@ -46,6 +46,14 @@ pub struct ReadyTimings {
     pub state_loaded: f64,
     pub panes_adopted: f64,
     pub panes: u32,
+    #[serde(default)]
+    pub html_received: f64,
+    #[serde(default)]
+    pub dom_loaded: f64,
+    #[serde(default)]
+    pub resources: u32,
+    #[serde(default)]
+    pub slowest: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -154,10 +162,15 @@ pub fn project_window_ready(
     };
     let total = opened.elapsed().as_millis();
     eprintln!(
-        "polakapi: project window {} ready in {total} ms — webview up and script running \
-         after {:.0} ms, state fetched +{:.0} ms, {} pane(s) adopted +{:.0} ms",
+        "polakapi: project window {} ready in {total} ms — html at {:.0} ms, script running \
+         at {:.0} ms, DOM loaded at {:.0} ms ({} resources; slowest: {}), state fetched \
+         +{:.0} ms, {} pane(s) adopted +{:.0} ms",
         window.label(),
+        timings.html_received,
         timings.script_started,
+        timings.dom_loaded,
+        timings.resources,
+        timings.slowest,
         timings.state_loaded - timings.script_started,
         timings.panes,
         timings.panes_adopted - timings.state_loaded,
