@@ -1,4 +1,5 @@
 import { emitTo } from "@tauri-apps/api/event";
+import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { wireShortcuts } from "../../shared/keyboard/shortcuts";
 import { invoke } from "../../shared/tauri/invoke";
 import { onPtyData, onPtyExit } from "../terminal/pty-client";
@@ -6,7 +7,9 @@ import { attachTerminalDrop } from "../terminal/terminal-drop";
 import { TerminalManager } from "../terminal/terminal-manager";
 import type { ProjectId } from "../workspaces/state/types";
 import {
+  PROJECT_WINDOW_ADOPT_EVENT,
   PROJECT_WINDOW_UPDATE_EVENT,
+  isTerminalSpecPayload,
   type ProjectWindowState,
   type ProjectWindowUpdate,
 } from "./protocol";
@@ -24,7 +27,7 @@ async function start(): Promise<void> {
   const state = await invoke<ProjectWindowState>("project_window_state");
   const stateLoaded = performance.now();
   const projectId = state.projectId as ProjectId;
-  const { payload, title } = state;
+  const { payload, title, windowId } = state;
 
   // Bells are suppressed while the user is looking at this window, not main.
   let focused = document.hasFocus();
@@ -35,8 +38,8 @@ async function start(): Promise<void> {
     focused = false;
   });
 
-  const send = (update: Omit<ProjectWindowUpdate, "projectId">): void => {
-    void emitTo("main", PROJECT_WINDOW_UPDATE_EVENT, { projectId, ...update }).catch(
+  const send = (update: Omit<ProjectWindowUpdate, "projectId" | "windowId">): void => {
+    void emitTo("main", PROJECT_WINDOW_UPDATE_EVENT, { windowId, projectId, ...update }).catch(
       (error: unknown) => console.error("project window: could not reach main", error),
     );
   };
@@ -82,6 +85,12 @@ async function start(): Promise<void> {
     if (!pane) return;
     pane.markExited();
     manager.markExited(id);
+  });
+
+  // A terminal torn off this project comes back here while the grid is out.
+  await getCurrentWebviewWindow().listen(PROJECT_WINDOW_ADOPT_EVENT, ({ payload: spec }) => {
+    if (!isTerminalSpecPayload(spec) || manager.get(spec.id)) return;
+    void manager.addPane(spec, { adoptPtyId: spec.id, skipStartupCmd: true });
   });
 
   await manager.restoreSpecs(payload.specs, { adopt: true });

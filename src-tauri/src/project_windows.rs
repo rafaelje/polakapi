@@ -19,8 +19,14 @@ pub const CLOSED_EVENT: &str = "project-window:closed";
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProjectWindowState {
+    /// Names the window: the project id for a whole grid, or
+    /// `<project id>--<pty id>` for a single terminal torn off it.
+    pub window_id: String,
     pub project_id: String,
     pub title: String,
+    /// Where to open, in screen coordinates; the pointer when a pane is dropped.
+    #[serde(default)]
+    pub position: Option<(f64, f64)>,
     /// Opaque to Rust: the terminal specs and layout the window rebuilds.
     pub payload: serde_json::Value,
 }
@@ -45,11 +51,20 @@ pub struct ReadyTimings {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ClosedPayload {
-    pub project_id: String,
+    pub window_id: String,
 }
 
-pub fn label_for(project_id: &str) -> String {
-    format!("{LABEL_PREFIX}{project_id}")
+pub fn label_for(window_id: &str) -> String {
+    format!("{LABEL_PREFIX}{window_id}")
+}
+
+/// Ids become window labels; keep them to the characters labels allow.
+fn is_valid_window_id(id: &str) -> bool {
+    !id.is_empty()
+        && id.len() <= 200
+        && id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
 }
 
 pub fn is_project_window(label: &str) -> bool {
@@ -68,10 +83,10 @@ pub fn project_window_open(
     windows: tauri::State<'_, ProjectWindows>,
     state: ProjectWindowState,
 ) -> Result<(), String> {
-    if state.project_id.is_empty() || state.project_id.contains(['/', '\\']) {
-        return Err("invalid project id".into());
+    if !is_valid_window_id(&state.window_id) {
+        return Err("invalid window id".into());
     }
-    let label = label_for(&state.project_id);
+    let label = label_for(&state.window_id);
     windows.windows.lock().insert(label.clone(), state.clone());
     windows
         .opened_at
@@ -81,19 +96,29 @@ pub fn project_window_open(
         focus(&existing);
         return Ok(());
     }
-    tauri::WebviewWindowBuilder::new(
+    let single_pane = state.window_id != state.project_id;
+    let (width, height) = if single_pane {
+        (760.0, 480.0)
+    } else {
+        (1100.0, 720.0)
+    };
+    let mut builder = tauri::WebviewWindowBuilder::new(
         &app,
         &label,
         tauri::WebviewUrl::App("terminals.html".into()),
     )
     .title(format!("{} — polakapi", state.title))
-    .inner_size(1100.0, 720.0)
-    .min_inner_size(480.0, 320.0)
+    .inner_size(width, height)
+    .min_inner_size(360.0, 240.0)
     // The app's own background, so the window is dark from the first frame
     // instead of flashing white until the stylesheet arrives.
-    .background_color(tauri::window::Color(0x0d, 0x0d, 0x10, 0xff))
-    .build()
-    .map_err(|e| format!("could not open project window: {e}"))?;
+    .background_color(tauri::window::Color(0x0d, 0x0d, 0x10, 0xff));
+    if let Some((x, y)) = state.position {
+        builder = builder.position(x, y);
+    }
+    builder
+        .build()
+        .map_err(|e| format!("could not open project window: {e}"))?;
     Ok(())
 }
 
@@ -139,10 +164,10 @@ pub fn project_window_ready(
     );
 }
 
-/// Brings the project's window to the front. False when it has no window.
+/// Brings the window to the front. False when it does not exist.
 #[tauri::command]
-pub fn project_window_focus(app: AppHandle, project_id: String) -> bool {
-    match app.get_webview_window(&label_for(&project_id)) {
+pub fn project_window_focus(app: AppHandle, window_id: String) -> bool {
+    match app.get_webview_window(&label_for(&window_id)) {
         Some(window) => {
             focus(&window);
             true
@@ -152,8 +177,8 @@ pub fn project_window_focus(app: AppHandle, project_id: String) -> bool {
 }
 
 #[tauri::command]
-pub fn project_window_close(app: AppHandle, project_id: String) -> Result<(), String> {
-    if let Some(window) = app.get_webview_window(&label_for(&project_id)) {
+pub fn project_window_close(app: AppHandle, window_id: String) -> Result<(), String> {
+    if let Some(window) = app.get_webview_window(&label_for(&window_id)) {
         window.close().map_err(|e| e.to_string())?;
     }
     Ok(())
@@ -165,16 +190,25 @@ pub fn on_destroyed(app: &AppHandle, windows: &ProjectWindows, label: &str) {
     if !is_project_window(label) {
         return;
     }
-    let state = windows.windows.lock().remove(label);
-    let project_id = state
-        .map(|s| s.project_id)
-        .unwrap_or_else(|| label[LABEL_PREFIX.len()..].to_string());
-    let _ = app.emit_to("main", CLOSED_EVENT, ClosedPayload { project_id });
+    windows.windows.lock().remove(label);
+    windows.opened_at.lock().remove(label);
+    let window_id = label[LABEL_PREFIX.len()..].to_string();
+    let _ = app.emit_to("main", CLOSED_EVENT, ClosedPayload { window_id });
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn window_ids_stay_within_label_characters() {
+        assert!(is_valid_window_id("5f1c-aa"));
+        assert!(is_valid_window_id("5f1c-aa--0b2e-77"));
+        assert!(!is_valid_window_id(""));
+        assert!(!is_valid_window_id("../main"));
+        assert!(!is_valid_window_id("a/b"));
+        assert!(!is_valid_window_id("a b"));
+    }
 
     #[test]
     fn labels_are_derived_from_the_project_id_and_recognised() {

@@ -149,6 +149,10 @@ export async function bootstrapWorkspaces(
       if (active?.id === projectId) void activateProject(active);
     },
   });
+  router.setTearOffHandler((projectId, ptyId, x, y) => {
+    const project = findProject(controller.getState(), projectId)?.project;
+    if (project) void projectWindows.tearOff(project, ptyId, { x, y });
+  });
 
   const projectPane = mountProjectPane({
     host: elements.projectPaneHost,
@@ -329,6 +333,7 @@ export async function bootstrapWorkspaces(
   const unwireActivation = wireActivationShortcuts(controller);
 
   const unsubscribe = (): void => {
+    router.setTearOffHandler(null);
     projectWindows.dispose();
     unwireActivation();
     terminalDrop.detach();

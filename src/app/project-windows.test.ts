@@ -15,9 +15,11 @@ vi.mock("@tauri-apps/api/event", () => ({
     events.handlers.set(name, handler);
     return Promise.resolve(() => events.handlers.delete(name));
   }),
+  emitTo: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock("../shared/tauri/invoke", () => ({ invoke: vi.fn() }));
 
+import { emitTo } from "@tauri-apps/api/event";
 import { invoke } from "../shared/tauri/invoke";
 import type { Project, ProjectId } from "../modules/workspaces/state/types";
 import { createProjectWindows, type ProjectWindowsDeps } from "./project-windows";
@@ -32,8 +34,10 @@ const grid: ReleasedGrid = {
 
 function router() {
   return {
-    release: vi.fn().mockResolvedValue(grid),
+    release: vi.fn().mockResolvedValue(structuredClone(grid)),
     adopt: vi.fn().mockResolvedValue(undefined),
+    tearOff: vi.fn().mockResolvedValue({ id: "pty-b", cliId: "codex", title: "api" }),
+    adoptPanes: vi.fn().mockResolvedValue(true),
     setExternalCount: vi.fn(),
   };
 }
@@ -52,31 +56,32 @@ async function setup() {
   return { windows, deps, fakeRouter };
 }
 
+const opened = (): Array<{ windowId: string; payload: unknown; position?: unknown }> =>
+  vi
+    .mocked(invoke)
+    .mock.calls.filter(([command]) => command === "project_window_open")
+    .map(([, args]) => (args as { state: never }).state);
+
 beforeEach(() => {
   vi.clearAllMocks();
   events.handlers.clear();
   vi.mocked(invoke).mockResolvedValue(undefined);
 });
 
-describe("project windows", () => {
-  it("hands the grid to a new window without stopping any process", async () => {
+describe("a project's whole grid in its own window", () => {
+  it("hands the grid over without stopping any process", async () => {
     const { windows, fakeRouter } = await setup();
     await windows.detach(project);
 
     expect(fakeRouter.release).toHaveBeenCalledWith(project.id);
-    expect(invoke).toHaveBeenCalledWith(
-      "project_window_open",
-      {
-        state: {
-          projectId: "p1",
-          title: "ice-games",
-          payload: { path: "/repos/ice", ...grid },
-        },
-      },
-      expect.anything(),
-    );
+    expect(opened()[0]).toMatchObject({
+      windowId: "p1",
+      projectId: "p1",
+      title: "ice-games",
+      payload: { path: "/repos/ice", ...grid },
+    });
     // Only the live pane counts; the suspended one has no process.
-    expect(fakeRouter.setExternalCount).toHaveBeenCalledWith(project.id, 1);
+    expect(fakeRouter.setExternalCount).toHaveBeenCalledWith("p1", project.id, 1);
     expect(windows.isDetached(project.id)).toBe(true);
   });
 
@@ -91,39 +96,45 @@ describe("project windows", () => {
     expect(windows.isDetached(project.id)).toBe(false);
   });
 
-  it("persists what the window reports and keeps it for the return trip", async () => {
+  it("persists what the window reports and brings it back on close", async () => {
     const { windows, deps, fakeRouter } = await setup();
     await windows.detach(project);
 
     const specs = [{ id: "pty-a" }, { id: "pty-b" }];
     const layout = { type: "pane" as const, paneId: "pty-b" };
-    events.fire("project-window:update", { projectId: "p1", specs, layout, liveCount: 2 });
     events.fire("project-window:update", {
+      windowId: "p1",
+      projectId: "p1",
+      specs,
+      layout,
+      liveCount: 2,
+    });
+    events.fire("project-window:update", {
+      windowId: "p1",
       projectId: "p1",
       bell: { paneId: "pty-b", pending: true },
     });
 
     expect(deps.persistSpecs).toHaveBeenCalledWith(project.id, specs);
     expect(deps.persistLayout).toHaveBeenCalledWith(project.id, layout);
-    expect(fakeRouter.setExternalCount).toHaveBeenLastCalledWith(project.id, 2);
+    expect(fakeRouter.setExternalCount).toHaveBeenLastCalledWith("p1", project.id, 2);
     expect(deps.onBell).toHaveBeenCalledWith(project.id, "pty-b", true);
 
-    events.fire("project-window:closed", { projectId: "p1" });
+    events.fire("project-window:closed", { windowId: "p1" });
     await vi.waitFor(() => expect(fakeRouter.adopt).toHaveBeenCalled());
     expect(fakeRouter.adopt).toHaveBeenCalledWith(project, {
       specs,
       layout,
       activeCliId: "claude",
     });
-    expect(fakeRouter.setExternalCount).toHaveBeenLastCalledWith(project.id, null);
-    expect(deps.onReturned).toHaveBeenCalledWith(project.id);
+    expect(fakeRouter.setExternalCount).toHaveBeenLastCalledWith("p1", project.id, null);
     expect(windows.isDetached(project.id)).toBe(false);
   });
 
-  it("ignores reports about projects it did not hand out", async () => {
+  it("ignores windows it did not open", async () => {
     const { deps } = await setup();
-    events.fire("project-window:update", { projectId: "someone-else", liveCount: 9 });
-    events.fire("project-window:closed", { projectId: "someone-else" });
+    events.fire("project-window:update", { windowId: "x", projectId: "x", liveCount: 9 });
+    events.fire("project-window:closed", { windowId: "x" });
     expect(deps.persistSpecs).not.toHaveBeenCalled();
     expect(deps.onReturned).not.toHaveBeenCalled();
   });
@@ -134,13 +145,84 @@ describe("project windows", () => {
     vi.mocked(invoke).mockClear();
 
     await windows.detach(project);
-    expect(invoke).toHaveBeenCalledWith("project_window_focus", { projectId: "p1" });
+    expect(invoke).toHaveBeenCalledWith("project_window_focus", { windowId: "p1" });
 
     await windows.bringBack(project.id);
     expect(invoke).toHaveBeenCalledWith(
       "project_window_close",
-      { projectId: "p1" },
+      { windowId: "p1" },
       expect.anything(),
     );
+  });
+});
+
+describe("a terminal dragged out of the grid", () => {
+  it("opens that one terminal where it was dropped, process still running", async () => {
+    const { windows, fakeRouter } = await setup();
+    await windows.tearOff(project, "pty-b", { x: 900, y: 300 });
+
+    expect(fakeRouter.tearOff).toHaveBeenCalledWith(project.id, "pty-b");
+    expect(opened()[0]).toMatchObject({
+      windowId: "p1--pty-b",
+      title: "ice-games · api",
+      position: [900, 300],
+      payload: {
+        specs: [{ id: "pty-b", cliId: "codex", title: "api" }],
+        layout: { type: "pane", paneId: "pty-b" },
+        activeCliId: "codex",
+      },
+    });
+    expect(fakeRouter.setExternalCount).toHaveBeenCalledWith("p1--pty-b", project.id, 1);
+    // One terminal out is not the whole project out.
+    expect(windows.isDetached(project.id)).toBe(false);
+  });
+
+  it("never overwrites the project's saved terminals with the lone pane", async () => {
+    const { windows, deps } = await setup();
+    await windows.tearOff(project, "pty-b");
+    events.fire("project-window:update", {
+      windowId: "p1--pty-b",
+      projectId: "p1",
+      specs: [{ id: "pty-b" }],
+      layout: { type: "pane", paneId: "pty-b" },
+    });
+    expect(deps.persistSpecs).not.toHaveBeenCalled();
+    expect(deps.persistLayout).not.toHaveBeenCalled();
+  });
+
+  it("goes back into the project's grid when its window closes", async () => {
+    const { windows, fakeRouter } = await setup();
+    await windows.tearOff(project, "pty-b");
+
+    events.fire("project-window:closed", { windowId: "p1--pty-b" });
+
+    await vi.waitFor(() => expect(fakeRouter.adoptPanes).toHaveBeenCalled());
+    expect(fakeRouter.adoptPanes).toHaveBeenCalledWith(project.id, [
+      { id: "pty-b", cliId: "codex", title: "api" },
+    ]);
+    expect(fakeRouter.setExternalCount).toHaveBeenLastCalledWith("p1--pty-b", project.id, null);
+  });
+
+  it("goes to the project's window when the whole grid is out", async () => {
+    const { windows, fakeRouter } = await setup();
+    await windows.tearOff(project, "pty-b");
+    await windows.detach(project);
+
+    events.fire("project-window:closed", { windowId: "p1--pty-b" });
+
+    await vi.waitFor(() => expect(emitTo).toHaveBeenCalled());
+    expect(emitTo).toHaveBeenCalledWith("project-p1", "project-window:adopt", {
+      id: "pty-b",
+      cliId: "codex",
+      title: "api",
+    });
+    expect(fakeRouter.adoptPanes).not.toHaveBeenCalled();
+  });
+
+  it("does nothing for a terminal that is not in the grid", async () => {
+    const { windows, fakeRouter } = await setup();
+    fakeRouter.tearOff.mockResolvedValueOnce(null);
+    await windows.tearOff(project, "gone");
+    expect(opened()).toEqual([]);
   });
 });

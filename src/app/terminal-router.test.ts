@@ -108,11 +108,11 @@ describe("TerminalRouter handing a grid to another window", () => {
 
   it("keeps counting panes that live in another window", () => {
     const router = new TerminalRouter({ onPersistSpecs: vi.fn(), onPersistLayout: vi.fn() });
-    router.setExternalCount(pid("p1"), 3);
+    router.setExternalCount("w1", pid("p1"), 3);
     expect(router.getCount(pid("p1"))).toBe(3);
     expect(router.totalLiveCount()).toBe(3);
     expect(router.liveCountsByProject().get(pid("p1"))).toBe(3);
-    router.setExternalCount(pid("p1"), null);
+    router.setExternalCount("w1", pid("p1"), null);
     expect(router.getCount(pid("p1"))).toBe(0);
   });
 

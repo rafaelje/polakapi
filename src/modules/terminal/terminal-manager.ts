@@ -53,6 +53,8 @@ export interface TerminalManagerOptions {
   activeCliId?: string;
   /** Optional. When omitted, panes do not register bell notifications. */
   notificationContext?: NotificationContext;
+  /** A pane's header was dropped outside the window, at these screen coordinates. */
+  onTearOff?(this: void, ptyId: string, screenX: number, screenY: number): void;
 }
 
 export type TerminalManagerEvent =
@@ -85,15 +87,12 @@ export class TerminalManager {
   /** Per-pane bell handles, disposed on close() / dispose(). */
   private readonly bellHandles = new Map<string, BellNotificationHandle>();
   private readonly dockingHandles = new Map<string, TerminalDockingHandle>();
-  /**
-   * Guards `respawnPane` against re-entry — a double click on the badge menu
-   * (or two close-together IPC events) would otherwise spawn two replacement
-   * panes for one slot, with the second seeing the first's already-deleted
-   * spec and silently no-oping.
-   */
+  /** Guards `respawnPane` against re-entry: a double click would otherwise
+   * spawn two replacement panes for one slot. */
   private readonly respawning = new Set<string>();
   private activeCliId: string;
   readonly projectId: ProjectId;
+  private readonly onTearOff: TerminalManagerOptions["onTearOff"];
 
   constructor(opts: TerminalManagerOptions) {
     this.projectId = opts.projectId;
@@ -101,6 +100,7 @@ export class TerminalManager {
     this.initialLayout = opts.layout ?? null;
     this.activeCliId = opts.activeCliId && opts.activeCliId.length > 0 ? opts.activeCliId : "shell";
     this.notificationContext = opts.notificationContext ?? null;
+    this.onTearOff = opts.onTearOff;
     const grid = document.createElement("div");
     grid.className = "terminal-grid";
     this.grid = grid;
@@ -200,10 +200,7 @@ export class TerminalManager {
     return () => this.listeners.delete(listener);
   }
 
-  /**
-   * Spawn a pane backed by the given spec. When `spec.cwd` is undefined the
-   * manager substitutes `defaultCwd` (the owning project's path).
-   */
+  /** Spawn a pane backed by the given spec; an undefined `cwd` uses `defaultCwd`. */
   async addPane(spec?: Partial<TerminalSpec>, opts?: PaneAddOptions): Promise<TerminalPane | null> {
     const pane = new TerminalPane();
     const anchorId = this.focusedId;
@@ -285,15 +282,13 @@ export class TerminalManager {
       dock: (sourceId, targetId, position) => this.dock(sourceId, targetId, position),
       setFocus: (id) => this.setFocus(id),
       close: (id) => this.close(id),
+      tearOff: this.onTearOff,
       orderLength: () => this.order.length,
     });
     this.dockingHandles.set(ptyId, dockingHandle);
   }
 
-  /**
-   * F5: wire bell notifications. The manager is the single owner of the
-   * handle and disposes it in close()/dispose().
-   */
+  /** F5: bells; the manager owns the handle and disposes it in close()/dispose(). */
   private registerBell(pane: TerminalPane, ptyId: string): void {
     const ctx = this.notificationContext;
     if (!ctx) return;
@@ -422,7 +417,8 @@ export class TerminalManager {
     }
   }
 
-  async close(ptyId: string, opts?: { silent?: boolean }): Promise<void> {
+  /** `keepPty` removes the pane but leaves its process running for another window. */
+  async close(ptyId: string, opts?: { silent?: boolean; keepPty?: boolean }): Promise<void> {
     const pane = this.panes.get(ptyId);
     if (!pane) return;
     this.panes.delete(ptyId);
@@ -443,7 +439,7 @@ export class TerminalManager {
         if (this.focusedId) this.setFocus(this.focusedId, true);
       }
     }
-    await pane.dispose();
+    await pane.dispose(opts);
     if (!opts?.silent) {
       this.relayout();
       if (wasLive) this.emitCount();

@@ -1,10 +1,12 @@
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { emitTo, listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { invoke } from "../shared/tauri/invoke";
 import {
+  PROJECT_WINDOW_ADOPT_EVENT,
   PROJECT_WINDOW_CLOSED_EVENT,
   PROJECT_WINDOW_UPDATE_EVENT,
   isProjectWindowClosed,
   isProjectWindowUpdate,
+  paneWindowId,
   type ProjectWindowState,
 } from "../modules/project-window/protocol";
 import type { TerminalLayoutNode } from "../modules/terminal/terminal-layout";
@@ -12,9 +14,10 @@ import type { TerminalSpec } from "../modules/terminal/types";
 import type { Project, ProjectId } from "../modules/workspaces/state/types";
 import type { ReleasedGrid, TerminalRouter } from "./terminal-router";
 
-// Main-window side of "open in its own window": hands a project's grid to a
-// new window, keeps the last state that window reported so the grid can come
-// back exactly as it was, and takes it back when the window closes.
+// Main-window side of terminals living in their own windows: a project's whole
+// grid, or single terminals torn off by dragging them out. Keeps the last state
+// each window reported so everything comes back exactly as it was, and takes
+// it back when the window closes. Processes never stop.
 
 export interface ProjectWindowsDeps {
   router: TerminalRouter;
@@ -27,90 +30,143 @@ export interface ProjectWindowsDeps {
 }
 
 export interface ProjectWindowsHandle {
+  /** True when the project's whole grid is in its own window. */
   isDetached(projectId: ProjectId): boolean;
   detach(project: Project): Promise<void>;
+  tearOff(project: Project, ptyId: string, at?: { x: number; y: number }): Promise<void>;
   bringBack(projectId: ProjectId): Promise<void>;
   focus(projectId: ProjectId): Promise<void>;
   dispose(): void;
+}
+
+interface OpenWindow {
+  projectId: ProjectId;
+  /** A whole grid persists as the project's terminals; a torn-off pane does not. */
+  whole: boolean;
+  grid: ReleasedGrid;
 }
 
 export async function createProjectWindows(
   deps: ProjectWindowsDeps,
 ): Promise<ProjectWindowsHandle> {
   const { router } = deps;
-  const detached = new Map<ProjectId, ReleasedGrid>();
+  const open = new Map<string, OpenWindow>();
 
-  const onClosed = async (projectId: ProjectId): Promise<void> => {
-    const grid = detached.get(projectId);
-    if (!grid) return;
-    detached.delete(projectId);
-    router.setExternalCount(projectId, null);
-    const project = deps.findProject(projectId);
+  const open_ = async (
+    windowId: string,
+    project: Project,
+    entry: OpenWindow,
+    title: string,
+    at?: { x: number; y: number },
+  ): Promise<void> => {
+    open.set(windowId, entry);
+    router.setExternalCount(
+      windowId,
+      project.id,
+      entry.grid.specs.filter((spec) => !spec.suspended).length,
+    );
+    const state: ProjectWindowState = {
+      windowId,
+      projectId: project.id,
+      title,
+      payload: { path: project.path, ...entry.grid },
+      position: at ? [at.x, at.y] : undefined,
+    };
+    try {
+      await invoke("project_window_open", { state }, { toastOnError: true });
+    } catch (error) {
+      // The window never opened: put everything straight back.
+      await returnWindow(windowId);
+      throw error;
+    }
+  };
+
+  const returnWindow = async (windowId: string): Promise<void> => {
+    const entry = open.get(windowId);
+    if (!entry) return;
+    open.delete(windowId);
+    router.setExternalCount(windowId, entry.projectId, null);
+    const project = deps.findProject(entry.projectId);
     if (!project) return;
-    await router.adopt(project, grid);
-    deps.onReturned(projectId);
+    if (entry.whole) {
+      await router.adopt(project, entry.grid);
+      deps.onReturned(entry.projectId);
+      return;
+    }
+    // A torn-off pane goes back to wherever its project's grid is now.
+    if (open.has(entry.projectId)) {
+      for (const spec of entry.grid.specs) {
+        await emitTo(`project-${entry.projectId}`, PROJECT_WINDOW_ADOPT_EVENT, spec);
+      }
+    } else if (!(await router.adoptPanes(entry.projectId, entry.grid.specs))) {
+      await router.adopt(project, entry.grid);
+      deps.onReturned(entry.projectId);
+    }
   };
 
   const unlisten: UnlistenFn[] = [
     await listen(PROJECT_WINDOW_UPDATE_EVENT, ({ payload }) => {
       if (!isProjectWindowUpdate(payload)) return;
-      const projectId = payload.projectId as ProjectId;
-      const grid = detached.get(projectId);
-      if (!grid) return;
+      const entry = open.get(payload.windowId);
+      if (!entry) return;
+      const projectId = entry.projectId;
       if (payload.specs) {
-        grid.specs = payload.specs;
-        deps.persistSpecs(projectId, payload.specs);
+        entry.grid.specs = payload.specs;
+        if (entry.whole) deps.persistSpecs(projectId, payload.specs);
       }
       if ("layout" in payload) {
-        grid.layout = payload.layout ?? null;
-        deps.persistLayout(projectId, grid.layout);
+        entry.grid.layout = payload.layout ?? null;
+        if (entry.whole) deps.persistLayout(projectId, entry.grid.layout);
       }
-      if (payload.liveCount !== undefined) router.setExternalCount(projectId, payload.liveCount);
+      if (payload.liveCount !== undefined) {
+        router.setExternalCount(payload.windowId, projectId, payload.liveCount);
+      }
       if (payload.bell) deps.onBell(projectId, payload.bell.paneId, payload.bell.pending);
     }),
     await listen(PROJECT_WINDOW_CLOSED_EVENT, ({ payload }) => {
       if (!isProjectWindowClosed(payload)) return;
-      void onClosed(payload.projectId as ProjectId).catch((error: unknown) =>
-        console.error("project window: could not take the grid back", error),
+      void returnWindow(payload.windowId).catch((error: unknown) =>
+        console.error("project window: could not take its terminals back", error),
       );
     }),
   ];
 
   return {
-    isDetached: (projectId) => detached.has(projectId),
+    isDetached: (projectId) => open.get(projectId)?.whole === true,
     async detach(project) {
-      if (detached.has(project.id)) {
-        await invoke("project_window_focus", { projectId: project.id });
+      if (open.has(project.id)) {
+        await invoke("project_window_focus", { windowId: project.id });
         return;
       }
       const grid = await router.release(project.id);
       if (!grid) return;
-      detached.set(project.id, grid);
-      router.setExternalCount(project.id, grid.specs.filter((s) => !s.suspended).length);
-      const state: ProjectWindowState = {
-        projectId: project.id,
-        title: project.name,
-        payload: { path: project.path, ...grid },
+      await open_(project.id, project, { projectId: project.id, whole: true, grid }, project.name);
+    },
+    async tearOff(project, ptyId, at) {
+      const spec = await router.tearOff(project.id, ptyId);
+      if (!spec) return;
+      const grid: ReleasedGrid = {
+        specs: [spec],
+        layout: { type: "pane", paneId: spec.id },
+        activeCliId: spec.cliId ?? "shell",
       };
-      try {
-        await invoke("project_window_open", { state }, { toastOnError: true });
-      } catch (error) {
-        // The window never opened: put the grid straight back.
-        detached.delete(project.id);
-        router.setExternalCount(project.id, null);
-        await router.adopt(project, grid);
-        deps.onReturned(project.id);
-        throw error;
-      }
+      const title = spec.title ? `${project.name} · ${spec.title}` : project.name;
+      await open_(
+        paneWindowId(project.id, ptyId),
+        project,
+        { projectId: project.id, whole: false, grid },
+        title,
+        at,
+      );
     },
     async bringBack(projectId) {
-      if (!detached.has(projectId)) return;
-      // Closing the window is what brings the grid back (see onClosed).
-      await invoke("project_window_close", { projectId }, { toastOnError: true });
+      if (!open.has(projectId)) return;
+      // Closing the window is what brings the grid back (see returnWindow).
+      await invoke("project_window_close", { windowId: projectId }, { toastOnError: true });
     },
     async focus(projectId) {
-      if (!detached.has(projectId)) return;
-      await invoke("project_window_focus", { projectId }, { toastOnError: false });
+      if (!open.has(projectId)) return;
+      await invoke("project_window_focus", { windowId: projectId }, { toastOnError: false });
     },
     dispose() {
       for (const stop of unlisten) stop();

@@ -50,8 +50,11 @@ export class TerminalRouter {
   private mountToken = 0;
   private notificationContext: NotificationContext | null = null;
   private readonly activity: ProjectActivityTracker;
-  /** Live panes projects have in their own windows, so counts stay whole. */
-  private readonly externalCounts = new Map<ProjectId, number>();
+  /** Live panes in other windows, by window id, so project counts stay whole. */
+  private readonly external = new Map<string, { projectId: ProjectId; count: number }>();
+  private tearOffHandler:
+    | ((projectId: ProjectId, ptyId: string, x: number, y: number) => void)
+    | null = null;
 
   constructor(private readonly opts: TerminalRouterOptions) {
     this.activity = new ProjectActivityTracker({
@@ -71,6 +74,13 @@ export class TerminalRouter {
     for (const manager of this.managers.values()) manager.setNotificationContext(ctx);
   }
 
+  /** Called when a pane header is dropped outside the main window. */
+  setTearOffHandler(
+    handler: ((projectId: ProjectId, ptyId: string, x: number, y: number) => void) | null,
+  ): void {
+    this.tearOffHandler = handler;
+  }
+
   getOrCreate(project: Project): TerminalManager {
     const existing = this.managers.get(project.id);
     if (existing) return existing;
@@ -80,6 +90,7 @@ export class TerminalRouter {
       layout: project.terminalLayout,
       activeCliId: project.activeCliId,
       notificationContext: this.notificationContext ?? undefined,
+      onTearOff: (ptyId, x, y) => this.tearOffHandler?.(project.id, ptyId, x, y),
     });
     this.managers.set(project.id, manager);
     const unsubscribe = manager.on((event) => this.onManagerEvent(event));
@@ -148,20 +159,43 @@ export class TerminalRouter {
   }
 
   liveCountsByProject(): ReadonlyMap<ProjectId, number> {
-    const map = new Map<ProjectId, number>(this.externalCounts);
+    const map = new Map<ProjectId, number>();
     for (const [id, manager] of this.managers) map.set(id, manager.size);
+    for (const { projectId, count } of this.external.values()) {
+      map.set(projectId, (map.get(projectId) ?? 0) + count);
+    }
     return map;
   }
 
   getCount(projectId: ProjectId): number {
-    return this.managers.get(projectId)?.size ?? this.externalCounts.get(projectId) ?? 0;
+    return this.liveCountsByProject().get(projectId) ?? 0;
   }
 
-  setExternalCount(projectId: ProjectId, count: number | null): void {
-    if (count === null) this.externalCounts.delete(projectId);
-    else this.externalCounts.set(projectId, count);
+  setExternalCount(windowId: string, projectId: ProjectId, count: number | null): void {
+    if (count === null) this.external.delete(windowId);
+    else this.external.set(windowId, { projectId, count });
     this.emitCounts();
     this.activity.refresh(projectId);
+  }
+
+  /** Takes one pane out of a project's grid, leaving its process running. */
+  async tearOff(projectId: ProjectId, ptyId: string): Promise<TerminalSpec | null> {
+    const manager = this.managers.get(projectId);
+    const spec = manager?.specs().find((candidate) => candidate.id === ptyId);
+    if (!manager || !spec) return null;
+    await manager.close(ptyId, { keepPty: true });
+    return spec;
+  }
+
+  /** Puts running panes back into a project's grid that is already here. */
+  async adoptPanes(projectId: ProjectId, specs: TerminalSpec[]): Promise<boolean> {
+    const manager = this.managers.get(projectId);
+    if (!manager) return false;
+    for (const spec of specs) {
+      // react-doctor-disable-next-line react-doctor/async-await-in-loop
+      await manager.addPane(spec, { adoptPtyId: spec.id, skipStartupCmd: true });
+    }
+    return true;
   }
 
   /**
