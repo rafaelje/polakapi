@@ -69,8 +69,8 @@ use crate::memory::pty_memory_stats;
 use crate::memory_review::{memory_delete, memory_list, memory_read, memory_write};
 use crate::paste_image::save_pasted_image;
 use crate::project_windows::{
-    project_window_close, project_window_focus, project_window_open, project_window_state,
-    ProjectWindows,
+    project_window_close, project_window_focus, project_window_open, project_window_ready,
+    project_window_state, ProjectWindows,
 };
 use crate::pty::PtyStore;
 use crate::skills::{skill_explain, skill_read, skill_write, skills_list};
@@ -188,6 +188,7 @@ pub fn run() {
             project_window_state,
             project_window_focus,
             project_window_close,
+            project_window_ready,
             pty_memory_stats,
             save_pasted_image,
             keep_awake_set,

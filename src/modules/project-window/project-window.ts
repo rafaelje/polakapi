@@ -16,9 +16,13 @@ import "./project-window.css";
 // by the main window and keep running; this window only renders them, and
 // tells `main` about every change so persistence and the sidebar stay right.
 
+// Measured against the moment main asked for the window, see project_window_ready.
+const scriptStarted = performance.now();
+
 async function start(): Promise<void> {
   const host = document.querySelector<HTMLElement>("#grid")!;
   const state = await invoke<ProjectWindowState>("project_window_state");
+  const stateLoaded = performance.now();
   const projectId = state.projectId as ProjectId;
   const { payload, title } = state;
 
@@ -83,6 +87,14 @@ async function start(): Promise<void> {
   await manager.restoreSpecs(payload.specs, { adopt: true });
   manager.refit();
   send({ liveCount: manager.size });
+  void invoke("project_window_ready", {
+    timings: {
+      scriptStarted,
+      stateLoaded,
+      panesAdopted: performance.now(),
+      panes: payload.specs.length,
+    },
+  });
   new ResizeObserver(() => manager.refit()).observe(host);
 
   attachTerminalDrop({ gridEl: manager.gridEl, router: { getActiveHost: () => host } });
