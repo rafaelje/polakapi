@@ -38,6 +38,8 @@ pub struct PtySession {
     pub writer: Mutex<Box<dyn Write + Send>>,
     pub master: Mutex<Box<dyn MasterPty + Send>>,
     pub child: Mutex<Box<dyn Child + Send + Sync>>,
+    /// Recent output, so a window that attaches later can catch up.
+    pub replay: Mutex<crate::pty_replay::ReplayBuffer>,
 }
 
 #[derive(Default)]
@@ -178,12 +180,14 @@ pub fn spawn_session(
         writer: Mutex::new(writer),
         master: Mutex::new(pair.master),
         child: Mutex::new(child),
+        replay: Mutex::new(Default::default()),
     });
-    store.insert_session(id.clone(), session);
+    store.insert_session(id.clone(), session.clone());
 
     let id_for_thread = id.clone();
     let app_for_thread = app.clone();
     let store_for_thread = store.clone();
+    let session_for_thread = session;
     std::thread::spawn(move || {
         let mut buf = [0u8; 4096];
         let mut pending: Vec<u8> = Vec::with_capacity(64);
@@ -194,6 +198,7 @@ pub fn spawn_session(
                     pending.extend_from_slice(&buf[..n]);
                     let chunk = drain_valid_utf8(&mut pending);
                     if !chunk.is_empty() {
+                        session_for_thread.replay.lock().push(&chunk);
                         let _ = app_for_thread.emit(
                             "pty:data",
                             PtyDataPayload {

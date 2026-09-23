@@ -3,6 +3,8 @@ export interface PaneCreateOptions {
   args?: string[];
   cwd?: string;
   cliId?: string;
+  /** Render a PTY that is already running (in another window) instead of spawning one. */
+  existingPtyId?: string;
 }
 
 export interface PaneAddOptions {
@@ -10,6 +12,7 @@ export interface PaneAddOptions {
   extraArgs?: string[];
   skipStartupCmd?: boolean;
   splitPosition?: "right" | "bottom";
+  adoptPtyId?: string;
 }
 
 /**

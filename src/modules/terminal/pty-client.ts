@@ -35,6 +35,11 @@ export function ptyResize(id: string, cols: number, rows: number): Promise<void>
   return invoke("pty_resize", { id, cols, rows }, { toastOnError: false });
 }
 
+/** Recent output of a running PTY, for a window taking over its rendering. */
+export function ptyAttach(id: string): Promise<string> {
+  return invoke<string>("pty_attach", { id }, { errorMessage: "Failed to attach terminal" });
+}
+
 export function ptyKill(id: string): Promise<void> {
   return invoke("pty_kill", { id }, { toastOnError: false });
 }

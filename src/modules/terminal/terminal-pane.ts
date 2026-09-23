@@ -2,7 +2,7 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { resolveProfile } from "./cli-registry";
-import { ptySpawn, ptyWrite, ptyResize, ptyKill } from "./pty-client";
+import { ptyAttach, ptySpawn, ptyWrite, ptyResize, ptyKill } from "./pty-client";
 import { terminalTheme } from "./terminal-theme";
 import {
   attachTerminalClipboard,
@@ -163,13 +163,21 @@ export class TerminalPane {
     this.safeFit();
     this.updateCliBadge(opts?.cliId);
 
-    this.ptyId = await ptySpawn({
-      cols: this.term.cols ?? 80,
-      rows: this.term.rows ?? 24,
-      command: opts?.command,
-      args: opts?.args,
-      cwd: opts?.cwd,
-    });
+    if (opts?.existingPtyId) {
+      // Taking over a PTY another window rendered: show what it showed, then
+      // tell the process the size it has here.
+      this.ptyId = opts.existingPtyId;
+      this.write(await ptyAttach(this.ptyId));
+      void ptyResize(this.ptyId, this.term.cols, this.term.rows);
+    } else {
+      this.ptyId = await ptySpawn({
+        cols: this.term.cols ?? 80,
+        rows: this.term.rows ?? 24,
+        command: opts?.command,
+        args: opts?.args,
+        cwd: opts?.cwd,
+      });
+    }
 
     this.titleEl.textContent = opts?.command
       ? `${opts.command} · ${this.ptyId.slice(0, 6)}`
@@ -345,7 +353,8 @@ export class TerminalPane {
     }
   }
 
-  async dispose(): Promise<void> {
+  /** `keepPty` releases the rendering only; the process goes on for another window. */
+  async dispose(opts?: { keepPty?: boolean }): Promise<void> {
     for (const disposable of this.disposables.splice(0)) {
       disposable.dispose();
     }
@@ -354,6 +363,7 @@ export class TerminalPane {
     if (!this.ptyId) return;
     const ptyId = this.ptyId;
     this.ptyId = "";
+    if (opts?.keepPty) return;
     try {
       await ptyKill(ptyId);
     } catch {

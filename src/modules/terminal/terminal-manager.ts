@@ -106,13 +106,8 @@ export class TerminalManager {
     this.grid = grid;
   }
 
-  /**
-   * F5: late binding. The bootstrap may not have constructed the notification
-   * context yet when getOrCreate fires (e.g. during restore); calling this
-   * after construction wires bells for any future panes. Already-spawned
-   * panes are NOT retro-wired — they pre-date the context and we'd risk
-   * double-registering on a reconnect.
-   */
+  /** Late binding for bells on future panes; already-spawned panes are not
+   * retro-wired, which would risk double-registering on a reconnect. */
   setNotificationContext(ctx: NotificationContext | null): void {
     this.notificationContext = ctx;
   }
@@ -226,6 +221,7 @@ export class TerminalManager {
         command,
         args: opts?.extraArgs ? [...(baseArgs ?? []), ...opts.extraArgs] : baseArgs,
         cliId: profile.id,
+        existingPtyId: opts?.adoptPtyId,
       });
     } catch (error) {
       spawnError = errorMessage(error);
@@ -508,7 +504,7 @@ export class TerminalManager {
   }
 
   /** Tears down every PTY + xterm and removes gridEl from any parent. */
-  async dispose(): Promise<void> {
+  async dispose(opts?: { keepPty?: boolean }): Promise<void> {
     this.listeners.clear();
     for (const handle of this.bellHandles.values()) handle.dispose();
     this.bellHandles.clear();
@@ -521,13 +517,14 @@ export class TerminalManager {
     this.order.splice(0);
     this.layout = null;
     this.focusedId = null;
-    await Promise.all(toClose.map((p) => p.dispose().catch(() => undefined)));
+    await Promise.all(toClose.map((p) => p.dispose(opts).catch(() => undefined)));
     this.grid.remove();
   }
 
   /** Replays persisted specs as panes, emitting one batched spec-changed at
-   * the end so persistence writes are not amplified per pane. */
-  async restoreSpecs(specs: TerminalSpec[]): Promise<void> {
+   * the end so persistence writes are not amplified per pane. `adopt` renders
+   * PTYs that are already running under the spec ids instead of spawning. */
+  async restoreSpecs(specs: TerminalSpec[], opts?: { adopt?: boolean }): Promise<void> {
     if (specs.length === 0) return;
     const idMap = new Map<string, string>();
     this.suppressPersistenceEvents = true;
@@ -539,7 +536,11 @@ export class TerminalManager {
           continue;
         }
         // react-doctor-disable-next-line react-doctor/async-await-in-loop
-        const pane = await this.addPane(spec);
+        // An adopted process already ran its startup command; never resend it.
+        const pane = await this.addPane(
+          spec,
+          opts?.adopt ? { adoptPtyId: spec.id, skipStartupCmd: true } : undefined,
+        );
         const restoredId = pane?.el.dataset.ptyId;
         if (restoredId) idMap.set(spec.id, restoredId);
       }

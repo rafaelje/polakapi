@@ -25,6 +25,13 @@ export interface TerminalRouterOptions {
   onPersistLayout(projectId: ProjectId, layout: TerminalLayoutNode | null): void;
 }
 
+/** A project's grid with its PTYs still running, ready to be rendered elsewhere. */
+export interface ReleasedGrid {
+  specs: TerminalSpec[];
+  layout: TerminalLayoutNode | null;
+  activeCliId: string;
+}
+
 /**
  * Owns one TerminalManager per ProjectId. Manages mount/unmount via DOM
  * reparenting — never disposes panes or PTYs on hide. Aggregates pane counts
@@ -43,6 +50,8 @@ export class TerminalRouter {
   private mountToken = 0;
   private notificationContext: NotificationContext | null = null;
   private readonly activity: ProjectActivityTracker;
+  /** Live panes projects have in their own windows, so counts stay whole. */
+  private readonly externalCounts = new Map<ProjectId, number>();
 
   constructor(private readonly opts: TerminalRouterOptions) {
     this.activity = new ProjectActivityTracker({
@@ -139,13 +148,52 @@ export class TerminalRouter {
   }
 
   liveCountsByProject(): ReadonlyMap<ProjectId, number> {
-    const map = new Map<ProjectId, number>();
+    const map = new Map<ProjectId, number>(this.externalCounts);
     for (const [id, manager] of this.managers) map.set(id, manager.size);
     return map;
   }
 
   getCount(projectId: ProjectId): number {
-    return this.managers.get(projectId)?.size ?? 0;
+    return this.managers.get(projectId)?.size ?? this.externalCounts.get(projectId) ?? 0;
+  }
+
+  setExternalCount(projectId: ProjectId, count: number | null): void {
+    if (count === null) this.externalCounts.delete(projectId);
+    else this.externalCounts.set(projectId, count);
+    this.emitCounts();
+    this.activity.refresh(projectId);
+  }
+
+  /**
+   * Hands a project's grid over: the panes stop rendering here, the PTYs keep
+   * running, and what another window needs to rebuild the grid comes back.
+   */
+  async release(projectId: ProjectId): Promise<ReleasedGrid | null> {
+    const manager = this.managers.get(projectId);
+    if (!manager) return null;
+    const grid: ReleasedGrid = {
+      specs: manager.specs(),
+      layout: manager.layoutSnapshot,
+      activeCliId: manager.getActiveCli(),
+    };
+    if (this.activeProjectId === projectId) this.unmount();
+    this.unsubscribes.get(projectId)?.();
+    this.unsubscribes.delete(projectId);
+    this.managers.delete(projectId);
+    await manager.dispose({ keepPty: true });
+    this.emitCounts();
+    return grid;
+  }
+
+  /** The reverse of `release`: renders PTYs that are already running. */
+  async adopt(project: Project, grid: ReleasedGrid): Promise<TerminalManager> {
+    const manager = this.getOrCreate({
+      ...project,
+      terminalLayout: grid.layout ?? undefined,
+      activeCliId: grid.activeCliId,
+    });
+    await manager.restoreSpecs(grid.specs, { adopt: true });
+    return manager;
   }
 
   getActivity(projectId: ProjectId): ProjectActivityState {
@@ -163,7 +211,7 @@ export class TerminalRouter {
 
   totalLiveCount(): number {
     let total = 0;
-    for (const manager of this.managers.values()) total += manager.size;
+    for (const count of this.liveCountsByProject().values()) total += count;
     return total;
   }
 

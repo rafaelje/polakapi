@@ -62,6 +62,16 @@ pub fn pty_resize(
     result.map_err(|e| e.to_string())
 }
 
+/// Recent output of a running PTY, for a webview taking over its rendering.
+#[tauri::command]
+pub fn pty_attach(store: State<'_, Arc<PtyStore>>, id: String) -> Result<String, String> {
+    let session = store
+        .session(&id)
+        .ok_or_else(|| format!("unknown pty: {id}"))?;
+    let snapshot = session.replay.lock().snapshot();
+    Ok(snapshot)
+}
+
 #[tauri::command]
 pub fn pty_kill(store: State<'_, Arc<PtyStore>>, id: String) -> Result<(), String> {
     store.kill_session(&id);

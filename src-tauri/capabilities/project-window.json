@@ -1,0 +1,13 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "project-window",
+  "description": "Capability for a project's terminal grid opened in its own window (labels project-<id>). Terminals need the clipboard for copy and paste, and dialog/notification for agent bells; pty_* and project_window_* commands reach it through the global invoke_handler in lib.rs.",
+  "windows": ["project-*"],
+  "permissions": [
+    "core:default",
+    "dialog:default",
+    "notification:default",
+    "clipboard-manager:allow-read-text",
+    "clipboard-manager:allow-write-text"
+  ]
+}
