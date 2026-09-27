@@ -1,4 +1,5 @@
 mod changes;
+mod commit;
 mod contents;
 mod git;
 mod paths;
@@ -13,6 +14,7 @@ mod test_repo;
 mod remote_fixture;
 
 pub use changes::code_review_changes;
+pub use commit::code_review_commit;
 pub use contents::code_review_file_contents;
 pub use refs::code_review_refs;
 pub use staging::{code_review_stage, code_review_stage_all, code_review_unstage};

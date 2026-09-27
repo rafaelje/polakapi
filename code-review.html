@@ -68,7 +68,24 @@
           <div class="code-review-column-title">agent</div>
           <p class="code-review-empty">The agent terminal will live here.</p>
         </aside>
-        <section class="code-review-list" id="code-review-list" aria-label="Files"></section>
+        <div class="code-review-list-column">
+          <section class="code-review-list" id="code-review-list" aria-label="Files"></section>
+          <form class="code-review-commit" id="code-review-commit" aria-label="Commit">
+            <textarea
+              id="code-review-commit-message"
+              class="code-review-commit-message"
+              rows="3"
+              placeholder="Commit message"
+              spellcheck="false"
+            ></textarea>
+            <div class="code-review-commit-actions">
+              <span class="code-review-muted" id="code-review-commit-status"></span>
+              <button type="submit" id="code-review-commit-button" class="code-review-btn" disabled>
+                commit
+              </button>
+            </div>
+          </form>
+        </div>
         <section class="code-review-diff" id="code-review-diff" aria-label="Diff">
           <p class="code-review-empty">Select a file to see its diff.</p>
         </section>

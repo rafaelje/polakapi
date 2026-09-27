@@ -27,6 +27,10 @@ export interface ChangesPanel {
   render(): void;
   toggleStage(): Promise<void>;
   stageAll(): Promise<void>;
+  stagedCount(): number;
+  isBusy(): boolean;
+  runAction(label: string, action: () => Promise<void>): Promise<boolean>;
+  onUpdate(listener: () => void): void;
 }
 
 export function mountChangesPanel(options: ChangesPanelOptions): ChangesPanel {
@@ -40,6 +44,8 @@ export function mountChangesPanel(options: ChangesPanelOptions): ChangesPanel {
   let requestId = 0;
   let reloadDiff = false;
   const diffView = mountDiffView(diff, project.path, () => options.isVisible());
+  const listeners: Array<() => void> = [];
+  const notify = (): void => listeners.forEach((listener) => listener());
 
   const selectedFile = (): ChangedFile | null =>
     groups.flatMap((group) => group.files).find((file) => fileKey(file) === selectedKey) ?? null;
@@ -86,12 +92,14 @@ export function mountChangesPanel(options: ChangesPanelOptions): ChangesPanel {
       error = `Could not read changes: ${describeError(cause)}`;
     }
     if (options.isVisible()) render();
+    notify();
   };
 
-  const runAction = async (label: string, action: () => Promise<void>): Promise<void> => {
-    if (busy) return;
+  const runAction = async (label: string, action: () => Promise<void>): Promise<boolean> => {
+    if (busy) return false;
     busy = true;
     actionError = null;
+    notify();
     try {
       await action();
     } catch (cause) {
@@ -99,7 +107,9 @@ export function mountChangesPanel(options: ChangesPanelOptions): ChangesPanel {
     } finally {
       busy = false;
     }
+    const succeeded = actionError === null;
     await refresh();
+    return succeeded;
   };
 
   return {
@@ -115,6 +125,12 @@ export function mountChangesPanel(options: ChangesPanelOptions): ChangesPanel {
       const run = staging.kind === "stage" ? stagePaths : unstagePaths;
       await runAction(staging.kind, () => run(project.path, staging.paths));
     },
-    stageAll: () => runAction("stage all", () => stageAll(project.path)),
+    stageAll: async () => {
+      await runAction("stage all", () => stageAll(project.path));
+    },
+    stagedCount: () => groups.find((group) => group.group === "staged")?.count ?? 0,
+    isBusy: () => busy,
+    runAction,
+    onUpdate: (listener) => listeners.push(listener),
   };
 }

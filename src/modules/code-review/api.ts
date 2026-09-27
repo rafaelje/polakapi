@@ -45,6 +45,10 @@ export function switchBranch(projectPath: string, branch: string): Promise<strin
   return invoke<string>("code_review_switch_branch", { projectPath, branch });
 }
 
+export function commitStaged(projectPath: string, message: string): Promise<string> {
+  return invoke<string>("code_review_commit", { projectPath, message });
+}
+
 export function describeError(error: unknown): string {
   if (error instanceof Error) return error.message;
   if (typeof error === "string") return error;

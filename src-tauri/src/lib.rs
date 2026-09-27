@@ -42,8 +42,9 @@ use crate::adv_review::{
 };
 use crate::agent_sessions::agent_list_sessions;
 use crate::code_review::{
-    code_review_changes, code_review_file_contents, code_review_pull, code_review_refs,
-    code_review_stage, code_review_stage_all, code_review_switch_branch, code_review_unstage,
+    code_review_changes, code_review_commit, code_review_file_contents, code_review_pull,
+    code_review_refs, code_review_stage, code_review_stage_all, code_review_switch_branch,
+    code_review_unstage,
 };
 use crate::commands::{
     app_exit, create_project_folder, fs_validate_path, open_file_in_editor, open_in_editor,
@@ -240,6 +241,7 @@ pub fn run() {
             code_review_refs,
             code_review_pull,
             code_review_switch_branch,
+            code_review_commit,
             adv_create_run,
             adv_read_run_file,
             adv_write_run_file,

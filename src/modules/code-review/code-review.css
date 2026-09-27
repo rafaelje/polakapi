@@ -144,6 +144,58 @@ button {
   padding: 6px;
 }
 
+.code-review-list-column {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.code-review-list-column > .code-review-list {
+  flex: 1;
+}
+
+.code-review-commit {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border-top: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+  background: var(--panel);
+}
+
+.code-review-commit[hidden] {
+  display: none;
+}
+
+.code-review-commit-message {
+  resize: vertical;
+  min-height: 54px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel-elev);
+  color: var(--text);
+  font: inherit;
+}
+
+.code-review-commit-message:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.code-review-commit-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.code-review-commit-actions .code-review-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 .code-review-diff {
   min-height: 0;
   overflow: auto;
