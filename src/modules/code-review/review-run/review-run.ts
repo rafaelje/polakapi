@@ -1,5 +1,5 @@
 import type { AgentPanel } from "../agent/agent-panel";
-import { describeError, prepareReviewFolder } from "../api";
+import { prepareReviewFolder } from "../api";
 import { el } from "../dom";
 import { buildReviewPrompt, type ReviewStep } from "./review-prompts";
 import {
@@ -7,6 +7,7 @@ import {
   reviewersModelOverride,
   reviewersModelValue,
 } from "./review-run-model";
+import { stringifyError } from "../../../shared/errors";
 
 export type ReviewAgent = Pick<AgentPanel, "selection" | "onSelectionChange" | "write">;
 
@@ -72,7 +73,7 @@ export function mountReviewRun(options: ReviewRunOptions): ReviewRun {
       setStatus(`Sent to ${cli} · ${folder.folder}`);
       options.onStarted();
     } catch (cause) {
-      setStatus(`Could not start the review: ${describeError(cause)}`, true);
+      setStatus(`Could not start the review: ${stringifyError(cause)}`, true);
     } finally {
       busy = false;
       element.classList.remove("is-busy");

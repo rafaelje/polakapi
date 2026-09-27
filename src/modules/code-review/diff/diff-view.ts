@@ -1,4 +1,4 @@
-import { describeError, fetchFileContents } from "../api";
+import { fetchFileContents } from "../api";
 import { el, renderEmpty } from "../dom";
 import type { DiffTarget, FileContents, SideContent } from "../types";
 import {
@@ -17,6 +17,7 @@ import {
 } from "./diff-render";
 import { copyToClipboard, wireSelectionCopy } from "./diff-copy";
 import { highlightFile } from "./highlight";
+import { stringifyError } from "../../../shared/errors";
 
 export interface DiffView {
   show(file: DiffTarget | null, reload?: boolean): void;
@@ -86,7 +87,7 @@ export function mountDiffView(
       contents = await fetchFileContents(projectPath, file);
       next = diffContents(contents);
     } catch (cause) {
-      next = { kind: "error", message: `Could not read the diff: ${describeError(cause)}` };
+      next = { kind: "error", message: `Could not read the diff: ${stringifyError(cause)}` };
     }
     if (!isCurrent(current, file)) return;
     const unchanged = contents && loaded && sameContents(contents, loaded);

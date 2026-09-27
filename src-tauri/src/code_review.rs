@@ -29,4 +29,12 @@ pub use refs::code_review_refs;
 pub use review_folder::code_review_prepare_review;
 pub use staging::{code_review_stage, code_review_stage_all, code_review_unstage};
 pub use sync::{code_review_pull, code_review_switch_branch};
-pub use watch::{code_review_watch_start, code_review_watch_stop, CodeReviewWatchers};
+pub use watch::{code_review_watch_start, CodeReviewWatchers};
+
+async fn blocking<T: Send + 'static>(
+    job: impl FnOnce() -> Result<T, String> + Send + 'static,
+) -> Result<T, String> {
+    tokio::task::spawn_blocking(job)
+        .await
+        .map_err(|error| format!("join error: {error}"))?
+}

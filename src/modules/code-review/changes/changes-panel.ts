@@ -1,11 +1,4 @@
-import {
-  describeError,
-  discardChanges,
-  fetchChangesOverview,
-  stageAll,
-  stagePaths,
-  unstagePaths,
-} from "../api";
+import { discardChanges, fetchChangesOverview, stageAll, stagePaths, unstagePaths } from "../api";
 import {
   changedFileTarget,
   fileKey,
@@ -21,6 +14,7 @@ import { el, renderEmpty } from "../dom";
 import type { ChangedFile, PinnedProject } from "../types";
 import { discardPaths, discardStep } from "./discard";
 import { renderFileList } from "./file-list";
+import { stringifyError } from "../../../shared/errors";
 
 export interface ChangesPanelOptions {
   project: PinnedProject;
@@ -105,7 +99,7 @@ export function mountChangesPanel(options: ChangesPanelOptions): ChangesPanel {
       options.onBranch(overview.branch);
     } catch (cause) {
       if (current !== requestId) return;
-      error = `Could not read changes: ${describeError(cause)}`;
+      error = `Could not read changes: ${stringifyError(cause)}`;
     }
     if (options.isVisible()) render();
     notify();
@@ -119,7 +113,7 @@ export function mountChangesPanel(options: ChangesPanelOptions): ChangesPanel {
     try {
       await action();
     } catch (cause) {
-      actionError = `Could not ${label}: ${describeError(cause)}`;
+      actionError = `Could not ${label}: ${stringifyError(cause)}`;
     } finally {
       busy = false;
     }

@@ -1,4 +1,5 @@
 import { el } from "../dom";
+import { splitPath } from "../file-path";
 import type { ChangedFile, ChangeStatus } from "../types";
 
 export type ListFile = Pick<
@@ -72,9 +73,8 @@ function createFileRow(
   status.title = file.status;
 
   const name = el("span", "code-review-file-name");
-  const slash = file.path.lastIndexOf("/");
-  name.append(el("span", "code-review-file-base", file.path.slice(slash + 1)));
-  const dir = file.path.slice(0, slash + 1);
+  const { dir, name: base } = splitPath(file.path);
+  name.append(el("span", "code-review-file-base", base));
   if (dir) name.append(el("span", "code-review-file-dir", dir));
   if (file.originalPath) {
     name.append(el("span", "code-review-file-source", `from ${file.originalPath}`));

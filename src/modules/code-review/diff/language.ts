@@ -1,3 +1,5 @@
+import { splitPath } from "../file-path";
+
 export interface FileLanguage {
   fence: string;
   highlight: string | null;
@@ -56,7 +58,7 @@ const BY_NAME: Readonly<Record<string, FileLanguage>> = {
 };
 
 export function languageForPath(path: string): FileLanguage {
-  const name = path.slice(path.lastIndexOf("/") + 1).toLowerCase();
+  const name = splitPath(path).name.toLowerCase();
   const byName = BY_NAME[name];
   if (byName) return byName;
   const dot = name.lastIndexOf(".");

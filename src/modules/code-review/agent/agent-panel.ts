@@ -3,7 +3,7 @@ import { AGENT_CLIS } from "../../../shared/agent-cli";
 import { bracketedPaste } from "../../agents-library/compose";
 import { onPtyData, onPtyExit, ptyWrite } from "../../terminal/pty-client";
 import { TerminalPane } from "../../terminal/terminal-pane";
-import { describeError } from "../api";
+import { el } from "../dom";
 import {
   agentSpawnSpec,
   changeAgentSelection,
@@ -12,6 +12,7 @@ import {
   type AgentSelection,
   type AgentSelectionChange,
 } from "./agent-session";
+import { stringifyError } from "../../../shared/errors";
 
 export interface AgentPanel {
   selection(): AgentSelection;
@@ -30,41 +31,32 @@ interface AgentPanelDom {
   terminalHost: HTMLElement;
 }
 
-function element<K extends keyof HTMLElementTagNameMap>(
-  tag: K,
-  className: string,
-): HTMLElementTagNameMap[K] {
-  const node = document.createElement(tag);
-  node.className = className;
-  return node;
-}
-
 function renderPanel(host: HTMLElement, selection: AgentSelection): AgentPanelDom {
-  const header = element("div", "code-review-agent-header");
-  const title = element("div", "code-review-column-title");
+  const header = el("div", "code-review-agent-header");
+  const title = el("div", "code-review-column-title");
   title.textContent = "agent";
-  const toggle = element("button", "code-review-agent-toggle");
+  const toggle = el("button", "code-review-agent-toggle");
   toggle.type = "button";
 
-  const controls = element("div", "code-review-agent-controls");
-  const cliSelect = element("select", "code-review-agent-cli");
+  const controls = el("div", "code-review-agent-controls");
+  const cliSelect = el("select", "code-review-agent-cli");
   cliSelect.setAttribute("aria-label", "Agent CLI");
   for (const cli of AGENT_CLIS) cliSelect.append(new Option(cli, cli));
   cliSelect.value = selection.cli;
-  const modelInput = element("input", "code-review-agent-model");
+  const modelInput = el("input", "code-review-agent-model");
   modelInput.type = "text";
   modelInput.spellcheck = false;
   modelInput.placeholder = "model";
   modelInput.setAttribute("aria-label", "Agent model");
   modelInput.value = selection.model;
-  const restartButton = element("button", "code-review-agent-restart");
+  const restartButton = el("button", "code-review-agent-restart");
   restartButton.type = "button";
   restartButton.textContent = "↻";
   restartButton.title = "Restart the agent terminal";
 
   header.append(title, toggle);
   controls.append(cliSelect, modelInput, restartButton);
-  const terminalHost = element("div", "code-review-agent-terminal");
+  const terminalHost = el("div", "code-review-agent-terminal");
   host.replaceChildren(header, controls, terminalHost);
   return { toggle, cliSelect, modelInput, restartButton, terminalHost };
 }
@@ -99,7 +91,7 @@ export function mountAgentPanel(host: HTMLElement, projectPath: string): AgentPa
         await next.attach(dom.terminalHost, spec);
         running = target;
       } catch (error) {
-        next.markSpawnFailed(spec.command, describeError(error));
+        next.markSpawnFailed(spec.command, stringifyError(error));
       }
       requestAnimationFrame(() => {
         if (pane === next) fitLive();

@@ -1,10 +1,11 @@
-use std::path::PathBuf;
+use std::path::Path;
 
 use serde::Serialize;
 
+use super::blocking;
 use super::changes::parse::parse_numstat_z;
 use super::changes::ChangeStatus;
-use super::git::git_stdout;
+use super::git::{git_stdout, lossy, nul_records};
 use crate::git_review::{
     is_safe_git_ref, merge_base, ref_exists, rev_parse_verify, validate_repo_path,
 };
@@ -37,9 +38,7 @@ pub struct BranchOverview {
 
 #[tauri::command]
 pub async fn code_review_default_base(project_path: String) -> Result<Option<String>, String> {
-    tokio::task::spawn_blocking(move || default_base_sync(&project_path))
-        .await
-        .map_err(|error| format!("join error: {error}"))?
+    blocking(move || default_base_sync(&project_path)).await
 }
 
 #[tauri::command]
@@ -47,9 +46,7 @@ pub async fn code_review_branch(
     project_path: String,
     base: String,
 ) -> Result<BranchOverview, String> {
-    tokio::task::spawn_blocking(move || branch_overview_sync(&project_path, &base))
-        .await
-        .map_err(|error| format!("join error: {error}"))?
+    blocking(move || branch_overview_sync(&project_path, &base)).await
 }
 
 fn default_base_sync(project_path: &str) -> Result<Option<String>, String> {
@@ -62,7 +59,7 @@ fn default_base_sync(project_path: &str) -> Result<Option<String>, String> {
     Ok(None)
 }
 
-pub(super) fn base_merge_base(project: &PathBuf, base: &str) -> Result<String, String> {
+pub(super) fn base_merge_base(project: &Path, base: &str) -> Result<String, String> {
     if !is_safe_git_ref(base) {
         return Err(format!("invalid base branch: {base:?}"));
     }
@@ -84,12 +81,12 @@ fn branch_overview_sync(project_path: &str, base: &str) -> Result<BranchOverview
     )?);
     let files = parse_name_status_z(&names)
         .into_iter()
-        .map(|(status, path, original_path)| {
-            let counts = counts.get(&path).copied().unwrap_or_default();
+        .map(|entry| {
+            let counts = counts.get(&entry.path).copied().unwrap_or_default();
             BranchFile {
-                path,
-                original_path,
-                status,
+                path: entry.path,
+                original_path: entry.original_path,
+                status: entry.status,
                 insertions: counts.insertions,
                 deletions: counts.deletions,
                 binary: counts.binary,
@@ -103,14 +100,20 @@ fn branch_overview_sync(project_path: &str, base: &str) -> Result<BranchOverview
     })
 }
 
-fn parse_name_status_z(raw: &[u8]) -> Vec<(ChangeStatus, String, Option<String>)> {
-    let mut records = raw.split(|byte| *byte == 0).filter(|r| !r.is_empty());
+struct NameStatus {
+    status: ChangeStatus,
+    path: String,
+    original_path: Option<String>,
+}
+
+fn parse_name_status_z(raw: &[u8]) -> Vec<NameStatus> {
+    let mut records = nul_records(raw);
     let mut entries = Vec::new();
     while let Some(code) = records.next() {
         let Some(first) = records.next().map(lossy) else {
             break;
         };
-        let entry = match code.first() {
+        let (status, path, original_path) = match code.first() {
             Some(b'R') => match records.next().map(lossy) {
                 Some(path) => (ChangeStatus::Renamed, path, Some(first)),
                 None => break,
@@ -124,13 +127,13 @@ fn parse_name_status_z(raw: &[u8]) -> Vec<(ChangeStatus, String, Option<String>)
             Some(b'U') => (ChangeStatus::Conflicted, first, None),
             _ => (ChangeStatus::Modified, first, None),
         };
-        entries.push(entry);
+        entries.push(NameStatus {
+            status,
+            path,
+            original_path,
+        });
     }
     entries
-}
-
-fn lossy(raw: &[u8]) -> String {
-    String::from_utf8_lossy(raw).into_owned()
 }
 
 #[cfg(test)]

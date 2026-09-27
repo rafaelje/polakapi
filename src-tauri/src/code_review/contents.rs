@@ -3,6 +3,7 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
+use super::blocking;
 use super::branch::base_merge_base;
 use super::git::git_stdout;
 use super::paths::validate_path;
@@ -43,11 +44,8 @@ pub async fn code_review_file_contents(
     original_path: Option<String>,
     source: ContentSource,
 ) -> Result<FileContents, String> {
-    tokio::task::spawn_blocking(move || {
-        file_contents_sync(&project_path, &path, original_path.as_deref(), &source)
-    })
-    .await
-    .map_err(|error| format!("join error: {error}"))?
+    blocking(move || file_contents_sync(&project_path, &path, original_path.as_deref(), &source))
+        .await
 }
 
 fn file_contents_sync(

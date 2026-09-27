@@ -1,15 +1,12 @@
-use std::io::Write;
 use std::path::Path;
-use std::process::{Command, Stdio};
 
-use super::git::git_stdout;
+use super::blocking;
+use super::git::{git_read, git_stdout, git_with_stdin, lossy, trimmed};
 use crate::git_review::validate_repo_path;
 
 #[tauri::command]
 pub async fn code_review_commit(project_path: String, message: String) -> Result<String, String> {
-    tokio::task::spawn_blocking(move || commit_sync(&project_path, &message))
-        .await
-        .map_err(|error| format!("join error: {error}"))?
+    blocking(move || commit_sync(&project_path, &message)).await
 }
 
 fn commit_sync(project_path: &str, message: &str) -> Result<String, String> {
@@ -22,48 +19,25 @@ fn commit_sync(project_path: &str, message: &str) -> Result<String, String> {
     }
     run_commit(&project, message)?;
     let hash = git_stdout(&project, &["rev-parse", "--short", "HEAD"])?;
-    Ok(String::from_utf8_lossy(&hash).trim().to_string())
+    Ok(trimmed(&hash))
 }
 
 fn has_staged_changes(project: &Path) -> Result<bool, String> {
-    let output = Command::new("git")
-        .args(["--no-optional-locks", "diff", "--cached", "--quiet"])
-        .current_dir(project)
-        .stdin(Stdio::null())
-        .output()
-        .map_err(|error| format!("could not run git: {error}"))?;
+    let output = git_read(project, &["diff", "--cached", "--quiet"])?;
     match output.status.code() {
         Some(0) => Ok(false),
         Some(1) => Ok(true),
-        _ => Err(format!(
-            "git diff failed: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        )),
+        _ => Err(format!("git diff failed: {}", trimmed(&output.stderr))),
     }
 }
 
 fn run_commit(project: &Path, message: &str) -> Result<(), String> {
-    let mut child = Command::new("git")
-        .args(["commit", "-q", "-F", "-"])
-        .current_dir(project)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|error| format!("could not run git: {error}"))?;
-    if let Some(mut stdin) = child.stdin.take() {
-        stdin
-            .write_all(message.as_bytes())
-            .map_err(|error| format!("could not pass the commit message: {error}"))?;
-    }
-    let output = child
-        .wait_with_output()
-        .map_err(|error| format!("could not run git: {error}"))?;
+    let output = git_with_stdin(project, &["commit", "-q", "-F", "-"], message.as_bytes())?;
     if output.status.success() {
         return Ok(());
     }
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = lossy(&output.stderr);
+    let stdout = lossy(&output.stdout);
     let detail = [stderr.trim(), stdout.trim()]
         .into_iter()
         .filter(|text| !text.is_empty())

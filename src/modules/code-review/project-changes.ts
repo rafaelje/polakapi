@@ -1,5 +1,6 @@
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
-import { describeError, startWatchingProject } from "./api";
+import { startWatchingProject } from "./api";
+import { stringifyError } from "../../shared/errors";
 
 const CHANGED_EVENT = "code-review:changed";
 
@@ -19,6 +20,6 @@ export async function watchProjectChanges(projectPath: string): Promise<void> {
   try {
     await startWatchingProject(projectPath);
   } catch (error) {
-    console.warn(`Auto-refresh is off: ${describeError(error)}`);
+    console.warn(`Auto-refresh is off: ${stringifyError(error)}`);
   }
 }

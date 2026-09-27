@@ -1,15 +1,13 @@
 use std::path::{Component, Path, PathBuf};
 
-use super::git::git_stdout;
-use super::paths::pathspec;
-use super::staging::{has_head, literal_pathspec, run_git};
+use super::blocking;
+use super::git::{git_stdout, git_with_pathspec, has_head, lossy, nul_records};
+use super::paths::{literal_pathspec, pathspec};
 use crate::git_review::validate_repo_path;
 
 #[tauri::command]
 pub async fn code_review_discard(project_path: String, paths: Vec<String>) -> Result<(), String> {
-    tokio::task::spawn_blocking(move || discard_sync(&project_path, &paths))
-        .await
-        .map_err(|error| format!("join error: {error}"))?
+    blocking(move || discard_sync(&project_path, &paths)).await
 }
 
 #[derive(Default)]
@@ -24,7 +22,7 @@ fn discard_sync(project_path: &str, paths: &[String]) -> Result<(), String> {
     let plan = plan_discard(&project, paths)?;
     if !plan.restore.is_empty() {
         let spec = literal_pathspec(&plan.restore)?;
-        run_git(
+        git_with_pathspec(
             &project,
             &["restore", "--staged", "--worktree", "--source=HEAD"],
             &spec,
@@ -32,7 +30,7 @@ fn discard_sync(project_path: &str, paths: &[String]) -> Result<(), String> {
     }
     if !plan.unindex.is_empty() {
         let spec = literal_pathspec(&plan.unindex)?;
-        run_git(&project, &["rm", "--cached", "-q", "-f"], &spec)?;
+        git_with_pathspec(&project, &["rm", "--cached", "-q", "-f"], &spec)?;
     }
     for target in &plan.delete {
         std::fs::remove_file(target)
@@ -66,14 +64,8 @@ fn plan_discard(project: &Path, paths: &[String]) -> Result<DiscardPlan, String>
 
 fn indexed_paths(project: &Path, paths: &[String]) -> Result<Vec<String>, String> {
     let spec = literal_pathspec(paths)?;
-    let mut args = vec!["ls-files", "-z", "--cached"];
-    args.extend(spec.iter().map(String::as_str));
-    let output = git_stdout(project, &args)?;
-    Ok(output
-        .split(|byte| *byte == 0)
-        .filter(|entry| !entry.is_empty())
-        .map(|entry| String::from_utf8_lossy(entry).to_string())
-        .collect())
+    let output = git_with_pathspec(project, &["ls-files", "-z", "--cached"], &spec)?;
+    Ok(nul_records(&output).map(lossy).collect())
 }
 
 fn in_head(project: &Path, path: &str) -> Result<bool, String> {

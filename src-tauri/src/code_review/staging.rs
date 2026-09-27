@@ -1,69 +1,43 @@
-use std::path::Path;
-
-use super::git::git_stdout;
-use super::paths::pathspec;
+use super::blocking;
+use super::git::{git_stdout, git_with_pathspec, has_head};
+use super::paths::literal_pathspec;
 use crate::git_review::validate_repo_path;
 
 #[tauri::command]
 pub async fn code_review_stage(project_path: String, paths: Vec<String>) -> Result<(), String> {
-    run_blocking(move || stage_sync(&project_path, &paths)).await
+    blocking(move || stage_sync(&project_path, &paths)).await
 }
 
 #[tauri::command]
 pub async fn code_review_unstage(project_path: String, paths: Vec<String>) -> Result<(), String> {
-    run_blocking(move || unstage_sync(&project_path, &paths)).await
+    blocking(move || unstage_sync(&project_path, &paths)).await
 }
 
 #[tauri::command]
 pub async fn code_review_stage_all(project_path: String) -> Result<(), String> {
-    run_blocking(move || stage_all_sync(&project_path)).await
-}
-
-async fn run_blocking(
-    job: impl FnOnce() -> Result<(), String> + Send + 'static,
-) -> Result<(), String> {
-    tokio::task::spawn_blocking(job)
-        .await
-        .map_err(|error| format!("join error: {error}"))?
+    blocking(move || stage_all_sync(&project_path)).await
 }
 
 fn stage_sync(project_path: &str, paths: &[String]) -> Result<(), String> {
     let project = validate_repo_path(project_path)?;
     let spec = literal_pathspec(paths)?;
-    run_git(&project, &["add", "-A"], &spec)
+    git_with_pathspec(&project, &["add", "-A"], &spec).map(|_| ())
 }
 
 fn unstage_sync(project_path: &str, paths: &[String]) -> Result<(), String> {
     let project = validate_repo_path(project_path)?;
     let spec = literal_pathspec(paths)?;
-    if has_head(&project) {
-        run_git(&project, &["restore", "--staged"], &spec)
+    let command: &[&str] = if has_head(&project) {
+        &["restore", "--staged"]
     } else {
-        run_git(&project, &["rm", "--cached", "-q", "-r"], &spec)
-    }
+        &["rm", "--cached", "-q", "-r"]
+    };
+    git_with_pathspec(&project, command, &spec).map(|_| ())
 }
 
 fn stage_all_sync(project_path: &str) -> Result<(), String> {
     let project = validate_repo_path(project_path)?;
     git_stdout(&project, &["add", "-A"]).map(|_| ())
-}
-
-pub(super) fn literal_pathspec(paths: &[String]) -> Result<Vec<String>, String> {
-    let mut spec = pathspec(paths)?;
-    for path in spec.iter_mut().skip(1) {
-        *path = format!(":(literal){path}");
-    }
-    Ok(spec)
-}
-
-pub(super) fn has_head(project: &Path) -> bool {
-    git_stdout(project, &["rev-parse", "--verify", "-q", "HEAD"]).is_ok()
-}
-
-pub(super) fn run_git(project: &Path, command: &[&str], spec: &[String]) -> Result<(), String> {
-    let mut args: Vec<&str> = command.to_vec();
-    args.extend(spec.iter().map(String::as_str));
-    git_stdout(project, &args).map(|_| ())
 }
 
 #[cfg(test)]

@@ -1,15 +1,13 @@
-use std::path::{Path, PathBuf};
-use std::process::{Command, Output, Stdio};
+use std::path::Path;
 
-use super::git::git_stdout;
+use super::blocking;
+use super::git::{git_stdout, git_unattended};
 use super::refs::{current_branch_name, list_branch_refs};
 use crate::git_review::{is_safe_git_ref, ref_exists, validate_repo_path};
 
 #[tauri::command]
 pub async fn code_review_pull(project_path: String) -> Result<String, String> {
-    tokio::task::spawn_blocking(move || pull_sync(&project_path))
-        .await
-        .map_err(|error| format!("join error: {error}"))?
+    blocking(move || pull_sync(&project_path)).await
 }
 
 #[tauri::command]
@@ -17,9 +15,7 @@ pub async fn code_review_switch_branch(
     project_path: String,
     branch: String,
 ) -> Result<String, String> {
-    tokio::task::spawn_blocking(move || switch_branch_sync(&project_path, &branch))
-        .await
-        .map_err(|error| format!("join error: {error}"))?
+    blocking(move || switch_branch_sync(&project_path, &branch)).await
 }
 
 fn pull_sync(project_path: &str) -> Result<String, String> {
@@ -27,13 +23,13 @@ fn pull_sync(project_path: &str) -> Result<String, String> {
     let Some(branch) = current_branch_name(&project) else {
         return Err("Cannot pull: HEAD is detached, switch to a branch first.".into());
     };
-    let upstream = run_git(&project, &["rev-parse", "--abbrev-ref", "@{upstream}"])?;
+    let upstream = git_unattended(&project, &["rev-parse", "--abbrev-ref", "@{upstream}"])?;
     if !upstream.status.success() {
         return Err(format!(
             "Cannot pull: {branch} has no upstream branch to pull from."
         ));
     }
-    let output = run_git(&project, &["pull", "--ff-only", "--no-rebase"])?;
+    let output = git_unattended(&project, &["pull", "--ff-only", "--no-rebase"])?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         if stderr.to_lowercase().contains("fast-forward") {
@@ -80,7 +76,7 @@ enum SwitchTarget {
     Track(String),
 }
 
-fn resolve_switch_target(project: &PathBuf, branch: &str) -> Result<SwitchTarget, String> {
+fn resolve_switch_target(project: &Path, branch: &str) -> Result<SwitchTarget, String> {
     if ref_exists(project, &format!("refs/heads/{branch}"))? {
         return Ok(SwitchTarget::Local(branch.to_string()));
     }
@@ -94,17 +90,6 @@ fn resolve_switch_target(project: &PathBuf, branch: &str) -> Result<SwitchTarget
         return Ok(SwitchTarget::Local(remote.branch));
     }
     Ok(SwitchTarget::Track(remote.name))
-}
-
-fn run_git(project: &Path, args: &[&str]) -> Result<Output, String> {
-    Command::new("git")
-        .args(args)
-        .current_dir(project)
-        .env("GIT_TERMINAL_PROMPT", "0")
-        .env("LC_ALL", "C")
-        .stdin(Stdio::null())
-        .output()
-        .map_err(|error| format!("could not run git: {error}"))
 }
 
 #[cfg(test)]

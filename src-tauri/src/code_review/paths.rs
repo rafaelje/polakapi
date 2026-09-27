@@ -33,6 +33,14 @@ pub(super) fn pathspec(paths: &[String]) -> Result<Vec<String>, String> {
     Ok(args)
 }
 
+pub(super) fn literal_pathspec(paths: &[String]) -> Result<Vec<String>, String> {
+    let mut spec = pathspec(paths)?;
+    for path in spec.iter_mut().skip(1) {
+        *path = format!(":(literal){path}");
+    }
+    Ok(spec)
+}
+
 fn has_drive_prefix(raw: &str) -> bool {
     let bytes = raw.as_bytes();
     bytes.len() >= 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':'

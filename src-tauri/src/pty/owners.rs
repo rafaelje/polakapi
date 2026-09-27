@@ -1,8 +1,6 @@
 use super::PtyStore;
 
 impl PtyStore {
-    /// Records the window that spawned a live session so it can be killed
-    /// when that window is destroyed.
     pub fn set_owner(&self, id: &str, window_label: &str) {
         let sessions = self.sessions.lock();
         if sessions.contains_key(id) {

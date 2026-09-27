@@ -4,6 +4,7 @@ use std::path::Path;
 
 use serde::Serialize;
 
+use super::blocking;
 use super::refs::current_branch_name;
 use crate::git_review::validate_repo_path;
 
@@ -22,9 +23,7 @@ pub async fn code_review_prepare_review(
     project_path: String,
     clear: bool,
 ) -> Result<ReviewFolder, String> {
-    tokio::task::spawn_blocking(move || prepare_sync(&project_path, clear))
-        .await
-        .map_err(|error| format!("join error: {error}"))?
+    blocking(move || prepare_sync(&project_path, clear)).await
 }
 
 fn prepare_sync(project_path: &str, clear: bool) -> Result<ReviewFolder, String> {

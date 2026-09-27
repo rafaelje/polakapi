@@ -1,5 +1,4 @@
 import {
-  describeError,
   fetchBranchOverview,
   fetchBranchRefs,
   fetchDefaultBase,
@@ -29,6 +28,7 @@ import {
   type BranchFileGroup,
   type BranchListView,
 } from "./branch-tab-model";
+import { stringifyError } from "../../../shared/errors";
 
 export interface BranchPanelOptions {
   project: PinnedProject;
@@ -99,7 +99,7 @@ export function mountBranchPanel(options: BranchPanelOptions): BranchPanel {
     try {
       processes = { kind: "loaded", ...(await fetchReviewProcesses(project.path)) };
     } catch (cause) {
-      processes = { kind: "error", message: describeError(cause) };
+      processes = { kind: "error", message: stringifyError(cause) };
     }
     selectedProcess = reconcileProcess(selectedProcess, processes);
   };
@@ -201,7 +201,7 @@ export function mountBranchPanel(options: BranchPanelOptions): BranchPanel {
     } catch (cause) {
       if (current !== requestId) return;
       group = null;
-      error = `Could not read the branch: ${describeError(cause)}`;
+      error = `Could not read the branch: ${stringifyError(cause)}`;
     }
     loaded = true;
     if (options.isVisible()) render();

@@ -2,7 +2,8 @@ use std::path::Path;
 
 use serde::Serialize;
 
-use super::git::git_stdout;
+use super::blocking;
+use super::git::{git_stdout, trimmed};
 use crate::git_review::validate_repo_path;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -23,9 +24,7 @@ pub struct BranchRefs {
 
 #[tauri::command]
 pub async fn code_review_refs(project_path: String) -> Result<BranchRefs, String> {
-    tokio::task::spawn_blocking(move || branch_refs_sync(&project_path))
-        .await
-        .map_err(|error| format!("join error: {error}"))?
+    blocking(move || branch_refs_sync(&project_path)).await
 }
 
 fn branch_refs_sync(project_path: &str) -> Result<BranchRefs, String> {
@@ -66,7 +65,7 @@ pub(crate) fn list_branch_refs(project: &Path) -> Result<BranchRefs, String> {
 
 pub(crate) fn current_branch_name(project: &Path) -> Option<String> {
     let raw = git_stdout(project, &["symbolic-ref", "--short", "-q", "HEAD"]).ok()?;
-    let name = String::from_utf8_lossy(&raw).trim().to_string();
+    let name = trimmed(&raw);
     (!name.is_empty()).then_some(name)
 }
 

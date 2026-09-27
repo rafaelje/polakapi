@@ -49,7 +49,6 @@ pub(crate) enum Activity {
 /// up to date (skipping directories for which `should_watch_dir` is false).
 pub(crate) trait Backend: Sized + Send + 'static {
     fn open(root: &Path) -> io::Result<Self>;
-    /// Blocks for at most `timeout`.
     fn wait(&mut self, timeout: Duration) -> io::Result<Activity>;
 }
 
@@ -131,8 +130,6 @@ fn normal_parts(relative: &Path) -> Vec<&OsStr> {
         .collect()
 }
 
-/// `.git/` is ignored except `.git/index` and `.git/HEAD`; `node_modules/` and
-/// `target/` are ignored at any depth.
 pub(crate) fn is_ignored(relative: &Path) -> bool {
     let parts = normal_parts(relative);
     if parts

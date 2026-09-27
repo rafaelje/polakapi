@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use parking_lot::Mutex;
 use tauri::{AppHandle, Emitter, Manager, WebviewWindow};
 
+use super::blocking;
 use crate::git_review::validate_repo_path;
 use crate::project_watch::ProjectWatcher;
 
@@ -13,13 +14,11 @@ pub struct CodeReviewWatchers(Mutex<HashMap<String, ProjectWatcher>>);
 
 impl CodeReviewWatchers {
     pub fn stop(&self, label: &str) {
-        let watcher = self.0.lock().remove(label);
-        drop(watcher);
+        let _stopped = self.0.lock().remove(label);
     }
 
     fn replace(&self, label: String, watcher: ProjectWatcher) {
-        let previous = self.0.lock().insert(label, watcher);
-        drop(previous);
+        let _previous = self.0.lock().insert(label, watcher);
     }
 }
 
@@ -30,18 +29,7 @@ pub async fn code_review_watch_start(
 ) -> Result<(), String> {
     let app = window.app_handle().clone();
     let label = window.label().to_string();
-    tokio::task::spawn_blocking(move || start_sync(app, label, &project_path))
-        .await
-        .map_err(|error| format!("join error: {error}"))?
-}
-
-#[tauri::command]
-pub async fn code_review_watch_stop(window: WebviewWindow) -> Result<(), String> {
-    let app = window.app_handle().clone();
-    let label = window.label().to_string();
-    tokio::task::spawn_blocking(move || app.state::<CodeReviewWatchers>().stop(&label))
-        .await
-        .map_err(|error| format!("join error: {error}"))
+    blocking(move || start_sync(app, label, &project_path)).await
 }
 
 fn start_sync(app: AppHandle, label: String, project_path: &str) -> Result<(), String> {

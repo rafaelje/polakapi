@@ -73,9 +73,3 @@ export function prepareReviewFolder(projectPath: string, clear: boolean): Promis
 export function fetchReviewProcesses(projectPath: string): Promise<ReviewProcesses> {
   return invoke<ReviewProcesses>("code_review_processes", { projectPath });
 }
-
-export function describeError(error: unknown): string {
-  if (error instanceof Error) return error.message;
-  if (typeof error === "string") return error;
-  return "unexpected error";
-}

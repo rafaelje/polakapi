@@ -34,12 +34,7 @@ import {
 } from "./terminal-notifications";
 import { layoutTerminalSplits } from "./terminal-split-layout";
 import { type PaneAddOptions, type TerminalSpec } from "./types";
-
-function errorMessage(error: unknown): string {
-  if (typeof error === "string") return error;
-  if (error instanceof Error) return error.message;
-  return String(error);
-}
+import { stringifyError } from "../../shared/errors";
 
 export type { NotificationContext };
 
@@ -228,7 +223,7 @@ export class TerminalManager {
         cliId: profile.id,
       });
     } catch (error) {
-      spawnError = errorMessage(error);
+      spawnError = stringifyError(error);
     }
 
     pane.el.style.visibility = "";

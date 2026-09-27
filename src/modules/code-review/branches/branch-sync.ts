@@ -1,14 +1,9 @@
 import { requireById } from "../../../shared/dom/dom";
-import {
-  describeError,
-  fetchBranchRefs,
-  fetchChangesOverview,
-  pullFastForward,
-  switchBranch,
-} from "../api";
+import { fetchBranchRefs, fetchChangesOverview, pullFastForward, switchBranch } from "../api";
 import { el } from "../dom";
 import type { BranchRefs, CodeReviewTab, PinnedProject } from "../types";
 import { branchSwitchGroups, switchBlockReason } from "./branch-switch-model";
+import { stringifyError } from "../../../shared/errors";
 
 export interface BranchSyncOptions {
   project: PinnedProject;
@@ -55,7 +50,7 @@ export function mountBranchSync(options: BranchSyncOptions): void {
       showStatus(`switched to ${branch}`);
       await options.onChanged();
     } catch (cause) {
-      showStatus(describeError(cause), true);
+      showStatus(stringifyError(cause), true);
     } finally {
       busy = false;
     }
@@ -116,7 +111,7 @@ export function mountBranchSync(options: BranchSyncOptions): void {
       renderSwitcher({ refs, blockReason: switchBlockReason(overview.files), filter: "" });
     } catch (cause) {
       popover.replaceChildren(
-        el("p", "code-review-switcher-note code-review-error", describeError(cause)),
+        el("p", "code-review-switcher-note code-review-error", stringifyError(cause)),
       );
     }
   };
@@ -146,7 +141,7 @@ export function mountBranchSync(options: BranchSyncOptions): void {
       showStatus(await pullFastForward(project.path));
       await options.onChanged();
     } catch (cause) {
-      showStatus(describeError(cause), true);
+      showStatus(stringifyError(cause), true);
     } finally {
       busy = false;
       pullButton.disabled = false;

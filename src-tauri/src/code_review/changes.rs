@@ -1,8 +1,10 @@
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use serde::Serialize;
 
+use super::blocking;
 use super::git::git_stdout;
+use super::refs::current_branch_name;
 use crate::git_review::{current_branch, validate_repo_path};
 use parse::{count_text_lines, parse_numstat_z, parse_porcelain_z, LineCounts};
 
@@ -50,9 +52,7 @@ pub struct ChangesOverview {
 
 #[tauri::command]
 pub async fn code_review_changes(project_path: String) -> Result<ChangesOverview, String> {
-    tokio::task::spawn_blocking(move || changes_overview_sync(&project_path))
-        .await
-        .map_err(|error| format!("join error: {error}"))?
+    blocking(move || changes_overview_sync(&project_path)).await
 }
 
 fn changes_overview_sync(project_path: &str) -> Result<ChangesOverview, String> {
@@ -95,18 +95,11 @@ fn changes_overview_sync(project_path: &str) -> Result<ChangesOverview, String> 
         .collect();
 
     Ok(ChangesOverview {
-        branch: branch_name(&project),
+        branch: current_branch(&project)
+            .ok()
+            .or_else(|| current_branch_name(&project)),
         files,
     })
-}
-
-fn branch_name(project: &PathBuf) -> Option<String> {
-    if let Ok(branch) = current_branch(project) {
-        return Some(branch);
-    }
-    let raw = git_stdout(project, &["symbolic-ref", "--short", "-q", "HEAD"]).ok()?;
-    let name = String::from_utf8_lossy(&raw).trim().to_string();
-    (!name.is_empty()).then_some(name)
 }
 
 fn untracked_counts(project: &Path, relative: &str) -> LineCounts {

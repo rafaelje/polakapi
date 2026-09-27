@@ -5,6 +5,7 @@ use std::path::Path;
 
 use serde::Serialize;
 
+use super::blocking;
 use super::review_folder::review_folder;
 use super::verdict::read_verdict;
 use super::verdict::Verdict;
@@ -45,9 +46,7 @@ struct ProcessName {
 
 #[tauri::command]
 pub async fn code_review_processes(project_path: String) -> Result<ReviewProcesses, String> {
-    tokio::task::spawn_blocking(move || processes_sync(&project_path))
-        .await
-        .map_err(|error| format!("join error: {error}"))?
+    blocking(move || processes_sync(&project_path)).await
 }
 
 fn processes_sync(project_path: &str) -> Result<ReviewProcesses, String> {

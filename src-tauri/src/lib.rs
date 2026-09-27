@@ -47,7 +47,7 @@ use crate::code_review::{
     code_review_discard, code_review_file_contents, code_review_prepare_review,
     code_review_processes, code_review_pull, code_review_refs, code_review_stage,
     code_review_stage_all, code_review_switch_branch, code_review_unstage, code_review_watch_start,
-    code_review_watch_stop, CodeReviewWatchers,
+    CodeReviewWatchers,
 };
 use crate::commands::{
     app_exit, create_project_folder, fs_validate_path, open_file_in_editor, open_in_editor,
@@ -249,7 +249,6 @@ pub fn run() {
             code_review_commit,
             code_review_discard,
             code_review_watch_start,
-            code_review_watch_stop,
             code_review_default_base,
             code_review_branch,
             code_review_prepare_review,

@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use super::{ChangeGroup, ChangeStatus};
+use crate::code_review::git::{lossy, nul_records};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct StatusEntry {
@@ -20,7 +21,7 @@ pub(in crate::code_review) struct LineCounts {
 const CONFLICT_CODES: [&[u8; 2]; 7] = [b"DD", b"AU", b"UD", b"UA", b"DU", b"AA", b"UU"];
 
 pub(super) fn parse_porcelain_z(raw: &[u8]) -> Vec<StatusEntry> {
-    let mut records = raw.split(|byte| *byte == 0).filter(|r| !r.is_empty());
+    let mut records = nul_records(raw);
     let mut entries = Vec::new();
     while let Some(record) = records.next() {
         if record.len() < 4 {
@@ -148,8 +149,4 @@ fn parse_count(raw: &[u8]) -> u32 {
         .ok()
         .and_then(|text| text.parse().ok())
         .unwrap_or(0)
-}
-
-fn lossy(raw: &[u8]) -> String {
-    String::from_utf8_lossy(raw).into_owned()
 }
