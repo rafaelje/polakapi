@@ -49,6 +49,10 @@ export function commitStaged(projectPath: string, message: string): Promise<stri
   return invoke<string>("code_review_commit", { projectPath, message });
 }
 
+export function discardChanges(projectPath: string, paths: string[]): Promise<void> {
+  return invoke<void>("code_review_discard", { projectPath, paths });
+}
+
 export function describeError(error: unknown): string {
   if (error instanceof Error) return error.message;
   if (typeof error === "string") return error;

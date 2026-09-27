@@ -15,6 +15,7 @@ export function renderFileList(
   container: HTMLElement,
   groups: readonly ChangesGroupView[],
   selectedKey: string | null,
+  armedKey: string | null = null,
 ): void {
   const sections = groups.map((group) => {
     const section = el("section", "code-review-group");
@@ -29,7 +30,8 @@ export function renderFileList(
       section.append(el("p", "code-review-group-empty", "none"));
     }
     for (const file of group.files) {
-      section.append(createFileRow(file, fileKey(file) === selectedKey));
+      const key = fileKey(file);
+      section.append(createFileRow(file, key === selectedKey, key === armedKey));
     }
     return section;
   });
@@ -40,8 +42,9 @@ export function statusLetter(status: ChangeStatus): string {
   return STATUS_LETTERS[status];
 }
 
-function createFileRow(file: ChangedFile, selected: boolean): HTMLButtonElement {
+function createFileRow(file: ChangedFile, selected: boolean, armed: boolean): HTMLButtonElement {
   const row = el("button", `code-review-file${selected ? " is-selected" : ""}`);
+  row.classList.toggle("is-armed", armed);
   row.type = "button";
   row.dataset.key = fileKey(file);
   row.title = file.originalPath ? `${file.originalPath} → ${file.path}` : file.path;
@@ -61,6 +64,11 @@ function createFileRow(file: ChangedFile, selected: boolean): HTMLButtonElement 
   }
 
   row.append(status, name, createCounts(file));
+  if (armed) {
+    const hint =
+      file.group === "untracked" ? "press d again to delete" : "press d again to discard";
+    row.append(el("span", "code-review-armed-hint", hint));
+  }
   return row;
 }
 

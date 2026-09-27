@@ -48,7 +48,7 @@ fn stage_all_sync(project_path: &str) -> Result<(), String> {
     git_stdout(&project, &["add", "-A"]).map(|_| ())
 }
 
-fn literal_pathspec(paths: &[String]) -> Result<Vec<String>, String> {
+pub(super) fn literal_pathspec(paths: &[String]) -> Result<Vec<String>, String> {
     let mut spec = pathspec(paths)?;
     for path in spec.iter_mut().skip(1) {
         *path = format!(":(literal){path}");
@@ -56,11 +56,11 @@ fn literal_pathspec(paths: &[String]) -> Result<Vec<String>, String> {
     Ok(spec)
 }
 
-fn has_head(project: &Path) -> bool {
+pub(super) fn has_head(project: &Path) -> bool {
     git_stdout(project, &["rev-parse", "--verify", "-q", "HEAD"]).is_ok()
 }
 
-fn run_git(project: &Path, command: &[&str], spec: &[String]) -> Result<(), String> {
+pub(super) fn run_git(project: &Path, command: &[&str], spec: &[String]) -> Result<(), String> {
     let mut args: Vec<&str> = command.to_vec();
     args.extend(spec.iter().map(String::as_str));
     git_stdout(project, &args).map(|_| ())

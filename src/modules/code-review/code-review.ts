@@ -22,8 +22,9 @@ function showBranchPlaceholder(layout: CodeReviewLayout): void {
 
 function wireKeyboard(layout: CodeReviewLayout, changes: ChangesPanel): void {
   document.addEventListener("keydown", (event) => {
-    if (event.defaultPrevented || isTypingTarget(event.target)) return;
-    const action = codeReviewKeyAction(event);
+    const ignored = event.defaultPrevented || isTypingTarget(event.target);
+    const action = ignored ? null : codeReviewKeyAction(event);
+    if (action !== "discard") changes.disarm();
     if (!action) return;
     event.preventDefault();
     if (action === "close") {
@@ -37,6 +38,7 @@ function wireKeyboard(layout: CodeReviewLayout, changes: ChangesPanel): void {
     if (layout.activeTab() !== "changes") return;
     if (action === "toggle-stage") void changes.toggleStage();
     else if (action === "stage-all") void changes.stageAll();
+    else if (action === "discard") void changes.discard();
     else changes.move(action === "next" ? 1 : -1);
   });
 }
@@ -62,6 +64,7 @@ function bootstrap(): void {
 
   layout.onTabChange((tab) => {
     commitBox.setVisible(tab === "changes");
+    changes.disarm();
     if (tab === "changes") changes.render();
     else showBranchPlaceholder(layout);
   });

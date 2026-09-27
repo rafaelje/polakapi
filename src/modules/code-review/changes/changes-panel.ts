@@ -1,4 +1,11 @@
-import { describeError, fetchChangesOverview, stageAll, stagePaths, unstagePaths } from "../api";
+import {
+  describeError,
+  discardChanges,
+  fetchChangesOverview,
+  stageAll,
+  stagePaths,
+  unstagePaths,
+} from "../api";
 import {
   fileKey,
   groupChanges,
@@ -11,6 +18,7 @@ import {
 import { mountDiffView } from "../diff/diff-view";
 import { el, renderEmpty } from "../dom";
 import type { ChangedFile, PinnedProject } from "../types";
+import { discardPaths, discardStep } from "./discard";
 import { renderFileList } from "./file-list";
 
 export interface ChangesPanelOptions {
@@ -31,12 +39,15 @@ export interface ChangesPanel {
   isBusy(): boolean;
   runAction(label: string, action: () => Promise<void>): Promise<boolean>;
   onUpdate(listener: () => void): void;
+  discard(): Promise<void>;
+  disarm(): void;
 }
 
 export function mountChangesPanel(options: ChangesPanelOptions): ChangesPanel {
   const { project, list, diff } = options;
   let groups: ChangesGroupView[] = [];
   let selectedKey: string | null = null;
+  let armedKey: string | null = null;
   let error: string | null = null;
   let actionError: string | null = null;
   let busy = false;
@@ -56,7 +67,7 @@ export function mountChangesPanel(options: ChangesPanelOptions): ChangesPanel {
     } else if (!loaded) {
       renderEmpty(list, "Loading changes…");
     } else {
-      renderFileList(list, groups, selectedKey);
+      renderFileList(list, groups, selectedKey, armedKey);
       if (actionError) list.prepend(el("p", "code-review-empty code-review-error", actionError));
       list
         .querySelector<HTMLElement>(".code-review-file.is-selected")
@@ -67,6 +78,7 @@ export function mountChangesPanel(options: ChangesPanelOptions): ChangesPanel {
   };
 
   const select = (key: string | null): void => {
+    if (key !== selectedKey) armedKey = null;
     selectedKey = key;
     render();
   };
@@ -83,6 +95,7 @@ export function mountChangesPanel(options: ChangesPanelOptions): ChangesPanel {
       if (current !== requestId) return;
       groups = groupChanges(overview.files);
       selectedKey = reconcileSelection(visibleFileKeys(groups), selectedKey);
+      if (armedKey !== selectedKey) armedKey = null;
       error = null;
       loaded = true;
       reloadDiff = true;
@@ -132,5 +145,19 @@ export function mountChangesPanel(options: ChangesPanelOptions): ChangesPanel {
     isBusy: () => busy,
     runAction,
     onUpdate: (listener) => listeners.push(listener),
+    discard: async () => {
+      if (busy) return;
+      const file = selectedFile();
+      const step = discardStep(armedKey, selectedKey, "discard");
+      armedKey = step.armed;
+      render();
+      if (!file || step.confirmed === null) return;
+      await runAction("discard", () => discardChanges(project.path, discardPaths(file)));
+    },
+    disarm: () => {
+      if (armedKey === null) return;
+      armedKey = null;
+      if (options.isVisible()) render();
+    },
   };
 }

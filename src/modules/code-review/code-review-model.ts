@@ -15,7 +15,8 @@ export type CodeReviewKeyAction =
   | "refresh"
   | "close"
   | "toggle-stage"
-  | "stage-all";
+  | "stage-all"
+  | "discard";
 
 export interface StagingAction {
   kind: "stage" | "unstage";
@@ -44,6 +45,7 @@ const KEY_ACTIONS: Readonly<Record<string, CodeReviewKeyAction>> = {
   Escape: "close",
   " ": "toggle-stage",
   a: "stage-all",
+  d: "discard",
 };
 
 const WINDOW_URL = "code-review.html";

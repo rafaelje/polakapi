@@ -421,3 +421,15 @@ button {
     color-mix(in srgb, var(--border) 45%, transparent) 6px 7px
   );
 }
+
+.code-review-file.is-armed {
+  border-color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 18%, transparent);
+}
+
+.code-review-armed-hint {
+  flex: 0 0 auto;
+  color: var(--danger);
+  font-size: 11px;
+  font-weight: 600;
+}
