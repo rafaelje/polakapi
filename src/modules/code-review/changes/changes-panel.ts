@@ -8,6 +8,7 @@ import {
   visibleFileKeys,
   type ChangesGroupView,
 } from "../code-review-model";
+import { mountDiffView } from "../diff/diff-view";
 import { el, renderEmpty } from "../dom";
 import type { ChangedFile, PinnedProject } from "../types";
 import { renderFileList } from "./file-list";
@@ -37,6 +38,8 @@ export function mountChangesPanel(options: ChangesPanelOptions): ChangesPanel {
   let busy = false;
   let loaded = false;
   let requestId = 0;
+  let reloadDiff = false;
+  const diffView = mountDiffView(diff, project.path, () => options.isVisible());
 
   const selectedFile = (): ChangedFile | null =>
     groups.flatMap((group) => group.files).find((file) => fileKey(file) === selectedKey) ?? null;
@@ -53,7 +56,8 @@ export function mountChangesPanel(options: ChangesPanelOptions): ChangesPanel {
         .querySelector<HTMLElement>(".code-review-file.is-selected")
         ?.scrollIntoView({ block: "nearest" });
     }
-    renderDiffPlaceholder(diff, selectedFile());
+    diffView.show(selectedFile(), reloadDiff);
+    reloadDiff = false;
   };
 
   const select = (key: string | null): void => {
@@ -75,6 +79,7 @@ export function mountChangesPanel(options: ChangesPanelOptions): ChangesPanel {
       selectedKey = reconcileSelection(visibleFileKeys(groups), selectedKey);
       error = null;
       loaded = true;
+      reloadDiff = true;
       options.onBranch(overview.branch);
     } catch (cause) {
       if (current !== requestId) return;
@@ -112,21 +117,4 @@ export function mountChangesPanel(options: ChangesPanelOptions): ChangesPanel {
     },
     stageAll: () => runAction("stage all", () => stageAll(project.path)),
   };
-}
-
-function renderDiffPlaceholder(container: HTMLElement, file: ChangedFile | null): void {
-  if (!file) {
-    renderEmpty(container, "Select a file to see its diff.");
-    return;
-  }
-  const header = el("div", "code-review-diff-header");
-  header.append(el("strong", "code-review-diff-path", file.path));
-  if (file.originalPath) {
-    header.append(el("span", "code-review-muted", `renamed from ${file.originalPath}`));
-  }
-  header.append(el("span", "code-review-muted", `${file.group} · ${file.status}`));
-  container.replaceChildren(
-    header,
-    el("p", "code-review-empty", "The diff view is not available yet."),
-  );
 }

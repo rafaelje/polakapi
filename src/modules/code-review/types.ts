@@ -29,3 +29,16 @@ export interface PinnedProject {
 }
 
 export type CodeReviewTab = "changes" | "branch";
+
+export type ContentSource = { kind: "staged" } | { kind: "unstaged" } | { kind: "untracked" };
+
+export type SideContent =
+  | { kind: "text"; text: string }
+  | { kind: "absent" }
+  | { kind: "binary" }
+  | { kind: "tooLarge"; bytes: number };
+
+export interface FileContents {
+  before: SideContent;
+  after: SideContent;
+}
