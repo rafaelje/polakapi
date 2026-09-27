@@ -39,6 +39,32 @@ fn default_base_uses_origin_main_when_main_is_only_remote() {
     assert_eq!(default_base(&fixture.repo).as_deref(), Some("origin/main"));
 }
 
+#[test]
+fn default_base_prefers_local_master_over_remote_only_main() {
+    let fixture = RemoteFixture::new();
+    fixture.repo.git(&["branch", "-m", "main", "master"]);
+
+    assert_eq!(default_base(&fixture.repo).as_deref(), Some("master"));
+}
+
+#[test]
+fn default_base_uses_origin_master_when_only_it_exists() {
+    let fixture = RemoteFixture::new();
+    fixture.repo.git(&["switch", "-q", "-c", "feature"]);
+    fixture.repo.git(&["branch", "-D", "main"]);
+    fixture
+        .repo
+        .git(&["update-ref", "refs/remotes/origin/master", "HEAD"]);
+    fixture
+        .repo
+        .git(&["update-ref", "-d", "refs/remotes/origin/main"]);
+
+    assert_eq!(
+        default_base(&fixture.repo).as_deref(),
+        Some("origin/master")
+    );
+}
+
 fn feature_repo() -> TestRepo {
     let repo = TestRepo::with_commit(&[
         ("a.txt", "one\n"),

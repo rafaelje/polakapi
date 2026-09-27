@@ -9,7 +9,12 @@ use crate::git_review::{
     is_safe_git_ref, merge_base, ref_exists, rev_parse_verify, validate_repo_path,
 };
 
-const DEFAULT_BASES: [&str; 2] = ["main", "master"];
+const DEFAULT_BASES: [(&str, &str); 4] = [
+    ("refs/heads/main", "main"),
+    ("refs/heads/master", "master"),
+    ("refs/remotes/origin/main", "origin/main"),
+    ("refs/remotes/origin/master", "origin/master"),
+];
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -49,12 +54,9 @@ pub async fn code_review_branch(
 
 fn default_base_sync(project_path: &str) -> Result<Option<String>, String> {
     let project = validate_repo_path(project_path)?;
-    for name in DEFAULT_BASES {
-        if ref_exists(&project, &format!("refs/heads/{name}"))? {
+    for (full_ref, name) in DEFAULT_BASES {
+        if ref_exists(&project, full_ref)? {
             return Ok(Some(name.to_string()));
-        }
-        if ref_exists(&project, &format!("refs/remotes/origin/{name}"))? {
-            return Ok(Some(format!("origin/{name}")));
         }
     }
     Ok(None)
