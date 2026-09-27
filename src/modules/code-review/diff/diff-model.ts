@@ -2,9 +2,15 @@ import type { FileContents, SideContent } from "../types";
 
 export type DiffRowKind = "context" | "added" | "deleted" | "modified";
 
+export interface TextRange {
+  start: number;
+  end: number;
+}
+
 export interface DiffLine {
   number: number;
   text: string;
+  changes?: TextRange[];
 }
 
 export interface DiffRow {
@@ -21,9 +27,25 @@ export interface DiffOp {
   newIndex: number;
 }
 
+export type UnifiedRowKind = "context" | "added" | "deleted";
+
+export interface UnifiedRow {
+  kind: UnifiedRowKind;
+  oldNumber: number | null;
+  newNumber: number | null;
+  text: string;
+  changes?: TextRange[];
+}
+
+export type FoldItem =
+  | { kind: "row"; index: number }
+  | { kind: "fold"; start: number; end: number };
+
 export type FileDiff = { kind: "rows"; rows: DiffRow[] } | { kind: "placeholder"; message: string };
 
 const MAX_EDIT_DISTANCE = 2000;
+const FOLD_CONTEXT = 3;
+const MIN_FOLDED_ROWS = 2;
 
 export function splitLines(text: string | null): string[] {
   if (!text) return [];
@@ -64,10 +86,13 @@ export function sideBySideRows(before: string | null, after: string | null): Dif
   const flush = (): void => {
     const paired = Math.min(deletes.length, inserts.length);
     for (let i = 0; i < paired; i++) {
+      const left = line(oldLines, deletes[i]);
+      const right = line(newLines, inserts[i]);
+      const changes = wordRanges(left.text, right.text);
       rows.push({
         kind: "modified",
-        left: line(oldLines, deletes[i]),
-        right: line(newLines, inserts[i]),
+        left: { ...left, changes: changes.left },
+        right: { ...right, changes: changes.right },
       });
     }
     for (const index of deletes.slice(paired)) {
@@ -138,6 +163,101 @@ export function lineDiff(oldLines: readonly string[], newLines: readonly string[
   middle.forEach(push);
   while (oldIndex < oldLines.length) push("equal");
   return ops;
+}
+
+export function wordRanges(
+  before: string,
+  after: string,
+): { left: TextRange[]; right: TextRange[] } {
+  const oldTokens = tokenize(before);
+  const newTokens = tokenize(after);
+  const left: TextRange[] = [];
+  const right: TextRange[] = [];
+  const mark = (ranges: TextRange[], start: number, token: string): void => {
+    const last = ranges[ranges.length - 1];
+    if (last && last.end === start) last.end += token.length;
+    else ranges.push({ start, end: start + token.length });
+  };
+  let oldOffset = 0;
+  let newOffset = 0;
+  for (const op of lineDiff(oldTokens, newTokens)) {
+    if (op.kind !== "insert") {
+      const token = oldTokens[op.oldIndex];
+      if (op.kind === "delete") mark(left, oldOffset, token);
+      oldOffset += token.length;
+    }
+    if (op.kind !== "delete") {
+      const token = newTokens[op.newIndex];
+      if (op.kind === "insert") mark(right, newOffset, token);
+      newOffset += token.length;
+    }
+  }
+  return { left, right };
+}
+
+export function foldRows(
+  rows: readonly { kind: string }[],
+  expanded: ReadonlySet<number> = new Set(),
+): FoldItem[] {
+  const items: FoldItem[] = [];
+  const pushRows = (from: number, to: number): void => {
+    for (let index = from; index < to; index++) items.push({ kind: "row", index });
+  };
+  let index = 0;
+  while (index < rows.length) {
+    if (rows[index].kind !== "context") {
+      items.push({ kind: "row", index });
+      index++;
+      continue;
+    }
+    let end = index;
+    while (end < rows.length && rows[end].kind === "context") end++;
+    const keepBefore = index === 0 ? 0 : FOLD_CONTEXT;
+    const keepAfter = end === rows.length ? 0 : FOLD_CONTEXT;
+    const foldStart = index + keepBefore;
+    const foldEnd = end - keepAfter;
+    if (foldEnd - foldStart >= MIN_FOLDED_ROWS && !expanded.has(foldStart)) {
+      pushRows(index, foldStart);
+      items.push({ kind: "fold", start: foldStart, end: foldEnd });
+      pushRows(foldEnd, end);
+    } else {
+      pushRows(index, end);
+    }
+    index = end;
+  }
+  return items;
+}
+
+export function unifiedRows(rows: readonly DiffRow[]): UnifiedRow[] {
+  const result: UnifiedRow[] = [];
+  let added: UnifiedRow[] = [];
+  const unified = (
+    kind: UnifiedRowKind,
+    line: DiffLine,
+    oldNumber: number | null,
+    newNumber: number | null,
+  ): UnifiedRow => ({
+    kind,
+    oldNumber,
+    newNumber,
+    text: line.text,
+    ...(line.changes ? { changes: line.changes } : {}),
+  });
+  for (const row of rows) {
+    if (row.kind === "context" && row.left && row.right) {
+      result.push(...added, unified("context", row.left, row.left.number, row.right.number));
+      added = [];
+      continue;
+    }
+    if (row.left) result.push(unified("deleted", row.left, row.left.number, null));
+    if (row.right) added.push(unified("added", row.right, null, row.right.number));
+  }
+  result.push(...added);
+  return result;
+}
+
+function tokenize(text: string): string[] {
+  return text.match(/[\p{L}\p{N}_]+|\s+|[^\p{L}\p{N}_\s]/gu) ?? [];
 }
 
 function sideText(side: SideContent): string | null {

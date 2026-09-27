@@ -1,8 +1,20 @@
 import { describeError, fetchFileContents } from "../api";
 import { el, renderEmpty } from "../dom";
 import type { DiffTarget, FileContents, SideContent } from "../types";
-import { diffContents, type FileDiff } from "./diff-model";
-import { renderSideBySide, type SideHighlights } from "./diff-render";
+import {
+  diffContents,
+  unifiedRows,
+  type DiffRow,
+  type FileDiff,
+  type UnifiedRow,
+} from "./diff-model";
+import {
+  renderSideBySide,
+  renderUnified,
+  type DiffMode,
+  type DiffRenderInput,
+  type SideHighlights,
+} from "./diff-render";
 import { highlightFile } from "./highlight";
 
 export interface DiffView {
@@ -12,9 +24,13 @@ export interface DiffView {
 type DiffState =
   | { kind: "loading" }
   | { kind: "error"; message: string }
-  | (FileDiff & { highlights?: SideHighlights });
+  | { kind: "placeholder"; message: string }
+  | { kind: "rows"; rows: DiffRow[]; unified?: UnifiedRow[]; highlights?: SideHighlights };
 
 const MAX_HIGHLIGHT_CHARS = 256 * 1024;
+const NO_HIGHLIGHTS: SideHighlights = { left: null, right: null };
+
+let mode: DiffMode = "split";
 
 export function mountDiffView(
   container: HTMLElement,
@@ -24,6 +40,27 @@ export function mountDiffView(
   let currentKey: string | null = null;
   let state: DiffState = { kind: "loading" };
   let requestId = 0;
+  let expanded = new Set<number>();
+  let shownFile: DiffTarget | null = null;
+
+  const render = (file: DiffTarget): void => {
+    const scrollTop = container.scrollTop;
+    const sameFile = shownFile !== null && shownFile.key === file.key;
+    shownFile = file;
+    renderFileDiff(container, file, state, {
+      expanded,
+      onExpand: (start) => {
+        expanded = new Set(expanded).add(start);
+        render(file);
+      },
+      onToggleMode: () => {
+        mode = mode === "split" ? "unified" : "split";
+        expanded = new Set();
+        render(file);
+      },
+    });
+    if (sameFile) container.scrollTop = scrollTop;
+  };
 
   const isCurrent = (current: number, file: DiffTarget): boolean =>
     current === requestId && currentKey === file.key;
@@ -31,7 +68,7 @@ export function mountDiffView(
   const load = async (file: DiffTarget): Promise<void> => {
     const current = ++requestId;
     let contents: FileContents | null = null;
-    let next: DiffState;
+    let next: FileDiff | { kind: "error"; message: string };
     try {
       contents = await fetchFileContents(projectPath, file);
       next = diffContents(contents);
@@ -40,19 +77,20 @@ export function mountDiffView(
     }
     if (!isCurrent(current, file)) return;
     state = next;
-    if (isVisible()) renderFileDiff(container, file, state);
+    if (isVisible()) render(file);
     if (!contents || state.kind !== "rows") return;
 
     await new Promise((resolve) => setTimeout(resolve));
     if (!isCurrent(current, file) || state.kind !== "rows") return;
     state = { ...state, highlights: highlightSides(file, contents) };
-    if (isVisible()) renderFileDiff(container, file, state);
+    if (isVisible()) render(file);
   };
 
   return {
     show: (file, reload = false) => {
       if (!file) {
         currentKey = null;
+        shownFile = null;
         requestId++;
         renderEmpty(container, "Select a file to see its diff.");
         return;
@@ -61,11 +99,12 @@ export function mountDiffView(
       if (key !== currentKey) {
         currentKey = key;
         state = { kind: "loading" };
+        expanded = new Set();
         void load(file);
       } else if (reload) {
         void load(file);
       }
-      renderFileDiff(container, file, state);
+      render(file);
     },
   };
 }
@@ -81,7 +120,18 @@ function highlightSides(file: DiffTarget, contents: FileContents): SideHighlight
   };
 }
 
-function renderFileDiff(container: HTMLElement, file: DiffTarget, state: DiffState): void {
+interface ViewControls {
+  expanded: ReadonlySet<number>;
+  onExpand: (start: number) => void;
+  onToggleMode: () => void;
+}
+
+function renderFileDiff(
+  container: HTMLElement,
+  file: DiffTarget,
+  state: DiffState,
+  controls: ViewControls,
+): void {
   const body = (() => {
     switch (state.kind) {
       case "loading":
@@ -93,13 +143,29 @@ function renderFileDiff(container: HTMLElement, file: DiffTarget, state: DiffSta
       case "rows":
         return state.rows.length === 0
           ? el("p", "code-review-empty", "No content changes.")
-          : renderSideBySide(file, state.rows, state.highlights ?? { left: null, right: null });
+          : renderRows(file, state, controls);
     }
   })();
-  container.replaceChildren(renderHeader(file), body);
+  container.replaceChildren(renderHeader(file, controls), body);
 }
 
-function renderHeader(file: DiffTarget): HTMLElement {
+function renderRows(
+  file: DiffTarget,
+  state: Extract<DiffState, { kind: "rows" }>,
+  controls: ViewControls,
+): HTMLElement {
+  const input: DiffRenderInput = {
+    file,
+    highlights: state.highlights ?? NO_HIGHLIGHTS,
+    expanded: controls.expanded,
+    onExpand: controls.onExpand,
+  };
+  if (mode === "split") return renderSideBySide(input, state.rows);
+  state.unified ??= unifiedRows(state.rows);
+  return renderUnified(input, state.unified);
+}
+
+function renderHeader(file: DiffTarget, controls: ViewControls): HTMLElement {
   const header = el("div", "code-review-diff-header");
   if (file.originalPath) {
     header.append(
@@ -111,6 +177,15 @@ function renderHeader(file: DiffTarget): HTMLElement {
     el("strong", "code-review-diff-path", file.path),
     el("span", "code-review-muted", `${sourceLabel(file)} · ${file.status}`),
   );
+  const toggle = el(
+    "button",
+    "code-review-btn code-review-diff-mode",
+    mode === "split" ? "Unified" : "Side by side",
+  );
+  toggle.type = "button";
+  toggle.title = "Switch between side-by-side and unified views";
+  toggle.addEventListener("click", controls.onToggleMode);
+  header.append(toggle);
   return header;
 }
 

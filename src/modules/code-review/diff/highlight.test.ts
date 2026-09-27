@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { highlightFile, splitHighlightedLines, type HighlightedLine } from "./highlight";
+import {
+  highlightFile,
+  markChanges,
+  splitHighlightedLines,
+  type HighlightedLine,
+} from "./highlight";
 
 const plain = (line: HighlightedLine): string => line.map((segment) => segment.text).join("");
 const classesOf = (line: HighlightedLine, text: string): string[] | undefined =>
@@ -55,6 +60,50 @@ describe("splitHighlightedLines", () => {
   it("decodes the entities highlight.js emits", () => {
     expect(splitHighlightedLines("&lt;a&gt; &amp; &quot;b&quot; &#x27;c&#x27;")).toEqual([
       [{ text: `<a> & "b" 'c'`, classes: [] }],
+    ]);
+  });
+});
+
+describe("markChanges", () => {
+  it("splits highlighted segments at the changed range boundaries", () => {
+    const line: HighlightedLine = [
+      { text: "const", classes: ["hljs-keyword"] },
+      { text: " value = ", classes: [] },
+      { text: "42", classes: ["hljs-number"] },
+    ];
+
+    expect(
+      markChanges(line, [
+        { start: 6, end: 11 },
+        { start: 14, end: 15 },
+      ]),
+    ).toEqual([
+      { text: "const", classes: ["hljs-keyword"], changed: false },
+      { text: " ", classes: [], changed: false },
+      { text: "value", classes: [], changed: true },
+      { text: " = ", classes: [], changed: false },
+      { text: "4", classes: ["hljs-number"], changed: true },
+      { text: "2", classes: ["hljs-number"], changed: false },
+    ]);
+  });
+
+  it("marks a range that spans several segments", () => {
+    const line: HighlightedLine = [
+      { text: "ab", classes: ["x"] },
+      { text: "cd", classes: [] },
+    ];
+
+    expect(markChanges(line, [{ start: 1, end: 3 }])).toEqual([
+      { text: "a", classes: ["x"], changed: false },
+      { text: "b", classes: ["x"], changed: true },
+      { text: "c", classes: [], changed: true },
+      { text: "d", classes: [], changed: false },
+    ]);
+  });
+
+  it("leaves the line untouched without ranges", () => {
+    expect(markChanges([{ text: "abc", classes: [] }], [])).toEqual([
+      { text: "abc", classes: [], changed: false },
     ]);
   });
 });

@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { diffContents, sideBySideRows, type DiffRow } from "./diff-model";
+import {
+  diffContents,
+  foldRows,
+  sideBySideRows,
+  unifiedRows,
+  wordRanges,
+  type DiffRow,
+  type TextRange,
+} from "./diff-model";
 
 const context = (left: number, right: number, text: string): DiffRow => ({
   kind: "context",
@@ -18,8 +26,8 @@ const added = (right: number, text: string): DiffRow => ({
 });
 const modified = (left: number, before: string, right: number, after: string): DiffRow => ({
   kind: "modified",
-  left: { number: left, text: before },
-  right: { number: right, text: after },
+  left: { number: left, text: before, changes: expect.any(Array) as TextRange[] },
+  right: { number: right, text: after, changes: expect.any(Array) as TextRange[] },
 });
 
 describe("sideBySideRows", () => {
@@ -146,5 +154,112 @@ describe("diffContents", () => {
         after: { kind: "absent" },
       }),
     ).toEqual({ kind: "placeholder", message: "File is too large to show (3.0 MB)." });
+  });
+});
+
+describe("wordRanges", () => {
+  it("marks only the changed word on both sides", () => {
+    expect(wordRanges("const a = 1;", "const b = 1;")).toEqual({
+      left: [{ start: 6, end: 7 }],
+      right: [{ start: 6, end: 7 }],
+    });
+  });
+
+  it("merges neighbouring changed tokens into one range", () => {
+    expect(wordRanges("call(bar)", "call(baz, qux)")).toEqual({
+      left: [{ start: 5, end: 8 }],
+      right: [{ start: 5, end: 13 }],
+    });
+  });
+
+  it("reports pure insertions only on the side that has them", () => {
+    expect(wordRanges("a b", "a x b")).toEqual({ left: [], right: [{ start: 2, end: 4 }] });
+  });
+
+  it("attaches the ranges to modified rows", () => {
+    const [row] = sideBySideRows("let x = 1;\n", "let y = 1;\n");
+    expect(row.left?.changes).toEqual([{ start: 4, end: 5 }]);
+    expect(row.right?.changes).toEqual([{ start: 4, end: 5 }]);
+  });
+});
+
+const numbered = (count: number, changedAt: number): [string, string] => {
+  const before = Array.from({ length: count }, (_, index) => `line ${index + 1}`);
+  const after = before.map((line, index) => (index === changedAt ? `${line}!` : line));
+  return [before.join("\n"), after.join("\n")];
+};
+
+describe("foldRows", () => {
+  it("folds unchanged regions beyond three context lines around a change", () => {
+    const rows = sideBySideRows(...numbered(20, 9));
+    expect(foldRows(rows)).toEqual([
+      { kind: "fold", start: 0, end: 6 },
+      ...[6, 7, 8, 9, 10, 11, 12].map((index) => ({ kind: "row", index })),
+      { kind: "fold", start: 13, end: 20 },
+    ]);
+  });
+
+  it("shows a fold's rows once it is expanded", () => {
+    const rows = sideBySideRows(...numbered(20, 9));
+    const items = foldRows(rows, new Set([0]));
+    expect(items.slice(0, 7)).toEqual(
+      [0, 1, 2, 3, 4, 5, 6].map((index) => ({ kind: "row", index })),
+    );
+    expect(items[items.length - 1]).toEqual({ kind: "fold", start: 13, end: 20 });
+  });
+
+  it("keeps short unchanged gaps between changes visible", () => {
+    const [before] = numbered(10, -1);
+    const after = before.replace("line 2", "line two").replace("line 9", "line nine");
+    expect(foldRows(sideBySideRows(before, after))).toEqual(
+      Array.from({ length: 10 }, (_, index) => ({ kind: "row", index })),
+    );
+  });
+
+  it("folds the middle of a long gap between two changes", () => {
+    const [before] = numbered(12, -1);
+    const after = before.replace("line 1\n", "line one\n").replace("line 12", "line twelve");
+    expect(foldRows(sideBySideRows(before, after))).toEqual([
+      ...[0, 1, 2, 3].map((index) => ({ kind: "row", index })),
+      { kind: "fold", start: 4, end: 8 },
+      ...[8, 9, 10, 11].map((index) => ({ kind: "row", index })),
+    ]);
+  });
+
+  it("does not fold a single hidden line", () => {
+    const rows = sideBySideRows(...numbered(5, 4));
+    expect(foldRows(rows)).toEqual([0, 1, 2, 3, 4].map((index) => ({ kind: "row", index })));
+  });
+});
+
+describe("unifiedRows", () => {
+  it("lists a changed block as its deletions followed by its additions", () => {
+    const rows = unifiedRows(sideBySideRows("a\nb\nc\n", "a\nB\nX\nc\n"));
+    expect(rows).toEqual([
+      { kind: "context", oldNumber: 1, newNumber: 1, text: "a" },
+      {
+        kind: "deleted",
+        oldNumber: 2,
+        newNumber: null,
+        text: "b",
+        changes: [{ start: 0, end: 1 }],
+      },
+      { kind: "added", oldNumber: null, newNumber: 2, text: "B", changes: [{ start: 0, end: 1 }] },
+      { kind: "added", oldNumber: null, newNumber: 3, text: "X" },
+      { kind: "context", oldNumber: 3, newNumber: 4, text: "c" },
+    ]);
+  });
+
+  it("renders an added file as only added lines", () => {
+    expect(unifiedRows(sideBySideRows(null, "x\n"))).toEqual([
+      { kind: "added", oldNumber: null, newNumber: 1, text: "x" },
+    ]);
+  });
+
+  it("folds with the same rules as the side-by-side rows", () => {
+    const rows = unifiedRows(sideBySideRows(...numbered(20, 9)));
+    expect(foldRows(rows)[0]).toEqual({ kind: "fold", start: 0, end: 6 });
+    expect(rows[9].kind).toBe("deleted");
+    expect(rows[10].kind).toBe("added");
   });
 });

@@ -24,7 +24,7 @@ import swift from "highlight.js/lib/languages/swift";
 import typescript from "highlight.js/lib/languages/typescript";
 import xml from "highlight.js/lib/languages/xml";
 import yaml from "highlight.js/lib/languages/yaml";
-import { splitLines } from "./diff-model";
+import { splitLines, type TextRange } from "./diff-model";
 import { languageForPath } from "./language";
 
 export interface HighlightSegment {
@@ -33,6 +33,10 @@ export interface HighlightSegment {
 }
 
 export type HighlightedLine = HighlightSegment[];
+
+export interface MarkedSegment extends HighlightSegment {
+  changed: boolean;
+}
 
 const LANGUAGES = {
   bash,
@@ -111,4 +115,28 @@ export function splitHighlightedLines(html: string): HighlightedLine[] {
   }
   pushText(html.slice(cursor));
   return lines;
+}
+
+export function markChanges(line: HighlightedLine, ranges: readonly TextRange[]): MarkedSegment[] {
+  const marked: MarkedSegment[] = [];
+  let offset = 0;
+  for (const segment of line) {
+    const end = offset + segment.text.length;
+    const cuts = new Set([offset, end]);
+    for (const range of ranges) {
+      if (range.start > offset && range.start < end) cuts.add(range.start);
+      if (range.end > offset && range.end < end) cuts.add(range.end);
+    }
+    const points = [...cuts].sort((a, b) => a - b);
+    for (let i = 0; i + 1 < points.length; i++) {
+      const from = points[i];
+      marked.push({
+        text: segment.text.slice(from - offset, points[i + 1] - offset),
+        classes: segment.classes,
+        changed: ranges.some((range) => range.start <= from && from < range.end),
+      });
+    }
+    offset = end;
+  }
+  return marked;
 }
