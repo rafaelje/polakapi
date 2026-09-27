@@ -1,11 +1,3 @@
-#![cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "consumed by the file contents, staging and discard commands"
-    )
-)]
-
 pub(super) const MAX_PATH_LEN: usize = 4096;
 
 pub(super) fn validate_path(raw: &str) -> Result<String, String> {

@@ -26,8 +26,14 @@ function wireKeyboard(layout: CodeReviewLayout, changes: ChangesPanel): void {
       void getCurrentWindow().close();
       return;
     }
-    if (action === "refresh") void changes.refresh();
-    else if (layout.activeTab() === "changes") changes.move(action === "next" ? 1 : -1);
+    if (action === "refresh") {
+      void changes.refresh();
+      return;
+    }
+    if (layout.activeTab() !== "changes") return;
+    if (action === "toggle-stage") void changes.toggleStage();
+    else if (action === "stage-all") void changes.stageAll();
+    else changes.move(action === "next" ? 1 : -1);
   });
 }
 
@@ -51,6 +57,7 @@ function bootstrap(): void {
     else showBranchPlaceholder(layout);
   });
   layout.refreshButton.addEventListener("click", () => void changes.refresh());
+  layout.stageAllButton.addEventListener("click", () => void changes.stageAll());
   wireKeyboard(layout, changes);
 
   changes.render();

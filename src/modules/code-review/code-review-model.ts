@@ -9,7 +9,18 @@ export interface ChangesGroupView {
   deletions: number;
 }
 
-export type CodeReviewKeyAction = "next" | "previous" | "refresh" | "close";
+export type CodeReviewKeyAction =
+  | "next"
+  | "previous"
+  | "refresh"
+  | "close"
+  | "toggle-stage"
+  | "stage-all";
+
+export interface StagingAction {
+  kind: "stage" | "unstage";
+  paths: string[];
+}
 
 export interface KeyPress {
   key: string;
@@ -31,6 +42,8 @@ const KEY_ACTIONS: Readonly<Record<string, CodeReviewKeyAction>> = {
   k: "previous",
   r: "refresh",
   Escape: "close",
+  " ": "toggle-stage",
+  a: "stage-all",
 };
 
 const WINDOW_URL = "code-review.html";
@@ -82,6 +95,13 @@ export function reconcileSelection(
 export function codeReviewKeyAction(press: KeyPress): CodeReviewKeyAction | null {
   if (press.ctrlKey || press.metaKey || press.altKey) return null;
   return KEY_ACTIONS[press.key] ?? null;
+}
+
+export function spaceAction(file: ChangedFile | null): StagingAction | null {
+  if (!file) return null;
+  if (file.group !== "staged") return { kind: "stage", paths: [file.path] };
+  const paths = file.originalPath ? [file.path, file.originalPath] : [file.path];
+  return { kind: "unstage", paths };
 }
 
 export function buildCodeReviewUrl(project: PinnedProject): string {

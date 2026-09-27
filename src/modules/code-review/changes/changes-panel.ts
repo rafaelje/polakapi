@@ -1,9 +1,10 @@
-import { describeError, fetchChangesOverview } from "../api";
+import { describeError, fetchChangesOverview, stageAll, stagePaths, unstagePaths } from "../api";
 import {
   fileKey,
   groupChanges,
   moveSelection,
   reconcileSelection,
+  spaceAction,
   visibleFileKeys,
   type ChangesGroupView,
 } from "../code-review-model";
@@ -23,6 +24,8 @@ export interface ChangesPanel {
   refresh(): Promise<void>;
   move(delta: 1 | -1): void;
   render(): void;
+  toggleStage(): Promise<void>;
+  stageAll(): Promise<void>;
 }
 
 export function mountChangesPanel(options: ChangesPanelOptions): ChangesPanel {
@@ -30,6 +33,8 @@ export function mountChangesPanel(options: ChangesPanelOptions): ChangesPanel {
   let groups: ChangesGroupView[] = [];
   let selectedKey: string | null = null;
   let error: string | null = null;
+  let actionError: string | null = null;
+  let busy = false;
   let loaded = false;
   let requestId = 0;
 
@@ -43,6 +48,7 @@ export function mountChangesPanel(options: ChangesPanelOptions): ChangesPanel {
       renderEmpty(list, "Loading changes…");
     } else {
       renderFileList(list, groups, selectedKey);
+      if (actionError) list.prepend(el("p", "code-review-empty code-review-error", actionError));
       list
         .querySelector<HTMLElement>(".code-review-file.is-selected")
         ?.scrollIntoView({ block: "nearest" });
@@ -60,25 +66,51 @@ export function mountChangesPanel(options: ChangesPanelOptions): ChangesPanel {
     if (row?.dataset.key) select(row.dataset.key);
   });
 
+  const refresh = async (): Promise<void> => {
+    const current = ++requestId;
+    try {
+      const overview = await fetchChangesOverview(project.path);
+      if (current !== requestId) return;
+      groups = groupChanges(overview.files);
+      selectedKey = reconcileSelection(visibleFileKeys(groups), selectedKey);
+      error = null;
+      loaded = true;
+      options.onBranch(overview.branch);
+    } catch (cause) {
+      if (current !== requestId) return;
+      error = `Could not read changes: ${describeError(cause)}`;
+    }
+    if (options.isVisible()) render();
+  };
+
+  const runAction = async (label: string, action: () => Promise<void>): Promise<void> => {
+    if (busy) return;
+    busy = true;
+    actionError = null;
+    try {
+      await action();
+    } catch (cause) {
+      actionError = `Could not ${label}: ${describeError(cause)}`;
+    } finally {
+      busy = false;
+    }
+    await refresh();
+  };
+
   return {
     render,
-    move: (delta) => select(moveSelection(visibleFileKeys(groups), selectedKey, delta)),
-    refresh: async () => {
-      const current = ++requestId;
-      try {
-        const overview = await fetchChangesOverview(project.path);
-        if (current !== requestId) return;
-        groups = groupChanges(overview.files);
-        selectedKey = reconcileSelection(visibleFileKeys(groups), selectedKey);
-        error = null;
-        loaded = true;
-        options.onBranch(overview.branch);
-      } catch (cause) {
-        if (current !== requestId) return;
-        error = `Could not read changes: ${describeError(cause)}`;
-      }
-      if (options.isVisible()) render();
+    refresh: () => {
+      actionError = null;
+      return refresh();
     },
+    move: (delta) => select(moveSelection(visibleFileKeys(groups), selectedKey, delta)),
+    toggleStage: async () => {
+      const staging = spaceAction(selectedFile());
+      if (!staging) return;
+      const run = staging.kind === "stage" ? stagePaths : unstagePaths;
+      await runAction(staging.kind, () => run(project.path, staging.paths));
+    },
+    stageAll: () => runAction("stage all", () => stageAll(project.path)),
   };
 }
 

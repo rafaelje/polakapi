@@ -41,7 +41,9 @@ use crate::adv_review::{
     adv_read_state_file, adv_write_run_file, adv_write_run_prompt, adv_write_state_file,
 };
 use crate::agent_sessions::agent_list_sessions;
-use crate::code_review::code_review_changes;
+use crate::code_review::{
+    code_review_changes, code_review_stage, code_review_stage_all, code_review_unstage,
+};
 use crate::commands::{
     app_exit, create_project_folder, fs_validate_path, open_file_in_editor, open_in_editor,
     open_in_explorer, open_in_shell, open_local_path, open_url, pty_kill, pty_resize, pty_spawn,
@@ -225,6 +227,9 @@ pub fn run() {
             git_create_worktree,
             git_clone_repo,
             code_review_changes,
+            code_review_stage,
+            code_review_unstage,
+            code_review_stage_all,
             adv_create_run,
             adv_read_run_file,
             adv_write_run_file,

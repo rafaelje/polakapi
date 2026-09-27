@@ -8,6 +8,7 @@ import {
   moveSelection,
   readPinnedProject,
   reconcileSelection,
+  spaceAction,
   visibleFileKeys,
 } from "./code-review-model";
 import type { ChangedFile } from "./types";
@@ -107,6 +108,12 @@ describe("codeReviewKeyAction", () => {
     expect(press("Escape")).toBe("close");
   });
 
+  it("maps space to toggle staging and a to stage all", () => {
+    expect(press(" ")).toBe("toggle-stage");
+    expect(press("a")).toBe("stage-all");
+    expect(press("a", { ctrlKey: true })).toBeNull();
+  });
+
   it("ignores modified keys and unrelated keys", () => {
     expect(press("r", { ctrlKey: true })).toBeNull();
     expect(press("r", { metaKey: true })).toBeNull();
@@ -138,5 +145,39 @@ describe("pinned project", () => {
     expect(a).toMatch(/^code-review-[0-9a-f]+$/);
     expect(codeReviewWindowLabel("/code/app")).toBe(a);
     expect(codeReviewWindowLabel("/code/other")).not.toBe(a);
+  });
+});
+
+describe("spaceAction", () => {
+  it("unstages a staged row", () => {
+    expect(spaceAction(file({ path: "a.ts", group: "staged" }))).toEqual({
+      kind: "unstage",
+      paths: ["a.ts"],
+    });
+  });
+
+  it("stages an unstaged or untracked row", () => {
+    expect(spaceAction(file({ path: "a.ts", group: "unstaged" }))).toEqual({
+      kind: "stage",
+      paths: ["a.ts"],
+    });
+    expect(spaceAction(file({ path: "new.ts", group: "untracked" }))).toEqual({
+      kind: "stage",
+      paths: ["new.ts"],
+    });
+  });
+
+  it("unstages both sides of a staged rename", () => {
+    const renamed = file({
+      path: "new.ts",
+      originalPath: "old.ts",
+      group: "staged",
+      status: "renamed",
+    });
+    expect(spaceAction(renamed)).toEqual({ kind: "unstage", paths: ["new.ts", "old.ts"] });
+  });
+
+  it("does nothing without a selected row", () => {
+    expect(spaceAction(null)).toBeNull();
   });
 });

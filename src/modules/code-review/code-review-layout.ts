@@ -5,6 +5,7 @@ export interface CodeReviewLayout {
   list: HTMLElement;
   diff: HTMLElement;
   refreshButton: HTMLButtonElement;
+  stageAllButton: HTMLButtonElement;
   activeTab(): CodeReviewTab;
   onTabChange(listener: (tab: CodeReviewTab) => void): void;
   setBranch(branch: string | null): void;
@@ -39,6 +40,7 @@ export function mountCodeReviewLayout(project: PinnedProject): CodeReviewLayout 
     list: requireById("code-review-list"),
     diff: requireById("code-review-diff"),
     refreshButton: requireById("code-review-refresh", HTMLButtonElement),
+    stageAllButton: requireById("code-review-stage-all", HTMLButtonElement),
     activeTab: () => active,
     onTabChange: (listener) => listeners.push(listener),
     setBranch: (branch) => {
