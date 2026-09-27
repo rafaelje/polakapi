@@ -1,4 +1,6 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { requireById } from "../../shared/dom/dom";
+import { mountAgentPanel } from "./agent/agent-panel";
 import { mountBranchSync } from "./branches/branch-sync";
 import { mountChangesPanel, type ChangesPanel } from "./changes/changes-panel";
 import { codeReviewKeyAction, readPinnedProject } from "./code-review-model";
@@ -45,6 +47,8 @@ function bootstrap(): void {
     return;
   }
   const layout = mountCodeReviewLayout(project);
+  const agent = mountAgentPanel(requireById("code-review-agent"), project.path);
+  window.addEventListener("pagehide", () => void agent.dispose());
   const changes = mountChangesPanel({
     project,
     list: layout.list,

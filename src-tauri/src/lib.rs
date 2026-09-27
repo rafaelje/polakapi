@@ -165,8 +165,13 @@ pub fn run() {
         .on_window_event({
             let store = store.clone();
             move |window, event| {
-                if window.label() == "main" && matches!(event, tauri::WindowEvent::Destroyed) {
+                if !matches!(event, tauri::WindowEvent::Destroyed) {
+                    return;
+                }
+                if window.label() == "main" {
                     store.kill_all();
+                } else {
+                    store.kill_owned_by(window.label());
                 }
             }
         })

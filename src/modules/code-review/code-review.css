@@ -1,5 +1,6 @@
 @import "../../styles/form-controls.css";
 @import "./branches/branch-sync.css";
+@import "./agent/agent-panel.css";
 
 :root {
   color-scheme: dark;
@@ -115,7 +116,7 @@ button {
 
 .code-review-columns {
   display: grid;
-  grid-template-columns: minmax(220px, 26%) minmax(240px, 24%) 1fr;
+  grid-template-columns: var(--code-review-agent-column, minmax(220px, 26%)) minmax(240px, 24%) 1fr;
   min-height: 0;
 }
 

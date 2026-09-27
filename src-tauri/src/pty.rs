@@ -10,6 +10,8 @@ use tauri::{AppHandle, Emitter, Manager};
 use crate::platform_command;
 use crate::shell_integration;
 
+mod owners;
+
 #[cfg(target_os = "windows")]
 const ALLOWED_SHELL_BASENAMES: &[&str] = &[
     "cmd",
@@ -43,6 +45,7 @@ pub struct PtySession {
 #[derive(Default)]
 pub struct PtyStore {
     sessions: Mutex<HashMap<String, Arc<PtySession>>>,
+    owners: Mutex<HashMap<String, String>>,
 }
 
 impl PtyStore {
@@ -55,7 +58,9 @@ impl PtyStore {
     }
 
     pub fn remove_session(&self, id: &str) -> Option<Arc<PtySession>> {
-        self.sessions.lock().remove(id)
+        let removed = self.sessions.lock().remove(id);
+        self.owners.lock().remove(id);
+        removed
     }
 
     pub fn kill_session(&self, id: &str) {
@@ -85,6 +90,7 @@ impl PtyStore {
             .drain()
             .map(|(_, session)| session)
             .collect();
+        self.owners.lock().clear();
         for session in sessions {
             kill_and_wait(session);
         }

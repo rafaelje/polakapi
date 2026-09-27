@@ -4,7 +4,7 @@ use crate::pty::{spawn_session, PtyStore};
 use portable_pty::PtySize;
 use std::io::Write;
 use std::sync::Arc;
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Manager, State, Window};
 
 /// Max bytes accepted in a single `pty_write` call. Guards against memory
 /// exhaustion from a malicious or runaway frontend loop. 256 KiB is well above
@@ -13,7 +13,7 @@ const MAX_WRITE_BYTES: usize = 256 * 1024;
 
 #[tauri::command]
 pub fn pty_spawn(
-    app: AppHandle,
+    window: Window,
     store: State<'_, Arc<PtyStore>>,
     cols: u16,
     rows: u16,
@@ -21,7 +21,10 @@ pub fn pty_spawn(
     args: Option<Vec<String>>,
     cwd: Option<String>,
 ) -> Result<String, String> {
-    spawn_session(app, (*store).clone(), cols, rows, command, args, cwd)
+    let app = window.app_handle().clone();
+    let id = spawn_session(app, (*store).clone(), cols, rows, command, args, cwd)?;
+    store.set_owner(&id, window.label());
+    Ok(id)
 }
 
 #[tauri::command]
