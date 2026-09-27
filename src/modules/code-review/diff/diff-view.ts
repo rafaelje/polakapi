@@ -1,14 +1,20 @@
 import { describeError, fetchFileContents } from "../api";
-import { diffSideLabels } from "../code-review-model";
 import { el, renderEmpty } from "../dom";
-import type { DiffTarget } from "../types";
-import { diffContents, type DiffLine, type DiffRow, type FileDiff } from "./diff-model";
+import type { DiffTarget, FileContents, SideContent } from "../types";
+import { diffContents, type FileDiff } from "./diff-model";
+import { renderSideBySide, type SideHighlights } from "./diff-render";
+import { highlightFile } from "./highlight";
 
 export interface DiffView {
   show(file: DiffTarget | null, reload?: boolean): void;
 }
 
-type DiffState = { kind: "loading" } | { kind: "error"; message: string } | FileDiff;
+type DiffState =
+  | { kind: "loading" }
+  | { kind: "error"; message: string }
+  | (FileDiff & { highlights?: SideHighlights });
+
+const MAX_HIGHLIGHT_CHARS = 256 * 1024;
 
 export function mountDiffView(
   container: HTMLElement,
@@ -19,16 +25,27 @@ export function mountDiffView(
   let state: DiffState = { kind: "loading" };
   let requestId = 0;
 
+  const isCurrent = (current: number, file: DiffTarget): boolean =>
+    current === requestId && currentKey === file.key;
+
   const load = async (file: DiffTarget): Promise<void> => {
     const current = ++requestId;
+    let contents: FileContents | null = null;
     let next: DiffState;
     try {
-      next = diffContents(await fetchFileContents(projectPath, file));
+      contents = await fetchFileContents(projectPath, file);
+      next = diffContents(contents);
     } catch (cause) {
       next = { kind: "error", message: `Could not read the diff: ${describeError(cause)}` };
     }
-    if (current !== requestId || currentKey !== file.key) return;
+    if (!isCurrent(current, file)) return;
     state = next;
+    if (isVisible()) renderFileDiff(container, file, state);
+    if (!contents || state.kind !== "rows") return;
+
+    await new Promise((resolve) => setTimeout(resolve));
+    if (!isCurrent(current, file) || state.kind !== "rows") return;
+    state = { ...state, highlights: highlightSides(file, contents) };
     if (isVisible()) renderFileDiff(container, file, state);
   };
 
@@ -53,6 +70,17 @@ export function mountDiffView(
   };
 }
 
+function highlightSides(file: DiffTarget, contents: FileContents): SideHighlights {
+  const highlight = (side: SideContent, path: string) =>
+    side.kind === "text" && side.text.length <= MAX_HIGHLIGHT_CHARS
+      ? highlightFile(side.text, path)
+      : null;
+  return {
+    left: highlight(contents.before, file.originalPath ?? file.path),
+    right: highlight(contents.after, file.path),
+  };
+}
+
 function renderFileDiff(container: HTMLElement, file: DiffTarget, state: DiffState): void {
   const body = (() => {
     switch (state.kind) {
@@ -65,7 +93,7 @@ function renderFileDiff(container: HTMLElement, file: DiffTarget, state: DiffSta
       case "rows":
         return state.rows.length === 0
           ? el("p", "code-review-empty", "No content changes.")
-          : renderRows(file, state.rows);
+          : renderSideBySide(file, state.rows, state.highlights ?? { left: null, right: null });
     }
   })();
   container.replaceChildren(renderHeader(file), body);
@@ -86,40 +114,6 @@ function renderHeader(file: DiffTarget): HTMLElement {
   return header;
 }
 
-function renderRows(file: DiffTarget, rows: readonly DiffRow[]): HTMLElement {
-  const grid = el("div", "code-review-diff-grid");
-  const [beforeLabel, afterLabel] = diffSideLabels(file.source);
-  const fragment = document.createDocumentFragment();
-  fragment.append(
-    sideTitle(
-      rows.some((row) => row.left)
-        ? `${beforeLabel} · ${file.originalPath ?? file.path}`
-        : "(new file)",
-    ),
-    sideTitle(rows.some((row) => row.right) ? `${afterLabel} · ${file.path}` : "(deleted)"),
-  );
-  for (const row of rows) {
-    const leftKind = row.kind === "context" ? "context" : row.left ? "deleted" : "empty";
-    const rightKind = row.kind === "context" ? "context" : row.right ? "added" : "empty";
-    appendSide(fragment, row.left, leftKind);
-    appendSide(fragment, row.right, rightKind);
-  }
-  grid.append(fragment);
-  return grid;
-}
-
 function sourceLabel(file: DiffTarget): string {
   return file.source.kind === "branch" ? `vs ${file.source.base}` : file.source.kind;
-}
-
-function sideTitle(text: string): HTMLElement {
-  return el("div", "code-review-diff-side-title", text);
-}
-
-function appendSide(target: DocumentFragment, line: DiffLine | null, kind: string): void {
-  const number = el("span", "code-review-diff-num", line ? String(line.number) : "");
-  const code = el("span", "code-review-diff-code", line?.text ?? "");
-  number.dataset.kind = kind;
-  code.dataset.kind = kind;
-  target.append(number, code);
 }

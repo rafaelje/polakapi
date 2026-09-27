@@ -2,6 +2,7 @@
 @import "./branches/branch-sync.css";
 @import "./agent/agent-panel.css";
 @import "./branch-tab/branch-tab.css";
+@import "./diff/diff-highlight.css";
 
 :root {
   color-scheme: dark;
