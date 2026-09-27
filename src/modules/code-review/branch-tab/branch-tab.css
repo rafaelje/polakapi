@@ -21,3 +21,52 @@ select.code-review-base[hidden] {
   padding: 2px 8px;
   font-size: 11px;
 }
+
+.code-review-run {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.code-review-run-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.code-review-run.is-busy .code-review-btn {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.code-review-run-status {
+  margin: 0;
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.code-review-run-status:empty {
+  display: none;
+}
+
+.code-review-verdict {
+  flex: 0 0 auto;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.code-review-verdict[data-verdict="GO"] {
+  border-color: var(--ok);
+  color: var(--ok);
+}
+
+.code-review-verdict[data-verdict="NO-GO"] {
+  border-color: var(--danger);
+  color: var(--danger);
+}

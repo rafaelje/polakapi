@@ -1,6 +1,7 @@
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import { AGENT_CLIS } from "../../../shared/agent-cli";
-import { onPtyData, onPtyExit } from "../../terminal/pty-client";
+import { bracketedPaste } from "../../agents-library/compose";
+import { onPtyData, onPtyExit, ptyWrite } from "../../terminal/pty-client";
 import { TerminalPane } from "../../terminal/terminal-pane";
 import { describeError } from "../api";
 import {
@@ -13,8 +14,12 @@ import {
 } from "./agent-session";
 
 export interface AgentPanel {
+  selection(): AgentSelection;
+  write(text: string): Promise<boolean>;
   dispose(): Promise<void>;
 }
+
+const SUBMIT_DELAY_MS = 150;
 
 interface AgentPanelDom {
   toggle: HTMLButtonElement;
@@ -141,7 +146,22 @@ export function mountAgentPanel(host: HTMLElement, projectPath: string): AgentPa
   setCollapsed(false);
   restart(false);
 
+  const write = async (text: string): Promise<boolean> => {
+    await queue;
+    const target = pane;
+    if (disposed || !target?.ptyId || running === null) return false;
+    if (collapsed) setCollapsed(false);
+    await ptyWrite(target.ptyId, bracketedPaste(text));
+    await new Promise((resolve) => setTimeout(resolve, SUBMIT_DELAY_MS));
+    if (pane !== target || !target.ptyId) return false;
+    await ptyWrite(target.ptyId, "\r");
+    target.focus();
+    return true;
+  };
+
   return {
+    selection: () => selection,
+    write,
     dispose: async () => {
       if (disposed) return;
       disposed = true;

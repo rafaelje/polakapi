@@ -67,6 +67,7 @@ function bootstrap(): void {
     list: layout.list,
     diff: layout.diff,
     basePicker: layout.basePicker,
+    agent,
     isVisible: () => layout.activeTab() === "branch",
   });
 

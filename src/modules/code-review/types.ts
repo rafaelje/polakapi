@@ -81,3 +81,22 @@ export interface FileContents {
   before: SideContent;
   after: SideContent;
 }
+
+export interface ReviewFolder {
+  branch: string;
+  folder: string;
+}
+
+export type Verdict = "go" | "no-go" | "pending";
+
+export interface ReviewProcess {
+  number: string;
+  slug: string;
+  markdown: string | null;
+  html: string | null;
+  verdict: Verdict;
+}
+
+export interface ReviewProcesses extends ReviewFolder {
+  processes: ReviewProcess[];
+}

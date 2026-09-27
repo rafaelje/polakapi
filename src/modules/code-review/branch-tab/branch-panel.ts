@@ -1,8 +1,17 @@
-import { describeError, fetchBranchOverview, fetchBranchRefs, fetchDefaultBase } from "../api";
+import {
+  describeError,
+  fetchBranchOverview,
+  fetchBranchRefs,
+  fetchDefaultBase,
+  fetchReviewProcesses,
+} from "../api";
 import { moveSelection, reconcileSelection } from "../code-review-model";
 import { renderFileList } from "../changes/file-list";
 import { mountDiffView } from "../diff/diff-view";
 import { el } from "../dom";
+import { renderProcesses } from "../review-run/processes-view";
+import { mountReviewRun, type ReviewAgent } from "../review-run/review-run";
+import type { ProcessesState } from "../review-run/review-run-model";
 import type { BranchFile, BranchRefs, PinnedProject } from "../types";
 import {
   BASE_PLACEHOLDER,
@@ -21,6 +30,7 @@ export interface BranchPanelOptions {
   list: HTMLElement;
   diff: HTMLElement;
   basePicker: HTMLSelectElement;
+  agent: ReviewAgent;
   isVisible(): boolean;
 }
 
@@ -44,6 +54,7 @@ export function mountBranchPanel(options: BranchPanelOptions): BranchPanel {
   let group: BranchFileGroup | null = null;
   let selectedKey: string | null = null;
   let view: BranchListView = "files";
+  let processes: ProcessesState = { kind: "loading" };
   let error: string | null = null;
   let loaded = false;
   let requestId = 0;
@@ -77,19 +88,53 @@ export function mountBranchPanel(options: BranchPanelOptions): BranchPanel {
     basePicker.title = current ? `base branch: ${current}` : BASE_PLACEHOLDER;
   };
 
-  const renderToggle = (): HTMLElement => {
-    const toggle = el("div", "code-review-list-toggle");
-    toggle.setAttribute("role", "tablist");
-    for (const [value, label] of LIST_VIEWS) {
-      const button = el("button", "code-review-tab", label);
-      button.type = "button";
-      button.dataset.view = value;
-      button.setAttribute("role", "tab");
-      button.setAttribute("aria-selected", String(value === view));
-      button.classList.toggle("is-active", value === view);
-      toggle.append(button);
+  const loadProcesses = async (): Promise<void> => {
+    try {
+      processes = { kind: "loaded", ...(await fetchReviewProcesses(project.path)) };
+    } catch (cause) {
+      processes = { kind: "error", message: describeError(cause) };
     }
-    return toggle;
+  };
+
+  const reviewRun = mountReviewRun({
+    projectPath: project.path,
+    agent: options.agent,
+    baseBranch: base,
+    onStarted: () => {
+      view = "processes";
+      void loadProcesses().then(() => {
+        if (options.isVisible()) render();
+      });
+    },
+  });
+  const toggle = el("div", "code-review-list-toggle");
+  toggle.setAttribute("role", "tablist");
+  const header = el("div", "code-review-branch-header");
+  header.append(reviewRun.element, toggle);
+
+  const renderToggle = (): void => {
+    toggle.replaceChildren(
+      ...LIST_VIEWS.map(([value, label]) => {
+        const button = el("button", "code-review-tab", label);
+        button.type = "button";
+        button.dataset.view = value;
+        button.setAttribute("role", "tab");
+        button.setAttribute("aria-selected", String(value === view));
+        button.classList.toggle("is-active", value === view);
+        return button;
+      }),
+    );
+  };
+
+  const placeBody = (body: HTMLElement): void => {
+    if (list.firstElementChild !== header) {
+      list.replaceChildren(header, body);
+      return;
+    }
+    while (list.lastElementChild && list.lastElementChild !== header) {
+      list.lastElementChild.remove();
+    }
+    list.append(body);
   };
 
   const renderBody = (): HTMLElement => {
@@ -98,7 +143,10 @@ export function mountBranchPanel(options: BranchPanelOptions): BranchPanel {
       body.append(el("p", `code-review-empty${isError ? " code-review-error" : ""}`, text));
       return body;
     };
-    if (view === "processes") return message("No review run yet");
+    if (view === "processes") {
+      renderProcesses(body, processes);
+      return body;
+    }
     if (error) return message(error, true);
     const current = base();
     if (!current && loaded) return message(BASE_PLACEHOLDER);
@@ -110,7 +158,8 @@ export function mountBranchPanel(options: BranchPanelOptions): BranchPanel {
 
   const render = (): void => {
     renderPicker();
-    list.replaceChildren(renderToggle(), renderBody());
+    renderToggle();
+    placeBody(renderBody());
     list
       .querySelector<HTMLElement>(".code-review-file.is-selected")
       ?.scrollIntoView({ block: "nearest" });
@@ -127,6 +176,7 @@ export function mountBranchPanel(options: BranchPanelOptions): BranchPanel {
       const [nextRefs, nextDefault] = await Promise.all([
         fetchBranchRefs(project.path),
         fetchDefaultBase(project.path),
+        loadProcesses(),
       ]);
       const nextBase = resolveBase(chosenBase, nextDefault);
       const overview = nextBase ? await fetchBranchOverview(project.path, nextBase) : null;

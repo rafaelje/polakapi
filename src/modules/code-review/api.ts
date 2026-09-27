@@ -5,6 +5,8 @@ import type {
   ChangesOverview,
   DiffTarget,
   FileContents,
+  ReviewFolder,
+  ReviewProcesses,
 } from "./types";
 
 export function fetchChangesOverview(projectPath: string): Promise<ChangesOverview> {
@@ -62,6 +64,14 @@ export function discardChanges(projectPath: string, paths: string[]): Promise<vo
 
 export function startWatchingProject(projectPath: string): Promise<void> {
   return invoke<void>("code_review_watch_start", { projectPath });
+}
+
+export function prepareReviewFolder(projectPath: string, clear: boolean): Promise<ReviewFolder> {
+  return invoke<ReviewFolder>("code_review_prepare_review", { projectPath, clear });
+}
+
+export function fetchReviewProcesses(projectPath: string): Promise<ReviewProcesses> {
+  return invoke<ReviewProcesses>("code_review_processes", { projectPath });
 }
 
 export function describeError(error: unknown): string {
