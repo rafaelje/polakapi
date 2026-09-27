@@ -11,17 +11,22 @@ mod linux;
 #[cfg(target_os = "linux")]
 use linux::PlatformBackend;
 
+#[cfg(target_os = "macos")]
+mod macos;
+#[cfg(target_os = "macos")]
+use macos::PlatformBackend;
+
 #[cfg(windows)]
 mod win;
 #[cfg(windows)]
 use win::PlatformBackend;
 
-#[cfg(not(any(target_os = "linux", windows)))]
+#[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
 mod unsupported;
-#[cfg(not(any(target_os = "linux", windows)))]
+#[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
 use unsupported::PlatformBackend;
 
-#[cfg(all(test, any(target_os = "linux", windows)))]
+#[cfg(all(test, any(target_os = "linux", target_os = "macos", windows)))]
 mod tests;
 
 const QUIET: Duration = Duration::from_millis(300);
@@ -29,7 +34,10 @@ const MAX_DELAY: Duration = Duration::from_secs(2);
 const POLL: Duration = Duration::from_millis(100);
 
 /// What a backend observed during one `wait`. Paths are relative to the watched root.
-#[cfg_attr(not(any(target_os = "linux", windows)), allow(dead_code))]
+#[cfg_attr(
+    not(any(target_os = "linux", target_os = "macos", windows)),
+    allow(dead_code)
+)]
 pub(crate) enum Activity {
     Quiet,
     Paths(Vec<PathBuf>),

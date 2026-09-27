@@ -107,3 +107,21 @@ jobs:
         run: cargo test --manifest-path src-tauri/Cargo.toml
       - name: Build Windows desktop executable
         run: pnpm tauri build --no-bundle
+
+  macos:
+    name: macOS file watcher
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - name: Clippy
+        run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
+      - name: Test the file watcher
+        run: cargo test --manifest-path src-tauri/Cargo.toml --lib project_watch
