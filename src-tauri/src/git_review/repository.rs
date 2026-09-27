@@ -36,7 +36,7 @@ pub(super) fn origin_head(project: &PathBuf) -> Result<Option<String>, String> {
     Ok((!name.is_empty()).then_some(name))
 }
 
-pub(super) fn ref_exists(project: &PathBuf, name: &str) -> Result<bool, String> {
+pub(crate) fn ref_exists(project: &PathBuf, name: &str) -> Result<bool, String> {
     Ok(
         git_output(project, ["rev-parse", "--verify", "--quiet", name])?
             .status
@@ -66,7 +66,7 @@ pub(super) fn merge_base(project: &PathBuf, a: &str, b: &str) -> Result<String, 
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
 
-pub(super) fn is_safe_git_ref(name: &str) -> bool {
+pub(crate) fn is_safe_git_ref(name: &str) -> bool {
     if name.is_empty() || name.len() > 200 {
         return false;
     }

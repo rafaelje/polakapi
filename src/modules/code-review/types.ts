@@ -23,6 +23,18 @@ export interface ChangesOverview {
   files: ChangedFile[];
 }
 
+export interface RemoteBranch {
+  name: string;
+  remote: string;
+  branch: string;
+}
+
+export interface BranchRefs {
+  current: string | null;
+  local: string[];
+  remote: RemoteBranch[];
+}
+
 export interface PinnedProject {
   path: string;
   name: string;

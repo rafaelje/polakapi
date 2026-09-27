@@ -13,7 +13,14 @@
         <div class="code-review-heading">
           <strong>/code-review</strong>
           <span class="code-review-project" id="code-review-project">loading…</span>
-          <span class="code-review-branch" id="code-review-branch" hidden></span>
+          <button
+            type="button"
+            class="code-review-branch"
+            id="code-review-branch"
+            aria-haspopup="listbox"
+            aria-expanded="false"
+            hidden
+          ></button>
         </div>
         <div class="code-review-tabs" role="tablist" aria-label="Code review views">
           <button
@@ -42,6 +49,15 @@
           title="Stage all (a)"
         >
           stage all
+        </button>
+        <span class="code-review-sync-status" id="code-review-sync-status" role="status"></span>
+        <button
+          type="button"
+          id="code-review-pull"
+          class="code-review-btn"
+          title="Pull with fast-forward only"
+        >
+          pull
         </button>
         <button type="button" id="code-review-refresh" class="code-review-btn" title="Refresh (r)">
           refresh

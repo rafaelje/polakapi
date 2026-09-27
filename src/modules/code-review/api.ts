@@ -1,5 +1,11 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { ChangedFile, ChangesOverview, ContentSource, FileContents } from "./types";
+import type {
+  BranchRefs,
+  ChangedFile,
+  ChangesOverview,
+  ContentSource,
+  FileContents,
+} from "./types";
 
 export function fetchChangesOverview(projectPath: string): Promise<ChangesOverview> {
   return invoke<ChangesOverview>("code_review_changes", { projectPath });
@@ -25,6 +31,18 @@ export function fetchFileContents(projectPath: string, file: ChangedFile): Promi
     originalPath: file.originalPath,
     source,
   });
+}
+
+export function fetchBranchRefs(projectPath: string): Promise<BranchRefs> {
+  return invoke<BranchRefs>("code_review_refs", { projectPath });
+}
+
+export function pullFastForward(projectPath: string): Promise<string> {
+  return invoke<string>("code_review_pull", { projectPath });
+}
+
+export function switchBranch(projectPath: string, branch: string): Promise<string> {
+  return invoke<string>("code_review_switch_branch", { projectPath, branch });
 }
 
 export function describeError(error: unknown): string {

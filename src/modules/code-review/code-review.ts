@@ -1,4 +1,5 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { mountBranchSync } from "./branches/branch-sync";
 import { mountChangesPanel, type ChangesPanel } from "./changes/changes-panel";
 import { codeReviewKeyAction, readPinnedProject } from "./code-review-model";
 import { mountCodeReviewLayout, type CodeReviewLayout } from "./code-review-layout";
@@ -58,6 +59,11 @@ function bootstrap(): void {
   });
   layout.refreshButton.addEventListener("click", () => void changes.refresh());
   layout.stageAllButton.addEventListener("click", () => void changes.stageAll());
+  mountBranchSync({
+    project,
+    onTabChange: (listener) => layout.onTabChange(listener),
+    onChanged: () => changes.refresh(),
+  });
   wireKeyboard(layout, changes);
 
   changes.render();
