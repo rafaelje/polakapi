@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="stylesheet" href="/src/modules/code-review/code-review.css" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>/code-review</title>
+    <script type="module" src="/src/modules/code-review/code-review.ts" defer></script>
+  </head>
+  <body>
+    <main class="code-review-body">
+      <header class="code-review-header">
+        <div class="code-review-heading">
+          <strong>/code-review</strong>
+          <span class="code-review-project" id="code-review-project">loading…</span>
+          <span class="code-review-branch" id="code-review-branch" hidden></span>
+        </div>
+        <div class="code-review-tabs" role="tablist" aria-label="Code review views">
+          <button
+            type="button"
+            class="code-review-tab is-active"
+            role="tab"
+            data-tab="changes"
+            aria-selected="true"
+          >
+            Changes
+          </button>
+          <button
+            type="button"
+            class="code-review-tab"
+            role="tab"
+            data-tab="branch"
+            aria-selected="false"
+          >
+            Branch
+          </button>
+        </div>
+        <button type="button" id="code-review-refresh" class="code-review-btn" title="Refresh (r)">
+          refresh
+        </button>
+      </header>
+      <div class="code-review-columns">
+        <aside class="code-review-agent" id="code-review-agent" aria-label="Agent">
+          <div class="code-review-column-title">agent</div>
+          <p class="code-review-empty">The agent terminal will live here.</p>
+        </aside>
+        <section class="code-review-list" id="code-review-list" aria-label="Files"></section>
+        <section class="code-review-diff" id="code-review-diff" aria-label="Diff">
+          <p class="code-review-empty">Select a file to see its diff.</p>
+        </section>
+      </div>
+    </main>
+  </body>
+</html>

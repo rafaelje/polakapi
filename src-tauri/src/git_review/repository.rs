@@ -12,7 +12,7 @@ pub(crate) fn validate_repo_path(project_path: &str) -> Result<PathBuf, String> 
     Ok(project)
 }
 
-pub(super) fn current_branch(project: &PathBuf) -> Result<String, String> {
+pub(crate) fn current_branch(project: &PathBuf) -> Result<String, String> {
     let output = git_output(project, ["rev-parse", "--abbrev-ref", "HEAD"])?;
     if !output.status.success() {
         return Err(format!(
