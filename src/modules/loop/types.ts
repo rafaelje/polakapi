@@ -1,13 +1,15 @@
 // Branded IDs + flat serializable shapes — this module's state is persisted to
 // disk via tauri-plugin-store and must stay trivially cloneable.
 
+import { defaultModelFor, type AgentCli } from "../../shared/agent-cli";
 import type { ProjectId } from "../workspaces/state/types";
 
 export type { ProjectId };
 
 export type LoopProfileId = string & { readonly __brand: "LoopProfileId" };
 
-export type LoopCli = "claude" | "codex" | "opencode";
+export const LOOP_CLIS = ["claude", "codex", "opencode"] as const satisfies readonly AgentCli[];
+export type LoopCli = (typeof LOOP_CLIS)[number];
 
 // `integration` only runs in hybrid mode (between batches).
 export type LoopAgentRole = "analysis" | "implementation" | "review" | "knowledge" | "integration";
@@ -56,7 +58,7 @@ export type LoopPromptName = (typeof LOOP_PROMPT_NAMES)[number];
 
 export const DEFAULT_AGENT_SLOT: AgentSlot = {
   cli: "claude",
-  model: "claude-opus-4-7",
+  model: defaultModelFor("claude"),
 };
 
 export function createDefaultMatrix(): ProfileMatrix {
@@ -74,8 +76,6 @@ export interface CliValidation {
   reason?: string | null;
 }
 
-export const LOOP_CLIS: readonly LoopCli[] = ["claude", "codex", "opencode"] as const;
-
 // Execution order: analysis → impl → review → knowledge, plus the cross-batch integrator.
 export const ALL_AGENT_ROLES: readonly LoopAgentRole[] = [
   "analysis",
@@ -84,17 +84,6 @@ export const ALL_AGENT_ROLES: readonly LoopAgentRole[] = [
   "knowledge",
   "integration",
 ] as const;
-
-export function defaultModelFor(cli: LoopCli): string {
-  switch (cli) {
-    case "claude":
-      return "claude-opus-4-7";
-    case "codex":
-      return "gpt-5.5";
-    case "opencode":
-      return "opencode-go/glm-5.2";
-  }
-}
 
 // The 2 pre-phase prompts (`problem-intake`, `phase-decomposition`) have no
 // agent role and return `null`.

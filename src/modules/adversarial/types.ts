@@ -142,17 +142,6 @@ export function severityAtOrAbove(sev: Severity, threshold: Severity): boolean {
   return SEVERITY_RANK[sev] >= SEVERITY_RANK[threshold];
 }
 
-export function defaultModelForCli(cli: LoopCli): string {
-  switch (cli) {
-    case "claude":
-      return "claude-opus-4-7";
-    case "codex":
-      return "gpt-5.5";
-    case "opencode":
-      return "opencode-go/glm-5.2";
-  }
-}
-
 // v1 policy: only `codex` maps `effort` to a CLI flag. The others accept the
 // value but the Rust side logs and ignores it.
 export function cliSupportsEffort(cli: LoopCli): boolean {

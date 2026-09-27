@@ -1,5 +1,6 @@
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 
+import { defaultModelFor } from "../../../shared/agent-cli";
 import { showToast } from "../../../shared/ui/toast";
 import { stringifyError } from "../../../shared/errors";
 import { invokers, type BranchDiff, type CliValidation } from "../scheduler/invokers";
@@ -7,7 +8,6 @@ import {
   DEFAULT_BLOCKING,
   DEFAULT_ROUNDS,
   DEFAULT_TIMEOUT_SECS,
-  defaultModelForCli,
   type DebateSettings,
   type DebateSlot,
   type DiffMeta,
@@ -59,8 +59,8 @@ export function mountStep1Setup(slot: HTMLElement, config: Step1Config): { dispo
     diff: null,
     diffError: null,
     loadingDiff: false,
-    critic: { cli: "claude", model: defaultModelForCli("claude"), effort: "default" },
-    defender: { cli: "codex", model: defaultModelForCli("codex"), effort: "high" },
+    critic: { cli: "claude", model: defaultModelFor("claude"), effort: "default" },
+    defender: { cli: "codex", model: defaultModelFor("codex"), effort: "high" },
     criticValid: null,
     defenderValid: null,
     rounds: DEFAULT_ROUNDS,
@@ -199,7 +199,7 @@ export function mountStep1Setup(slot: HTMLElement, config: Step1Config): { dispo
     const target = role === "critic" ? state.critic : state.defender;
     const cliChanged = patch.cli !== undefined && patch.cli !== target.cli;
     const next: DebateSlot = { ...target, ...patch };
-    if (cliChanged) next.model = defaultModelForCli(next.cli);
+    if (cliChanged) next.model = defaultModelFor(next.cli);
     if (role === "critic") state.critic = next;
     else state.defender = next;
     if (cliChanged || patch.model !== undefined) {

@@ -1,8 +1,9 @@
 import { invoke } from "@tauri-apps/api/core";
 
+import { defaultModelFor } from "../../../shared/agent-cli";
 import { stringifyError } from "../../../shared/errors";
 
-import { buildRunPromptPath, defaultModelFor } from "../types";
+import { buildRunPromptPath } from "../types";
 import { detectCycle, phaseSlug, slugToId, topologicalBatches } from "./graph";
 import {
   parseAgentPhasesJson,
