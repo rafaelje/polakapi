@@ -92,20 +92,22 @@ select.code-review-base[hidden] {
 .code-review-report {
   display: flex;
   flex-direction: column;
-  height: 100%;
-  min-height: 0;
+  gap: 10px;
 }
 
-.code-review-report-frame {
-  flex: 1 1 auto;
-  min-height: 0;
-  width: 100%;
-  margin-top: 10px;
+.code-review-report-path {
+  padding: 8px 10px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  background: #fff;
+  background: var(--panel-elev);
+  font-family: var(--mono);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+  user-select: text;
 }
 
-.code-review-report-frame[hidden] {
-  display: none;
+.code-review-report-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }

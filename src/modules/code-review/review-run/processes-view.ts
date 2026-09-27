@@ -1,16 +1,14 @@
 import { el } from "../dom";
-import { processRows, processesMessage, type ProcessesState } from "./review-run-model";
+import { INDEX_KEY, processRows, processesMessage, type ProcessesState } from "./review-run-model";
 
-function processItem(label: string, report: string | null, open: string | null): HTMLElement {
-  const selected = report !== null && report === open;
-  const item = el(report ? "button" : "div", "code-review-file code-review-process");
+function processItem(key: string, label: string, selectedKey: string | null): HTMLElement {
+  const selected = key === selectedKey;
+  const item = el("button", "code-review-file code-review-process");
+  item.type = "button";
   item.classList.toggle("is-selected", selected);
-  if (item instanceof HTMLButtonElement) item.type = "button";
-  if (report) {
-    item.dataset.report = report;
-    item.title = `Open ${report}`;
-    item.setAttribute("aria-selected", String(selected));
-  }
+  item.dataset.process = key;
+  item.title = `Show the path of ${label}`;
+  item.setAttribute("aria-selected", String(selected));
   item.append(el("span", "code-review-file-name", label));
   return item;
 }
@@ -18,7 +16,7 @@ function processItem(label: string, report: string | null, open: string | null):
 export function renderProcesses(
   container: HTMLElement,
   state: ProcessesState,
-  openReport: string | null,
+  selectedKey: string | null,
 ): void {
   const message = processesMessage(state);
   if (message !== null || state.kind !== "loaded") {
@@ -36,9 +34,9 @@ export function renderProcesses(
     el("span", "code-review-group-count", String(state.processes.length)),
   );
   section.append(heading);
-  if (state.index) section.append(processItem("index", state.index, openReport));
+  if (state.index) section.append(processItem(INDEX_KEY, INDEX_KEY, selectedKey));
   for (const row of processRows(state.processes)) {
-    const item = processItem(row.label, row.report, openReport);
+    const item = processItem(row.key, row.label, selectedKey);
     const badge = el("span", "code-review-verdict", row.badge);
     badge.dataset.verdict = row.badge;
     item.append(badge);

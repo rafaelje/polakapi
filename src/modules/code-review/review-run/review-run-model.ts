@@ -12,8 +12,15 @@ export interface ProcessRow {
   key: string;
   label: string;
   badge: VerdictBadge;
-  report: string | null;
+  file: string | null;
 }
+
+export interface ReportTarget {
+  label: string;
+  path: string;
+}
+
+export const INDEX_KEY = "index";
 
 const BADGES: Record<Verdict, VerdictBadge> = {
   go: "GO",
@@ -36,7 +43,7 @@ export function processRows(processes: readonly ReviewProcess[]): ProcessRow[] {
     key: `${process.number}-${process.slug}`,
     label: `${process.number} ${process.slug}`,
     badge: BADGES[process.verdict],
-    report: process.html,
+    file: process.html ?? process.markdown,
   }));
 }
 
@@ -49,8 +56,26 @@ export function reviewersModelOverride(typed: string, terminalModel: string): st
   return model === "" || model === terminalModel ? null : model;
 }
 
-export function reconcileReport(open: string | null, state: ProcessesState): string | null {
-  if (open === null || state.kind !== "loaded") return open;
-  const exists = open === state.index || state.processes.some((process) => process.html === open);
-  return exists ? open : null;
+export function selectedReport(
+  key: string | null,
+  state: ProcessesState,
+  projectPath: string,
+): ReportTarget | null {
+  if (key === null || state.kind !== "loaded") return null;
+  const target = (label: string, file: string | null): ReportTarget | null =>
+    file ? { label, path: reportPath(projectPath, state.folder, file) } : null;
+  if (key === INDEX_KEY) return target(INDEX_KEY, state.index);
+  const row = processRows(state.processes).find((entry) => entry.key === key);
+  return row ? target(row.label, row.file) : null;
+}
+
+export function reconcileProcess(key: string | null, state: ProcessesState): string | null {
+  if (key === null || state.kind !== "loaded") return key;
+  return selectedReport(key, state, "") ? key : null;
+}
+
+export function reportPath(projectPath: string, folder: string, file: string): string {
+  const separator = projectPath.includes("\\") && !projectPath.includes("/") ? "\\" : "/";
+  const root = projectPath.replace(/[\\/]+$/, "");
+  return [root, ...folder.split("/"), file].join(separator);
 }

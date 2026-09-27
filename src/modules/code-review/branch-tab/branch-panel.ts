@@ -11,8 +11,12 @@ import { mountDiffView } from "../diff/diff-view";
 import { el } from "../dom";
 import { renderProcesses } from "../review-run/processes-view";
 import { mountReviewRun, type ReviewAgent } from "../review-run/review-run";
-import { reconcileReport, type ProcessesState } from "../review-run/review-run-model";
-import { mountReportView } from "../review-run/report-view";
+import { mountReportPathView } from "../review-run/report-path-view";
+import {
+  reconcileProcess,
+  selectedReport,
+  type ProcessesState,
+} from "../review-run/review-run-model";
 import type { BranchFile, BranchRefs, PinnedProject } from "../types";
 import {
   BASE_PLACEHOLDER,
@@ -56,16 +60,13 @@ export function mountBranchPanel(options: BranchPanelOptions): BranchPanel {
   let selectedKey: string | null = null;
   let view: BranchListView = "files";
   let processes: ProcessesState = { kind: "loading" };
-  let openReport: string | null = null;
+  let selectedProcess: string | null = null;
   let error: string | null = null;
   let loaded = false;
   let requestId = 0;
   let reloadDiff = false;
   const diffView = mountDiffView(diff, project.path, () => options.isVisible() && view === "files");
-  const reportView = mountReportView(diff, project.path, () => {
-    openReport = null;
-    render();
-  });
+  const reportView = mountReportPathView(diff);
 
   const base = (): string | null => resolveBase(chosenBase, defaultBase);
 
@@ -100,7 +101,7 @@ export function mountBranchPanel(options: BranchPanelOptions): BranchPanel {
     } catch (cause) {
       processes = { kind: "error", message: describeError(cause) };
     }
-    openReport = reconcileReport(openReport, processes);
+    selectedProcess = reconcileProcess(selectedProcess, processes);
   };
 
   const reviewRun = mountReviewRun({
@@ -151,7 +152,7 @@ export function mountBranchPanel(options: BranchPanelOptions): BranchPanel {
       return body;
     };
     if (view === "processes") {
-      renderProcesses(body, processes, openReport);
+      renderProcesses(body, processes, selectedProcess);
       return body;
     }
     if (error) return message(error, true);
@@ -173,7 +174,9 @@ export function mountBranchPanel(options: BranchPanelOptions): BranchPanel {
     const file = selectedFile();
     const current = base();
     const showDiff = view === "files" && file !== null && current !== null;
-    if (view === "processes" && openReport) reportView.show(openReport, reloadDiff);
+    const report =
+      view === "processes" ? selectedReport(selectedProcess, processes, project.path) : null;
+    if (report) reportView.show(report);
     else diffView.show(showDiff ? branchFileTarget(file, current) : null, reloadDiff);
     reloadDiff = false;
   };
@@ -213,9 +216,9 @@ export function mountBranchPanel(options: BranchPanelOptions): BranchPanel {
       render();
       return;
     }
-    const report = target.closest<HTMLElement>("[data-report]");
-    if (report?.dataset.report) {
-      openReport = report.dataset.report;
+    const process = target.closest<HTMLElement>("[data-process]");
+    if (process?.dataset.process) {
+      selectedProcess = process.dataset.process;
       render();
       return;
     }

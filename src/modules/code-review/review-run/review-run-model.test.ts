@@ -4,9 +4,11 @@ import {
   clearsReviewFolder,
   processRows,
   processesMessage,
-  reconcileReport,
+  reconcileProcess,
+  reportPath,
   reviewersModelOverride,
   reviewersModelValue,
+  selectedReport,
   type ProcessesState,
 } from "./review-run-model";
 
@@ -43,7 +45,7 @@ describe("processesMessage", () => {
 });
 
 describe("processRows", () => {
-  it("labels each process with its number, name, verdict badge and report", () => {
+  it("labels each process with its number, name, verdict badge and file", () => {
     const rows = processRows([
       process({ number: "1.1", slug: "login-form", markdown: "1.1-login-form.md" }),
       process({ number: "1.2", slug: "sync", html: "1.2-sync.html", verdict: "go" }),
@@ -51,9 +53,14 @@ describe("processRows", () => {
     ]);
 
     expect(rows).toEqual([
-      { key: "1.1-login-form", label: "1.1 login-form", badge: "pending", report: null },
-      { key: "1.2-sync", label: "1.2 sync", badge: "GO", report: "1.2-sync.html" },
-      { key: "2.1-cache", label: "2.1 cache", badge: "NO-GO", report: "2.1-cache.html" },
+      {
+        key: "1.1-login-form",
+        label: "1.1 login-form",
+        badge: "pending",
+        file: "1.1-login-form.md",
+      },
+      { key: "1.2-sync", label: "1.2 sync", badge: "GO", file: "1.2-sync.html" },
+      { key: "2.1-cache", label: "2.1 cache", badge: "NO-GO", file: "2.1-cache.html" },
     ]);
   });
 });
@@ -73,25 +80,86 @@ describe("reviewers' model", () => {
   });
 });
 
-describe("reconcileReport", () => {
+describe("reportPath", () => {
+  it("joins the project root, review folder and file", () => {
+    expect(reportPath("/home/me/app", "docs/code-review/feat-x", "1.1-a.html")).toBe(
+      "/home/me/app/docs/code-review/feat-x/1.1-a.html",
+    );
+    expect(reportPath("/home/me/app/", "docs/code-review/main", "index.html")).toBe(
+      "/home/me/app/docs/code-review/main/index.html",
+    );
+  });
+
+  it("uses backslashes for Windows project paths", () => {
+    expect(reportPath("C:\\repos\\app\\", "docs/code-review/main", "1.1-a.md")).toBe(
+      "C:\\repos\\app\\docs\\code-review\\main\\1.1-a.md",
+    );
+  });
+});
+
+describe("selectedReport", () => {
+  const state = loaded(
+    [
+      process({
+        number: "1.1",
+        slug: "a",
+        markdown: "1.1-a.md",
+        html: "1.1-a.html",
+        verdict: "go",
+      }),
+      process({ number: "1.2", slug: "b", markdown: "1.2-b.md" }),
+    ],
+    "index.html",
+  );
+
+  it("points to the HTML report of a process", () => {
+    expect(selectedReport("1.1-a", state, "/p")).toEqual({
+      label: "1.1 a",
+      path: "/p/docs/x/1.1-a.html",
+    });
+  });
+
+  it("falls back to the markdown file while the HTML does not exist", () => {
+    expect(selectedReport("1.2-b", state, "/p")).toEqual({
+      label: "1.2 b",
+      path: "/p/docs/x/1.2-b.md",
+    });
+  });
+
+  it("points to the index", () => {
+    expect(selectedReport("index", state, "/p")).toEqual({
+      label: "index",
+      path: "/p/docs/x/index.html",
+    });
+  });
+
+  it("is empty without a selection, a matching process or loaded processes", () => {
+    expect(selectedReport(null, state, "/p")).toBeNull();
+    expect(selectedReport("9.9-z", state, "/p")).toBeNull();
+    expect(selectedReport("index", loaded([]), "/p")).toBeNull();
+    expect(selectedReport("1.1-a", { kind: "loading" }, "/p")).toBeNull();
+  });
+});
+
+describe("reconcileProcess", () => {
   const state = loaded(
     [process({ number: "1.1", slug: "a", html: "1.1-a.html", verdict: "go" })],
     "index.html",
   );
 
-  it("keeps an open report that still exists", () => {
-    expect(reconcileReport("1.1-a.html", state)).toBe("1.1-a.html");
-    expect(reconcileReport("index.html", state)).toBe("index.html");
+  it("keeps a selected process that still exists", () => {
+    expect(reconcileProcess("1.1-a", state)).toBe("1.1-a");
+    expect(reconcileProcess("index", state)).toBe("index");
   });
 
-  it("closes a report that disappeared", () => {
-    expect(reconcileReport("1.2-b.html", state)).toBeNull();
-    expect(reconcileReport("index.html", loaded([]))).toBeNull();
-    expect(reconcileReport(null, state)).toBeNull();
+  it("clears a process that disappeared", () => {
+    expect(reconcileProcess("1.2-b", state)).toBeNull();
+    expect(reconcileProcess("index", loaded([]))).toBeNull();
+    expect(reconcileProcess(null, state)).toBeNull();
   });
 
-  it("keeps the open report while the list is loading or failing", () => {
-    expect(reconcileReport("1.1-a.html", { kind: "loading" })).toBe("1.1-a.html");
-    expect(reconcileReport("1.1-a.html", { kind: "error", message: "x" })).toBe("1.1-a.html");
+  it("keeps the selection while the list is loading or failing", () => {
+    expect(reconcileProcess("1.1-a", { kind: "loading" })).toBe("1.1-a");
+    expect(reconcileProcess("1.1-a", { kind: "error", message: "x" })).toBe("1.1-a");
   });
 });
