@@ -74,6 +74,29 @@ fn processes_without_a_report_are_pending() {
 }
 
 #[test]
+fn reads_each_report_verdict_and_the_index() {
+    let repo = TestRepo::with_commit(&[("a.txt", "one\n")]);
+    repo.write("docs/code-review/main/1.1-a.md", "x");
+    repo.write(
+        "docs/code-review/main/1.1-a.html",
+        r#"<head><meta name="verdict" content="GO"></head>"#,
+    );
+    repo.write(
+        "docs/code-review/main/1.2-b.html",
+        r#"<meta content='NO-GO' name='verdict'>"#,
+    );
+    repo.write("docs/code-review/main/1.3-c.html", "<p>half written");
+
+    let processes = list(&repo);
+    let verdicts: Vec<Verdict> = processes.processes.iter().map(|p| p.verdict).collect();
+
+    assert_eq!(verdicts, [Verdict::Go, Verdict::NoGo, Verdict::Pending]);
+    assert_eq!(processes.index, None);
+    repo.write("docs/code-review/main/index.html", "<p>summary</p>");
+    assert_eq!(list(&repo).index.as_deref(), Some("index.html"));
+}
+
+#[test]
 fn refuses_a_detached_head() {
     let repo = TestRepo::with_commit(&[("a.txt", "one\n")]);
     repo.git(&["switch", "-q", "--detach", "HEAD"]);

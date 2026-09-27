@@ -74,6 +74,10 @@ export function fetchReviewProcesses(projectPath: string): Promise<ReviewProcess
   return invoke<ReviewProcesses>("code_review_processes", { projectPath });
 }
 
+export function fetchProcessReport(projectPath: string, file: string): Promise<string> {
+  return invoke<string>("code_review_process_report", { projectPath, file });
+}
+
 export function describeError(error: unknown): string {
   if (error instanceof Error) return error.message;
   if (typeof error === "string") return error;

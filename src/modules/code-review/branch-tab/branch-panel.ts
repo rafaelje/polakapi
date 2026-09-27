@@ -11,7 +11,8 @@ import { mountDiffView } from "../diff/diff-view";
 import { el } from "../dom";
 import { renderProcesses } from "../review-run/processes-view";
 import { mountReviewRun, type ReviewAgent } from "../review-run/review-run";
-import type { ProcessesState } from "../review-run/review-run-model";
+import { reconcileReport, type ProcessesState } from "../review-run/review-run-model";
+import { mountReportView } from "../review-run/report-view";
 import type { BranchFile, BranchRefs, PinnedProject } from "../types";
 import {
   BASE_PLACEHOLDER,
@@ -55,11 +56,16 @@ export function mountBranchPanel(options: BranchPanelOptions): BranchPanel {
   let selectedKey: string | null = null;
   let view: BranchListView = "files";
   let processes: ProcessesState = { kind: "loading" };
+  let openReport: string | null = null;
   let error: string | null = null;
   let loaded = false;
   let requestId = 0;
   let reloadDiff = false;
-  const diffView = mountDiffView(diff, project.path, () => options.isVisible());
+  const diffView = mountDiffView(diff, project.path, () => options.isVisible() && view === "files");
+  const reportView = mountReportView(diff, project.path, () => {
+    openReport = null;
+    render();
+  });
 
   const base = (): string | null => resolveBase(chosenBase, defaultBase);
 
@@ -94,6 +100,7 @@ export function mountBranchPanel(options: BranchPanelOptions): BranchPanel {
     } catch (cause) {
       processes = { kind: "error", message: describeError(cause) };
     }
+    openReport = reconcileReport(openReport, processes);
   };
 
   const reviewRun = mountReviewRun({
@@ -144,7 +151,7 @@ export function mountBranchPanel(options: BranchPanelOptions): BranchPanel {
       return body;
     };
     if (view === "processes") {
-      renderProcesses(body, processes);
+      renderProcesses(body, processes, openReport);
       return body;
     }
     if (error) return message(error, true);
@@ -166,7 +173,8 @@ export function mountBranchPanel(options: BranchPanelOptions): BranchPanel {
     const file = selectedFile();
     const current = base();
     const showDiff = view === "files" && file !== null && current !== null;
-    diffView.show(showDiff ? branchFileTarget(file, current) : null, reloadDiff);
+    if (view === "processes" && openReport) reportView.show(openReport, reloadDiff);
+    else diffView.show(showDiff ? branchFileTarget(file, current) : null, reloadDiff);
     reloadDiff = false;
   };
 
@@ -202,6 +210,12 @@ export function mountBranchPanel(options: BranchPanelOptions): BranchPanel {
     const toggle = target.closest<HTMLElement>(".code-review-list-toggle [data-view]");
     if (toggle) {
       view = listViewFrom(toggle.dataset.view);
+      render();
+      return;
+    }
+    const report = target.closest<HTMLElement>("[data-report]");
+    if (report?.dataset.report) {
+      openReport = report.dataset.report;
       render();
       return;
     }

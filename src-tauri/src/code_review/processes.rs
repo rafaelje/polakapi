@@ -6,13 +6,9 @@ use std::path::Path;
 use serde::Serialize;
 
 use super::review_folder::review_folder;
+use super::verdict::read_verdict;
+use super::verdict::Verdict;
 use crate::git_review::validate_repo_path;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum Verdict {
-    Pending,
-}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -30,7 +26,10 @@ pub struct ReviewProcesses {
     pub branch: String,
     pub folder: String,
     pub processes: Vec<ReviewProcess>,
+    pub index: Option<String>,
 }
+
+const INDEX_FILE: &str = "index.html";
 
 enum ProcessFile {
     Markdown,
@@ -54,11 +53,17 @@ pub async fn code_review_processes(project_path: String) -> Result<ReviewProcess
 fn processes_sync(project_path: &str) -> Result<ReviewProcesses, String> {
     let project = validate_repo_path(project_path)?;
     let folder = review_folder(&project)?;
-    let processes = list_processes(&project.join(&folder.folder))?;
+    let dir = project.join(&folder.folder);
+    let processes = list_processes(&dir)?;
+    let index = dir
+        .join(INDEX_FILE)
+        .is_file()
+        .then(|| INDEX_FILE.to_string());
     Ok(ReviewProcesses {
         branch: folder.branch,
         folder: folder.folder,
         processes,
+        index,
     })
 }
 
@@ -91,7 +96,15 @@ fn list_processes(dir: &Path) -> Result<Vec<ReviewProcess>, String> {
             ProcessFile::Html => process.html = Some(file_name),
         }
     }
-    Ok(grouped.into_values().collect())
+    Ok(grouped
+        .into_values()
+        .map(|mut process| {
+            if let Some(html) = &process.html {
+                process.verdict = read_verdict(&dir.join(html));
+            }
+            process
+        })
+        .collect())
 }
 
 fn parse_process_name(file_name: &str) -> Option<ProcessName> {

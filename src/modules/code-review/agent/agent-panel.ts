@@ -15,6 +15,7 @@ import {
 
 export interface AgentPanel {
   selection(): AgentSelection;
+  onSelectionChange(listener: (selection: AgentSelection) => void): void;
   write(text: string): Promise<boolean>;
   dispose(): Promise<void>;
 }
@@ -76,6 +77,7 @@ export function mountAgentPanel(host: HTMLElement, projectPath: string): AgentPa
   let disposed = false;
   let queue: Promise<unknown> = Promise.resolve();
   const unlisten: Array<Promise<UnlistenFn>> = [];
+  const selectionListeners: Array<(selection: AgentSelection) => void> = [];
   const dom = renderPanel(host, selection);
 
   const fitLive = (): void => {
@@ -106,7 +108,9 @@ export function mountAgentPanel(host: HTMLElement, projectPath: string): AgentPa
   };
 
   const apply = (change: AgentSelectionChange): void => {
+    const previous = selection;
     selection = changeAgentSelection(selection, change);
+    if (selection !== previous) selectionListeners.forEach((listener) => listener(selection));
     dom.cliSelect.value = selection.cli;
     dom.modelInput.value = selection.model;
     restart(false);
@@ -161,6 +165,7 @@ export function mountAgentPanel(host: HTMLElement, projectPath: string): AgentPa
 
   return {
     selection: () => selection,
+    onSelectionChange: (listener) => selectionListeners.push(listener),
     write,
     dispose: async () => {
       if (disposed) return;

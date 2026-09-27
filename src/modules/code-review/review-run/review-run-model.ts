@@ -12,6 +12,7 @@ export interface ProcessRow {
   key: string;
   label: string;
   badge: VerdictBadge;
+  report: string | null;
 }
 
 const BADGES: Record<Verdict, VerdictBadge> = {
@@ -21,7 +22,7 @@ const BADGES: Record<Verdict, VerdictBadge> = {
 };
 
 export function clearsReviewFolder(step: ReviewStep): boolean {
-  return step === "step1";
+  return step !== "step2";
 }
 
 export function processesMessage(state: ProcessesState): string | null {
@@ -35,5 +36,21 @@ export function processRows(processes: readonly ReviewProcess[]): ProcessRow[] {
     key: `${process.number}-${process.slug}`,
     label: `${process.number} ${process.slug}`,
     badge: BADGES[process.verdict],
+    report: process.html,
   }));
+}
+
+export function reviewersModelValue(override: string | null, terminalModel: string): string {
+  return override ?? terminalModel;
+}
+
+export function reviewersModelOverride(typed: string, terminalModel: string): string | null {
+  const model = typed.trim();
+  return model === "" || model === terminalModel ? null : model;
+}
+
+export function reconcileReport(open: string | null, state: ProcessesState): string | null {
+  if (open === null || state.kind !== "loaded") return open;
+  const exists = open === state.index || state.processes.some((process) => process.html === open);
+  return exists ? open : null;
 }

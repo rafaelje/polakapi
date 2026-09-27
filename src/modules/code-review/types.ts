@@ -99,4 +99,5 @@ export interface ReviewProcess {
 
 export interface ReviewProcesses extends ReviewFolder {
   processes: ReviewProcess[];
+  index: string | null;
 }
