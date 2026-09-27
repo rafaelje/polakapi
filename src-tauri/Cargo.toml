@@ -54,6 +54,8 @@ objc2-app-kit = { version = "0.3", default-features = false, features = ["std", 
 windows-sys = { version = "0.61", features = [
   "Win32_Foundation",
   "Win32_Security",
+  "Win32_Storage_FileSystem",
+  "Win32_System_IO",
   "Win32_System_JobObjects",
   "Win32_System_Threading",
 ] }
