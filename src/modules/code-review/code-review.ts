@@ -7,6 +7,7 @@ import { mountCommitBox } from "./changes/commit-box";
 import { codeReviewKeyAction, readPinnedProject } from "./code-review-model";
 import { mountCodeReviewLayout, type CodeReviewLayout } from "./code-review-layout";
 import { renderEmpty } from "./dom";
+import { onProjectChanged, watchProjectChanges } from "./project-changes";
 
 function isTypingTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
@@ -76,9 +77,11 @@ function bootstrap(): void {
     onChanged: () => changes.refresh(),
   });
   wireKeyboard(layout, changes);
+  onProjectChanged(() => void changes.refresh());
 
   changes.render();
   void changes.refresh();
+  void watchProjectChanges(project.path);
 }
 
 bootstrap();

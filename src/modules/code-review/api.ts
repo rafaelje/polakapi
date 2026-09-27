@@ -53,6 +53,10 @@ export function discardChanges(projectPath: string, paths: string[]): Promise<vo
   return invoke<void>("code_review_discard", { projectPath, paths });
 }
 
+export function startWatchingProject(projectPath: string): Promise<void> {
+  return invoke<void>("code_review_watch_start", { projectPath });
+}
+
 export function describeError(error: unknown): string {
   if (error instanceof Error) return error.message;
   if (typeof error === "string") return error;

@@ -7,6 +7,7 @@ mod paths;
 mod refs;
 mod staging;
 mod sync;
+mod watch;
 
 #[cfg(test)]
 mod test_repo;
@@ -21,3 +22,4 @@ pub use discard::code_review_discard;
 pub use refs::code_review_refs;
 pub use staging::{code_review_stage, code_review_stage_all, code_review_unstage};
 pub use sync::{code_review_pull, code_review_switch_branch};
+pub use watch::{code_review_watch_start, code_review_watch_stop, CodeReviewWatchers};
