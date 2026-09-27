@@ -6,6 +6,7 @@ export interface CodeReviewLayout {
   diff: HTMLElement;
   refreshButton: HTMLButtonElement;
   stageAllButton: HTMLButtonElement;
+  basePicker: HTMLSelectElement;
   activeTab(): CodeReviewTab;
   onTabChange(listener: (tab: CodeReviewTab) => void): void;
   setBranch(branch: string | null): void;
@@ -14,6 +15,8 @@ export interface CodeReviewLayout {
 export function mountCodeReviewLayout(project: PinnedProject): CodeReviewLayout {
   const projectEl = requireById("code-review-project");
   const branchEl = requireById("code-review-branch");
+  const stageAllButton = requireById("code-review-stage-all", HTMLButtonElement);
+  const basePicker = requireById("code-review-base", HTMLSelectElement);
   const tabs = Array.from(document.querySelectorAll<HTMLButtonElement>(".code-review-tab"));
   const listeners: Array<(tab: CodeReviewTab) => void> = [];
   let active: CodeReviewTab = "changes";
@@ -32,6 +35,8 @@ export function mountCodeReviewLayout(project: PinnedProject): CodeReviewLayout 
         other.classList.toggle("is-active", selected);
         other.setAttribute("aria-selected", String(selected));
       }
+      stageAllButton.hidden = active !== "changes";
+      basePicker.hidden = active !== "branch";
       listeners.forEach((listener) => listener(active));
     });
   }
@@ -40,7 +45,8 @@ export function mountCodeReviewLayout(project: PinnedProject): CodeReviewLayout 
     list: requireById("code-review-list"),
     diff: requireById("code-review-diff"),
     refreshButton: requireById("code-review-refresh", HTMLButtonElement),
-    stageAllButton: requireById("code-review-stage-all", HTMLButtonElement),
+    stageAllButton,
+    basePicker,
     activeTab: () => active,
     onTabChange: (listener) => listeners.push(listener),
     setBranch: (branch) => {

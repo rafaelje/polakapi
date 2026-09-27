@@ -1,6 +1,17 @@
-import { fileKey, type ChangesGroupView } from "../code-review-model";
 import { el } from "../dom";
 import type { ChangedFile, ChangeStatus } from "../types";
+
+export type ListFile = Pick<
+  ChangedFile,
+  "path" | "originalPath" | "status" | "insertions" | "deletions" | "binary"
+>;
+
+export interface FileListGroup<F extends ListFile> {
+  group: string;
+  label: string;
+  count: number;
+  files: readonly F[];
+}
 
 const STATUS_LETTERS: Readonly<Record<ChangeStatus, string>> = {
   modified: "M",
@@ -11,10 +22,11 @@ const STATUS_LETTERS: Readonly<Record<ChangeStatus, string>> = {
   conflicted: "C",
 };
 
-export function renderFileList(
+export function renderFileList<F extends ListFile>(
   container: HTMLElement,
-  groups: readonly ChangesGroupView[],
+  groups: readonly FileListGroup<F>[],
   selectedKey: string | null,
+  keyOf: (file: F) => string,
   armedKey: string | null = null,
 ): void {
   const sections = groups.map((group) => {
@@ -30,8 +42,8 @@ export function renderFileList(
       section.append(el("p", "code-review-group-empty", "none"));
     }
     for (const file of group.files) {
-      const key = fileKey(file);
-      section.append(createFileRow(file, key === selectedKey, key === armedKey));
+      const key = keyOf(file);
+      section.append(createFileRow(file, key, key === selectedKey, key === armedKey));
     }
     return section;
   });
@@ -42,11 +54,16 @@ export function statusLetter(status: ChangeStatus): string {
   return STATUS_LETTERS[status];
 }
 
-function createFileRow(file: ChangedFile, selected: boolean, armed: boolean): HTMLButtonElement {
+function createFileRow(
+  file: ListFile,
+  key: string,
+  selected: boolean,
+  armed: boolean,
+): HTMLButtonElement {
   const row = el("button", `code-review-file${selected ? " is-selected" : ""}`);
   row.classList.toggle("is-armed", armed);
   row.type = "button";
-  row.dataset.key = fileKey(file);
+  row.dataset.key = key;
   row.title = file.originalPath ? `${file.originalPath} → ${file.path}` : file.path;
   row.setAttribute("aria-selected", String(selected));
 
@@ -66,13 +83,13 @@ function createFileRow(file: ChangedFile, selected: boolean, armed: boolean): HT
   row.append(status, name, createCounts(file));
   if (armed) {
     const hint =
-      file.group === "untracked" ? "press d again to delete" : "press d again to discard";
+      file.status === "untracked" ? "press d again to delete" : "press d again to discard";
     row.append(el("span", "code-review-armed-hint", hint));
   }
   return row;
 }
 
-function createCounts(file: ChangedFile): HTMLSpanElement {
+function createCounts(file: ListFile): HTMLSpanElement {
   const counts = el("span", "code-review-counts");
   if (file.binary) {
     counts.append(el("span", "code-review-binary", "binary"));

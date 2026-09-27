@@ -1,6 +1,7 @@
 @import "../../styles/form-controls.css";
 @import "./branches/branch-sync.css";
 @import "./agent/agent-panel.css";
+@import "./branch-tab/branch-tab.css";
 
 :root {
   color-scheme: dark;

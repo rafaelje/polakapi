@@ -1,3 +1,4 @@
+mod branch;
 mod changes;
 mod commit;
 mod contents;
@@ -15,6 +16,7 @@ mod test_repo;
 #[cfg(test)]
 mod remote_fixture;
 
+pub use branch::{code_review_branch, code_review_default_base};
 pub use changes::code_review_changes;
 pub use commit::code_review_commit;
 pub use contents::code_review_file_contents;

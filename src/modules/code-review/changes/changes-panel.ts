@@ -7,6 +7,7 @@ import {
   unstagePaths,
 } from "../api";
 import {
+  changedFileTarget,
   fileKey,
   groupChanges,
   moveSelection,
@@ -67,13 +68,14 @@ export function mountChangesPanel(options: ChangesPanelOptions): ChangesPanel {
     } else if (!loaded) {
       renderEmpty(list, "Loading changes…");
     } else {
-      renderFileList(list, groups, selectedKey, armedKey);
+      renderFileList(list, groups, selectedKey, fileKey, armedKey);
       if (actionError) list.prepend(el("p", "code-review-empty code-review-error", actionError));
       list
         .querySelector<HTMLElement>(".code-review-file.is-selected")
         ?.scrollIntoView({ block: "nearest" });
     }
-    diffView.show(selectedFile(), reloadDiff);
+    const file = selectedFile();
+    diffView.show(file ? changedFileTarget(file) : null, reloadDiff);
     reloadDiff = false;
   };
 
@@ -84,6 +86,7 @@ export function mountChangesPanel(options: ChangesPanelOptions): ChangesPanel {
   };
 
   list.addEventListener("click", (event) => {
+    if (!options.isVisible()) return;
     const row = (event.target as HTMLElement).closest<HTMLElement>(".code-review-file");
     if (row?.dataset.key) select(row.dataset.key);
   });

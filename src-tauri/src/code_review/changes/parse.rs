@@ -11,7 +11,7 @@ pub(super) struct StatusEntry {
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub(super) struct LineCounts {
+pub(in crate::code_review) struct LineCounts {
     pub insertions: u32,
     pub deletions: u32,
     pub binary: bool,
@@ -73,7 +73,7 @@ pub(super) fn parse_porcelain_z(raw: &[u8]) -> Vec<StatusEntry> {
     entries
 }
 
-pub(super) fn parse_numstat_z(raw: &[u8]) -> HashMap<String, LineCounts> {
+pub(in crate::code_review) fn parse_numstat_z(raw: &[u8]) -> HashMap<String, LineCounts> {
     let mut records = raw.split(|byte| *byte == 0);
     let mut counts = HashMap::new();
     while let Some(record) = records.next() {

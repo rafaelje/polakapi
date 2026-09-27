@@ -1,9 +1,9 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
+  BranchOverview,
   BranchRefs,
-  ChangedFile,
   ChangesOverview,
-  ContentSource,
+  DiffTarget,
   FileContents,
 } from "./types";
 
@@ -23,14 +23,21 @@ export function stageAll(projectPath: string): Promise<void> {
   return invoke<void>("code_review_stage_all", { projectPath });
 }
 
-export function fetchFileContents(projectPath: string, file: ChangedFile): Promise<FileContents> {
-  const source: ContentSource = { kind: file.group };
+export function fetchFileContents(projectPath: string, target: DiffTarget): Promise<FileContents> {
   return invoke<FileContents>("code_review_file_contents", {
     projectPath,
-    path: file.path,
-    originalPath: file.originalPath,
-    source,
+    path: target.path,
+    originalPath: target.originalPath,
+    source: target.source,
   });
+}
+
+export function fetchDefaultBase(projectPath: string): Promise<string | null> {
+  return invoke<string | null>("code_review_default_base", { projectPath });
+}
+
+export function fetchBranchOverview(projectPath: string, base: string): Promise<BranchOverview> {
+  return invoke<BranchOverview>("code_review_branch", { projectPath, base });
 }
 
 export function fetchBranchRefs(projectPath: string): Promise<BranchRefs> {

@@ -200,3 +200,62 @@ fn source_and_sides_use_tagged_json() {
     let side = serde_json::to_value(SideContent::TooLarge { bytes: 5 }).unwrap();
     assert_eq!(side, serde_json::json!({"kind": "tooLarge", "bytes": 5}));
 }
+
+fn branch(base: &str) -> ContentSource {
+    ContentSource::Branch {
+        base: base.to_string(),
+    }
+}
+
+#[test]
+fn branch_compares_the_merge_base_with_head() {
+    let repo = TestRepo::with_commit(&[("a.txt", "one\n")]);
+    repo.git(&["switch", "-q", "-c", "feature"]);
+    repo.write("a.txt", "one\nfeature\n");
+    repo.git(&["commit", "-q", "-am", "feature"]);
+    repo.git(&["switch", "-q", "main"]);
+    repo.write("a.txt", "one\nmain later\n");
+    repo.git(&["commit", "-q", "-am", "main later"]);
+    repo.git(&["switch", "-q", "feature"]);
+    repo.write("a.txt", "uncommitted\n");
+
+    let result = contents(&repo, "a.txt", branch("main"));
+
+    assert_eq!(result.before, text("one\n"));
+    assert_eq!(result.after, text("one\nfeature\n"));
+}
+
+#[test]
+fn branch_reads_the_before_side_from_the_rename_source() {
+    let repo = TestRepo::with_commit(&[("old.txt", "same\n")]);
+    repo.git(&["switch", "-q", "-c", "feature"]);
+    repo.git(&["mv", "old.txt", "new.txt"]);
+    repo.git(&["commit", "-q", "-m", "rename"]);
+
+    let result = file_contents_sync(
+        &repo.path_str(),
+        "new.txt",
+        Some("old.txt"),
+        &branch("main"),
+    )
+    .unwrap();
+
+    assert_eq!(result.before, text("same\n"));
+    assert_eq!(result.after, text("same\n"));
+}
+
+#[test]
+fn branch_refuses_unsafe_bases() {
+    let repo = TestRepo::with_commit(&[("a.txt", "one\n")]);
+
+    let result = file_contents_sync(&repo.path_str(), "a.txt", None, &branch("--all"));
+
+    assert!(result.is_err(), "{result:?}");
+}
+
+#[test]
+fn branch_source_uses_tagged_json() {
+    let source: ContentSource =
+        serde_json::from_str(r#"{"kind":"branch","base":"origin/main"}"#).unwrap();
+    assert_eq!(source, branch("origin/main"));
+}

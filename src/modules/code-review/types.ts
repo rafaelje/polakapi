@@ -42,7 +42,34 @@ export interface PinnedProject {
 
 export type CodeReviewTab = "changes" | "branch";
 
-export type ContentSource = { kind: "staged" } | { kind: "unstaged" } | { kind: "untracked" };
+export interface BranchFile {
+  path: string;
+  originalPath: string | null;
+  status: ChangeStatus;
+  insertions: number;
+  deletions: number;
+  binary: boolean;
+}
+
+export interface BranchOverview {
+  base: string;
+  mergeBase: string;
+  files: BranchFile[];
+}
+
+export type ContentSource =
+  | { kind: "staged" }
+  | { kind: "unstaged" }
+  | { kind: "untracked" }
+  | { kind: "branch"; base: string };
+
+export interface DiffTarget {
+  key: string;
+  path: string;
+  originalPath: string | null;
+  status: ChangeStatus;
+  source: ContentSource;
+}
 
 export type SideContent =
   | { kind: "text"; text: string }

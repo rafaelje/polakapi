@@ -6,7 +6,7 @@ use super::git::git_stdout;
 use crate::git_review::{current_branch, validate_repo_path};
 use parse::{count_text_lines, parse_numstat_z, parse_porcelain_z, LineCounts};
 
-mod parse;
+pub(super) mod parse;
 
 const MAX_COUNTED_UNTRACKED_BYTES: u64 = 2 * 1024 * 1024;
 

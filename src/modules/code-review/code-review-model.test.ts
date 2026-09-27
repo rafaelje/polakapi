@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   buildCodeReviewUrl,
+  changedFileTarget,
   codeReviewKeyAction,
   codeReviewWindowLabel,
+  diffSideLabels,
   fileKey,
   groupChanges,
   moveSelection,
@@ -179,5 +181,28 @@ describe("spaceAction", () => {
 
   it("does nothing without a selected row", () => {
     expect(spaceAction(null)).toBeNull();
+  });
+});
+
+describe("diff targets", () => {
+  it("builds a working tree diff target from a changed file", () => {
+    const staged = file({ path: "a.ts", group: "staged", status: "added" });
+    expect(changedFileTarget(staged)).toEqual({
+      key: "staged:a.ts",
+      path: "a.ts",
+      originalPath: null,
+      status: "added",
+      source: { kind: "staged" },
+    });
+  });
+
+  it("labels the diff sides by source", () => {
+    expect(diffSideLabels({ kind: "staged" })).toEqual(["HEAD", "Index"]);
+    expect(diffSideLabels({ kind: "unstaged" })).toEqual(["Index", "Working tree"]);
+    expect(diffSideLabels({ kind: "untracked" })).toEqual(["Index", "Working tree"]);
+    expect(diffSideLabels({ kind: "branch", base: "origin/main" })).toEqual([
+      "origin/main",
+      "HEAD",
+    ]);
   });
 });

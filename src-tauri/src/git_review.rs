@@ -22,8 +22,10 @@ use serde::{Deserialize, Serialize};
 
 mod repository;
 
-pub(crate) use repository::{current_branch, is_safe_git_ref, ref_exists, validate_repo_path};
-use repository::{merge_base, origin_head, rev_parse_verify};
+use repository::origin_head;
+pub(crate) use repository::{
+    current_branch, is_safe_git_ref, merge_base, ref_exists, rev_parse_verify, validate_repo_path,
+};
 
 // Per-file cap: keeps one huge file (lockfile, generated dump) from eating the
 // whole prompt budget. Files past this size are cut at a line boundary and

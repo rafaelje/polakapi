@@ -1,0 +1,23 @@
+select.code-review-base {
+  height: 28px;
+  max-width: 260px;
+  padding: 3px 26px 3px 10px;
+  font-size: 12px;
+}
+
+select.code-review-base[hidden] {
+  display: none;
+}
+
+.code-review-list-toggle {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.code-review-list-toggle .code-review-tab {
+  flex: 1;
+  height: 24px;
+  padding: 2px 8px;
+  font-size: 11px;
+}

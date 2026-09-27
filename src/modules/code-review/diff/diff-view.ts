@@ -1,20 +1,14 @@
 import { describeError, fetchFileContents } from "../api";
-import { fileKey } from "../code-review-model";
+import { diffSideLabels } from "../code-review-model";
 import { el, renderEmpty } from "../dom";
-import type { ChangedFile, ChangeGroup } from "../types";
+import type { DiffTarget } from "../types";
 import { diffContents, type DiffLine, type DiffRow, type FileDiff } from "./diff-model";
 
 export interface DiffView {
-  show(file: ChangedFile | null, reload?: boolean): void;
+  show(file: DiffTarget | null, reload?: boolean): void;
 }
 
 type DiffState = { kind: "loading" } | { kind: "error"; message: string } | FileDiff;
-
-const SIDE_LABELS: Readonly<Record<ChangeGroup, [string, string]>> = {
-  staged: ["HEAD", "Index"],
-  unstaged: ["Index", "Working tree"],
-  untracked: ["Index", "Working tree"],
-};
 
 export function mountDiffView(
   container: HTMLElement,
@@ -25,7 +19,7 @@ export function mountDiffView(
   let state: DiffState = { kind: "loading" };
   let requestId = 0;
 
-  const load = async (file: ChangedFile): Promise<void> => {
+  const load = async (file: DiffTarget): Promise<void> => {
     const current = ++requestId;
     let next: DiffState;
     try {
@@ -33,7 +27,7 @@ export function mountDiffView(
     } catch (cause) {
       next = { kind: "error", message: `Could not read the diff: ${describeError(cause)}` };
     }
-    if (current !== requestId || currentKey !== fileKey(file)) return;
+    if (current !== requestId || currentKey !== file.key) return;
     state = next;
     if (isVisible()) renderFileDiff(container, file, state);
   };
@@ -46,7 +40,7 @@ export function mountDiffView(
         renderEmpty(container, "Select a file to see its diff.");
         return;
       }
-      const key = fileKey(file);
+      const key = file.key;
       if (key !== currentKey) {
         currentKey = key;
         state = { kind: "loading" };
@@ -59,7 +53,7 @@ export function mountDiffView(
   };
 }
 
-function renderFileDiff(container: HTMLElement, file: ChangedFile, state: DiffState): void {
+function renderFileDiff(container: HTMLElement, file: DiffTarget, state: DiffState): void {
   const body = (() => {
     switch (state.kind) {
       case "loading":
@@ -77,7 +71,7 @@ function renderFileDiff(container: HTMLElement, file: ChangedFile, state: DiffSt
   container.replaceChildren(renderHeader(file), body);
 }
 
-function renderHeader(file: ChangedFile): HTMLElement {
+function renderHeader(file: DiffTarget): HTMLElement {
   const header = el("div", "code-review-diff-header");
   if (file.originalPath) {
     header.append(
@@ -87,14 +81,14 @@ function renderHeader(file: ChangedFile): HTMLElement {
   }
   header.append(
     el("strong", "code-review-diff-path", file.path),
-    el("span", "code-review-muted", `${file.group} · ${file.status}`),
+    el("span", "code-review-muted", `${sourceLabel(file)} · ${file.status}`),
   );
   return header;
 }
 
-function renderRows(file: ChangedFile, rows: readonly DiffRow[]): HTMLElement {
+function renderRows(file: DiffTarget, rows: readonly DiffRow[]): HTMLElement {
   const grid = el("div", "code-review-diff-grid");
-  const [beforeLabel, afterLabel] = SIDE_LABELS[file.group];
+  const [beforeLabel, afterLabel] = diffSideLabels(file.source);
   const fragment = document.createDocumentFragment();
   fragment.append(
     sideTitle(
@@ -112,6 +106,10 @@ function renderRows(file: ChangedFile, rows: readonly DiffRow[]): HTMLElement {
   }
   grid.append(fragment);
   return grid;
+}
+
+function sourceLabel(file: DiffTarget): string {
+  return file.source.kind === "branch" ? `vs ${file.source.base}` : file.source.kind;
 }
 
 function sideTitle(text: string): HTMLElement {

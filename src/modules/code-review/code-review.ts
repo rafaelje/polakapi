@@ -1,6 +1,7 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { requireById } from "../../shared/dom/dom";
 import { mountAgentPanel } from "./agent/agent-panel";
+import { mountBranchPanel, type BranchPanel } from "./branch-tab/branch-panel";
 import { mountBranchSync } from "./branches/branch-sync";
 import { mountChangesPanel, type ChangesPanel } from "./changes/changes-panel";
 import { mountCommitBox } from "./changes/commit-box";
@@ -16,12 +17,7 @@ function isTypingTarget(target: EventTarget | null): boolean {
   return ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName);
 }
 
-function showBranchPlaceholder(layout: CodeReviewLayout): void {
-  renderEmpty(layout.list, "The Branch view is not available yet.");
-  renderEmpty(layout.diff, "Select a file to see its diff.");
-}
-
-function wireKeyboard(layout: CodeReviewLayout, changes: ChangesPanel): void {
+function wireKeyboard(layout: CodeReviewLayout, changes: ChangesPanel, branch: BranchPanel): void {
   document.addEventListener("keydown", (event) => {
     const ignored = event.defaultPrevented || isTypingTarget(event.target);
     const action = ignored ? null : codeReviewKeyAction(event);
@@ -32,11 +28,15 @@ function wireKeyboard(layout: CodeReviewLayout, changes: ChangesPanel): void {
       void getCurrentWindow().close();
       return;
     }
+    const onBranch = layout.activeTab() === "branch";
     if (action === "refresh") {
-      void changes.refresh();
+      void (onBranch ? branch.refresh() : changes.refresh());
       return;
     }
-    if (layout.activeTab() !== "changes") return;
+    if (onBranch) {
+      if (action === "next" || action === "previous") branch.move(action === "next" ? 1 : -1);
+      return;
+    }
     if (action === "toggle-stage") void changes.toggleStage();
     else if (action === "stage-all") void changes.stageAll();
     else if (action === "discard") void changes.discard();
@@ -62,22 +62,43 @@ function bootstrap(): void {
   });
 
   const commitBox = mountCommitBox(project, changes);
+  const branch = mountBranchPanel({
+    project,
+    list: layout.list,
+    diff: layout.diff,
+    basePicker: layout.basePicker,
+    isVisible: () => layout.activeTab() === "branch",
+  });
 
   layout.onTabChange((tab) => {
     commitBox.setVisible(tab === "changes");
     changes.disarm();
-    if (tab === "changes") changes.render();
-    else showBranchPlaceholder(layout);
+    if (tab === "changes") {
+      changes.render();
+      return;
+    }
+    branch.render();
+    void branch.refresh();
   });
-  layout.refreshButton.addEventListener("click", () => void changes.refresh());
+  layout.refreshButton.addEventListener("click", () => {
+    void (layout.activeTab() === "branch" ? branch.refresh() : changes.refresh());
+  });
   layout.stageAllButton.addEventListener("click", () => void changes.stageAll());
   mountBranchSync({
     project,
     onTabChange: (listener) => layout.onTabChange(listener),
-    onChanged: () => changes.refresh(),
+    onChanged: async () => {
+      await Promise.all([
+        changes.refresh(),
+        layout.activeTab() === "branch" ? branch.refresh() : Promise.resolve(),
+      ]);
+    },
   });
-  wireKeyboard(layout, changes);
-  onProjectChanged(() => void changes.refresh());
+  wireKeyboard(layout, changes, branch);
+  onProjectChanged(() => {
+    void changes.refresh();
+    if (layout.activeTab() === "branch") void branch.refresh();
+  });
 
   changes.render();
   void changes.refresh();

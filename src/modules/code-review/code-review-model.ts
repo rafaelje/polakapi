@@ -1,4 +1,4 @@
-import type { ChangedFile, ChangeGroup, PinnedProject } from "./types";
+import type { ChangedFile, ChangeGroup, ContentSource, DiffTarget, PinnedProject } from "./types";
 
 export interface ChangesGroupView {
   group: ChangeGroup;
@@ -104,6 +104,27 @@ export function spaceAction(file: ChangedFile | null): StagingAction | null {
   if (file.group !== "staged") return { kind: "stage", paths: [file.path] };
   const paths = file.originalPath ? [file.path, file.originalPath] : [file.path];
   return { kind: "unstage", paths };
+}
+
+export function changedFileTarget(file: ChangedFile): DiffTarget {
+  return {
+    key: fileKey(file),
+    path: file.path,
+    originalPath: file.originalPath,
+    status: file.status,
+    source: { kind: file.group },
+  };
+}
+
+export function diffSideLabels(source: ContentSource): [string, string] {
+  switch (source.kind) {
+    case "staged":
+      return ["HEAD", "Index"];
+    case "branch":
+      return [source.base, "HEAD"];
+    default:
+      return ["Index", "Working tree"];
+  }
 }
 
 export function buildCodeReviewUrl(project: PinnedProject): string {

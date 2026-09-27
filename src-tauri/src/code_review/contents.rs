@@ -3,6 +3,7 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
+use super::branch::base_merge_base;
 use super::git::git_stdout;
 use super::paths::validate_path;
 use crate::git_review::validate_repo_path;
@@ -16,6 +17,7 @@ pub enum ContentSource {
     Staged,
     Unstaged,
     Untracked,
+    Branch { base: String },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -74,6 +76,13 @@ fn file_contents_sync(
             (before, worktree(&project, &path)?)
         }
         ContentSource::Untracked => (SideContent::Absent, worktree(&project, &path)?),
+        ContentSource::Branch { base } => {
+            let merge_base = base_merge_base(&project, base)?;
+            (
+                object(&project, &format!("{merge_base}:{before_path}"))?,
+                object(&project, &format!("HEAD:{path}"))?,
+            )
+        }
     };
     Ok(FileContents { before, after })
 }

@@ -44,7 +44,7 @@ pub(crate) fn ref_exists(project: &PathBuf, name: &str) -> Result<bool, String> 
     )
 }
 
-pub(super) fn rev_parse_verify(project: &PathBuf, name: &str) -> Result<String, String> {
+pub(crate) fn rev_parse_verify(project: &PathBuf, name: &str) -> Result<String, String> {
     let output = git_output(project, ["rev-parse", "--verify", name])?;
     if !output.status.success() {
         return Err(format!(
@@ -55,7 +55,7 @@ pub(super) fn rev_parse_verify(project: &PathBuf, name: &str) -> Result<String, 
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
 
-pub(super) fn merge_base(project: &PathBuf, a: &str, b: &str) -> Result<String, String> {
+pub(crate) fn merge_base(project: &PathBuf, a: &str, b: &str) -> Result<String, String> {
     let output = git_output(project, ["merge-base", a, b])?;
     if !output.status.success() {
         return Err(format!(
