@@ -15,6 +15,7 @@ import {
   type DiffRenderInput,
   type SideHighlights,
 } from "./diff-render";
+import { copyToClipboard, wireSelectionCopy } from "./diff-copy";
 import { highlightFile } from "./highlight";
 
 export interface DiffView {
@@ -42,6 +43,15 @@ export function mountDiffView(
   let requestId = 0;
   let expanded = new Set<number>();
   let shownFile: DiffTarget | null = null;
+  let loaded: FileContents | null = null;
+  let copiedTimer: ReturnType<typeof setTimeout> | undefined;
+  const copied = el("span", "code-review-diff-copied");
+  copied.setAttribute("role", "status");
+  const onCopied = (message: string): void => {
+    copied.textContent = message;
+    clearTimeout(copiedTimer);
+    copiedTimer = setTimeout(() => (copied.textContent = ""), 1800);
+  };
 
   const render = (file: DiffTarget): void => {
     const scrollTop = container.scrollTop;
@@ -49,6 +59,9 @@ export function mountDiffView(
     shownFile = file;
     renderFileDiff(container, file, state, {
       expanded,
+      base: file.source.kind === "branch" ? file.source.base : null,
+      copied,
+      onCopied,
       onExpand: (start) => {
         expanded = new Set(expanded).add(start);
         render(file);
@@ -76,6 +89,9 @@ export function mountDiffView(
       next = { kind: "error", message: `Could not read the diff: ${describeError(cause)}` };
     }
     if (!isCurrent(current, file)) return;
+    const unchanged = contents && loaded && sameContents(contents, loaded);
+    if (unchanged && state.kind === "rows" && state.highlights) return;
+    loaded = contents;
     state = next;
     if (isVisible()) render(file);
     if (!contents || state.kind !== "rows") return;
@@ -99,6 +115,7 @@ export function mountDiffView(
       if (key !== currentKey) {
         currentKey = key;
         state = { kind: "loading" };
+        loaded = null;
         expanded = new Set();
         void load(file);
       } else if (reload) {
@@ -107,6 +124,10 @@ export function mountDiffView(
       render(file);
     },
   };
+}
+
+function sameContents(a: FileContents, b: FileContents): boolean {
+  return JSON.stringify(a) === JSON.stringify(b);
 }
 
 function highlightSides(file: DiffTarget, contents: FileContents): SideHighlights {
@@ -122,6 +143,9 @@ function highlightSides(file: DiffTarget, contents: FileContents): SideHighlight
 
 interface ViewControls {
   expanded: ReadonlySet<number>;
+  base: string | null;
+  copied: HTMLElement;
+  onCopied: (message: string) => void;
   onExpand: (start: number) => void;
   onToggleMode: () => void;
 }
@@ -160,9 +184,21 @@ function renderRows(
     expanded: controls.expanded,
     onExpand: controls.onExpand,
   };
-  if (mode === "split") return renderSideBySide(input, state.rows);
+  const copy = {
+    path: file.path,
+    beforePath: file.originalPath ?? file.path,
+    base: controls.base,
+    onCopied: controls.onCopied,
+  };
+  if (mode === "split") {
+    const grid = renderSideBySide(input, state.rows);
+    wireSelectionCopy(grid, { ...copy, source: { mode, rows: state.rows } });
+    return grid;
+  }
   state.unified ??= unifiedRows(state.rows);
-  return renderUnified(input, state.unified);
+  const grid = renderUnified(input, state.unified);
+  wireSelectionCopy(grid, { ...copy, source: { mode, rows: state.unified } });
+  return grid;
 }
 
 function renderHeader(file: DiffTarget, controls: ViewControls): HTMLElement {
@@ -173,9 +209,17 @@ function renderHeader(file: DiffTarget, controls: ViewControls): HTMLElement {
       el("span", "code-review-muted", "→"),
     );
   }
+  const copyPath = el("button", "code-review-diff-copy-path", "Copy path");
+  copyPath.type = "button";
+  copyPath.title = "Copy the file path";
+  copyPath.addEventListener("click", () =>
+    copyToClipboard(file.path, `Copied ${file.path}`, controls.onCopied),
+  );
   header.append(
     el("strong", "code-review-diff-path", file.path),
+    copyPath,
     el("span", "code-review-muted", `${sourceLabel(file)} · ${file.status}`),
+    controls.copied,
   );
   const toggle = el(
     "button",

@@ -435,6 +435,32 @@ button {
   margin-left: auto;
 }
 
+.code-review-diff-copy-path {
+  padding: 1px 7px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--panel-elev);
+  color: var(--muted);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.code-review-diff-copy-path:hover {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.code-review-diff-copied {
+  color: var(--ok);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.code-review-diff-grid[data-select-side="left"] .code-review-diff-code:not([data-side="left"]),
+.code-review-diff-grid[data-select-side="right"] .code-review-diff-code:not([data-side="right"]) {
+  user-select: none;
+}
+
 .code-review-diff-code[data-kind="deleted"] {
   background: color-mix(in srgb, var(--danger) 14%, transparent);
 }
