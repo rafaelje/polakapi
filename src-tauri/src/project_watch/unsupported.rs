@@ -2,12 +2,12 @@ use std::io;
 use std::path::Path;
 use std::time::Duration;
 
-use super::{Activity, Backend};
+use super::{Activity, Backend, Scope};
 
 pub(crate) struct PlatformBackend;
 
 impl Backend for PlatformBackend {
-    fn open(_root: &Path) -> io::Result<Self> {
+    fn open(_root: &Path, _scope: &Scope) -> io::Result<Self> {
         Err(io::Error::new(
             io::ErrorKind::Unsupported,
             "file watching not supported on this platform yet",

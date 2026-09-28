@@ -1,6 +1,5 @@
-use std::ffi::OsStr;
 use std::io;
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread::JoinHandle;
@@ -26,6 +25,9 @@ mod unsupported;
 #[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
 use unsupported::PlatformBackend;
 
+mod scope;
+use scope::{watch_roots, Scope};
+
 #[cfg(all(test, any(target_os = "linux", target_os = "macos", windows)))]
 mod tests;
 
@@ -46,9 +48,9 @@ pub(crate) enum Activity {
 
 /// A platform binding. The core owns ignore rules, debouncing and stopping;
 /// a backend only reports raw activity under the root and keeps its OS watches
-/// up to date (skipping directories for which `should_watch_dir` is false).
+/// up to date (skipping directories for which `Scope::should_watch_dir` is false).
 pub(crate) trait Backend: Sized + Send + 'static {
-    fn open(root: &Path) -> io::Result<Self>;
+    fn open(root: &Path, scope: &Scope) -> io::Result<Self>;
     fn wait(&mut self, timeout: Duration) -> io::Result<Activity>;
 }
 
@@ -67,13 +69,22 @@ impl ProjectWatcher {
                 format!("not a directory: {}", root.display()),
             ));
         }
-        let backend = PlatformBackend::open(root)?;
+        let mut watches = Vec::new();
+        for (index, (path, scope)) in watch_roots(root).into_iter().enumerate() {
+            match PlatformBackend::open(&path, &scope) {
+                Ok(backend) => watches.push((backend, scope)),
+                Err(error) if index == 0 => return Err(error),
+                Err(error) => {
+                    eprintln!("polakapi: could not watch {}: {error}", path.display());
+                }
+            }
+        }
         let stop = Arc::new(AtomicBool::new(false));
         let thread = std::thread::Builder::new()
             .name("polakapi-project-watch".into())
             .spawn({
                 let stop = stop.clone();
-                move || run(backend, &stop, on_change)
+                move || run(watches, &stop, on_change)
             })?;
         Ok(Self {
             stop,
@@ -91,22 +102,35 @@ impl Drop for ProjectWatcher {
     }
 }
 
-fn run<B: Backend>(mut backend: B, stop: &AtomicBool, on_change: impl Fn()) {
+fn run<B: Backend>(mut watches: Vec<(B, Scope)>, stop: &AtomicBool, on_change: impl Fn()) {
     let mut burst: Option<(Instant, Instant)> = None;
     while !stop.load(Ordering::SeqCst) {
         let timeout = match burst {
             Some((_, last)) => QUIET.saturating_sub(last.elapsed()).min(POLL),
             None => POLL,
         };
-        let changed = match backend.wait(timeout) {
-            Ok(Activity::Quiet) => false,
-            Ok(Activity::Overflow) => true,
-            Ok(Activity::Paths(paths)) => paths.iter().any(|path| !is_ignored(path)),
-            Err(error) => {
-                eprintln!("polakapi: project watcher stopped: {error}");
-                return;
+        let mut changed = false;
+        let mut failed = None;
+        for (index, (backend, scope)) in watches.iter_mut().enumerate() {
+            let wait = if index == 0 { timeout } else { Duration::ZERO };
+            match backend.wait(wait) {
+                Ok(Activity::Quiet) => {}
+                Ok(Activity::Overflow) => changed = true,
+                Ok(Activity::Paths(paths)) => {
+                    changed |= paths.iter().any(|path| scope.is_relevant(path));
+                }
+                Err(error) => {
+                    eprintln!("polakapi: project watcher stopped: {error}");
+                    failed = Some(index);
+                    break;
+                }
             }
-        };
+        }
+        match failed {
+            Some(0) => return,
+            Some(index) => drop(watches.remove(index)),
+            None => {}
+        }
         let now = Instant::now();
         if changed {
             burst = Some(burst.map_or((now, now), |(first, _)| (first, now)));
@@ -118,34 +142,4 @@ fn run<B: Backend>(mut backend: B, stop: &AtomicBool, on_change: impl Fn()) {
             }
         }
     }
-}
-
-fn normal_parts(relative: &Path) -> Vec<&OsStr> {
-    relative
-        .components()
-        .filter_map(|component| match component {
-            Component::Normal(part) => Some(part),
-            _ => None,
-        })
-        .collect()
-}
-
-pub(crate) fn is_ignored(relative: &Path) -> bool {
-    let parts = normal_parts(relative);
-    if parts
-        .iter()
-        .any(|part| *part == "node_modules" || *part == "target")
-    {
-        return true;
-    }
-    match parts.iter().position(|part| *part == ".git") {
-        None => false,
-        Some(0) => !(parts.len() == 2 && (parts[1] == "index" || parts[1] == "HEAD")),
-        Some(_) => true,
-    }
-}
-
-#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
-pub(crate) fn should_watch_dir(relative: &Path) -> bool {
-    normal_parts(relative) == [OsStr::new(".git")] || !is_ignored(relative)
 }

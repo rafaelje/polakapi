@@ -1,5 +1,6 @@
 use std::fs;
 use std::path::Path;
+use std::process::Command;
 use std::sync::mpsc::{channel, Receiver};
 use std::time::{Duration, Instant};
 
@@ -34,7 +35,12 @@ fn project() -> TempDir {
     let dir = tempfile::tempdir().expect("tempdir");
     fs::create_dir_all(dir.path().join("src")).unwrap();
     fs::write(dir.path().join("src/main.rs"), "fn main() {}\n").unwrap();
-    for ignored in [".git/objects/ab", "node_modules/pkg", "target/debug"] {
+    for ignored in [
+        ".git/objects/ab",
+        ".git/refs/heads",
+        "node_modules/pkg",
+        "target/debug",
+    ] {
         fs::create_dir_all(dir.path().join(ignored)).unwrap();
     }
     fs::write(dir.path().join(".git/HEAD"), "ref: refs/heads/main\n").unwrap();
@@ -106,6 +112,60 @@ fn git_index_and_head_changes_emit() {
 
     fs::write(dir.path().join(".git/HEAD"), "ref: refs/heads/other\n").unwrap();
     assert_eq!(signals_within(&receiver, SETTLE), 1);
+}
+
+#[test]
+fn moving_a_branch_ref_emits() {
+    let dir = project();
+    let (_watcher, receiver) = watch(dir.path());
+    fs::write(dir.path().join(".git/refs/heads/main"), "0123\n").unwrap();
+    assert_eq!(signals_within(&receiver, SETTLE), 1);
+
+    fs::create_dir_all(dir.path().join(".git/refs/heads/feat")).unwrap();
+    fs::write(dir.path().join(".git/refs/heads/feat/x"), "4567\n").unwrap();
+    assert!(signals_within(&receiver, SETTLE) >= 1);
+}
+
+fn git(dir: &Path, args: &[&str]) {
+    let output = Command::new("git")
+        .args(args)
+        .current_dir(dir)
+        .output()
+        .expect("git should be installed");
+    assert!(
+        output.status.success(),
+        "git {args:?} failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn a_linked_worktree_notices_index_and_branch_changes() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let main = dir.path().join("main");
+    fs::create_dir_all(&main).unwrap();
+    git(&main, &["init", "-q", "-b", "main"]);
+    git(&main, &["config", "user.email", "test@example.com"]);
+    git(&main, &["config", "user.name", "Test"]);
+    git(&main, &["config", "commit.gpgsign", "false"]);
+    fs::write(main.join("a.txt"), "one\n").unwrap();
+    git(&main, &["add", "a.txt"]);
+    git(&main, &["commit", "-q", "-m", "one"]);
+    git(&main, &["commit", "-q", "--allow-empty", "-m", "two"]);
+    git(
+        &main,
+        &["worktree", "add", "-q", "-b", "feature", "../linked"],
+    );
+    let linked = dir.path().join("linked");
+    let (_watcher, receiver) = watch(&linked);
+
+    git(&linked, &["reset", "-q", "--soft", "HEAD~"]);
+    assert!(signals_within(&receiver, SETTLE) >= 1);
+
+    fs::write(linked.join("a.txt"), "two\n").unwrap();
+    assert!(signals_within(&receiver, SETTLE) >= 1);
+    git(&linked, &["add", "a.txt"]);
+    assert!(signals_within(&receiver, SETTLE) >= 1);
 }
 
 #[test]

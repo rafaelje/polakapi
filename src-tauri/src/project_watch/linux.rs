@@ -7,11 +7,12 @@ use std::time::Duration;
 
 use inotify::{EventMask, Inotify, WatchDescriptor, WatchMask};
 
-use super::{should_watch_dir, Activity, Backend};
+use super::{Activity, Backend, Scope};
 
 pub(crate) struct PlatformBackend {
     inotify: Inotify,
     root: PathBuf,
+    scope: Scope,
     dirs: HashMap<WatchDescriptor, PathBuf>,
     buffer: Vec<u8>,
 }
@@ -48,7 +49,7 @@ impl PlatformBackend {
     fn watch_tree(&mut self, start: PathBuf) {
         let mut pending = vec![start];
         while let Some(relative) = pending.pop() {
-            if !should_watch_dir(&relative) || self.watch(&relative).is_err() {
+            if !self.scope.should_watch_dir(&relative) || self.watch(&relative).is_err() {
                 continue;
             }
             let Ok(entries) = std::fs::read_dir(self.root.join(&relative)) else {
@@ -98,10 +99,11 @@ fn poll_readable(fd: i32, timeout: Duration) -> io::Result<bool> {
 }
 
 impl Backend for PlatformBackend {
-    fn open(root: &Path) -> io::Result<Self> {
+    fn open(root: &Path, scope: &Scope) -> io::Result<Self> {
         let mut backend = Self {
             inotify: Inotify::init()?,
             root: root.to_path_buf(),
+            scope: scope.clone(),
             dirs: HashMap::new(),
             buffer: vec![0; 64 * 1024],
         };

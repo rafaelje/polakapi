@@ -22,7 +22,7 @@ use fsevent_sys::{
     FSEventStreamStop,
 };
 
-use super::{Activity, Backend};
+use super::{Activity, Backend, Scope};
 
 const LATENCY: CFTimeInterval = 0.05;
 const RUN_SLICE: CFTimeInterval = 0.1;
@@ -60,7 +60,7 @@ pub(crate) struct PlatformBackend {
 }
 
 impl Backend for PlatformBackend {
-    fn open(root: &Path) -> io::Result<Self> {
+    fn open(root: &Path, _scope: &Scope) -> io::Result<Self> {
         let root = root.canonicalize()?;
         let (sender, receiver) = channel();
         let (ready_sender, ready_receiver) = channel();

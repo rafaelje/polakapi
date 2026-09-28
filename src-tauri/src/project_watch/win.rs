@@ -19,7 +19,7 @@ use windows_sys::Win32::Storage::FileSystem::{
 use windows_sys::Win32::System::Threading::{CreateEventW, ResetEvent, WaitForSingleObject};
 use windows_sys::Win32::System::IO::{CancelIoEx, GetOverlappedResult, OVERLAPPED};
 
-use super::{Activity, Backend};
+use super::{Activity, Backend, Scope};
 
 const BUFFER_WORDS: usize = 16 * 1024;
 
@@ -124,7 +124,7 @@ fn parse(bytes: &[u8]) -> Vec<PathBuf> {
 }
 
 impl Backend for PlatformBackend {
-    fn open(root: &Path) -> io::Result<Self> {
+    fn open(root: &Path, _scope: &Scope) -> io::Result<Self> {
         let wide: Vec<u16> = root.as_os_str().encode_wide().chain([0]).collect();
         // SAFETY: `wide` is a NUL-terminated UTF-16 string.
         let dir = owned(unsafe {
