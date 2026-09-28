@@ -49,8 +49,10 @@ pub(super) fn review_folder(project: &Path) -> Result<ReviewFolder, String> {
     })
 }
 
+/// `~` cannot appear in a branch name, so mapping `/` to it keeps every
+/// branch in its own folder.
 pub(super) fn branch_folder_name(branch: &str) -> String {
-    branch.replace('/', "-")
+    branch.replace('/', "~")
 }
 
 fn ensure_gitignore(root: &Path) -> Result<(), String> {

@@ -21,7 +21,7 @@ fn an_absent_folder_has_no_processes() {
     let processes = list(&repo);
 
     assert_eq!(processes.branch, "feat/x");
-    assert_eq!(processes.folder, "docs/code-review/feat-x");
+    assert_eq!(processes.folder, "docs/code-review/feat~x");
     assert!(processes.processes.is_empty());
 }
 
