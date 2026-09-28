@@ -43,11 +43,12 @@ pub fn is_safe_session(session: &str) -> bool {
 }
 
 /// Stores are per CLI session, not per terminal: `/clear` in the same terminal
-/// must start empty, and resuming a session must bring its data back. Falls back
-/// to the terminal alone when no session was recorded.
+/// must start empty, and resuming a session — usually in a new terminal, whose
+/// id is fresh — must bring its data back. So the key is the CLI session alone,
+/// and the terminal only stands in when no session was recorded.
 pub fn session_key(pty_id: &str, cli_session_id: Option<&str>) -> String {
     match cli_session_id {
-        Some(session) if !session.is_empty() => format!("{pty_id}-{session}"),
+        Some(session) if !session.is_empty() => session.to_string(),
         _ => pty_id.to_string(),
     }
 }
@@ -211,6 +212,14 @@ mod tests {
         assert!(is_safe_session(&before));
         assert_eq!(session_key("pty-1", None), "pty-1");
         assert_eq!(session_key("pty-1", Some("")), "pty-1");
+    }
+
+    #[test]
+    fn a_resumed_session_in_a_new_terminal_finds_its_store() {
+        assert_eq!(
+            session_key("pty-1", Some("session-a")),
+            session_key("pty-2", Some("session-a"))
+        );
     }
 
     #[test]
