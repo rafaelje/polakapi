@@ -84,8 +84,11 @@ fn exec(args: &[String]) -> Result<(String, i32), String> {
     let output = crate::ctx::mcp::run_shell(&command, std::env::current_dir().ok().as_deref())?;
     let source =
         source.unwrap_or_else(|| format!("exec:{}", crate::ctx::mcp::source_slug(&command)));
-    let context = open()?.offload(&source, &output.text)?.context_text;
     let code = output.code.unwrap_or(1);
+    let context = crate::ctx::mcp::stored_or_raw(
+        open().and_then(|mut session| session.offload(&source, &output.text)),
+        &output,
+    );
     Ok((crate::ctx::mcp::with_status(context, &output), code))
 }
 
@@ -212,6 +215,12 @@ mod tests {
             match open() {
                 Err(error) => assert!(error.contains("POLAKAPI_PTY_ID"), "{error}"),
                 Ok(_) => panic!("expected an error without POLAKAPI_PTY_ID"),
+            }
+            // The command already ran, so its output comes back anyway.
+            #[cfg(unix)]
+            {
+                let (text, code) = exec(&["echo".to_string(), "hello".to_string()]).unwrap();
+                assert_eq!((text.trim(), code), ("hello", 0));
             }
         });
     }

@@ -111,8 +111,10 @@ impl Server {
             .unwrap_or_else(|| format!("exec:{}", source_slug(command)));
 
         let output = run_shell(command, self.project.as_deref())?;
-        let result = self.session()?.offload(&source, &output.text)?;
-        Ok(with_status(result.context_text, &output))
+        let stored = self
+            .session()
+            .and_then(|session| session.offload(&source, &output.text));
+        Ok(with_status(stored_or_raw(stored, &output), &output))
     }
 
     fn search(&mut self, args: &Value) -> Result<String, String> {
@@ -362,6 +364,22 @@ fn join_capture(handle: Option<JoinHandle<(Vec<u8>, bool)>>) -> (Vec<u8>, bool) 
         .unwrap_or_default()
 }
 
+/// What reaches the model once the command has run. A store that cannot be
+/// opened or written must not cost the agent output it already paid for, so
+/// the raw text comes back instead and the failure goes to stderr.
+pub fn stored_or_raw(
+    stored: Result<crate::ctx::offload::OffloadResult, String>,
+    output: &ShellOutput,
+) -> String {
+    match stored {
+        Ok(result) => result.context_text,
+        Err(message) => {
+            eprintln!("polakapi ctx: output not stored: {message}");
+            output.text.clone()
+        }
+    }
+}
+
 /// The offloaded text plus the exit status when the command failed.
 pub fn with_status(context_text: String, output: &ShellOutput) -> String {
     match output.status_note() {
@@ -534,6 +552,20 @@ mod tests {
         let output = run_shell("yes aaé | head -c 9000000", None).unwrap();
         assert!(output.text.ends_with("output truncated by polakapi"));
         assert!(output.text.len() < MAX_EXEC_OUTPUT + 64);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn output_survives_a_store_that_cannot_be_opened() {
+        let project = tempfile::tempdir().unwrap();
+        let mut server = server(project.path());
+        server.session_id = "../escape".to_string();
+        let reply = text(&call(
+            &mut server,
+            "ctx_exec",
+            json!({ "command": "echo kept; exit 3" }),
+        ));
+        assert_eq!(reply, "kept\n\nExit status 3.");
     }
 
     #[test]
