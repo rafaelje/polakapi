@@ -91,6 +91,20 @@ pub fn temp_store(session: &str) -> Option<PathBuf> {
     )
 }
 
+/// Serialises the processes writing one session. Kept outside the store itself,
+/// which moves when it is promoted.
+pub fn lock_file(session: &str) -> Option<PathBuf> {
+    if !is_safe_session(session) {
+        return None;
+    }
+    Some(
+        std::env::temp_dir()
+            .join("polakapi")
+            .join("ctx-locks")
+            .join(format!("{session}.lock")),
+    )
+}
+
 pub fn project_store(project: &Path, session: &str) -> Option<PathBuf> {
     if !is_safe_session(session) {
         return None;

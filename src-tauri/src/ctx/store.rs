@@ -85,6 +85,9 @@ impl CtxStore {
         }
         let conn = Connection::open(path)
             .map_err(|e| format!("could not open {}: {e}", path.display()))?;
+        // Parallel commands in one session share this file.
+        conn.busy_timeout(std::time::Duration::from_secs(5))
+            .map_err(|e| format!("could not set busy timeout: {e}"))?;
         conn.pragma_update(None, "journal_mode", "WAL")
             .map_err(|e| format!("could not set WAL: {e}"))?;
         conn.pragma_update(None, "foreign_keys", "ON")
@@ -92,6 +95,14 @@ impl CtxStore {
         conn.execute_batch(SCHEMA)
             .map_err(|e| format!("ctx schema: {e}"))?;
         Ok(Self { conn })
+    }
+
+    /// Folds the write-ahead log into the database file, so a copy of the
+    /// directory does not depend on a log another connection may still hold.
+    pub fn checkpoint(&self) -> Result<(), String> {
+        self.conn
+            .query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |_| Ok(()))
+            .map_err(|e| format!("ctx checkpoint: {e}"))
     }
 
     #[cfg(test)]

@@ -27,6 +27,8 @@ impl CtxSession {
         project: Option<&Path>,
         config: CtxConfig,
     ) -> Result<Self, String> {
+        // Not while another process is moving the store.
+        let _lock = lock(session_id);
         // A session promoted by an earlier process already lives in the project.
         // Each hooked command runs as its own process, so this is the only way
         // a later call finds what an earlier one stored.
@@ -66,6 +68,11 @@ impl CtxSession {
     }
 
     pub fn offload(&mut self, source: &str, text: &str) -> Result<OffloadResult, String> {
+        // Every hooked command is its own process, and parallel ones share this
+        // session: one of them promoting the store while another writes to it
+        // would lose that write.
+        let _lock = self.lock();
+        self.switch_to_promoted()?;
         let artifacts = self.dir.join("artifacts");
         let policy = self.config.policy;
         let session_id = self.session_id.clone();
@@ -87,23 +94,63 @@ impl CtxSession {
         source: Option<&str>,
         limit: usize,
     ) -> Result<Vec<SearchRow>, String> {
+        self.follow_promotion()?;
         let session_id = self.session_id.clone();
         self.store()?.search(&session_id, query, source, limit)
     }
 
     pub fn read(&mut self, source: &str, ordinal: i64) -> Result<Option<String>, String> {
+        self.follow_promotion()?;
         let session_id = self.session_id.clone();
         self.store()?.read_chunk(&session_id, source, ordinal)
     }
 
     pub fn list(&mut self) -> Result<Vec<SourceRow>, String> {
+        self.follow_promotion()?;
         let session_id = self.session_id.clone();
         self.store()?.list_sources(&session_id)
     }
 
     pub fn savings(&mut self) -> Result<(u64, u64), String> {
+        self.follow_promotion()?;
         let session_id = self.session_id.clone();
         self.store()?.savings(&session_id)
+    }
+
+    fn lock(&self) -> Option<std::fs::File> {
+        lock(&self.session_id)
+    }
+
+    /// The project store, when another process has promoted this session since
+    /// it was opened here.
+    fn promoted_elsewhere(&self) -> Option<PathBuf> {
+        if self.persisted {
+            return None;
+        }
+        let target = paths::project_store(self.project.as_deref()?, &self.session_id)?;
+        target.join("ctx.db").is_file().then_some(target)
+    }
+
+    /// For readers: switches to the promoted store, waiting for a promotion
+    /// that is still copying files.
+    fn follow_promotion(&mut self) -> Result<(), String> {
+        if self.promoted_elsewhere().is_none() {
+            return Ok(());
+        }
+        let _lock = self.lock();
+        self.switch_to_promoted()
+    }
+
+    /// Callers hold the lock.
+    fn switch_to_promoted(&mut self) -> Result<(), String> {
+        let Some(target) = self.promoted_elsewhere() else {
+            return Ok(());
+        };
+        self.store = None;
+        self.store = Some(CtxStore::open(&target.join("ctx.db"))?);
+        self.dir = target;
+        self.persisted = true;
+        Ok(())
     }
 
     /// Moves the store into the project once the session has grown enough.
@@ -126,7 +173,12 @@ impl CtxSession {
             .ok_or_else(|| format!("unsafe session id: {}", self.session_id))?;
         paths::ensure_self_ignored(&project)?;
 
-        // Close the database before the files move under it.
+        // Close the database before the files move under it, with nothing
+        // left behind in the write-ahead log. A failed checkpoint still leaves
+        // the log, which is copied along with the database.
+        if let Some(store) = &self.store {
+            let _ = store.checkpoint();
+        }
         self.store = None;
         paths::promote(&self.dir, &target)?;
         self.dir = target;
@@ -134,6 +186,22 @@ impl CtxSession {
         self.persisted = true;
         Ok(())
     }
+}
+
+/// Held while a process opens or writes a session's store; released on drop.
+/// Best effort: a filesystem without locks still gets context mode, just
+/// without the guarantee.
+fn lock(session_id: &str) -> Option<std::fs::File> {
+    let path = paths::lock_file(session_id)?;
+    std::fs::create_dir_all(path.parent()?).ok()?;
+    let file = std::fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(path)
+        .ok()?;
+    file.lock().ok()?;
+    Some(file)
 }
 
 #[cfg(test)]
@@ -222,6 +290,50 @@ mod tests {
             CtxSession::open(&id, Some(project.path()), config(Storage::Promote, 1)).unwrap();
         assert!(second.dir().starts_with(project.path()));
         assert_eq!(second.list().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn a_session_opened_before_another_process_promoted_it_follows_the_move() {
+        let project = tempfile::tempdir().unwrap();
+        let id = format!("sess-follow-{}", uuid::Uuid::new_v4());
+        let mut idle =
+            CtxSession::open(&id, Some(project.path()), config(Storage::Promote, 2)).unwrap();
+        idle.offload("exec:one", &body("a")).unwrap();
+        {
+            let mut busy =
+                CtxSession::open(&id, Some(project.path()), config(Storage::Promote, 2)).unwrap();
+            busy.offload("exec:two", &body("b")).unwrap();
+            assert!(busy.dir().starts_with(project.path()), "promoted");
+        }
+        assert_eq!(idle.list().unwrap().len(), 2);
+        idle.offload("exec:three", &body("c")).unwrap();
+        assert!(idle.dir().starts_with(project.path()));
+        assert_eq!(idle.list().unwrap().len(), 3);
+    }
+
+    #[test]
+    fn parallel_writers_lose_nothing_across_a_promotion() {
+        let project = tempfile::tempdir().unwrap();
+        let id = format!("sess-parallel-{}", uuid::Uuid::new_v4());
+        let writers: Vec<_> = (0..8)
+            .map(|n| {
+                let id = id.clone();
+                let project = project.path().to_path_buf();
+                std::thread::spawn(move || {
+                    let mut session =
+                        CtxSession::open(&id, Some(&project), config(Storage::Promote, 3)).unwrap();
+                    session
+                        .offload(&format!("exec:{n}"), &body(&n.to_string()))
+                        .unwrap();
+                })
+            })
+            .collect();
+        for writer in writers {
+            writer.join().unwrap();
+        }
+        let mut session =
+            CtxSession::open(&id, Some(project.path()), config(Storage::Promote, 3)).unwrap();
+        assert_eq!(session.list().unwrap().len(), 8);
     }
 
     #[test]
