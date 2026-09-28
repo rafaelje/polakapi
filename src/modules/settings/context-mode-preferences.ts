@@ -30,10 +30,6 @@ export interface ContextModePreferences {
   bypassKb: number;
   /** Output larger than this is indexed and replaced by a query pointer. */
   externalizeKb: number;
-  /** Also append `.polakapi/` to the project's own .gitignore. Off by default:
-   * the store writes a self-ignoring directory, so the user's file is left
-   * alone unless they ask otherwise. */
-  writeGitignore: boolean;
 }
 
 export interface ContextModeCliInfo {
@@ -79,7 +75,6 @@ export const contextModeDefaults: ContextModePreferences = {
   promoteAfterSources: 20,
   bypassKb: 1,
   externalizeKb: 100,
-  writeGitignore: false,
 };
 
 const STORAGE_MODES: readonly ContextStorage[] = ["ephemeral", "promote", "project"];
@@ -121,8 +116,6 @@ export function normalizeContextMode(value: unknown): ContextModePreferences {
     // An externalize threshold at or below the bypass threshold would leave no
     // band for summarising, so it is pushed above it rather than accepted.
     externalizeKb: Math.max(externalizeKb, bypassKb + 1),
-    writeGitignore:
-      typeof p.writeGitignore === "boolean" ? p.writeGitignore : contextModeDefaults.writeGitignore,
   };
 }
 

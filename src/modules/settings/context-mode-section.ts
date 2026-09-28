@@ -117,24 +117,12 @@ export async function mountContextModeSection(opts: ContextModeSectionOptions): 
     "Results this large are indexed and replaced by a pointer the model can query, instead of being summarised.",
   ).append(externalize);
 
-  const gitignore = settingsToggle(
-    "Add .polakapi/ to .gitignore",
-    preferences.writeGitignore,
-    (writeGitignore) => save({ writeGitignore }),
-  );
-  settingsRow(
-    group,
-    "Add .polakapi/ to .gitignore",
-    "Off by default. The store already ignores itself; turn this on only if you want the entry written into the project's own .gitignore.",
-  ).append(gitignore);
-
   function refresh(): void {
     const on = preferences.enabled;
     for (const toggle of cliToggles) toggle.disabled = !on;
     storage.disabled = !on;
     bypass.disabled = !on;
     externalize.disabled = !on;
-    gitignore.disabled = !on;
     // Only the promote mode has anything to promote after.
     promoteAfter.disabled = !on || preferences.storage !== "promote";
   }

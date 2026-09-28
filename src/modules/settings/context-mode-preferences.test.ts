@@ -25,7 +25,6 @@ describe("normalizeContextMode", () => {
       promoteAfterSources: 5,
       bypassKb: 2,
       externalizeKb: 250,
-      writeGitignore: true,
     };
     expect(normalizeContextMode(stored)).toEqual(stored);
   });
