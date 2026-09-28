@@ -1,5 +1,7 @@
-use std::io::{BufRead, Write};
+use std::io::{BufRead, Read, Write};
 use std::path::PathBuf;
+use std::process::Stdio;
+use std::thread::JoinHandle;
 
 use serde_json::{json, Value};
 
@@ -312,21 +314,52 @@ pub fn run_shell(command: &str, cwd: Option<&std::path::Path>) -> Result<ShellOu
     if let Some(dir) = cwd {
         cmd.current_dir(dir);
     }
-    let output = cmd
-        .output()
+    let mut child = cmd
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
         .map_err(|e| format!("could not run command: {e}"))?;
-    let mut text = String::from_utf8_lossy(&output.stdout).into_owned();
-    if !output.stderr.is_empty() {
-        text.push_str(&String::from_utf8_lossy(&output.stderr));
-    }
-    if text.len() > MAX_EXEC_OUTPUT {
-        text.truncate(MAX_EXEC_OUTPUT);
+    let stdout = child.stdout.take().map(capture);
+    let stderr = child.stderr.take().map(capture);
+    let status = child
+        .wait()
+        .map_err(|e| format!("could not run command: {e}"))?;
+    let (stdout, stdout_cut) = join_capture(stdout);
+    let (stderr, stderr_cut) = join_capture(stderr);
+
+    let mut text = String::from_utf8_lossy(&stdout).into_owned();
+    text.push_str(&String::from_utf8_lossy(&stderr));
+    if stdout_cut || stderr_cut || text.len() > MAX_EXEC_OUTPUT {
+        text.truncate(crate::ctx::offload::floor_char_boundary(
+            &text,
+            MAX_EXEC_OUTPUT,
+        ));
         text.push_str("\n… output truncated by polakapi");
     }
     Ok(ShellOutput {
         text,
-        code: output.status.code(),
+        code: status.code(),
     })
+}
+
+/// Keeps at most `MAX_EXEC_OUTPUT` bytes of a stream and discards the rest, so
+/// the child never blocks on a full pipe and memory stays bounded. Reports
+/// whether anything was discarded.
+fn capture<R: Read + Send + 'static>(stream: R) -> JoinHandle<(Vec<u8>, bool)> {
+    std::thread::spawn(move || {
+        let mut kept = Vec::new();
+        let mut limited = stream.take(MAX_EXEC_OUTPUT as u64);
+        let _ = limited.read_to_end(&mut kept);
+        let dropped = std::io::copy(&mut limited.into_inner(), &mut std::io::sink()).unwrap_or(0);
+        (kept, dropped > 0)
+    })
+}
+
+fn join_capture(handle: Option<JoinHandle<(Vec<u8>, bool)>>) -> (Vec<u8>, bool) {
+    handle
+        .and_then(|handle| handle.join().ok())
+        .unwrap_or_default()
 }
 
 /// The offloaded text plus the exit status when the command failed.
@@ -492,6 +525,15 @@ mod tests {
             json!({ "command": "echo hello" }),
         ));
         assert_eq!(reply.trim(), "hello");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn oversized_output_is_capped_on_a_character_boundary() {
+        // Five bytes per line puts the cap inside the two-byte "é".
+        let output = run_shell("yes aaé | head -c 9000000", None).unwrap();
+        assert!(output.text.ends_with("output truncated by polakapi"));
+        assert!(output.text.len() < MAX_EXEC_OUTPUT + 64);
     }
 
     #[test]

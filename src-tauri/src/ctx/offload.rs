@@ -30,7 +30,7 @@ pub fn offload(
     policy: &Policy,
 ) -> Result<OffloadResult, String> {
     let raw_bytes = text.len() as u64;
-    let sample = &text[..text.len().min(SAMPLE_BYTES)];
+    let sample = &text[..floor_char_boundary(text, SAMPLE_BYTES)];
     let kind = classify(source, sample);
     let decision = route(raw_bytes, kind, policy);
 
@@ -74,6 +74,19 @@ pub fn offload(
         context_text,
         raw_bytes,
     })
+}
+
+/// The largest index at or below `index` that does not split a UTF-8
+/// character, so a byte budget can be applied to any text without panicking.
+pub(crate) fn floor_char_boundary(text: &str, index: usize) -> usize {
+    if index >= text.len() {
+        return text.len();
+    }
+    let mut boundary = index;
+    while !text.is_char_boundary(boundary) {
+        boundary -= 1;
+    }
+    boundary
 }
 
 fn kind_label(kind: crate::ctx::router::DataKind) -> &'static str {
@@ -240,6 +253,14 @@ mod tests {
         let written: Vec<_> = std::fs::read_dir(dir.path()).unwrap().flatten().collect();
         assert_eq!(written.len(), 1);
         assert_eq!(std::fs::read_to_string(written[0].path()).unwrap(), text);
+    }
+
+    #[test]
+    fn a_multibyte_character_across_the_sample_limit_does_not_panic() {
+        let mut store = store();
+        let text = format!("{}é", "a".repeat(SAMPLE_BYTES - 1));
+        offload(&mut store, None, "s1", "exec:shell", &text, &policy()).unwrap();
+        assert_eq!(floor_char_boundary(&text, SAMPLE_BYTES), SAMPLE_BYTES - 1);
     }
 
     #[test]
