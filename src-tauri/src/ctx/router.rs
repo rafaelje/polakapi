@@ -37,7 +37,8 @@ pub struct Policy {
 impl Default for Policy {
     fn default() -> Self {
         Self {
-            bypass_bytes: 1024,
+            // Under this, a pointer and the follow-up read cost more than the output.
+            bypass_bytes: 4 * 1024,
             externalize_bytes: 100 * 1024,
         }
     }

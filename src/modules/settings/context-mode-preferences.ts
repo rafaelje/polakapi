@@ -73,7 +73,7 @@ export const contextModeDefaults: ContextModePreferences = {
   clis: { claude: false, codex: false, opencode: false, cursor: false },
   storage: "promote",
   promoteAfterSources: 20,
-  bypassKb: 1,
+  bypassKb: 4,
   externalizeKb: 100,
 };
 

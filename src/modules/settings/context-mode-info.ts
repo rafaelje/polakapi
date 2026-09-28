@@ -27,7 +27,7 @@ function sections(preferences: ContextModePreferences): Section[] {
         "polakapi installs two hooks for that CLI and removes them when you switch it off. Claude Code's go in ~/.claude/settings.json and Cursor's in ~/.cursor/hooks.json. Your own hooks in those files are left untouched.",
       ],
       items: [
-        "Before a shell command runs, one hook checks whether it is known to print a lot: git log, git diff, git show, gh, cat, find, grep -r, curl, or container and system logs. If so, polakapi runs it instead and stores the output.",
+        "Before a shell command runs, one hook hands it to polakapi, which runs it and stores the output. It leaves alone what routing could break or cannot help: cd, export and source, interactive or never-ending commands, heredocs, output written to a file, aliases, and commands that always print a line or two such as git status or mkdir.",
         "At session start, the other hook tells the agent that stored output exists and how to search it.",
       ],
     },
@@ -35,8 +35,8 @@ function sections(preferences: ContextModePreferences): Section[] {
       heading: "What the agent receives instead",
       items: [
         `Output under ${skip} KB: the output itself, unchanged. Offloading something that small costs more than it saves.`,
-        "Logs and other repetitive output: a short summary with line counts, error levels, the most repeated lines, and the first and last lines.",
-        `Text whose exact wording matters (code, diffs, docs, anything over ${externalize} KB): a one-line pointer. The agent runs polakapi ctx search to find the part it needs and polakapi ctx read to get it verbatim.`,
+        "Builds, tests, logs and other repetitive output: a short summary with line counts, every line naming an error, failure or warning (up to 40), the most repeated lines, and the first and last lines.",
+        `Text whose exact wording matters (code, diffs, listings, docs, and other output over ${externalize} KB): a pointer listing its sections. The agent runs polakapi ctx search to find the part it needs and polakapi ctx read to get it verbatim.`,
         'A failing command still reports its failure: the agent sees "Exit status N."',
       ],
     },

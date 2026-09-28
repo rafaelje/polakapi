@@ -56,7 +56,7 @@ describe("how context mode works", () => {
     button("How it works").click();
     const text = dialog()?.textContent ?? "";
     expect(text).toContain("Output under 3 KB");
-    expect(text).toContain("anything over 250 KB");
+    expect(text).toContain("other output over 250 KB");
   });
 
   it("closes from the button, the close icon, Escape and the backdrop", () => {

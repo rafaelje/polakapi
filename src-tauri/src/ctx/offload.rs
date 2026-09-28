@@ -3,7 +3,7 @@ use std::path::Path;
 use sha2::{Digest, Sha256};
 
 use crate::ctx::chunk::chunk_default;
-use crate::ctx::router::{classify, route, Policy, Route};
+use crate::ctx::router::{classify, route, DataKind, Policy, Route};
 use crate::ctx::store::CtxStore;
 use crate::ctx::summarize::summarize;
 
@@ -52,9 +52,12 @@ pub fn offload(
     // summary is a convenience, never the only copy: the agent asked for this
     // output and has to be able to get all of it, exactly as it was.
     let chunks = chunk_default(text);
-    let context_text = match decision {
-        Route::Summarize => format!("{}\n{}", summarize(source, text), retrieval_hint(source)),
-        _ => pointer(source, &chunks),
+    // A log past the externalize threshold is still summarised: its failures
+    // are what the agent needs, and a bare pointer would hide them.
+    let context_text = if decision == Route::Summarize || kind == DataKind::Aggregate {
+        format!("{}\n{}", summarize(source, text), retrieval_hint(source))
+    } else {
+        pointer(source, &chunks)
     };
 
     store.put_source(
@@ -117,15 +120,51 @@ pub fn polakapi_command() -> String {
 /// What replaces the raw bytes in the context. Deliberately carries no path to
 /// the stored output: the handle is a query scope, so the model cannot read the
 /// whole thing back in and undo the saving.
+const MAX_LISTED_SECTIONS: usize = 12;
+const MAX_SECTION_TITLE_CHARS: usize = 80;
+
 pub fn pointer(source: &str, chunks: &[crate::ctx::store::NewChunk]) -> String {
     let with_code = chunks.iter().filter(|chunk| chunk.has_code).count();
     let polakapi = polakapi_command();
-    format!(
-        "Indexed {} sections ({with_code} with code) from: {source}\n\
-         Search it with `{polakapi} ctx search <query> --source {source}`,\n\
-         then read a section verbatim with `{polakapi} ctx read {source} <n>`.",
+    let mut out = format!(
+        "Indexed {} sections ({with_code} with code) from: {source}\n",
         chunks.len()
-    )
+    );
+    // Titles let the agent read the right section without a blind search.
+    for (n, chunk) in chunks.iter().enumerate().take(MAX_LISTED_SECTIONS) {
+        out.push_str(&format!("  {n} {}\n", section_title(chunk)));
+    }
+    if chunks.len() > MAX_LISTED_SECTIONS {
+        out.push_str(&format!(
+            "  … {} more\n",
+            chunks.len() - MAX_LISTED_SECTIONS
+        ));
+    }
+    out.push_str(&format!(
+        "Search it with `{polakapi} ctx search <query> --source {source}`,\n\
+         then read a section verbatim with `{polakapi} ctx read {source} <n>`."
+    ));
+    out
+}
+
+fn section_title(chunk: &crate::ctx::store::NewChunk) -> String {
+    let title = chunk
+        .heading
+        .as_deref()
+        .or_else(|| {
+            chunk
+                .body
+                .lines()
+                .map(str::trim)
+                .find(|line| !line.is_empty())
+        })
+        .unwrap_or("");
+    let clipped: String = title.chars().take(MAX_SECTION_TITLE_CHARS).collect();
+    if clipped.len() < title.len() {
+        format!("{clipped}…")
+    } else {
+        clipped
+    }
 }
 
 fn write_artifact(dir: &Path, source: &str, text: &str) -> Result<std::path::PathBuf, String> {
