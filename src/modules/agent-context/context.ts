@@ -58,6 +58,10 @@ let pattern = "";
 let hits: Map<number, SearchHit> | null = null;
 let searchError: string | null = null;
 let searchTimer: ReturnType<typeof setTimeout> | null = null;
+// Bumped per request, so a slow answer for an earlier agent or pattern cannot
+// overwrite the one the user is now looking at.
+let detailRequest = 0;
+let searchRequest = 0;
 const expanded = new Map<number, string>();
 
 function el<K extends keyof HTMLElementTagNameMap>(
@@ -146,7 +150,10 @@ function agentRow(agent: AgentSummary): HTMLButtonElement {
 }
 
 async function selectAgent(ptyId: string): Promise<void> {
+  const request = ++detailRequest;
+  searchRequest++;
   activePtyId = ptyId;
+  detail = null;
   filter = "all";
   expanded.clear();
   // Entry ids are per-transcript, so a previous agent's hits would mis-point.
@@ -155,12 +162,16 @@ async function selectAgent(ptyId: string): Promise<void> {
   renderList();
   if (!detailEl) return;
   message(detailEl, "Reading context…");
+  const isStale = (): boolean => request !== detailRequest || activePtyId !== ptyId;
+  let next: ContextDetail;
   try {
-    detail = await invoke<ContextDetail>("agent_context_detail", { ptyId });
+    next = await invoke<ContextDetail>("agent_context_detail", { ptyId });
   } catch (error) {
-    message(detailEl, `Could not read that context: ${String(error)}`, true);
+    if (!isStale()) message(detailEl, `Could not read that context: ${String(error)}`, true);
     return;
   }
+  if (isStale()) return;
+  detail = next;
   if (pattern.trim() !== "") {
     await runSearch();
     return;
@@ -219,20 +230,22 @@ function renderDetail(): void {
 }
 
 async function runSearch(): Promise<void> {
-  if (!activePtyId || pattern.trim() === "") {
+  const request = ++searchRequest;
+  const ptyId = activePtyId;
+  if (!ptyId || pattern.trim() === "") {
     hits = null;
     searchError = null;
     renderDetail();
     return;
   }
+  const isStale = (): boolean => request !== searchRequest || activePtyId !== ptyId;
   try {
-    const found = await invoke<SearchHit[]>("agent_context_search", {
-      ptyId: activePtyId,
-      pattern,
-    });
+    const found = await invoke<SearchHit[]>("agent_context_search", { ptyId, pattern });
+    if (isStale()) return;
     hits = new Map(found.map((hit) => [hit.entryId, hit]));
     searchError = null;
   } catch (error) {
+    if (isStale()) return;
     hits = null;
     searchError = String(error);
   }
