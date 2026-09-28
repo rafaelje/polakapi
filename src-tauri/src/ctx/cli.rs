@@ -1,5 +1,3 @@
-use std::path::PathBuf;
-
 use crate::ctx::config;
 use crate::ctx::session::CtxSession;
 
@@ -68,7 +66,7 @@ fn open() -> Result<CtxSession, String> {
     let session_id = crate::ctx::paths::session_key_from_env().ok_or_else(|| {
         "POLAKAPI_PTY_ID is not set — run this inside a polakapi terminal".to_string()
     })?;
-    let project: Option<PathBuf> = std::env::current_dir().ok();
+    let project = crate::ctx::paths::project_dir_from_env();
     CtxSession::open(&session_id, project.as_deref(), config::load_from_env())
 }
 
@@ -81,7 +79,7 @@ fn exec(args: &[String]) -> Result<(String, i32), String> {
         return Err("exec needs a command".into());
     }
     let command = args.join(" ");
-    let output = crate::ctx::mcp::run_shell(&command, std::env::current_dir().ok().as_deref())?;
+    let output = crate::ctx::mcp::run_shell(&command, None)?;
     let source =
         source.unwrap_or_else(|| format!("exec:{}", crate::ctx::mcp::source_slug(&command)));
     let code = output.code.unwrap_or(1);

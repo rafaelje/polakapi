@@ -110,7 +110,9 @@ impl Server {
             .map(str::to_string)
             .unwrap_or_else(|| format!("exec:{}", source_slug(command)));
 
-        let output = run_shell(command, self.project.as_deref())?;
+        // The command runs where the agent is; only the store follows the
+        // terminal's directory.
+        let output = run_shell(command, None)?;
         let stored = self
             .session()
             .and_then(|session| session.offload(&source, &output.text));
@@ -391,7 +393,7 @@ pub fn with_status(context_text: String, output: &ShellOutput) -> String {
 /// Entry point for the `polakapi ctx-mcp` subcommand.
 pub fn run() -> i32 {
     let session_id = crate::ctx::paths::session_key_from_env().unwrap_or_else(|| "unscoped".into());
-    let project = std::env::current_dir().ok();
+    let project = crate::ctx::paths::project_dir_from_env();
     let mut server = Server::new(session_id, project, config::load_from_env());
 
     let stdin = std::io::stdin();

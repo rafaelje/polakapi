@@ -9,6 +9,10 @@ use std::path::{Path, PathBuf};
 // including that file — so the user's own .gitignore is never touched.
 
 pub const STORE_DIR: &str = ".polakapi";
+/// The directory the terminal was opened in, exported by the PTY layer. The
+/// store follows it rather than the process's cwd, which moves with every `cd`
+/// the agent runs.
+pub const PROJECT_DIR_ENV: &str = "POLAKAPI_PROJECT_DIR";
 const SELF_IGNORE: &str = "*\n";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -55,6 +59,23 @@ pub fn session_key_from_env() -> Option<String> {
     let session = std::env::var_os("POLAKAPI_DB_PATH")
         .and_then(|db| crate::db::agent_session::current(std::path::Path::new(&db), &pty_id));
     Some(session_key(&pty_id, session.as_deref()))
+}
+
+/// The project a store belongs to: the terminal's directory when polakapi
+/// exported one, otherwise wherever this process runs.
+pub fn project_dir_from_env() -> Option<PathBuf> {
+    project_dir(
+        std::env::var_os(PROJECT_DIR_ENV),
+        std::env::current_dir().ok(),
+    )
+}
+
+fn project_dir(exported: Option<std::ffi::OsString>, cwd: Option<PathBuf>) -> Option<PathBuf> {
+    exported
+        .filter(|dir| !dir.is_empty())
+        .map(PathBuf::from)
+        .filter(|dir| dir.is_dir())
+        .or(cwd)
 }
 
 pub fn temp_store(session: &str) -> Option<PathBuf> {
@@ -190,6 +211,24 @@ mod tests {
         assert!(is_safe_session(&before));
         assert_eq!(session_key("pty-1", None), "pty-1");
         assert_eq!(session_key("pty-1", Some("")), "pty-1");
+    }
+
+    #[test]
+    fn the_exported_terminal_directory_wins_over_the_cwd() {
+        let project = tempfile::tempdir().unwrap();
+        let elsewhere = PathBuf::from("/somewhere/the/agent/cd-ed");
+        assert_eq!(
+            project_dir(Some(project.path().into()), Some(elsewhere.clone())),
+            Some(project.path().to_path_buf())
+        );
+        assert_eq!(
+            project_dir(Some("".into()), Some(elsewhere.clone())),
+            Some(elsewhere.clone())
+        );
+        assert_eq!(
+            project_dir(Some("/does/not/exist".into()), Some(elsewhere.clone())),
+            Some(elsewhere)
+        );
     }
 
     #[test]

@@ -181,6 +181,10 @@ pub fn spawn_session(
 
     let mut cmd =
         platform_command::portable_command(&program, &validated_args, !is_allowed_shell(&shell))?;
+    match &validated_cwd {
+        Some(dir) => cmd.env(crate::ctx::paths::PROJECT_DIR_ENV, dir),
+        None => cmd.env_remove(crate::ctx::paths::PROJECT_DIR_ENV),
+    }
     let effective_cwd: Option<String> = validated_cwd
         .or_else(|| default_working_dir().map(|dir| dir.to_string_lossy().into_owned()));
     if let Some(dir) = &effective_cwd {
