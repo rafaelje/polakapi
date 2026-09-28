@@ -1,5 +1,6 @@
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
+import { SerializeAddon } from "@xterm/addon-serialize";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { resolveProfile } from "./cli-registry";
 import { ptyAttach, ptySpawn, ptyWrite, ptyResize, ptyKill } from "./pty-client";
@@ -28,7 +29,7 @@ import type {
   StartupCmdEditCallbacks,
   SuspendCallbacks,
 } from "./terminal-pane-types";
-import { type PaneCreateOptions } from "./types";
+import { type PaneCreateOptions, type PaneSnapshot } from "./types";
 
 export type { StartupCmdEditCallbacks };
 
@@ -50,6 +51,11 @@ export class TerminalPane {
   readonly menuBtn: HTMLButtonElement;
   private term: Terminal;
   private fitAddon: FitAddon;
+  private readonly serializer = new SerializeAddon();
+  /** Where the output written so far ends in the PTY's stream. */
+  private outputOffset = 0;
+  /** Output that arrived while an adopted pane was still catching up. */
+  private pendingOutput: Array<{ data: string; offset?: number }> | null = null;
   private readonly disposables: Array<{ dispose(): void }> = [];
   private startupCmdCallbacks: StartupCmdEditCallbacks | null = null;
   private cliRespawnCallbacks: CliRespawnCallbacks | null = null;
@@ -117,6 +123,7 @@ export class TerminalPane {
     });
     this.fitAddon = new FitAddon();
     this.term.loadAddon(this.fitAddon);
+    this.term.loadAddon(this.serializer);
     // Plain-text URL detection; same Rust-routed activation as above.
     this.term.loadAddon(
       new WebLinksAddon((event, uri) => {
@@ -164,11 +171,8 @@ export class TerminalPane {
     this.updateCliBadge(opts?.cliId);
 
     if (opts?.existingPtyId) {
-      // Taking over a PTY another window rendered: show what it showed, then
-      // tell the process the size it has here.
       this.ptyId = opts.existingPtyId;
-      this.write(await ptyAttach(this.ptyId));
-      void ptyResize(this.ptyId, this.term.cols, this.term.rows);
+      await this.catchUp(opts.snapshot);
     } else {
       this.ptyId = await ptySpawn({
         cols: this.term.cols ?? 80,
@@ -197,7 +201,56 @@ export class TerminalPane {
     );
   }
 
-  write(data: string): void {
+  /**
+   * Takes over a PTY another window rendered: its serialized screen keeps every
+   * color and mode, and only the output after it is replayed. Replaying the raw
+   * stream alone would start in the middle of a TUI redraw.
+   */
+  private async catchUp(snapshot?: PaneSnapshot): Promise<void> {
+    this.pendingOutput = [];
+    try {
+      const { data, offset } = await ptyAttach(this.ptyId, snapshot?.offset);
+      if (snapshot) {
+        this.term.resize(snapshot.cols, snapshot.rows);
+        this.term.write(snapshot.screen);
+        this.hasOutput = snapshot.screen.length > 0;
+      }
+      this.write(data, offset);
+    } finally {
+      const pending = this.pendingOutput;
+      this.pendingOutput = null;
+      for (const chunk of pending) this.write(chunk.data, chunk.offset);
+    }
+    this.safeFit();
+    void ptyResize(this.ptyId, this.term.cols, this.term.rows);
+  }
+
+  /** What this pane shows, for another window to take it over. */
+  snapshot(): Promise<PaneSnapshot | null> {
+    if (!this.ptyId || this.spawnFailed || this.suspended) return Promise.resolve(null);
+    const offset = this.outputOffset;
+    // Serialized in the write callback, before anything queued later is parsed.
+    return new Promise((resolve) => {
+      this.term.write("", () =>
+        resolve({
+          screen: this.serializer.serialize(),
+          offset,
+          cols: this.term.cols,
+          rows: this.term.rows,
+        }),
+      );
+    });
+  }
+
+  write(data: string, offset?: number): void {
+    if (this.pendingOutput) {
+      this.pendingOutput.push({ data, offset });
+      return;
+    }
+    if (offset !== undefined) {
+      if (offset <= this.outputOffset) return;
+      this.outputOffset = offset;
+    }
     if (data.length > 0) {
       this.hasOutput = true;
       this.lastActivityAt = Date.now();

@@ -100,6 +100,7 @@ describe("TerminalRouter handing a grid to another window", () => {
       specs: [{ id: "pty-1" }],
       layout: { type: "pane", paneId: "pty-1" },
       activeCliId: "claude",
+      snapshots: {},
     });
     expect(managerCalls.dispose).toEqual([{ keepPty: true }]);
     expect(router.getById(pid("p1"))).toBeNull();

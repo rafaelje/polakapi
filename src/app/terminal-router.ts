@@ -5,7 +5,8 @@ import {
 } from "../modules/terminal/terminal-manager";
 import type { TerminalPane } from "../modules/terminal/terminal-pane";
 import type { TerminalLayoutNode } from "../modules/terminal/terminal-layout";
-import type { TerminalSpec } from "../modules/terminal/types";
+import type { PaneSnapshot, PaneSnapshots, TerminalSpec } from "../modules/terminal/types";
+import { snapshotPanes } from "../modules/terminal/pane-snapshots";
 import { ptyKill } from "../modules/terminal/pty-client";
 import {
   ProjectActivityTracker,
@@ -30,6 +31,8 @@ export interface ReleasedGrid {
   specs: TerminalSpec[];
   layout: TerminalLayoutNode | null;
   activeCliId: string;
+  /** What each pane showed when it was released, by PTY id. */
+  snapshots?: PaneSnapshots;
 }
 
 /**
@@ -179,21 +182,33 @@ export class TerminalRouter {
   }
 
   /** Takes one pane out of a project's grid, leaving its process running. */
-  async tearOff(projectId: ProjectId, ptyId: string): Promise<TerminalSpec | null> {
+  async tearOff(
+    projectId: ProjectId,
+    ptyId: string,
+  ): Promise<{ spec: TerminalSpec; snapshot: PaneSnapshot | null } | null> {
     const manager = this.managers.get(projectId);
     const spec = manager?.specs().find((candidate) => candidate.id === ptyId);
     if (!manager || !spec) return null;
+    const snapshot = (await manager.get(ptyId)?.snapshot()) ?? null;
     await manager.close(ptyId, { keepPty: true });
-    return spec;
+    return { spec, snapshot };
   }
 
   /** Puts running panes back into a project's grid that is already here. */
-  async adoptPanes(projectId: ProjectId, specs: TerminalSpec[]): Promise<boolean> {
+  async adoptPanes(
+    projectId: ProjectId,
+    specs: TerminalSpec[],
+    snapshots?: PaneSnapshots,
+  ): Promise<boolean> {
     const manager = this.managers.get(projectId);
     if (!manager) return false;
     for (const spec of specs) {
       // react-doctor-disable-next-line react-doctor/async-await-in-loop
-      await manager.addPane(spec, { adoptPtyId: spec.id, skipStartupCmd: true });
+      await manager.addPane(spec, {
+        adoptPtyId: spec.id,
+        skipStartupCmd: true,
+        snapshot: snapshots?.[spec.id],
+      });
     }
     return true;
   }
@@ -209,6 +224,7 @@ export class TerminalRouter {
       specs: manager.specs(),
       layout: manager.layoutSnapshot,
       activeCliId: manager.getActiveCli(),
+      snapshots: await snapshotPanes(manager),
     };
     if (this.activeProjectId === projectId) this.unmount();
     this.unsubscribes.get(projectId)?.();
@@ -226,7 +242,7 @@ export class TerminalRouter {
       terminalLayout: grid.layout ?? undefined,
       activeCliId: grid.activeCliId,
     });
-    await manager.restoreSpecs(grid.specs, { adopt: true });
+    await manager.restoreSpecs(grid.specs, { adopt: true, snapshots: grid.snapshots });
     return manager;
   }
 

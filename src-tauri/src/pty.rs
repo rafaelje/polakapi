@@ -111,6 +111,8 @@ impl Drop for PtyStore {
 pub struct PtyDataPayload {
     pub id: String,
     pub data: String,
+    /// Offset right after this chunk in the PTY's output, see `pty_attach`.
+    pub offset: u64,
 }
 
 #[derive(Clone, Serialize)]
@@ -198,12 +200,13 @@ pub fn spawn_session(
                     pending.extend_from_slice(&buf[..n]);
                     let chunk = drain_valid_utf8(&mut pending);
                     if !chunk.is_empty() {
-                        session_for_thread.replay.lock().push(&chunk);
+                        let offset = session_for_thread.replay.lock().push(&chunk);
                         let _ = app_for_thread.emit(
                             "pty:data",
                             PtyDataPayload {
                                 id: id_for_thread.clone(),
                                 data: chunk,
+                                offset,
                             },
                         );
                     }
@@ -213,11 +216,13 @@ pub fn spawn_session(
         }
         if !pending.is_empty() {
             let chunk = String::from_utf8_lossy(&pending).to_string();
+            let offset = session_for_thread.replay.lock().push(&chunk);
             let _ = app_for_thread.emit(
                 "pty:data",
                 PtyDataPayload {
                     id: id_for_thread.clone(),
                     data: chunk,
+                    offset,
                 },
             );
         }

@@ -12,6 +12,8 @@ pub const REPLAY_CAPACITY: usize = 256 * 1024;
 pub struct ReplayBuffer {
     bytes: VecDeque<u8>,
     capacity: usize,
+    /// Bytes ever pushed: the offset right after the newest byte kept.
+    end: u64,
 }
 
 impl Default for ReplayBuffer {
@@ -25,16 +27,19 @@ impl ReplayBuffer {
         Self {
             bytes: VecDeque::with_capacity(capacity.min(4096)),
             capacity,
+            end: 0,
         }
     }
 
-    pub fn push(&mut self, chunk: &str) {
+    /// Appends a chunk and returns the offset right after it.
+    pub fn push(&mut self, chunk: &str) -> u64 {
         let incoming = chunk.as_bytes();
+        self.end += incoming.len() as u64;
         if incoming.len() >= self.capacity {
             self.bytes.clear();
             self.bytes
                 .extend(tail_at_char_boundary(incoming, self.capacity));
-            return;
+            return self.end;
         }
         let overflow = (self.bytes.len() + incoming.len()).saturating_sub(self.capacity);
         if overflow > 0 {
@@ -42,14 +47,29 @@ impl ReplayBuffer {
             self.drop_partial_char();
         }
         self.bytes.extend(incoming);
+        self.end
     }
 
+    #[cfg(test)]
     pub fn snapshot(&self) -> String {
-        let (head, tail) = self.bytes.as_slices();
-        let mut out = Vec::with_capacity(self.bytes.len());
-        out.extend_from_slice(head);
-        out.extend_from_slice(tail);
-        String::from_utf8(out).unwrap_or_default()
+        self.since(None).0
+    }
+
+    /// What was pushed after `offset` (everything kept when `None` or when it
+    /// was already dropped), with the offset right after it.
+    pub fn since(&self, offset: Option<u64>) -> (String, u64) {
+        let start = self.end - self.bytes.len() as u64;
+        let from = offset.map_or(start, |offset| offset.clamp(start, self.end));
+        let mut skip = (from - start) as usize;
+        while self
+            .bytes
+            .get(skip)
+            .is_some_and(|byte| byte & 0b1100_0000 == 0b1000_0000)
+        {
+            skip += 1;
+        }
+        let out: Vec<u8> = self.bytes.range(skip..).copied().collect();
+        (String::from_utf8(out).unwrap_or_default(), self.end)
     }
 
     /// After a raw drain the front may be the middle of a multi-byte character;
@@ -116,6 +136,19 @@ mod tests {
         assert_eq!(buffer.snapshot(), "456789");
         buffer.push("ññññ"); // 8 bytes > 6: tail at a boundary
         assert_eq!(buffer.snapshot(), "ñññ");
+    }
+
+    #[test]
+    fn since_returns_only_what_came_after_an_offset() {
+        let mut buffer = ReplayBuffer::with_capacity(8);
+        let first = buffer.push("abc");
+        assert_eq!(first, 3);
+        buffer.push("def");
+        assert_eq!(buffer.since(Some(first)), ("def".to_string(), 6));
+        assert_eq!(buffer.since(Some(6)), (String::new(), 6));
+        buffer.push("ghij"); // drops "ab"
+        assert_eq!(buffer.since(Some(1)), ("cdefghij".to_string(), 10));
+        assert_eq!(buffer.since(None), ("cdefghij".to_string(), 10));
     }
 
     #[test]

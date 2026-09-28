@@ -33,7 +33,7 @@ import {
   type NotificationContext,
 } from "./terminal-notifications";
 import { layoutTerminalSplits } from "./terminal-split-layout";
-import { type PaneAddOptions, type TerminalSpec } from "./types";
+import { type PaneAddOptions, type PaneSnapshots, type TerminalSpec } from "./types";
 
 function errorMessage(error: unknown): string {
   if (typeof error === "string") return error;
@@ -44,7 +44,6 @@ function errorMessage(error: unknown): string {
 export type { NotificationContext };
 
 export interface TerminalManagerOptions {
-  /** Identity used for router lookup + events. */
   projectId: ProjectId;
   /** project.path applied when a spec omits cwd. */
   defaultCwd: string;
@@ -73,6 +72,8 @@ export type TerminalManagerListener = (event: TerminalManagerEvent) => void;
  */
 export class TerminalManager {
   private readonly panes = new Map<string, TerminalPane>();
+  /** Adopted panes still catching up; their live output must reach them too. */
+  private readonly adopting = new Map<string, TerminalPane>();
   private readonly order: string[] = [];
   private readonly liveIds = new Set<string>();
   private readonly specsById = new Map<string, TerminalSpec>();
@@ -117,8 +118,7 @@ export class TerminalManager {
     const current = this.specsById.get(terminalId);
     if (!current) return;
     const next: TerminalSpec = { ...current, ...patch, id: current.id };
-    // Identity preservation: bail out when nothing actually changed so we
-    // don't trigger a redundant persist round-trip.
+    // Skip the persist round-trip when nothing actually changed.
     if (
       next.title === current.title &&
       next.cwd === current.cwd &&
@@ -143,8 +143,7 @@ export class TerminalManager {
     return this.liveIds.size;
   }
 
-  /** Count of specs currently suspended (placeholder panes) — drives the
-   * "Resume terminals (N)" row-menu item, mirroring `getLiveCount`. */
+  /** Suspended placeholder panes, for the "Resume terminals (N)" row-menu item. */
   get suspendedCount(): number {
     let count = 0;
     for (const spec of this.specsById.values()) if (spec.suspended) count++;
@@ -182,7 +181,7 @@ export class TerminalManager {
   }
 
   get(id: string): TerminalPane | undefined {
-    return this.panes.get(id);
+    return this.panes.get(id) ?? this.adopting.get(id);
   }
 
   /** True for spawned, non-exited PTY sessions — false for failed spawns
@@ -212,6 +211,7 @@ export class TerminalManager {
     const command = profile.command || undefined;
     const baseArgs = spec?.launchArgs ?? profile.args;
     let spawnError: string | null = null;
+    if (opts?.adoptPtyId) this.adopting.set(opts.adoptPtyId, pane);
     try {
       await pane.attach(this.grid, {
         cwd,
@@ -219,10 +219,12 @@ export class TerminalManager {
         args: opts?.extraArgs ? [...(baseArgs ?? []), ...opts.extraArgs] : baseArgs,
         cliId: profile.id,
         existingPtyId: opts?.adoptPtyId,
+        snapshot: opts?.snapshot,
       });
     } catch (error) {
       spawnError = errorMessage(error);
     }
+    if (opts?.adoptPtyId) this.adopting.delete(opts.adoptPtyId);
 
     pane.el.style.visibility = "";
     // Spawn failures keep the pane visible so the user can read the error and
@@ -520,7 +522,10 @@ export class TerminalManager {
   /** Replays persisted specs as panes, emitting one batched spec-changed at
    * the end so persistence writes are not amplified per pane. `adopt` renders
    * PTYs that are already running under the spec ids instead of spawning. */
-  async restoreSpecs(specs: TerminalSpec[], opts?: { adopt?: boolean }): Promise<void> {
+  async restoreSpecs(
+    specs: TerminalSpec[],
+    opts?: { adopt?: boolean; snapshots?: PaneSnapshots },
+  ): Promise<void> {
     if (specs.length === 0) return;
     const idMap = new Map<string, string>();
     this.suppressPersistenceEvents = true;
@@ -531,12 +536,12 @@ export class TerminalManager {
           idMap.set(spec.id, spec.id);
           continue;
         }
-        // react-doctor-disable-next-line react-doctor/async-await-in-loop
         // An adopted process already ran its startup command; never resend it.
-        const pane = await this.addPane(
-          spec,
-          opts?.adopt ? { adoptPtyId: spec.id, skipStartupCmd: true } : undefined,
-        );
+        const adopt = opts?.adopt
+          ? { adoptPtyId: spec.id, skipStartupCmd: true, snapshot: opts.snapshots?.[spec.id] }
+          : undefined;
+        // react-doctor-disable-next-line react-doctor/async-await-in-loop
+        const pane = await this.addPane(spec, adopt);
         const restoredId = pane?.el.dataset.ptyId;
         if (restoredId) idMap.set(spec.id, restoredId);
       }

@@ -26,6 +26,7 @@ import { createProjectWindows, type ProjectWindowsDeps } from "./project-windows
 import type { ReleasedGrid } from "./terminal-router";
 
 const project: Project = { id: "p1" as ProjectId, name: "ice-games", path: "/repos/ice" };
+const SNAPSHOT = { screen: "\u001b[31mred", offset: 42, cols: 80, rows: 24 };
 const grid: ReleasedGrid = {
   specs: [{ id: "pty-a" }, { id: "old", suspended: true }],
   layout: { type: "pane", paneId: "pty-a" },
@@ -36,7 +37,10 @@ function router() {
   return {
     release: vi.fn().mockResolvedValue(structuredClone(grid)),
     adopt: vi.fn().mockResolvedValue(undefined),
-    tearOff: vi.fn().mockResolvedValue({ id: "pty-b", cliId: "codex", title: "api" }),
+    tearOff: vi.fn().mockResolvedValue({
+      spec: { id: "pty-b", cliId: "codex", title: "api" },
+      snapshot: SNAPSHOT,
+    }),
     adoptPanes: vi.fn().mockResolvedValue(true),
     setExternalCount: vi.fn(),
   };
@@ -197,9 +201,11 @@ describe("a terminal dragged out of the grid", () => {
     events.fire("project-window:closed", { windowId: "p1--pty-b" });
 
     await vi.waitFor(() => expect(fakeRouter.adoptPanes).toHaveBeenCalled());
-    expect(fakeRouter.adoptPanes).toHaveBeenCalledWith(project.id, [
-      { id: "pty-b", cliId: "codex", title: "api" },
-    ]);
+    expect(fakeRouter.adoptPanes).toHaveBeenCalledWith(
+      project.id,
+      [{ id: "pty-b", cliId: "codex", title: "api" }],
+      { "pty-b": SNAPSHOT },
+    );
     expect(fakeRouter.setExternalCount).toHaveBeenLastCalledWith("p1--pty-b", project.id, null);
   });
 
@@ -212,9 +218,8 @@ describe("a terminal dragged out of the grid", () => {
 
     await vi.waitFor(() => expect(emitTo).toHaveBeenCalled());
     expect(emitTo).toHaveBeenCalledWith("project-p1", "project-window:adopt", {
-      id: "pty-b",
-      cliId: "codex",
-      title: "api",
+      spec: { id: "pty-b", cliId: "codex", title: "api" },
+      snapshot: SNAPSHOT,
     });
     expect(fakeRouter.adoptPanes).not.toHaveBeenCalled();
   });

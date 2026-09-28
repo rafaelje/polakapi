@@ -46,6 +46,7 @@ describe("window capabilities", () => {
     expect(capability.windows).toContain("project-*");
     for (const permission of [
       "core:default",
+      "core:window:allow-destroy",
       "clipboard-manager:allow-read-text",
       "clipboard-manager:allow-write-text",
       "notification:default",

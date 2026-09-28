@@ -3,13 +3,14 @@ import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { wireShortcuts } from "../../shared/keyboard/shortcuts";
 import { invoke } from "../../shared/tauri/invoke";
 import { onPtyData, onPtyExit } from "../terminal/pty-client";
+import { snapshotPanes } from "../terminal/pane-snapshots";
 import { attachTerminalDrop } from "../terminal/terminal-drop";
 import { TerminalManager } from "../terminal/terminal-manager";
 import type { ProjectId } from "../workspaces/state/types";
 import {
   PROJECT_WINDOW_ADOPT_EVENT,
   PROJECT_WINDOW_UPDATE_EVENT,
-  isTerminalSpecPayload,
+  isAdoptedPane,
   type ProjectWindowState,
   type ProjectWindowUpdate,
 } from "./protocol";
@@ -74,26 +75,43 @@ async function start(): Promise<void> {
     }
   });
 
+  const currentWindow = getCurrentWebviewWindow();
   // Listen before adopting, so nothing printed during the takeover is lost.
-  await onPtyData(({ id, data }) => {
-    const pane = manager.get(id);
-    if (!pane) return;
-    pane.write(data);
-  });
-  await onPtyExit(({ id }) => {
-    const pane = manager.get(id);
-    if (!pane) return;
-    pane.markExited();
-    manager.markExited(id);
-  });
+  await Promise.all([
+    onPtyData(({ id, data, offset }) => {
+      manager.get(id)?.write(data, offset);
+    }),
+    onPtyExit(({ id }) => {
+      const pane = manager.get(id);
+      if (!pane) return;
+      pane.markExited();
+      manager.markExited(id);
+    }),
+    // A terminal torn off this project comes back here while the grid is out.
+    currentWindow.listen(PROJECT_WINDOW_ADOPT_EVENT, ({ payload: adopted }) => {
+      if (!isAdoptedPane(adopted) || manager.get(adopted.spec.id)) return;
+      void manager.addPane(adopted.spec, {
+        adoptPtyId: adopted.spec.id,
+        skipStartupCmd: true,
+        snapshot: adopted.snapshot ?? undefined,
+      });
+    }),
+    // Hands main what every pane shows before the window goes, so the
+    // terminals come back with their colors instead of a raw replay.
+    currentWindow.onCloseRequested(async () => {
+      try {
+        await emitTo("main", PROJECT_WINDOW_UPDATE_EVENT, {
+          windowId,
+          projectId,
+          snapshots: await snapshotPanes(manager),
+        });
+      } catch (error) {
+        console.error("project window: could not hand its terminals back", error);
+      }
+    }),
+  ]);
 
-  // A terminal torn off this project comes back here while the grid is out.
-  await getCurrentWebviewWindow().listen(PROJECT_WINDOW_ADOPT_EVENT, ({ payload: spec }) => {
-    if (!isTerminalSpecPayload(spec) || manager.get(spec.id)) return;
-    void manager.addPane(spec, { adoptPtyId: spec.id, skipStartupCmd: true });
-  });
-
-  await manager.restoreSpecs(payload.specs, { adopt: true });
+  await manager.restoreSpecs(payload.specs, { adopt: true, snapshots: payload.snapshots });
   manager.refit();
   send({ liveCount: manager.size });
   const navigation = performance.getEntriesByType("navigation")[0] as

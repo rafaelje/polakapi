@@ -1,5 +1,5 @@
 import type { TerminalLayoutNode } from "../terminal/terminal-layout";
-import type { TerminalSpec } from "../terminal/types";
+import type { PaneSnapshot, PaneSnapshots, TerminalSpec } from "../terminal/types";
 
 // What crosses between the main window and a project's own window. The main
 // window keeps owning the project and its persistence; the project window
@@ -22,6 +22,13 @@ export interface ProjectWindowPayload {
   specs: TerminalSpec[];
   layout: TerminalLayoutNode | null;
   activeCliId: string;
+  snapshots?: PaneSnapshots;
+}
+
+/** Sent with PROJECT_WINDOW_ADOPT_EVENT. */
+export interface AdoptedPane {
+  spec: TerminalSpec;
+  snapshot: PaneSnapshot | null;
 }
 
 /** What Rust hands the project window to build itself. */
@@ -41,6 +48,8 @@ export interface ProjectWindowUpdate {
   layout?: TerminalLayoutNode | null;
   liveCount?: number;
   bell?: { paneId: string; pending: boolean };
+  /** Sent while the window closes, so the panes come back looking the same. */
+  snapshots?: PaneSnapshots;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -52,6 +61,7 @@ export function isProjectWindowUpdate(value: unknown): value is ProjectWindowUpd
   if (typeof value.windowId !== "string") return false;
   if ("specs" in value && !Array.isArray(value.specs)) return false;
   if ("liveCount" in value && typeof value.liveCount !== "number") return false;
+  if ("snapshots" in value && !isRecord(value.snapshots)) return false;
   if ("bell" in value) {
     const bell = value.bell;
     if (!isRecord(bell) || typeof bell.paneId !== "string" || typeof bell.pending !== "boolean")
@@ -64,6 +74,6 @@ export function isProjectWindowClosed(value: unknown): value is { windowId: stri
   return isRecord(value) && typeof value.windowId === "string";
 }
 
-export function isTerminalSpecPayload(value: unknown): value is TerminalSpec {
-  return isRecord(value) && typeof value.id === "string";
+export function isAdoptedPane(value: unknown): value is AdoptedPane {
+  return isRecord(value) && isRecord(value.spec) && typeof value.spec.id === "string";
 }

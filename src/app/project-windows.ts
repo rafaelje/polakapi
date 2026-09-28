@@ -7,6 +7,7 @@ import {
   isProjectWindowClosed,
   isProjectWindowUpdate,
   paneWindowId,
+  type AdoptedPane,
   type ProjectWindowState,
 } from "../modules/project-window/protocol";
 import type { TerminalLayoutNode } from "../modules/terminal/terminal-layout";
@@ -96,9 +97,12 @@ export async function createProjectWindows(
     // A torn-off pane goes back to wherever its project's grid is now.
     if (open.has(entry.projectId)) {
       for (const spec of entry.grid.specs) {
-        await emitTo(`project-${entry.projectId}`, PROJECT_WINDOW_ADOPT_EVENT, spec);
+        const adopted: AdoptedPane = { spec, snapshot: entry.grid.snapshots?.[spec.id] ?? null };
+        await emitTo(`project-${entry.projectId}`, PROJECT_WINDOW_ADOPT_EVENT, adopted);
       }
-    } else if (!(await router.adoptPanes(entry.projectId, entry.grid.specs))) {
+    } else if (
+      !(await router.adoptPanes(entry.projectId, entry.grid.specs, entry.grid.snapshots))
+    ) {
       await router.adopt(project, entry.grid);
       deps.onReturned(entry.projectId);
     }
@@ -122,6 +126,7 @@ export async function createProjectWindows(
         router.setExternalCount(payload.windowId, projectId, payload.liveCount);
       }
       if (payload.bell) deps.onBell(projectId, payload.bell.paneId, payload.bell.pending);
+      if (payload.snapshots) entry.grid.snapshots = payload.snapshots;
     }),
     await listen(PROJECT_WINDOW_CLOSED_EVENT, ({ payload }) => {
       if (!isProjectWindowClosed(payload)) return;
@@ -143,12 +148,14 @@ export async function createProjectWindows(
       await open_(project.id, project, { projectId: project.id, whole: true, grid }, project.name);
     },
     async tearOff(project, ptyId, at) {
-      const spec = await router.tearOff(project.id, ptyId);
-      if (!spec) return;
+      const torn = await router.tearOff(project.id, ptyId);
+      if (!torn) return;
+      const { spec, snapshot } = torn;
       const grid: ReleasedGrid = {
         specs: [spec],
         layout: { type: "pane", paneId: spec.id },
         activeCliId: spec.cliId ?? "shell",
+        snapshots: snapshot ? { [spec.id]: snapshot } : undefined,
       };
       const title = spec.title ? `${project.name} · ${spec.title}` : project.name;
       await open_(
