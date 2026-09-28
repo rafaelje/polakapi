@@ -22,7 +22,7 @@ pub struct RunningPane {
     pub command: String,
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn pty_running_commands(store: State<'_, Arc<PtyStore>>) -> Result<Vec<RunningPane>, String> {
     let mut sys = System::new();
     sys.refresh_processes(ProcessesToUpdate::All, true);

@@ -62,7 +62,7 @@ pub struct ContextDetail {
     pub note: Option<String>,
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn agent_context_list(
     store: State<'_, Arc<PtyStore>>,
     db: State<'_, StdMutex<Db>>,
@@ -86,7 +86,7 @@ pub fn agent_context_list(
     Ok(out)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn agent_context_detail(
     store: State<'_, Arc<PtyStore>>,
     db: State<'_, StdMutex<Db>>,
@@ -154,7 +154,7 @@ pub fn agent_context_detail(
 /// Regex search across the full entry bodies. Runs in Rust because the listing
 /// only carries 400-character previews — searching those in the window would
 /// silently miss every match past the cut.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn agent_context_search(
     store: State<'_, Arc<PtyStore>>,
     db: State<'_, StdMutex<Db>>,
@@ -173,7 +173,7 @@ pub fn agent_context_search(
 }
 
 /// Full text of one entry, fetched on demand so the listing stays small.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn agent_context_entry(
     store: State<'_, Arc<PtyStore>>,
     db: State<'_, StdMutex<Db>>,
