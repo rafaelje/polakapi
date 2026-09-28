@@ -31,13 +31,27 @@ pub(super) fn git_read(project: &Path, args: &[&str]) -> Result<Output, String> 
 }
 
 pub(super) fn git_unattended(project: &Path, args: &[&str]) -> Result<Output, String> {
-    git(project)
+    let mut command = git(project);
+    command
         .args(args)
         .env("GIT_TERMINAL_PROMPT", "0")
+        .env("SSH_ASKPASS_REQUIRE", "never")
         .env("LC_ALL", "C")
-        .stdin(Stdio::null())
-        .output()
-        .map_err(run_error)
+        .stdin(Stdio::null());
+    if !has_custom_ssh(project) {
+        command.env("GIT_SSH_COMMAND", BATCH_SSH_COMMAND);
+    }
+    command.output().map_err(run_error)
+}
+
+const BATCH_SSH_COMMAND: &str = "ssh -o BatchMode=yes";
+
+fn has_custom_ssh(project: &Path) -> bool {
+    let set = |name: &str| std::env::var_os(name).is_some_and(|value| !value.is_empty());
+    set("GIT_SSH_COMMAND")
+        || set("GIT_SSH")
+        || git_stdout(project, &["config", "--get", "core.sshCommand"])
+            .is_ok_and(|value| !value.trim_ascii().is_empty())
 }
 
 pub(super) fn git_with_stdin(
@@ -86,3 +100,6 @@ fn git(project: &Path) -> Command {
 fn run_error(error: std::io::Error) -> String {
     format!("could not run git: {error}")
 }
+
+#[cfg(test)]
+mod tests;
