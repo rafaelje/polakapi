@@ -67,19 +67,26 @@ pub(crate) fn merge_base(project: &Path, a: &str, b: &str) -> Result<String, Str
 }
 
 pub(crate) fn is_safe_git_ref(name: &str) -> bool {
-    if name.is_empty() || name.len() > 200 {
+    if name.is_empty() || name.len() > 200 || name.starts_with('-') {
         return false;
     }
-    if name.starts_with('-') || name.contains("..") || name.contains(':') || name.contains(' ') {
+    if name.starts_with('/') || name.ends_with('/') || name.ends_with('.') {
         return false;
     }
-    name.chars().all(|character| {
-        character.is_ascii_alphanumeric()
-            || matches!(
-                character,
-                '/' | '_' | '-' | '.' | '~' | '^' | '@' | '{' | '}'
-            )
-    })
+    if [":", "..", "//", "\\", "?", "*", "["]
+        .iter()
+        .any(|forbidden| name.contains(forbidden))
+    {
+        return false;
+    }
+    if name
+        .chars()
+        .any(|character| character.is_control() || character.is_whitespace())
+    {
+        return false;
+    }
+    name.split('/')
+        .all(|part| !part.starts_with('.') && !part.ends_with(".lock"))
 }
 
 fn git_output<const N: usize>(
