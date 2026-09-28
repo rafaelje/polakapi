@@ -1,12 +1,11 @@
-use std::io::{BufRead, Read, Write};
+use std::io::{BufRead, Write};
 use std::path::PathBuf;
-use std::process::Stdio;
-use std::thread::JoinHandle;
 
 use serde_json::{json, Value};
 
 use crate::ctx::config::{self, CtxConfig};
 use crate::ctx::session::CtxSession;
+use crate::ctx::shell::{run_shell, stored_or_raw, with_status};
 
 // Stdio MCP server exposing the ctx_* tools. Every CLI polakapi launches speaks
 // MCP, which is why the tools live here rather than behind a hook: hooks differ
@@ -17,7 +16,6 @@ use crate::ctx::session::CtxSession;
 
 const PROTOCOL_VERSION: &str = "2024-11-05";
 const DEFAULT_SEARCH_LIMIT: usize = 8;
-const MAX_EXEC_OUTPUT: usize = 8 * 1024 * 1024;
 /// Readable part of a source label, before the disambiguating hash.
 const SLUG_HEAD_CHARS: usize = 24;
 
@@ -279,117 +277,6 @@ fn plural(count: usize, one: &str, many: &str) -> String {
     }
 }
 
-/// Runs the command with the user's own privileges — the same reach the agent's
-/// shell tool already has. The output is capped so one runaway process cannot
-/// exhaust memory.
-pub struct ShellOutput {
-    /// stdout followed by stderr.
-    pub text: String,
-    /// `None` when the process was killed by a signal.
-    pub code: Option<i32>,
-}
-
-impl ShellOutput {
-    pub fn succeeded(&self) -> bool {
-        self.code == Some(0)
-    }
-
-    /// Appended to whatever reaches the model: a summary or a pointer hides the
-    /// output, so without this a failing build would read as a success.
-    pub fn status_note(&self) -> Option<String> {
-        match self.code {
-            Some(0) => None,
-            Some(code) => Some(format!("Exit status {code}.")),
-            None => Some("The command was terminated by a signal.".to_string()),
-        }
-    }
-}
-
-pub fn run_shell(command: &str, cwd: Option<&std::path::Path>) -> Result<ShellOutput, String> {
-    let mut cmd = if cfg!(windows) {
-        let mut cmd = std::process::Command::new("cmd");
-        cmd.arg("/C").arg(command);
-        cmd
-    } else {
-        let mut cmd = std::process::Command::new("sh");
-        cmd.arg("-c").arg(command);
-        cmd
-    };
-    if let Some(dir) = cwd {
-        cmd.current_dir(dir);
-    }
-    let mut child = cmd
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|e| format!("could not run command: {e}"))?;
-    let stdout = child.stdout.take().map(capture);
-    let stderr = child.stderr.take().map(capture);
-    let status = child
-        .wait()
-        .map_err(|e| format!("could not run command: {e}"))?;
-    let (stdout, stdout_cut) = join_capture(stdout);
-    let (stderr, stderr_cut) = join_capture(stderr);
-
-    let mut text = String::from_utf8_lossy(&stdout).into_owned();
-    text.push_str(&String::from_utf8_lossy(&stderr));
-    if stdout_cut || stderr_cut || text.len() > MAX_EXEC_OUTPUT {
-        text.truncate(crate::ctx::offload::floor_char_boundary(
-            &text,
-            MAX_EXEC_OUTPUT,
-        ));
-        text.push_str("\n… output truncated by polakapi");
-    }
-    Ok(ShellOutput {
-        text,
-        code: status.code(),
-    })
-}
-
-/// Keeps at most `MAX_EXEC_OUTPUT` bytes of a stream and discards the rest, so
-/// the child never blocks on a full pipe and memory stays bounded. Reports
-/// whether anything was discarded.
-fn capture<R: Read + Send + 'static>(stream: R) -> JoinHandle<(Vec<u8>, bool)> {
-    std::thread::spawn(move || {
-        let mut kept = Vec::new();
-        let mut limited = stream.take(MAX_EXEC_OUTPUT as u64);
-        let _ = limited.read_to_end(&mut kept);
-        let dropped = std::io::copy(&mut limited.into_inner(), &mut std::io::sink()).unwrap_or(0);
-        (kept, dropped > 0)
-    })
-}
-
-fn join_capture(handle: Option<JoinHandle<(Vec<u8>, bool)>>) -> (Vec<u8>, bool) {
-    handle
-        .and_then(|handle| handle.join().ok())
-        .unwrap_or_default()
-}
-
-/// What reaches the model once the command has run. A store that cannot be
-/// opened or written must not cost the agent output it already paid for, so
-/// the raw text comes back instead and the failure goes to stderr.
-pub fn stored_or_raw(
-    stored: Result<crate::ctx::offload::OffloadResult, String>,
-    output: &ShellOutput,
-) -> String {
-    match stored {
-        Ok(result) => result.context_text,
-        Err(message) => {
-            eprintln!("polakapi ctx: output not stored: {message}");
-            output.text.clone()
-        }
-    }
-}
-
-/// The offloaded text plus the exit status when the command failed.
-pub fn with_status(context_text: String, output: &ShellOutput) -> String {
-    match output.status_note() {
-        Some(note) => format!("{context_text}\n{note}"),
-        None => context_text,
-    }
-}
-
 /// Entry point for the `polakapi ctx-mcp` subcommand.
 pub fn run() -> i32 {
     let session_id = crate::ctx::paths::session_key_from_env().unwrap_or_else(|| "unscoped".into());
@@ -545,15 +432,6 @@ mod tests {
             json!({ "command": "echo hello" }),
         ));
         assert_eq!(reply.trim(), "hello");
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn oversized_output_is_capped_on_a_character_boundary() {
-        // Five bytes per line puts the cap inside the two-byte "é".
-        let output = run_shell("yes aaé | head -c 9000000", None).unwrap();
-        assert!(output.text.ends_with("output truncated by polakapi"));
-        assert!(output.text.len() < MAX_EXEC_OUTPUT + 64);
     }
 
     #[cfg(unix)]

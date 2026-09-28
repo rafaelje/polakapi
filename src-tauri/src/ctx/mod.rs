@@ -10,6 +10,7 @@
 //   session   — one agent session's store, including promotion
 //   offload   — ties the above together for one tool result
 //   config    — the Context Mode settings the UI writes
+//   shell     — runs a rerouted command and captures its capped output
 //   mcp       — the stdio server that exposes ctx_* to every CLI
 //   intercept — which agent shell commands to reroute, and the rewrite
 //   hook      — `polakapi ctx-hook`, the Claude Code hook handler
@@ -28,5 +29,6 @@ pub mod paths;
 pub mod project_data;
 pub mod router;
 pub mod session;
+pub mod shell;
 pub mod store;
 pub mod summarize;

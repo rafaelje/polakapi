@@ -79,15 +79,15 @@ fn exec(args: &[String]) -> Result<(String, i32), String> {
         return Err("exec needs a command".into());
     }
     let command = args.join(" ");
-    let output = crate::ctx::mcp::run_shell(&command, None)?;
+    let output = crate::ctx::shell::run_shell(&command, None)?;
     let source =
         source.unwrap_or_else(|| format!("exec:{}", crate::ctx::mcp::source_slug(&command)));
     let code = output.code.unwrap_or(1);
-    let context = crate::ctx::mcp::stored_or_raw(
+    let context = crate::ctx::shell::stored_or_raw(
         open().and_then(|mut session| session.offload(&source, &output.text)),
         &output,
     );
-    Ok((crate::ctx::mcp::with_status(context, &output), code))
+    Ok((crate::ctx::shell::with_status(context, &output), code))
 }
 
 fn search(args: &[String]) -> Result<String, String> {
