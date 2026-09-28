@@ -11,7 +11,7 @@ const LAST_LINES: usize = 6;
 const MAX_LINE_CHARS: usize = 160;
 const MAX_PROBLEM_LINES: usize = 40;
 /// Lines that name a failure, and how many lines after each carry its detail
-/// (an assertion's values, a panic's message).
+/// (an assertion's left and right values, a panic's message).
 const PROBLEM_MARKERS: &[&str] = &[
     "error",
     "fail",
@@ -23,7 +23,7 @@ const PROBLEM_MARKERS: &[&str] = &[
     "✗",
     "×",
 ];
-const PROBLEM_CONTEXT: usize = 1;
+const PROBLEM_CONTEXT: usize = 2;
 
 pub fn summarize(source: &str, text: &str) -> String {
     let lines: Vec<&str> = text
@@ -257,6 +257,7 @@ mod tests {
             "many::broken ... FAILED",
             "math is off",
             "left: 2",
+            "right: 3",
             "test result: FAILED",
         ] {
             assert!(summary.contains(expected), "{expected}: {summary}");
