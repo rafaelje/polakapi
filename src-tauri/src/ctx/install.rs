@@ -277,15 +277,21 @@ fn add_group(hooks: &mut Map<String, Value>, event: &str, matcher: Option<&str>,
 }
 
 /// Writes through a sibling temp file so a crash mid-write never leaves Claude
-/// with a truncated settings file.
+/// with a truncated settings file. A symlinked settings file (dotfiles setups)
+/// is written through to its target, keeping the link and the target's mode.
 fn write_atomically(path: &Path, text: &str) -> Result<(), String> {
-    if let Some(parent) = path.parent() {
+    let target = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    if let Some(parent) = target.parent() {
         std::fs::create_dir_all(parent)
             .map_err(|e| format!("could not create {}: {e}", parent.display()))?;
     }
-    let temp = path.with_extension("json.polakapi-tmp");
+    let temp = target.with_extension("json.polakapi-tmp");
     std::fs::write(&temp, text).map_err(|e| format!("could not write {}: {e}", temp.display()))?;
-    std::fs::rename(&temp, path).map_err(|e| format!("could not replace {}: {e}", path.display()))
+    if let Ok(meta) = std::fs::metadata(&target) {
+        let _ = std::fs::set_permissions(&temp, meta.permissions());
+    }
+    std::fs::rename(&temp, &target)
+        .map_err(|e| format!("could not replace {}: {e}", target.display()))
 }
 
 #[cfg(test)]
@@ -294,6 +300,30 @@ mod tests {
 
     fn settings(dir: &tempfile::TempDir) -> PathBuf {
         dir.path().join(".claude").join("settings.json")
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_symlinked_settings_file_is_written_through_its_link() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let real = dir.path().join("dotfiles").join("settings.json");
+        std::fs::create_dir_all(real.parent().unwrap()).unwrap();
+        std::fs::write(&real, "{}").unwrap();
+        std::fs::set_permissions(&real, std::fs::Permissions::from_mode(0o600)).unwrap();
+        let link = settings(&dir);
+        std::fs::create_dir_all(link.parent().unwrap()).unwrap();
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+
+        write_atomically(&link, "{\"a\":1}\n").unwrap();
+
+        assert!(std::fs::symlink_metadata(&link)
+            .unwrap()
+            .file_type()
+            .is_symlink());
+        assert_eq!(std::fs::read_to_string(&real).unwrap(), "{\"a\":1}\n");
+        let mode = std::fs::metadata(&real).unwrap().permissions().mode();
+        assert_eq!(mode & 0o777, 0o600);
     }
 
     fn read(path: &Path) -> Value {
