@@ -141,7 +141,10 @@ fn search(args: &[String]) -> Result<String, String> {
             hit.snippet
         ));
     }
-    out.push("Read one with: polakapi ctx read <source> <n>".into());
+    out.push(format!(
+        "Read one with: {} ctx read <source> <n>",
+        crate::ctx::offload::polakapi_command()
+    ));
     Ok(out.join("\n\n"))
 }
 

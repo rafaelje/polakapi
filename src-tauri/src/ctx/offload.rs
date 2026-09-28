@@ -99,21 +99,31 @@ fn kind_label(kind: crate::ctx::router::DataKind) -> &'static str {
 /// How to reach the full output, appended to a summary so the agent knows the
 /// lines behind it are still available.
 pub fn retrieval_hint(source: &str) -> String {
+    let polakapi = polakapi_command();
     format!(
-        "Full output kept: `polakapi ctx search <query> --source {source}`, \
-         then `polakapi ctx read {source} <n>`."
+        "Full output kept: `{polakapi} ctx search <query> --source {source}`, \
+         then `{polakapi} ctx read {source} <n>`."
     )
 }
 
-/// What replaces the raw bytes in the context. Deliberately carries no file
-/// path: the handle is a query scope, so the model cannot read the whole thing
-/// back in and undo the saving.
+/// This binary, quoted for a shell. polakapi is rarely on PATH, so the model is
+/// told the path it was actually run from.
+pub fn polakapi_command() -> String {
+    std::env::current_exe()
+        .map(|bin| crate::ctx::intercept::shell_quote(&bin.to_string_lossy()))
+        .unwrap_or_else(|_| "polakapi".to_string())
+}
+
+/// What replaces the raw bytes in the context. Deliberately carries no path to
+/// the stored output: the handle is a query scope, so the model cannot read the
+/// whole thing back in and undo the saving.
 pub fn pointer(source: &str, chunks: &[crate::ctx::store::NewChunk]) -> String {
     let with_code = chunks.iter().filter(|chunk| chunk.has_code).count();
+    let polakapi = polakapi_command();
     format!(
         "Indexed {} sections ({with_code} with code) from: {source}\n\
-         Search it with `polakapi ctx search <query> --source {source}` (or ctx_search),\n\
-         then read a section verbatim with `polakapi ctx read {source} <n>`.",
+         Search it with `{polakapi} ctx search <query> --source {source}`,\n\
+         then read a section verbatim with `{polakapi} ctx read {source} <n>`.",
         chunks.len()
     )
 }
@@ -180,8 +190,10 @@ mod tests {
         assert_eq!(result.route, Route::Index);
         assert!(result.context_text.starts_with("Indexed "));
         assert!(result.context_text.contains("fetch:react"));
-        // The pointer must not leak a filesystem path.
-        assert!(!result.context_text.contains('/'));
+        // The pointer must not leak where the output is stored.
+        assert!(!result.context_text.contains(".txt"));
+        assert!(result.context_text.contains(&polakapi_command()));
+        assert!(!result.context_text.contains("ctx_search"));
     }
 
     #[test]
