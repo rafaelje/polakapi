@@ -93,7 +93,7 @@ pub fn run(args: &[String]) -> i32 {
     let env = HookEnv {
         target,
         in_polakapi_terminal: std::env::var_os("POLAKAPI_PTY_ID").is_some(),
-        cli: std::env::var("POLAKAPI_CLI").unwrap_or_default(),
+        cli: caller_cli(&event),
         config: config::load_from_env(),
         bin: bin.to_string_lossy().into_owned(),
     };
@@ -158,7 +158,7 @@ fn record_session_start(event: &Value) {
     ) else {
         return;
     };
-    let cli = std::env::var("POLAKAPI_CLI").unwrap_or_default();
+    let cli = caller_cli(event);
     let cwd = event
         .get("cwd")
         .and_then(Value::as_str)
@@ -171,6 +171,29 @@ fn record_session_start(event: &Value) {
         session,
         cwd,
     );
+}
+
+/// The CLI behind this call. A CLI started by hand in a shell pane has no
+/// `POLAKAPI_CLI`, so the event tells: Cursor tags its payloads with
+/// `cursor_version` and spells event names in camelCase, Claude Code does not.
+fn caller_cli(event: &Value) -> String {
+    match std::env::var("POLAKAPI_CLI") {
+        Ok(cli) if !cli.is_empty() => cli,
+        _ => infer_cli(event).to_string(),
+    }
+}
+
+pub fn infer_cli(event: &Value) -> &'static str {
+    let camel_case = event
+        .get("hook_event_name")
+        .and_then(Value::as_str)
+        .and_then(|name| name.chars().next())
+        .is_some_and(char::is_lowercase);
+    if camel_case || event.get("cursor_version").is_some() {
+        Target::Cursor.binary()
+    } else {
+        Target::Claude.binary()
+    }
 }
 
 pub struct HookEnv {
@@ -321,6 +344,19 @@ mod tests {
             "tool_input": { "command": command, "cwd": "", "timeout": 30000 },
             "cursor_version": "2026.09.15-d2fe57e"
         })
+    }
+
+    #[test]
+    fn a_cli_started_from_a_shell_pane_is_told_apart_by_its_events() {
+        assert_eq!(infer_cli(&bash("git log")), "claude");
+        assert_eq!(infer_cli(&cursor_shell("git log")), "cursor-agent");
+        let inferred = env(true, infer_cli(&bash("git log")));
+        assert!(decide(&bash("git log --oneline"), &inferred).is_ok());
+        let cursor = HookEnv {
+            cli: infer_cli(&cursor_shell("git log")).to_string(),
+            ..env(true, "")
+        };
+        assert!(decide(&cursor_shell("git log --oneline"), &cursor).is_err());
     }
 
     #[test]
