@@ -21,7 +21,7 @@ fn discard_restores_a_modified_file() {
     repo.write("a.txt", "two\n");
     repo.write("b.txt", "two\n");
 
-    discard_sync(&repo.path_str(), &paths(&["a.txt"])).unwrap();
+    discard_sync(&repo.path_str(), &paths(&["a.txt"]), DiscardGroup::Unstaged).unwrap();
 
     assert_eq!(read(&repo, "a.txt"), "one\n");
     assert_eq!(status(&repo), " M b.txt\n");
@@ -34,10 +34,94 @@ fn discard_restores_a_staged_file_and_its_working_tree() {
     repo.git(&["add", "a.txt"]);
     repo.write("a.txt", "three\n");
 
-    discard_sync(&repo.path_str(), &paths(&["a.txt"])).unwrap();
+    discard_sync(&repo.path_str(), &paths(&["a.txt"]), DiscardGroup::Staged).unwrap();
 
     assert_eq!(read(&repo, "a.txt"), "one\n");
     assert_eq!(status(&repo), "");
+}
+
+#[test]
+fn discard_unstaged_keeps_the_staged_version_of_a_partly_staged_file() {
+    let repo = TestRepo::with_commit(&[("a.txt", "one\n")]);
+    repo.write("a.txt", "two\n");
+    repo.git(&["add", "a.txt"]);
+    repo.write("a.txt", "three\n");
+
+    discard_sync(&repo.path_str(), &paths(&["a.txt"]), DiscardGroup::Unstaged).unwrap();
+
+    assert_eq!(read(&repo, "a.txt"), "two\n");
+    assert_eq!(status(&repo), "M  a.txt\n");
+}
+
+#[test]
+fn discard_unstaged_brings_back_a_file_deleted_from_the_working_tree_only() {
+    let repo = TestRepo::with_commit(&[("a.txt", "one\n")]);
+    repo.write("a.txt", "two\n");
+    repo.git(&["add", "a.txt"]);
+    std::fs::remove_file(repo.path().join("a.txt")).unwrap();
+
+    discard_sync(&repo.path_str(), &paths(&["a.txt"]), DiscardGroup::Unstaged).unwrap();
+
+    assert_eq!(read(&repo, "a.txt"), "two\n");
+    assert_eq!(status(&repo), "M  a.txt\n");
+}
+
+#[test]
+fn discard_unstaged_keeps_a_staged_new_file() {
+    let repo = TestRepo::with_commit(&[("a.txt", "one\n")]);
+    repo.write("new.txt", "new\n");
+    repo.git(&["add", "new.txt"]);
+    repo.write("new.txt", "newer\n");
+
+    discard_sync(
+        &repo.path_str(),
+        &paths(&["new.txt"]),
+        DiscardGroup::Unstaged,
+    )
+    .unwrap();
+
+    assert_eq!(read(&repo, "new.txt"), "new\n");
+    assert_eq!(status(&repo), "A  new.txt\n");
+}
+
+#[test]
+fn plan_restores_only_the_working_tree_for_unstaged_rows() {
+    let repo = TestRepo::with_commit(&[("a.txt", "one\n")]);
+    repo.write("a.txt", "two\n");
+    repo.git(&["add", "a.txt"]);
+    repo.write("a.txt", "three\n");
+
+    let unstaged = plan_discard(repo.path(), &paths(&["a.txt"]), DiscardGroup::Unstaged).unwrap();
+    let staged = plan_discard(repo.path(), &paths(&["a.txt"]), DiscardGroup::Staged).unwrap();
+
+    assert_eq!(
+        unstaged,
+        DiscardPlan {
+            restore_worktree: paths(&["a.txt"]),
+            ..DiscardPlan::default()
+        }
+    );
+    assert_eq!(
+        staged,
+        DiscardPlan {
+            restore: paths(&["a.txt"]),
+            ..DiscardPlan::default()
+        }
+    );
+}
+
+#[test]
+fn plan_deletes_untracked_rows() {
+    let repo = TestRepo::with_commit(&[("a.txt", "one\n")]);
+    repo.write("new.txt", "new\n");
+
+    let plan = plan_discard(repo.path(), &paths(&["new.txt"]), DiscardGroup::Untracked).unwrap();
+
+    assert!(plan.restore_worktree.is_empty());
+    assert!(plan.restore.is_empty());
+    assert!(plan.unindex.is_empty());
+    assert_eq!(plan.delete.len(), 1);
+    assert!(plan.delete[0].ends_with("new.txt"));
 }
 
 #[test]
@@ -46,7 +130,8 @@ fn discard_brings_back_deleted_files() {
     std::fs::remove_file(repo.path().join("a.txt")).unwrap();
     repo.git(&["rm", "-q", "b.txt"]);
 
-    discard_sync(&repo.path_str(), &paths(&["a.txt", "b.txt"])).unwrap();
+    discard_sync(&repo.path_str(), &paths(&["a.txt"]), DiscardGroup::Unstaged).unwrap();
+    discard_sync(&repo.path_str(), &paths(&["b.txt"]), DiscardGroup::Staged).unwrap();
 
     assert_eq!(read(&repo, "a.txt"), "one\n");
     assert_eq!(read(&repo, "b.txt"), "bee\n");
@@ -59,7 +144,12 @@ fn discard_deletes_an_untracked_file() {
     repo.write("dir/new file.txt", "new\n");
     repo.write("dir/keep.txt", "keep\n");
 
-    discard_sync(&repo.path_str(), &paths(&["dir/new file.txt"])).unwrap();
+    discard_sync(
+        &repo.path_str(),
+        &paths(&["dir/new file.txt"]),
+        DiscardGroup::Untracked,
+    )
+    .unwrap();
 
     assert!(!repo.path().join("dir/new file.txt").exists());
     assert_eq!(status(&repo), "?? dir/keep.txt\n");
@@ -72,7 +162,7 @@ fn discard_removes_a_staged_new_file_from_index_and_disk() {
     repo.git(&["add", "new.txt"]);
     repo.write("new.txt", "newer\n");
 
-    discard_sync(&repo.path_str(), &paths(&["new.txt"])).unwrap();
+    discard_sync(&repo.path_str(), &paths(&["new.txt"]), DiscardGroup::Staged).unwrap();
 
     assert!(!repo.path().join("new.txt").exists());
     assert_eq!(status(&repo), "");
@@ -83,7 +173,12 @@ fn discard_a_rename_restores_both_sides() {
     let repo = TestRepo::with_commit(&[("old.txt", "same\n")]);
     repo.git(&["mv", "old.txt", "new.txt"]);
 
-    discard_sync(&repo.path_str(), &paths(&["new.txt", "old.txt"])).unwrap();
+    discard_sync(
+        &repo.path_str(),
+        &paths(&["new.txt", "old.txt"]),
+        DiscardGroup::Staged,
+    )
+    .unwrap();
 
     assert_eq!(read(&repo, "old.txt"), "same\n");
     assert!(!repo.path().join("new.txt").exists());
@@ -98,7 +193,18 @@ fn discard_works_in_a_repo_without_commits() {
     repo.write("untracked.txt", "two\n");
     repo.write("keep.txt", "keep\n");
 
-    discard_sync(&repo.path_str(), &paths(&["staged.txt", "untracked.txt"])).unwrap();
+    discard_sync(
+        &repo.path_str(),
+        &paths(&["staged.txt"]),
+        DiscardGroup::Staged,
+    )
+    .unwrap();
+    discard_sync(
+        &repo.path_str(),
+        &paths(&["untracked.txt"]),
+        DiscardGroup::Untracked,
+    )
+    .unwrap();
 
     assert!(!repo.path().join("staged.txt").exists());
     assert!(!repo.path().join("untracked.txt").exists());
@@ -111,8 +217,8 @@ fn discard_refuses_directories() {
     repo.write("src/a.txt", "two\n");
     repo.write("new/b.txt", "new\n");
 
-    assert!(discard_sync(&repo.path_str(), &paths(&["src"])).is_err());
-    assert!(discard_sync(&repo.path_str(), &paths(&["new"])).is_err());
+    assert!(discard_sync(&repo.path_str(), &paths(&["src"]), DiscardGroup::Unstaged).is_err());
+    assert!(discard_sync(&repo.path_str(), &paths(&["new"]), DiscardGroup::Untracked).is_err());
 
     assert_eq!(read(&repo, "src/a.txt"), "two\n");
     assert_eq!(read(&repo, "new/b.txt"), "new\n");
@@ -131,10 +237,19 @@ fn discard_rejects_unsafe_or_missing_paths() {
         "a/../../x",
         ".git/HEAD",
     ] {
-        assert!(discard_sync(&project, &paths(&[bad])).is_err(), "{bad}");
+        for group in [
+            DiscardGroup::Staged,
+            DiscardGroup::Unstaged,
+            DiscardGroup::Untracked,
+        ] {
+            assert!(
+                discard_sync(&project, &paths(&[bad]), group).is_err(),
+                "{bad}"
+            );
+        }
     }
-    assert!(discard_sync(&project, &[]).is_err());
-    assert!(discard_sync(&project, &paths(&["a.txt", "../x"])).is_err());
+    assert!(discard_sync(&project, &[], DiscardGroup::Unstaged).is_err());
+    assert!(discard_sync(&project, &paths(&["a.txt", "../x"]), DiscardGroup::Unstaged).is_err());
     assert_eq!(read(&repo, "a.txt"), "two\n");
 }
 
@@ -146,7 +261,12 @@ fn discard_refuses_paths_escaping_through_a_symlink() {
     let repo = TestRepo::with_commit(&[("a.txt", "one\n")]);
     std::os::unix::fs::symlink(outside.path(), repo.path().join("link")).unwrap();
 
-    assert!(discard_sync(&repo.path_str(), &paths(&["link/secret.txt"])).is_err());
+    assert!(discard_sync(
+        &repo.path_str(),
+        &paths(&["link/secret.txt"]),
+        DiscardGroup::Untracked
+    )
+    .is_err());
 
     assert!(outside.path().join("secret.txt").exists());
 }
@@ -159,7 +279,7 @@ fn discard_deletes_an_untracked_symlink_but_not_its_target() {
     let repo = TestRepo::with_commit(&[("a.txt", "one\n")]);
     std::os::unix::fs::symlink(outside.path(), repo.path().join("link")).unwrap();
 
-    discard_sync(&repo.path_str(), &paths(&["link"])).unwrap();
+    discard_sync(&repo.path_str(), &paths(&["link"]), DiscardGroup::Untracked).unwrap();
 
     assert!(repo.path().join("link").symlink_metadata().is_err());
     assert!(outside.path().join("secret.txt").exists());
@@ -169,5 +289,5 @@ fn discard_deletes_an_untracked_symlink_but_not_its_target() {
 fn discard_reports_an_error_outside_a_repository() {
     let dir = tempfile::tempdir().unwrap();
     let project = dir.path().to_string_lossy().to_string();
-    assert!(discard_sync(&project, &paths(&["a.txt"])).is_err());
+    assert!(discard_sync(&project, &paths(&["a.txt"]), DiscardGroup::Unstaged).is_err());
 }

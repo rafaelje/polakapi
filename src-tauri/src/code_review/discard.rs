@@ -1,25 +1,44 @@
 use std::path::{Component, Path, PathBuf};
 
+use serde::Deserialize;
+
 use super::blocking;
 use super::git::{git_stdout, git_with_pathspec, has_head, lossy, nul_records};
 use super::paths::{literal_pathspec, pathspec};
 use crate::git_review::validate_repo_path;
 
 #[tauri::command]
-pub async fn code_review_discard(project_path: String, paths: Vec<String>) -> Result<(), String> {
-    blocking(move || discard_sync(&project_path, &paths)).await
+pub async fn code_review_discard(
+    project_path: String,
+    paths: Vec<String>,
+    group: DiscardGroup,
+) -> Result<(), String> {
+    blocking(move || discard_sync(&project_path, &paths, group)).await
 }
 
-#[derive(Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum DiscardGroup {
+    Staged,
+    Unstaged,
+    Untracked,
+}
+
+#[derive(Debug, Default, PartialEq, Eq)]
 struct DiscardPlan {
+    restore_worktree: Vec<String>,
     restore: Vec<String>,
     unindex: Vec<String>,
     delete: Vec<PathBuf>,
 }
 
-fn discard_sync(project_path: &str, paths: &[String]) -> Result<(), String> {
+fn discard_sync(project_path: &str, paths: &[String], group: DiscardGroup) -> Result<(), String> {
     let project = validate_repo_path(project_path)?;
-    let plan = plan_discard(&project, paths)?;
+    let plan = plan_discard(&project, paths, group)?;
+    if !plan.restore_worktree.is_empty() {
+        let spec = literal_pathspec(&plan.restore_worktree)?;
+        git_with_pathspec(&project, &["restore", "--worktree"], &spec)?;
+    }
     if !plan.restore.is_empty() {
         let spec = literal_pathspec(&plan.restore)?;
         git_with_pathspec(
@@ -39,7 +58,11 @@ fn discard_sync(project_path: &str, paths: &[String]) -> Result<(), String> {
     Ok(())
 }
 
-fn plan_discard(project: &Path, paths: &[String]) -> Result<DiscardPlan, String> {
+fn plan_discard(
+    project: &Path,
+    paths: &[String],
+    group: DiscardGroup,
+) -> Result<DiscardPlan, String> {
     let paths: Vec<String> = pathspec(paths)?.split_off(1);
     let root = project
         .canonicalize()
@@ -48,6 +71,10 @@ fn plan_discard(project: &Path, paths: &[String]) -> Result<DiscardPlan, String>
     let indexed = indexed_paths(project, &paths)?;
     let mut plan = DiscardPlan::default();
     for path in paths {
+        if group == DiscardGroup::Unstaged && indexed.contains(&path) {
+            plan.restore_worktree.push(path);
+            continue;
+        }
         if head && in_head(project, &path)? {
             plan.restore.push(path);
             continue;

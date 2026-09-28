@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type {
   BranchOverview,
   BranchRefs,
+  ChangeGroup,
   ChangesOverview,
   DiffTarget,
   FileContents,
@@ -58,8 +59,12 @@ export function commitStaged(projectPath: string, message: string): Promise<stri
   return invoke<string>("code_review_commit", { projectPath, message });
 }
 
-export function discardChanges(projectPath: string, paths: string[]): Promise<void> {
-  return invoke<void>("code_review_discard", { projectPath, paths });
+export function discardChanges(
+  projectPath: string,
+  paths: string[],
+  group: ChangeGroup,
+): Promise<void> {
+  return invoke<void>("code_review_discard", { projectPath, paths, group });
 }
 
 export function startWatchingProject(projectPath: string): Promise<void> {

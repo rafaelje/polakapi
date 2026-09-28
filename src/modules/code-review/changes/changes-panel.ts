@@ -149,7 +149,9 @@ export function mountChangesPanel(options: ChangesPanelOptions): ChangesPanel {
       armedKey = step.armed;
       render();
       if (!file || step.confirmed === null) return;
-      await runAction("discard", () => discardChanges(project.path, discardPaths(file)));
+      await runAction("discard", () =>
+        discardChanges(project.path, discardPaths(file), file.group),
+      );
     },
     disarm: () => {
       if (armedKey === null) return;
