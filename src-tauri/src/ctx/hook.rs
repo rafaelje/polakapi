@@ -298,11 +298,11 @@ fn instructions(bin: &str) -> String {
     let polakapi = intercept::shell_quote(bin);
     format!(
         "polakapi context mode is on in this terminal.\n\
-         Some shell commands that produce large output (git log/diff/show, gh, cat, find, \
-         grep -r, curl, logs) run through polakapi, which stores the output outside your \
-         context. Instead of the raw output you get either a summary or a line starting \
-         \"Indexed N sections … from: <source>\". A failing command still ends with \
-         \"Exit status N.\"\n\
+         Your shell commands run through polakapi, which stores their output outside your \
+         context. Short output comes back unchanged. Longer output comes back as a summary \
+         (builds, tests and logs, with every error and failure line) or as a list of \
+         sections starting \"Indexed N sections … from: <source>\". A failing command \
+         still ends with \"Exit status N.\"\n\
          To see stored output:\n\
          - {polakapi} ctx search <query> [--source <source>]  ranked matches\n\
          - {polakapi} ctx read <source> <n>                   one section verbatim\n\
@@ -369,9 +369,9 @@ mod tests {
         assert!(decide(&bash("git log"), &env(false, "claude"))
             .unwrap_err()
             .contains("off for claude"));
-        assert!(decide(&bash("npm test"), &env(true, "claude"))
+        assert!(decide(&bash("git status"), &env(true, "claude"))
             .unwrap_err()
-            .contains("npm is not a command"));
+            .contains("prints little"));
         assert!(decide(&bash("git log"), &env(true, "cursor-agent"))
             .unwrap_err()
             .contains("runs cursor-agent"));
@@ -446,8 +446,8 @@ mod tests {
     }
 
     #[test]
-    fn leaves_ordinary_commands_alone() {
-        assert!(respond(&bash("cargo test"), &env(true, "claude")).is_none());
+    fn leaves_commands_that_change_the_shell_or_print_little() {
+        assert!(respond(&bash("mkdir -p out"), &env(true, "claude")).is_none());
         assert!(respond(&bash("cd src && cat main.rs"), &env(true, "claude")).is_none());
     }
 
