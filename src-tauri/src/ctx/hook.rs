@@ -123,10 +123,7 @@ fn log_decision(event: &Value, env: &HookEnv, decision: &Result<Value, String>) 
         .get("tool_input")
         .and_then(|input| input.get("command"))
         .and_then(Value::as_str)
-        .map(|command| {
-            let short: String = command.chars().take(80).collect();
-            format!(" | {short}")
-        })
+        .map(|command| format!(" | {}", intercept::program_name(command)))
         .unwrap_or_default();
     let outcome = match decision {
         Ok(_) if name.eq_ignore_ascii_case("sessionstart") => "instructions sent".to_string(),

@@ -85,6 +85,14 @@ pub fn classify(command: &str) -> Result<OutputKind, String> {
         .ok_or_else(|| format!("{} is not a command known to print a lot", program(first)))
 }
 
+/// Just the program a command runs, without its path or arguments: what the
+/// diagnostics log records, since arguments and inline variables can carry
+/// secrets.
+pub fn program_name(command: &str) -> &str {
+    let program = program(command);
+    program.rsplit(['/', '\\']).next().unwrap_or(program)
+}
+
 fn program(segment: &str) -> &str {
     segment
         .split_whitespace()
@@ -235,6 +243,16 @@ mod tests {
             classify_command("GIT_PAGER=cat git log"),
             Some(OutputKind::Exact)
         );
+    }
+
+    #[test]
+    fn the_logged_program_name_carries_no_arguments_or_variables() {
+        assert_eq!(
+            program_name("TOKEN=secret /usr/bin/curl -H 'Authorization: x' url"),
+            "curl"
+        );
+        assert_eq!(program_name("git log --oneline"), "git");
+        assert_eq!(program_name(""), "");
     }
 
     #[test]
