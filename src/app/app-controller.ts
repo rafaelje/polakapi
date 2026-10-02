@@ -61,6 +61,7 @@ import {
 } from "../modules/memory-library/memory-button";
 import { flushSaveAgents } from "../shared/persistence/agents-store";
 import { flushSaveWorkspaces } from "../shared/persistence/workspaces-store";
+import { findProject } from "../modules/workspaces/state/workspaces-reducer";
 import { bootstrapWorkspaces, type WorkspacesBootstrapHandle } from "./workspaces-bootstrap";
 import { wireWindowLifecycle } from "./lifecycle";
 import { wireQuitConfirm } from "./quit-confirm";
@@ -125,7 +126,11 @@ export class AppController {
     this.unlistenUpdateMenu = await listen("check-updates", () => {
       void checkForUpdatesManually();
     });
-    this.stopAgentNotifier = await startAgentNotifier();
+    this.stopAgentNotifier = await startAgentNotifier((ptyId) => {
+      const projectId = this.router.findPaneById(ptyId)?.manager.projectId;
+      if (!projectId || !this.workspaces) return null;
+      return findProject(this.workspaces.controller.getState(), projectId)?.project.name ?? null;
+    });
     const layout = await this.loadSavedLayout();
     this.applyLayout(layout);
     this.bottomPanel = mountBottomPanel({
