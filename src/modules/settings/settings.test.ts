@@ -36,6 +36,7 @@ beforeEach(async () => {
     waiting: true,
     finished: "idle",
     desktop: true,
+    soundEnabled: true,
     sound: "default",
     command: 'say "done"',
   });
