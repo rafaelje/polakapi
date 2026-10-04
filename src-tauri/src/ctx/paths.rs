@@ -192,7 +192,10 @@ pub fn promote(from: &Path, to: &Path) -> Result<(), String> {
         return Ok(());
     }
     copy_dir(from, to)?;
-    std::fs::remove_dir_all(from).map_err(|e| format!("could not clear {}: {e}", from.display()))
+    // Another process may still hold the old database open (Windows refuses to
+    // delete it); the copy is already safe and the sweep clears the leftover.
+    let _ = std::fs::remove_dir_all(from);
+    Ok(())
 }
 
 fn copy_dir(from: &Path, to: &Path) -> Result<(), String> {
