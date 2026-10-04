@@ -4,6 +4,8 @@ use serde_json::{json, Value};
 
 use crate::ctx::config::{self, CtxConfig};
 use crate::ctx::intercept;
+use crate::ctx::paths;
+use crate::ctx::session;
 
 // `polakapi ctx-hook --for <cli>` — the hook that puts context mode in the
 // agent's path, for Claude Code and for the Cursor CLI.
@@ -97,6 +99,7 @@ pub fn run(args: &[String]) -> i32 {
         config: config::load_from_env(),
         bin: bin.to_string_lossy().into_owned(),
     };
+    name_store(&event, &env);
     let decision = decide(&event, &env);
     log_decision(&event, &env, &decision);
     match decision {
@@ -108,6 +111,59 @@ pub fn run(args: &[String]) -> i32 {
         Err(_) => {}
     }
     0
+}
+
+/// Keeps the project store's directory named after the session, so a session
+/// renamed with `/rename` can be told apart on disk. Claude has no hook for the
+/// rename itself, so it is picked up on the next event. Best effort: a store
+/// that cannot move right now (Windows refuses while another process has it
+/// open) is retried on the following event.
+fn name_store(event: &Value, env: &HookEnv) {
+    if env.target != Target::Claude
+        || !env.in_polakapi_terminal
+        || env.cli != env.target.binary()
+        || !env.config.enabled_for(env.target.config_id())
+    {
+        return;
+    }
+    let (Some(session), Some(transcript)) = (
+        event.get("session_id").and_then(Value::as_str),
+        event.get("transcript_path").and_then(Value::as_str),
+    ) else {
+        return;
+    };
+    // The store is keyed by the session polakapi recorded for this terminal;
+    // an event from any other session does not own it.
+    if paths::session_key_from_env().as_deref() != Some(session) {
+        return;
+    }
+    let Some(project) = paths::project_dir_from_env() else {
+        return;
+    };
+    let title = custom_title(std::path::Path::new(transcript), session);
+    if let Ok(Some(dir)) = session::rename_store(session, &project, title.as_deref()) {
+        crate::capture::append_log_line(&format!(
+            "{} [CTX] cli={} store renamed to {}",
+            crate::capture::now_ts(),
+            env.cli,
+            dir.display()
+        ));
+    }
+}
+
+/// The latest name given to a session with `/rename`, from its transcript.
+fn custom_title(transcript: &std::path::Path, session: &str) -> Option<String> {
+    let file = std::fs::File::open(transcript).ok()?;
+    std::io::BufRead::lines(std::io::BufReader::new(file))
+        .map_while(Result::ok)
+        .filter(|line| line.contains("\"custom-title\""))
+        .filter_map(|line| serde_json::from_str::<Value>(&line).ok())
+        .filter(|entry| {
+            entry.get("type").and_then(Value::as_str) == Some("custom-title")
+                && entry.get("sessionId").and_then(Value::as_str) == Some(session)
+        })
+        .filter_map(|entry| entry.get("customTitle")?.as_str().map(str::to_string))
+        .last()
 }
 
 /// One line per invocation in polakapi.db.log, next to the capture hook's,
@@ -508,5 +564,28 @@ mod tests {
             &env(true, "claude")
         )
         .is_none());
+    }
+
+    #[test]
+    fn the_latest_rename_of_this_session_wins() {
+        let dir = tempfile::tempdir().unwrap();
+        let transcript = dir.path().join("t.jsonl");
+        std::fs::write(
+            &transcript,
+            [
+                r#"{"type":"user","message":"custom-title in a prompt"}"#,
+                r#"{"type":"custom-title","customTitle":"first","sessionId":"s-1"}"#,
+                r#"{"type":"custom-title","customTitle":"other","sessionId":"s-2"}"#,
+                r#"{"type":"custom-title","customTitle":"Ekim NPCs","sessionId":"s-1"}"#,
+            ]
+            .join("\n"),
+        )
+        .unwrap();
+        assert_eq!(
+            custom_title(&transcript, "s-1").as_deref(),
+            Some("Ekim NPCs")
+        );
+        assert_eq!(custom_title(&transcript, "s-3"), None);
+        assert_eq!(custom_title(&dir.path().join("missing.jsonl"), "s-1"), None);
     }
 }

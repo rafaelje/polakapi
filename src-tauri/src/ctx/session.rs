@@ -121,14 +121,14 @@ impl CtxSession {
         lock(&self.session_id)
     }
 
-    /// The project store, when another process has promoted this session since
-    /// it was opened here.
+    /// The project store, when another process has promoted or renamed this
+    /// session's store since it was opened here.
     fn promoted_elsewhere(&self) -> Option<PathBuf> {
-        if self.persisted {
+        if self.persisted && self.dir.join("ctx.db").is_file() {
             return None;
         }
         let target = paths::project_store(self.project.as_deref()?, &self.session_id)?;
-        target.join("ctx.db").is_file().then_some(target)
+        (target != self.dir && target.join("ctx.db").is_file()).then_some(target)
     }
 
     /// For readers: switches to the promoted store, waiting for a promotion
@@ -186,6 +186,17 @@ impl CtxSession {
         self.persisted = true;
         Ok(())
     }
+}
+
+/// Renames a session's project store after its title, holding the lock so no
+/// process writes into it while it moves.
+pub fn rename_store(
+    session_id: &str,
+    project: &Path,
+    title: Option<&str>,
+) -> Result<Option<PathBuf>, String> {
+    let _lock = lock(session_id);
+    paths::rename_project_store(project, session_id, title)
 }
 
 /// Held while a process opens or writes a session's store; released on drop.
@@ -309,6 +320,30 @@ mod tests {
         idle.offload("exec:three", &body("c")).unwrap();
         assert!(idle.dir().starts_with(project.path()));
         assert_eq!(idle.list().unwrap().len(), 3);
+    }
+
+    #[test]
+    fn an_open_session_follows_a_rename_made_by_another_process() {
+        let project = tempfile::tempdir().unwrap();
+        let id = format!("sess-rename-{}", uuid::Uuid::new_v4());
+        let mut open =
+            CtxSession::open(&id, Some(project.path()), config(Storage::Project, 1)).unwrap();
+        open.offload("exec:one", &body("a")).unwrap();
+        drop(open.store.take());
+
+        let renamed = rename_store(&id, project.path(), Some("Ekim"))
+            .unwrap()
+            .unwrap();
+
+        open.offload("exec:two", &body("b")).unwrap();
+        assert_eq!(open.dir(), renamed);
+        assert_eq!(open.list().unwrap().len(), 2);
+        assert!(!project
+            .path()
+            .join(paths::STORE_DIR)
+            .join("ctx")
+            .join(&id)
+            .exists());
     }
 
     #[test]

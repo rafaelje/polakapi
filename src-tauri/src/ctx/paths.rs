@@ -105,11 +105,92 @@ pub fn lock_file(session: &str) -> Option<PathBuf> {
     )
 }
 
+/// The session's store in the project: the existing directory, named or not,
+/// or `<session>` when there is none yet.
 pub fn project_store(project: &Path, session: &str) -> Option<PathBuf> {
     if !is_safe_session(session) {
         return None;
     }
-    Some(project.join(STORE_DIR).join("ctx").join(session))
+    let root = project.join(STORE_DIR).join("ctx");
+    Some(find_store(&root, session).unwrap_or_else(|| root.join(session)))
+}
+
+/// A named store is `<name>-<session>`, so it is found by its suffix. Legacy
+/// `<terminal>-<session>` directories end the same way and are skipped: their
+/// prefix is a terminal id, not a name.
+fn find_store(root: &Path, session: &str) -> Option<PathBuf> {
+    let exact = root.join(session);
+    if exact.is_dir() {
+        return Some(exact);
+    }
+    let suffix = format!("-{session}");
+    std::fs::read_dir(root)
+        .ok()?
+        .flatten()
+        .filter(|entry| entry.file_type().is_ok_and(|kind| kind.is_dir()))
+        .find(|entry| {
+            entry
+                .file_name()
+                .to_str()
+                .and_then(|name| name.strip_suffix(&suffix))
+                .is_some_and(|prefix| !prefix.is_empty() && !is_uuid(prefix))
+        })
+        .map(|entry| entry.path())
+}
+
+fn is_uuid(value: &str) -> bool {
+    let groups: Vec<&str> = value.split('-').collect();
+    groups.len() == 5
+        && groups
+            .iter()
+            .zip([8, 4, 4, 4, 12])
+            .all(|(group, len)| group.len() == len && group.chars().all(|c| c.is_ascii_hexdigit()))
+}
+
+/// The directory name for a session the user has named, e.g. after `/rename`.
+pub fn store_dir_name(session: &str, title: Option<&str>) -> String {
+    match title.map(slug).filter(|slug| !slug.is_empty()) {
+        Some(slug) => format!("{slug}-{session}"),
+        None => session.to_string(),
+    }
+}
+
+fn slug(title: &str) -> String {
+    let mut slug = String::new();
+    for c in title.chars().flat_map(char::to_lowercase) {
+        if c.is_alphanumeric() {
+            slug.push(c);
+        } else if !slug.is_empty() && !slug.ends_with('-') {
+            slug.push('-');
+        }
+        if slug.chars().count() >= 48 {
+            break;
+        }
+    }
+    slug.trim_end_matches('-').to_string()
+}
+
+/// Renames the session's project store to match its title. Returns the new
+/// directory when it moved; a store that does not exist yet is left for the
+/// next call, and a target that is taken is never overwritten.
+pub fn rename_project_store(
+    project: &Path,
+    session: &str,
+    title: Option<&str>,
+) -> Result<Option<PathBuf>, String> {
+    let Some(current) = project_store(project, session) else {
+        return Ok(None);
+    };
+    let Some(root) = current.parent() else {
+        return Ok(None);
+    };
+    let target = root.join(store_dir_name(session, title));
+    if target == current || !current.is_dir() || target.exists() {
+        return Ok(None);
+    }
+    std::fs::rename(&current, &target)
+        .map_err(|e| format!("could not rename {}: {e}", current.display()))?;
+    Ok(Some(target))
 }
 
 /// True once this session's data belongs in the project rather than in temp.
@@ -365,5 +446,74 @@ mod tests {
     fn promoting_a_store_that_never_existed_is_not_an_error() {
         let root = tempfile::tempdir().unwrap();
         promote(&root.path().join("missing"), &root.path().join("to")).unwrap();
+    }
+
+    const SESSION: &str = "e0eb2201-9526-477a-a0e3-ff127f62f0a0";
+
+    fn store_root(project: &Path) -> PathBuf {
+        project.join(STORE_DIR).join("ctx")
+    }
+
+    #[test]
+    fn a_named_session_gets_a_readable_directory() {
+        assert_eq!(
+            store_dir_name(SESSION, Some("Ekim: NPC notes / sesión 3")),
+            format!("ekim-npc-notes-sesión-3-{SESSION}")
+        );
+        assert_eq!(store_dir_name(SESSION, Some("  ")), SESSION);
+        assert_eq!(store_dir_name(SESSION, None), SESSION);
+    }
+
+    #[test]
+    fn a_renamed_store_is_still_found_by_its_session() {
+        let project = tempfile::tempdir().unwrap();
+        let named = store_root(project.path()).join(format!("ekim-{SESSION}"));
+        std::fs::create_dir_all(&named).unwrap();
+        assert_eq!(project_store(project.path(), SESSION), Some(named));
+    }
+
+    #[test]
+    fn a_legacy_terminal_keyed_store_is_not_mistaken_for_a_name() {
+        let project = tempfile::tempdir().unwrap();
+        let legacy = store_root(project.path())
+            .join(format!("28bba2ab-abaf-42d6-8aaf-c5ce681113ba-{SESSION}"));
+        std::fs::create_dir_all(legacy).unwrap();
+        assert_eq!(
+            project_store(project.path(), SESSION),
+            Some(store_root(project.path()).join(SESSION))
+        );
+    }
+
+    #[test]
+    fn renaming_follows_the_title_and_back() {
+        let project = tempfile::tempdir().unwrap();
+        let root = store_root(project.path());
+        std::fs::create_dir_all(root.join(SESSION)).unwrap();
+
+        let named = rename_project_store(project.path(), SESSION, Some("Ekim"))
+            .unwrap()
+            .unwrap();
+        assert_eq!(named, root.join(format!("ekim-{SESSION}")));
+        assert!(!root.join(SESSION).exists());
+
+        let renamed = rename_project_store(project.path(), SESSION, Some("Ekim NPCs"))
+            .unwrap()
+            .unwrap();
+        assert_eq!(renamed, root.join(format!("ekim-npcs-{SESSION}")));
+        assert_eq!(
+            rename_project_store(project.path(), SESSION, Some("Ekim NPCs")).unwrap(),
+            None,
+            "already named"
+        );
+    }
+
+    #[test]
+    fn renaming_a_store_that_does_not_exist_yet_does_nothing() {
+        let project = tempfile::tempdir().unwrap();
+        assert_eq!(
+            rename_project_store(project.path(), SESSION, Some("Ekim")).unwrap(),
+            None
+        );
+        assert!(!store_root(project.path()).exists());
     }
 }
