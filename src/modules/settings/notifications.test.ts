@@ -112,6 +112,25 @@ describe("notification delivery", () => {
     );
     expect(invoke).toHaveBeenCalledTimes(2);
   });
+  it("keeps banners but plays no sound when sounds are turned off", async () => {
+    await deliverNotification("Agent", "Done", { ...defaults, soundEnabled: false });
+    await deliverNotification("Agent", "Done", {
+      ...defaults,
+      soundEnabled: false,
+      sound: "/tmp/ping.wav",
+    });
+    expect(invoke).toHaveBeenCalledTimes(2);
+    expect(invoke).toHaveBeenCalledWith(
+      "notification_send",
+      { title: "Agent", body: "Done", defaultSound: false },
+      { toastOnError: false },
+    );
+    expect(invoke).not.toHaveBeenCalledWith(
+      "notification_play_sound",
+      expect.anything(),
+      expect.anything(),
+    );
+  });
   it("skips desktop permission and delivery when disabled", async () => {
     await deliverNotification("Agent", "Done", { ...defaults, desktop: false, sound: "none" });
     expect(isPermissionGranted).not.toHaveBeenCalled();
