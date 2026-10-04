@@ -66,7 +66,10 @@ export function reloadSpec(spec: TerminalSpec): Partial<TerminalSpec> {
 }
 
 export async function closeAllPanes(target: BatchTarget): Promise<void> {
+  // Sequential on purpose: each close mutates the layout tree and pane order,
+  // so overlapping calls would corrupt the grid.
   for (const id of [...target.ids()]) {
+    // react-doctor-disable-next-line react-doctor/async-await-in-loop
     await target.close(id);
   }
 }
@@ -97,15 +100,20 @@ export async function reloadAllPanes(target: BatchTarget): Promise<void> {
   // Capture before closing: each close drops its spec and prunes the tree.
   const specs = target.specs();
   const template = reloadTemplate(specs, target.layoutSnapshot);
+  // Sequential on purpose: each close mutates the layout tree and pane order,
+  // so overlapping calls would corrupt the grid.
   for (const id of [...target.ids()]) {
+    // react-doctor-disable-next-line react-doctor/async-await-in-loop
     await target.close(id, { silent: true });
   }
   if (template) {
     await target.applyTemplate(template);
     return;
   }
-  // No tree to restore, so there are no positions to keep: reopen in order.
+  // No tree to restore, so there are no positions to keep: reopen in order,
+  // one at a time, since each pane takes the next slot in the grid.
   for (const spec of specs) {
+    // react-doctor-disable-next-line react-doctor/async-await-in-loop
     await target.addPane(reloadSpec(spec));
   }
 }
