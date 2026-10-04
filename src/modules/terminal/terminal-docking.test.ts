@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { attachTerminalDocking, resolveTerminalDockPosition } from "./terminal-docking";
+import {
+  attachTerminalDocking,
+  resolveTerminalDockPosition,
+  isOutsideViewport,
+} from "./terminal-docking";
 
 function pointerEvent(type: string, init: MouseEventInit): Event {
   return new MouseEvent(type, { bubbles: true, cancelable: true, ...init });
@@ -165,5 +169,15 @@ describe("attachTerminalDocking", () => {
 
     expect(onDock).not.toHaveBeenCalled();
     handle.dispose();
+  });
+});
+
+describe("dragging a pane out of the window", () => {
+  it("counts only points past the viewport edge as outside", () => {
+    expect(isOutsideViewport(10, 10)).toBe(false);
+    expect(isOutsideViewport(-1, 10)).toBe(true);
+    expect(isOutsideViewport(10, -1)).toBe(true);
+    expect(isOutsideViewport(window.innerWidth, 10)).toBe(true);
+    expect(isOutsideViewport(10, window.innerHeight)).toBe(true);
   });
 });

@@ -309,12 +309,12 @@ export class AppController {
   }
 
   private async wirePtyEvents(): Promise<void> {
-    this.unlistenData = await onPtyData(({ id, data }) => {
+    this.unlistenData = await onPtyData(({ id, data, offset }) => {
       if (this.bottomPanel?.handlePtyData(id, data)) return;
       const found = this.router.findPaneById(id);
       if (!found) return;
       this.router.recordActivity(id);
-      found.pane.write(data);
+      found.pane.write(data, offset);
     });
     this.unlistenExit = await onPtyExit(({ id }) => {
       if (this.bottomPanel?.handlePtyExit(id)) return;

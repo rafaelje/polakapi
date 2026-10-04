@@ -5,7 +5,8 @@ import {
 } from "../modules/terminal/terminal-manager";
 import type { TerminalPane } from "../modules/terminal/terminal-pane";
 import type { TerminalLayoutNode } from "../modules/terminal/terminal-layout";
-import type { TerminalSpec } from "../modules/terminal/types";
+import type { PaneSnapshot, PaneSnapshots, TerminalSpec } from "../modules/terminal/types";
+import { snapshotPanes } from "../modules/terminal/pane-snapshots";
 import { ptyKill } from "../modules/terminal/pty-client";
 import {
   ProjectActivityTracker,
@@ -23,6 +24,15 @@ export type TerminalRouterListener = (event: TerminalRouterEvent) => void;
 export interface TerminalRouterOptions {
   onPersistSpecs(projectId: ProjectId, specs: TerminalSpec[]): void;
   onPersistLayout(projectId: ProjectId, layout: TerminalLayoutNode | null): void;
+}
+
+/** A project's grid with its PTYs still running, ready to be rendered elsewhere. */
+export interface ReleasedGrid {
+  specs: TerminalSpec[];
+  layout: TerminalLayoutNode | null;
+  activeCliId: string;
+  /** What each pane showed when it was released, by PTY id. */
+  snapshots?: PaneSnapshots;
 }
 
 /**
@@ -43,6 +53,11 @@ export class TerminalRouter {
   private mountToken = 0;
   private notificationContext: NotificationContext | null = null;
   private readonly activity: ProjectActivityTracker;
+  /** Live panes in other windows, by window id, so project counts stay whole. */
+  private readonly external = new Map<string, { projectId: ProjectId; count: number }>();
+  private tearOffHandler:
+    | ((projectId: ProjectId, ptyId: string, x: number, y: number) => void)
+    | null = null;
 
   constructor(private readonly opts: TerminalRouterOptions) {
     this.activity = new ProjectActivityTracker({
@@ -62,6 +77,13 @@ export class TerminalRouter {
     for (const manager of this.managers.values()) manager.setNotificationContext(ctx);
   }
 
+  /** Called when a pane header is dropped outside the main window. */
+  setTearOffHandler(
+    handler: ((projectId: ProjectId, ptyId: string, x: number, y: number) => void) | null,
+  ): void {
+    this.tearOffHandler = handler;
+  }
+
   getOrCreate(project: Project): TerminalManager {
     const existing = this.managers.get(project.id);
     if (existing) return existing;
@@ -71,6 +93,7 @@ export class TerminalRouter {
       layout: project.terminalLayout,
       activeCliId: project.activeCliId,
       notificationContext: this.notificationContext ?? undefined,
+      onTearOff: (ptyId, x, y) => this.tearOffHandler?.(project.id, ptyId, x, y),
     });
     this.managers.set(project.id, manager);
     const unsubscribe = manager.on((event) => this.onManagerEvent(event));
@@ -141,11 +164,86 @@ export class TerminalRouter {
   liveCountsByProject(): ReadonlyMap<ProjectId, number> {
     const map = new Map<ProjectId, number>();
     for (const [id, manager] of this.managers) map.set(id, manager.size);
+    for (const { projectId, count } of this.external.values()) {
+      map.set(projectId, (map.get(projectId) ?? 0) + count);
+    }
     return map;
   }
 
   getCount(projectId: ProjectId): number {
-    return this.managers.get(projectId)?.size ?? 0;
+    return this.liveCountsByProject().get(projectId) ?? 0;
+  }
+
+  setExternalCount(windowId: string, projectId: ProjectId, count: number | null): void {
+    if (count === null) this.external.delete(windowId);
+    else this.external.set(windowId, { projectId, count });
+    this.emitCounts();
+    this.activity.refresh(projectId);
+  }
+
+  /** Takes one pane out of a project's grid, leaving its process running. */
+  async tearOff(
+    projectId: ProjectId,
+    ptyId: string,
+  ): Promise<{ spec: TerminalSpec; snapshot: PaneSnapshot | null } | null> {
+    const manager = this.managers.get(projectId);
+    const spec = manager?.specs().find((candidate) => candidate.id === ptyId);
+    if (!manager || !spec) return null;
+    const snapshot = (await manager.get(ptyId)?.snapshot()) ?? null;
+    await manager.close(ptyId, { keepPty: true });
+    return { spec, snapshot };
+  }
+
+  /** Puts running panes back into a project's grid that is already here. */
+  async adoptPanes(
+    projectId: ProjectId,
+    specs: TerminalSpec[],
+    snapshots?: PaneSnapshots,
+  ): Promise<boolean> {
+    const manager = this.managers.get(projectId);
+    if (!manager) return false;
+    for (const spec of specs) {
+      // react-doctor-disable-next-line react-doctor/async-await-in-loop
+      await manager.addPane(spec, {
+        adoptPtyId: spec.id,
+        skipStartupCmd: true,
+        snapshot: snapshots?.[spec.id],
+      });
+    }
+    return true;
+  }
+
+  /**
+   * Hands a project's grid over: the panes stop rendering here, the PTYs keep
+   * running, and what another window needs to rebuild the grid comes back.
+   */
+  async release(projectId: ProjectId): Promise<ReleasedGrid | null> {
+    const manager = this.managers.get(projectId);
+    if (!manager) return null;
+    const grid: ReleasedGrid = {
+      specs: manager.specs(),
+      layout: manager.layoutSnapshot,
+      activeCliId: manager.getActiveCli(),
+      snapshots: await snapshotPanes(manager),
+    };
+    if (this.activeProjectId === projectId) this.unmount();
+    this.unsubscribes.get(projectId)?.();
+    this.unsubscribes.delete(projectId);
+    this.managers.delete(projectId);
+    await manager.dispose({ keepPty: true });
+    this.emitCounts();
+    return grid;
+  }
+
+  /** The reverse of `release`: renders PTYs that are already running. */
+  async adopt(project: Project, grid: ReleasedGrid): Promise<TerminalManager> {
+    const manager = this.getOrCreate({
+      ...project,
+      terminalLayout: grid.layout ?? undefined,
+      activeCliId: grid.activeCliId,
+    });
+    await manager.restoreSpecs(grid.specs, { adopt: true, snapshots: grid.snapshots });
+    return manager;
   }
 
   getActivity(projectId: ProjectId): ProjectActivityState {
@@ -163,7 +261,7 @@ export class TerminalRouter {
 
   totalLiveCount(): number {
     let total = 0;
-    for (const manager of this.managers.values()) total += manager.size;
+    for (const count of this.liveCountsByProject().values()) total += count;
     return total;
   }
 

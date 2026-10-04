@@ -3,13 +3,31 @@ export interface PaneCreateOptions {
   args?: string[];
   cwd?: string;
   cliId?: string;
+  /** Render a PTY that is already running (in another window) instead of spawning one. */
+  existingPtyId?: string;
+  /** What that other window showed, so the pane picks up exactly where it was. */
+  snapshot?: PaneSnapshot;
 }
+
+/** A pane's screen and scrollback with its colors, and the PTY output offset
+ * it covers; output after that offset is replayed on top. */
+export interface PaneSnapshot {
+  screen: string;
+  offset: number;
+  cols: number;
+  rows: number;
+}
+
+/** Pane snapshots by PTY id. */
+export type PaneSnapshots = Record<string, PaneSnapshot>;
 
 export interface PaneAddOptions {
   silent?: boolean;
   extraArgs?: string[];
   skipStartupCmd?: boolean;
   splitPosition?: "right" | "bottom";
+  adoptPtyId?: string;
+  snapshot?: PaneSnapshot;
 }
 
 /**

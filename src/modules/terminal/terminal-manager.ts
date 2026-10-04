@@ -33,7 +33,7 @@ import {
   type NotificationContext,
 } from "./terminal-notifications";
 import { layoutTerminalSplits } from "./terminal-split-layout";
-import { type PaneAddOptions, type TerminalSpec } from "./types";
+import { type PaneAddOptions, type PaneSnapshots, type TerminalSpec } from "./types";
 
 function errorMessage(error: unknown): string {
   if (typeof error === "string") return error;
@@ -44,7 +44,6 @@ function errorMessage(error: unknown): string {
 export type { NotificationContext };
 
 export interface TerminalManagerOptions {
-  /** Identity used for router lookup + events. */
   projectId: ProjectId;
   /** project.path applied when a spec omits cwd. */
   defaultCwd: string;
@@ -53,6 +52,8 @@ export interface TerminalManagerOptions {
   activeCliId?: string;
   /** Optional. When omitted, panes do not register bell notifications. */
   notificationContext?: NotificationContext;
+  /** A pane's header was dropped outside the window, at these screen coordinates. */
+  onTearOff?(this: void, ptyId: string, screenX: number, screenY: number): void;
 }
 
 export type TerminalManagerEvent =
@@ -71,6 +72,8 @@ export type TerminalManagerListener = (event: TerminalManagerEvent) => void;
  */
 export class TerminalManager {
   private readonly panes = new Map<string, TerminalPane>();
+  /** Adopted panes still catching up; their live output must reach them too. */
+  private readonly adopting = new Map<string, TerminalPane>();
   private readonly order: string[] = [];
   private readonly liveIds = new Set<string>();
   private readonly specsById = new Map<string, TerminalSpec>();
@@ -85,15 +88,12 @@ export class TerminalManager {
   /** Per-pane bell handles, disposed on close() / dispose(). */
   private readonly bellHandles = new Map<string, BellNotificationHandle>();
   private readonly dockingHandles = new Map<string, TerminalDockingHandle>();
-  /**
-   * Guards `respawnPane` against re-entry — a double click on the badge menu
-   * (or two close-together IPC events) would otherwise spawn two replacement
-   * panes for one slot, with the second seeing the first's already-deleted
-   * spec and silently no-oping.
-   */
+  /** Guards `respawnPane` against re-entry: a double click would otherwise
+   * spawn two replacement panes for one slot. */
   private readonly respawning = new Set<string>();
   private activeCliId: string;
   readonly projectId: ProjectId;
+  private readonly onTearOff: TerminalManagerOptions["onTearOff"];
 
   constructor(opts: TerminalManagerOptions) {
     this.projectId = opts.projectId;
@@ -101,18 +101,14 @@ export class TerminalManager {
     this.initialLayout = opts.layout ?? null;
     this.activeCliId = opts.activeCliId && opts.activeCliId.length > 0 ? opts.activeCliId : "shell";
     this.notificationContext = opts.notificationContext ?? null;
+    this.onTearOff = opts.onTearOff;
     const grid = document.createElement("div");
     grid.className = "terminal-grid";
     this.grid = grid;
   }
 
-  /**
-   * F5: late binding. The bootstrap may not have constructed the notification
-   * context yet when getOrCreate fires (e.g. during restore); calling this
-   * after construction wires bells for any future panes. Already-spawned
-   * panes are NOT retro-wired — they pre-date the context and we'd risk
-   * double-registering on a reconnect.
-   */
+  /** Late binding for bells on future panes; already-spawned panes are not
+   * retro-wired, which would risk double-registering on a reconnect. */
   setNotificationContext(ctx: NotificationContext | null): void {
     this.notificationContext = ctx;
   }
@@ -122,8 +118,7 @@ export class TerminalManager {
     const current = this.specsById.get(terminalId);
     if (!current) return;
     const next: TerminalSpec = { ...current, ...patch, id: current.id };
-    // Identity preservation: bail out when nothing actually changed so we
-    // don't trigger a redundant persist round-trip.
+    // Skip the persist round-trip when nothing actually changed.
     if (
       next.title === current.title &&
       next.cwd === current.cwd &&
@@ -148,8 +143,7 @@ export class TerminalManager {
     return this.liveIds.size;
   }
 
-  /** Count of specs currently suspended (placeholder panes) — drives the
-   * "Resume terminals (N)" row-menu item, mirroring `getLiveCount`. */
+  /** Suspended placeholder panes, for the "Resume terminals (N)" row-menu item. */
   get suspendedCount(): number {
     let count = 0;
     for (const spec of this.specsById.values()) if (spec.suspended) count++;
@@ -187,7 +181,7 @@ export class TerminalManager {
   }
 
   get(id: string): TerminalPane | undefined {
-    return this.panes.get(id);
+    return this.panes.get(id) ?? this.adopting.get(id);
   }
 
   /** True for spawned, non-exited PTY sessions — false for failed spawns
@@ -205,10 +199,7 @@ export class TerminalManager {
     return () => this.listeners.delete(listener);
   }
 
-  /**
-   * Spawn a pane backed by the given spec. When `spec.cwd` is undefined the
-   * manager substitutes `defaultCwd` (the owning project's path).
-   */
+  /** Spawn a pane backed by the given spec; an undefined `cwd` uses `defaultCwd`. */
   async addPane(spec?: Partial<TerminalSpec>, opts?: PaneAddOptions): Promise<TerminalPane | null> {
     const pane = new TerminalPane();
     const anchorId = this.focusedId;
@@ -220,16 +211,20 @@ export class TerminalManager {
     const command = profile.command || undefined;
     const baseArgs = spec?.launchArgs ?? profile.args;
     let spawnError: string | null = null;
+    if (opts?.adoptPtyId) this.adopting.set(opts.adoptPtyId, pane);
     try {
       await pane.attach(this.grid, {
         cwd,
         command,
         args: opts?.extraArgs ? [...(baseArgs ?? []), ...opts.extraArgs] : baseArgs,
         cliId: profile.id,
+        existingPtyId: opts?.adoptPtyId,
+        snapshot: opts?.snapshot,
       });
     } catch (error) {
       spawnError = errorMessage(error);
     }
+    if (opts?.adoptPtyId) this.adopting.delete(opts.adoptPtyId);
 
     pane.el.style.visibility = "";
     // Spawn failures keep the pane visible so the user can read the error and
@@ -289,15 +284,13 @@ export class TerminalManager {
       dock: (sourceId, targetId, position) => this.dock(sourceId, targetId, position),
       setFocus: (id) => this.setFocus(id),
       close: (id) => this.close(id),
+      tearOff: this.onTearOff,
       orderLength: () => this.order.length,
     });
     this.dockingHandles.set(ptyId, dockingHandle);
   }
 
-  /**
-   * F5: wire bell notifications. The manager is the single owner of the
-   * handle and disposes it in close()/dispose().
-   */
+  /** F5: bells; the manager owns the handle and disposes it in close()/dispose(). */
   private registerBell(pane: TerminalPane, ptyId: string): void {
     const ctx = this.notificationContext;
     if (!ctx) return;
@@ -426,7 +419,8 @@ export class TerminalManager {
     }
   }
 
-  async close(ptyId: string, opts?: { silent?: boolean }): Promise<void> {
+  /** `keepPty` removes the pane but leaves its process running for another window. */
+  async close(ptyId: string, opts?: { silent?: boolean; keepPty?: boolean }): Promise<void> {
     const pane = this.panes.get(ptyId);
     if (!pane) return;
     this.panes.delete(ptyId);
@@ -447,7 +441,7 @@ export class TerminalManager {
         if (this.focusedId) this.setFocus(this.focusedId, true);
       }
     }
-    await pane.dispose();
+    await pane.dispose(opts);
     if (!opts?.silent) {
       this.relayout();
       if (wasLive) this.emitCount();
@@ -508,7 +502,7 @@ export class TerminalManager {
   }
 
   /** Tears down every PTY + xterm and removes gridEl from any parent. */
-  async dispose(): Promise<void> {
+  async dispose(opts?: { keepPty?: boolean }): Promise<void> {
     this.listeners.clear();
     for (const handle of this.bellHandles.values()) handle.dispose();
     this.bellHandles.clear();
@@ -521,13 +515,17 @@ export class TerminalManager {
     this.order.splice(0);
     this.layout = null;
     this.focusedId = null;
-    await Promise.all(toClose.map((p) => p.dispose().catch(() => undefined)));
+    await Promise.all(toClose.map((p) => p.dispose(opts).catch(() => undefined)));
     this.grid.remove();
   }
 
   /** Replays persisted specs as panes, emitting one batched spec-changed at
-   * the end so persistence writes are not amplified per pane. */
-  async restoreSpecs(specs: TerminalSpec[]): Promise<void> {
+   * the end so persistence writes are not amplified per pane. `adopt` renders
+   * PTYs that are already running under the spec ids instead of spawning. */
+  async restoreSpecs(
+    specs: TerminalSpec[],
+    opts?: { adopt?: boolean; snapshots?: PaneSnapshots },
+  ): Promise<void> {
     if (specs.length === 0) return;
     const idMap = new Map<string, string>();
     this.suppressPersistenceEvents = true;
@@ -538,8 +536,12 @@ export class TerminalManager {
           idMap.set(spec.id, spec.id);
           continue;
         }
+        // An adopted process already ran its startup command; never resend it.
+        const adopt = opts?.adopt
+          ? { adoptPtyId: spec.id, skipStartupCmd: true, snapshot: opts.snapshots?.[spec.id] }
+          : undefined;
         // react-doctor-disable-next-line react-doctor/async-await-in-loop
-        const pane = await this.addPane(spec);
+        const pane = await this.addPane(spec, adopt);
         const restoredId = pane?.el.dataset.ptyId;
         if (restoredId) idMap.set(spec.id, restoredId);
       }
