@@ -98,6 +98,7 @@ export async function createProjectWindows(
     if (open.has(entry.projectId)) {
       for (const spec of entry.grid.specs) {
         const adopted: AdoptedPane = { spec, snapshot: entry.grid.snapshots?.[spec.id] ?? null };
+        // react-doctor-disable-next-line react-doctor/async-await-in-loop
         await emitTo(`project-${entry.projectId}`, PROJECT_WINDOW_ADOPT_EVENT, adopted);
       }
     } else if (
