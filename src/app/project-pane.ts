@@ -18,6 +18,9 @@ export interface ProjectPaneCallbacks {
   onOpenInWindow(this: void): void;
   onBringBack(this: void): void;
   onRunInAll(this: void): void;
+  onCloseAll(this: void): void;
+  onReloadAll(this: void): void;
+  onClearContextData(this: void): void;
   onRevealFolder(this: void, path: string): void;
   onOpenInEditor(this: void, path: string): void;
   onOpenInShell(this: void, path: string): void;
@@ -28,6 +31,8 @@ export interface ProjectPaneOptions {
   host: HTMLElement;
   gridEl: HTMLDivElement;
   callbacks: ProjectPaneCallbacks;
+  /** Read each time the actions menu opens, so it follows Settings live. */
+  isContextModeActive?: () => boolean;
 }
 
 export interface ProjectPaneHandle {
@@ -180,6 +185,18 @@ export function mountProjectPane(opts: ProjectPaneOptions): ProjectPaneHandle {
           label: showResume ? "Resume all" : "Suspend all",
           onSelect: showResume ? callbacks.onResumeAll : callbacks.onSuspendAll,
         },
+        { id: "reload-all", label: "Reload all", onSelect: callbacks.onReloadAll },
+        { id: "close-all", label: "Close all", onSelect: callbacks.onCloseAll },
+        ...(opts.isContextModeActive?.()
+          ? [
+              {
+                id: "clear-context-data",
+                label: "Clear context mode data…",
+                disabled: !path,
+                onSelect: callbacks.onClearContextData,
+              },
+            ]
+          : []),
         {
           label: "Reveal in file manager",
           separatorBefore: true,

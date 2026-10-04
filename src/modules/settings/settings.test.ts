@@ -18,6 +18,16 @@ vi.mock("./notifications", () => ({
   deliverNotification: vi.fn().mockResolvedValue(undefined),
   runNotificationCommand: vi.fn().mockResolvedValue(undefined),
 }));
+// The Context Mode section reads its own store; without this the real plugin
+// would run in jsdom and take the whole settings window down.
+vi.mock("@tauri-apps/plugin-store", () => ({
+  load: vi.fn().mockResolvedValue({
+    get: vi.fn().mockResolvedValue(undefined),
+    set: vi.fn().mockResolvedValue(undefined),
+    save: vi.fn().mockResolvedValue(undefined),
+  }),
+}));
+vi.mock("@tauri-apps/api/event", () => ({ emit: vi.fn(), listen: vi.fn() }));
 
 import { loadPreferences, savePreferences } from "./preferences";
 import { deliverNotification, runNotificationCommand } from "./notifications";

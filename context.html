@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="stylesheet" href="/src/modules/agent-context/context.css" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>/context</title>
+    <script type="module" src="/src/modules/agent-context/context.ts" defer></script>
+  </head>
+  <body>
+    <main class="ctx-body">
+      <header class="ctx-header">
+        <div class="ctx-heading">
+          <strong>/context</strong>
+          <span class="ctx-counter" id="ctx-counter">loading…</span>
+        </div>
+        <div class="ctx-controls">
+          <input
+            type="search"
+            id="ctx-search"
+            class="ctx-input"
+            aria-label="Search the context with a regular expression"
+            placeholder="Search context (regex)…"
+            autocomplete="off"
+          />
+          <select id="ctx-sort" class="ctx-input" aria-label="Sort entries">
+            <option value="oldest">oldest first</option>
+            <option value="newest">newest first</option>
+            <option value="largest">largest first</option>
+            <option value="smallest">smallest first</option>
+          </select>
+          <button type="button" id="ctx-refresh" class="ctx-btn">reload</button>
+        </div>
+      </header>
+      <aside class="ctx-list" id="ctx-list" aria-label="Running agents"></aside>
+      <section class="ctx-detail" id="ctx-detail">
+        <p class="ctx-empty">Select a running agent to inspect what its context holds.</p>
+      </section>
+    </main>
+  </body>
+</html>

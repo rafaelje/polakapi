@@ -3268,7 +3268,7 @@ dependencies = [
 
 [[package]]
 name = "polakapi"
-version = "0.14.0"
+version = "0.15.0"
 dependencies = [
  "keepawake",
  "libc",
@@ -3276,6 +3276,7 @@ dependencies = [
  "objc2-app-kit",
  "parking_lot",
  "portable-pty",
+ "regex",
  "reqwest 0.12.28",
  "rusqlite",
  "serde",

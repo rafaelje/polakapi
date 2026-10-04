@@ -1,11 +1,22 @@
-import { promptModal } from "../shared/ui/modal";
+import { confirmModal, promptModal } from "../shared/ui/modal";
 import { showToast } from "../shared/ui/toast";
 import { ptyWrite } from "../modules/terminal/pty-client";
 import { buildLayoutTemplate } from "../modules/terminal/layout-templates";
 import { wireActivationShortcuts } from "../modules/workspaces/activation-shortcuts";
 import { openLayoutTemplateMenu } from "../modules/terminal/layout-template-menu";
 import { attachTerminalDrop, type TerminalDropHandle } from "../modules/terminal/terminal-drop";
+import {
+  busyMessage,
+  busyPanes,
+  closeAllPanes,
+  fetchRunningPanes,
+  reloadAllPanes,
+} from "../modules/terminal/terminal-batch";
 import { openInEditor, openInShell, revealFolder } from "../modules/workspaces/open-external";
+import {
+  clearProjectContextData,
+  trackContextModeActivity,
+} from "../modules/context-mode/project-data";
 import { WorkspacesController } from "../modules/workspaces/state/workspaces-controller";
 import {
   mountWorkspacesPanel,
@@ -153,8 +164,39 @@ export async function bootstrapWorkspaces(
     const project = findProject(controller.getState(), projectId)?.project;
     if (project) void projectWindows.tearOff(project, ptyId, { x, y });
   });
+  /**
+   * Close or reload every terminal of the active project. Panes with a process
+   * running inside them are listed in a confirmation first — an idle shell is
+   * cheap to lose, a running build is not.
+   */
+  const runTerminalBatch = async (action: "Close" | "Reload"): Promise<void> => {
+    const manager = router.getActive();
+    if (!manager) return;
+    const ids = manager.ids();
+    if (ids.length === 0) return;
+
+    // A failed probe must not block the action; it only costs the warning.
+    const running = await fetchRunningPanes().catch(() => []);
+    const busy = busyPanes(ids, running);
+    if (busy.length > 0) {
+      const confirmed = await confirmModal({
+        title: `${action} ${ids.length} terminal${ids.length === 1 ? "" : "s"}?`,
+        message: busyMessage(busy),
+        confirmLabel: `${action} anyway`,
+        cancelLabel: "Cancel",
+        danger: true,
+      });
+      if (!confirmed) return;
+    }
+
+    if (action === "Close") await closeAllPanes(manager);
+    else await reloadAllPanes(manager);
+  };
+
+  const contextMode = await trackContextModeActivity();
 
   const projectPane = mountProjectPane({
+    isContextModeActive: () => contextMode.isActive(),
     host: elements.projectPaneHost,
     gridEl: elements.gridEl,
     callbacks: {
@@ -196,6 +238,12 @@ export async function bootstrapWorkspaces(
       onSuspendAll: () => router.getActive()?.suspendAll(),
       onResumeAll: () => void router.getActive()?.resumeAll(),
       onRunInAll: () => void runCommandInActivePanes(router),
+      onCloseAll: () => void runTerminalBatch("Close"),
+      onReloadAll: () => void runTerminalBatch("Reload"),
+      onClearContextData: () => {
+        const project = controller.getActiveProject();
+        if (project) void clearProjectContextData(project);
+      },
       onRevealFolder: (path) => {
         void revealFolder(path);
       },
@@ -335,6 +383,7 @@ export async function bootstrapWorkspaces(
   const unsubscribe = (): void => {
     router.setTearOffHandler(null);
     projectWindows.dispose();
+    contextMode.dispose();
     unwireActivation();
     terminalDrop.detach();
     unsubscribeController();

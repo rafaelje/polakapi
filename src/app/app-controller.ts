@@ -59,6 +59,10 @@ import {
   mountMemoryButton,
   type MemoryButtonHandle,
 } from "../modules/memory-library/memory-button";
+import {
+  mountContextButton,
+  type ContextButtonHandle,
+} from "../modules/agents-flow/context-window";
 import { flushSaveAgents } from "../shared/persistence/agents-store";
 import { flushSaveWorkspaces } from "../shared/persistence/workspaces-store";
 import { findProject } from "../modules/workspaces/state/workspaces-reducer";
@@ -92,6 +96,7 @@ export class AppController {
   private agentsController: AgentsController | null = null;
   private skillsButton: SkillsButtonHandle | null = null;
   private memoryButton: MemoryButtonHandle | null = null;
+  private contextButton: ContextButtonHandle | null = null;
   private unwireShortcuts: (() => void) | null = null;
   private unwireWindowLifecycle: (() => void) | null = null;
   private memoryGuard: MemoryGuardHandle | null = null;
@@ -170,6 +175,7 @@ export class AppController {
     };
     this.skillsButton = mountSkillsButton(projectScope);
     this.memoryButton = mountMemoryButton(projectScope);
+    this.contextButton = mountContextButton();
     await this.wirePtyEvents();
     this.wireGutters();
     this.wirePanelToggles();
@@ -261,6 +267,9 @@ export class AppController {
     this.skillsButton = null;
     this.memoryButton?.dispose();
     this.memoryButton = null;
+
+    this.contextButton?.dispose();
+    this.contextButton = null;
 
     const agentsController = this.agentsController;
     this.agentsController = null;
