@@ -62,6 +62,27 @@ pub fn pty_resize(
     result.map_err(|e| e.to_string())
 }
 
+#[derive(serde::Serialize)]
+pub struct PtyAttachment {
+    data: String,
+    offset: u64,
+}
+
+/// Output of a running PTY after `since` (all that is kept when omitted), for
+/// a webview taking over its rendering.
+#[tauri::command]
+pub fn pty_attach(
+    store: State<'_, Arc<PtyStore>>,
+    id: String,
+    since: Option<u64>,
+) -> Result<PtyAttachment, String> {
+    let session = store
+        .session(&id)
+        .ok_or_else(|| format!("unknown pty: {id}"))?;
+    let (data, offset) = session.replay.lock().since(since);
+    Ok(PtyAttachment { data, offset })
+}
+
 #[tauri::command]
 pub fn pty_kill(store: State<'_, Arc<PtyStore>>, id: String) -> Result<(), String> {
     store.kill_session(&id);

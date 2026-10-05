@@ -130,6 +130,12 @@ async function start(): Promise<void> {
   );
   window.addEventListener("focus", () => action(refreshPermission));
   action(refreshPermission);
+  row("Play Sounds", "Play a sound when a notification arrives.").append(
+    toggle("Play Sounds", p.soundEnabled, (soundEnabled) => {
+      save({ soundEnabled });
+      renderSound();
+    }),
+  );
   const soundControls = row(
     "Notification Sound",
     "Play a system sound or your own audio file when a notification arrives.",
@@ -154,7 +160,8 @@ async function start(): Promise<void> {
     sound.value = isCustom ? "custom" : p.sound;
     filename.textContent = isCustom ? (p.sound.split(/[\\/]/).pop() ?? p.sound) : "";
     filename.title = isCustom ? p.sound : "";
-    preview.disabled = p.sound === "none";
+    sound.disabled = !p.soundEnabled;
+    preview.disabled = !p.soundEnabled || p.sound === "none";
     clear.disabled = p.sound === "default";
   }
   async function choose(): Promise<void> {

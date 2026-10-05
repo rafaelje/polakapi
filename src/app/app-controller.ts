@@ -65,6 +65,7 @@ import {
 } from "../modules/agents-flow/context-window";
 import { flushSaveAgents } from "../shared/persistence/agents-store";
 import { flushSaveWorkspaces } from "../shared/persistence/workspaces-store";
+import { findProject } from "../modules/workspaces/state/workspaces-reducer";
 import { bootstrapWorkspaces, type WorkspacesBootstrapHandle } from "./workspaces-bootstrap";
 import { wireWindowLifecycle } from "./lifecycle";
 import { wireQuitConfirm } from "./quit-confirm";
@@ -130,7 +131,11 @@ export class AppController {
     this.unlistenUpdateMenu = await listen("check-updates", () => {
       void checkForUpdatesManually();
     });
-    this.stopAgentNotifier = await startAgentNotifier();
+    this.stopAgentNotifier = await startAgentNotifier((ptyId) => {
+      const projectId = this.router.findPaneById(ptyId)?.manager.projectId;
+      if (!projectId || !this.workspaces) return null;
+      return findProject(this.workspaces.controller.getState(), projectId)?.project.name ?? null;
+    });
     const layout = await this.loadSavedLayout();
     this.applyLayout(layout);
     this.bottomPanel = mountBottomPanel({
@@ -313,12 +318,12 @@ export class AppController {
   }
 
   private async wirePtyEvents(): Promise<void> {
-    this.unlistenData = await onPtyData(({ id, data }) => {
+    this.unlistenData = await onPtyData(({ id, data, offset }) => {
       if (this.bottomPanel?.handlePtyData(id, data)) return;
       const found = this.router.findPaneById(id);
       if (!found) return;
       this.router.recordActivity(id);
-      found.pane.write(data);
+      found.pane.write(data, offset);
     });
     this.unlistenExit = await onPtyExit(({ id }) => {
       if (this.bottomPanel?.handlePtyExit(id)) return;

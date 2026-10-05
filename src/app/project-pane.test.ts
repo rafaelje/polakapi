@@ -9,6 +9,8 @@ function callbacks(): ProjectPaneCallbacks {
     onOpenLayoutsMenu: vi.fn(),
     onSuspendAll: vi.fn(),
     onResumeAll: vi.fn(),
+    onOpenInWindow: vi.fn(),
+    onBringBack: vi.fn(),
     onRunInAll: vi.fn(),
     onCloseAll: vi.fn(),
     onReloadAll: vi.fn(),
@@ -143,6 +145,28 @@ describe("project toolbar", () => {
     expect(labels).toContain("⏸ Suspend all");
     expect(labels.some((label) => label.includes("Close all"))).toBe(false);
     expect(labels.some((label) => label.includes("Reload all"))).toBe(false);
+  });
+
+  it("moves the grid to its own window and back from the project actions menu", () => {
+    const { handlers, pane } = mount();
+    pane.setActiveProject(project());
+    const actions = document.querySelector<HTMLButtonElement>("#project-actions-menu")!;
+
+    expect(document.querySelector("#open-in-window")).toBeNull();
+    actions.click();
+    menuItem("Open in window").click();
+    expect(handlers.onOpenInWindow).toHaveBeenCalledOnce();
+
+    pane.setDetached(true);
+    // Nothing can be started here while the terminals live elsewhere.
+    expect(document.querySelector<HTMLButtonElement>("#add-pane")?.disabled).toBe(true);
+    expect(document.querySelector<HTMLButtonElement>("#suspend-all")?.disabled).toBe(true);
+    actions.click();
+    menuItem("Bring back").click();
+    expect(handlers.onBringBack).toHaveBeenCalledOnce();
+
+    pane.setDetached(false);
+    expect(document.querySelector<HTMLButtonElement>("#add-pane")?.disabled).toBe(false);
   });
 
   it("keeps the toolbar focused on terminal controls", () => {

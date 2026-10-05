@@ -1,9 +1,11 @@
+// @vitest-environment node
+
 import { readFileSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-const ROOT = process.cwd();
+const ROOT = resolve(__dirname, "../..");
 const OPENERS_DIR = resolve(ROOT, "src/modules/agents-flow");
 const MAIN_CAPABILITY = resolve(ROOT, "src-tauri/capabilities/default.json");
 
@@ -12,6 +14,7 @@ const MAIN_CAPABILITY = resolve(ROOT, "src-tauri/capabilities/default.json");
 // window and bring an already-open popup back with these calls, so a method
 // the main capability does not grant fails silently into the catch block and
 // the popup never comes to the front.
+
 const PERMISSION_FOR_METHOD: Record<string, string> = {
   unminimize: "core:window:allow-unminimize",
   show: "core:window:allow-show",
@@ -49,5 +52,21 @@ describe("window capabilities", () => {
       }
     }
     expect(missing).toEqual([]);
+  });
+
+  it("covers project windows with their own capability", () => {
+    const capability = JSON.parse(
+      readFileSync(resolve(ROOT, "src-tauri/capabilities/project-window.json"), "utf8"),
+    ) as { windows: string[]; permissions: string[] };
+    expect(capability.windows).toContain("project-*");
+    for (const permission of [
+      "core:default",
+      "core:window:allow-destroy",
+      "clipboard-manager:allow-read-text",
+      "clipboard-manager:allow-write-text",
+      "notification:default",
+    ]) {
+      expect(capability.permissions).toContain(permission);
+    }
   });
 });

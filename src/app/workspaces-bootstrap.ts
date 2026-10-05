@@ -25,6 +25,7 @@ import { findProject } from "../modules/workspaces/state/workspaces-reducer";
 import { mountNotesPanel } from "../modules/notes/notes-panel";
 import type { NotesPanelHandle, NotesSource } from "../modules/notes/types";
 import { mountProjectPane, type ProjectPaneHandle } from "./project-pane";
+import { createProjectWindows } from "./project-windows";
 import { mountBreadcrumb, type BreadcrumbHandle } from "./breadcrumb";
 import { type AppElements } from "./elements";
 import type { TerminalRouter, TerminalRouterEvent } from "./terminal-router";
@@ -178,6 +179,24 @@ export async function bootstrapWorkspaces(
       batchRunning = false;
     }
   };
+  const projectWindows = await createProjectWindows({
+    router,
+    findProject: (projectId) => findProject(controller.getState(), projectId)?.project ?? null,
+    persistSpecs: controller.replaceTerminalSpecs,
+    persistLayout: controller.setProjectTerminalLayout,
+    onBell: (projectId, paneId, pending) =>
+      emitBell({ type: "bell-pending", projectId, paneId, pending }),
+    onReturned: (projectId) => {
+      // Adopted panes are the restore; a second restore would spawn duplicates.
+      restored.add(projectId);
+      const active = controller.getActiveProject();
+      if (active?.id === projectId) void activateProject(active);
+    },
+  });
+  router.setTearOffHandler((projectId, ptyId, x, y) => {
+    const project = findProject(controller.getState(), projectId)?.project;
+    if (project) void projectWindows.tearOff(project, ptyId, { x, y });
+  });
 
   const projectPane = mountProjectPane({
     host: elements.projectPaneHost,
@@ -209,6 +228,14 @@ export async function bootstrapWorkspaces(
           },
           onDelete: (templateId) => controller.deleteLayoutTemplate(templateId),
         });
+      },
+      onOpenInWindow: () => {
+        const project = controller.getActiveProject();
+        if (project) void projectWindows.detach(project).then(() => activateProject(project));
+      },
+      onBringBack: () => {
+        const project = controller.getActiveProject();
+        if (project) void projectWindows.bringBack(project.id);
       },
       onSuspendAll: () => router.getActive()?.suspendAll(),
       onResumeAll: () => void router.getActive()?.resumeAll(),
@@ -253,6 +280,16 @@ export async function bootstrapWorkspaces(
       router.unmount();
       return;
     }
+    const detached = projectWindows.isDetached(project.id);
+    projectPane.setDetached(detached);
+    if (detached) {
+      // The grid is in the project's own window: nothing to show here, bring
+      // that window forward instead.
+      router.unmount();
+      refreshSuspendResumeToggle();
+      void projectWindows.focus(project.id);
+      return;
+    }
     const manager = router.getOrCreate(project);
     router.mount(project.id, elements.gridEl);
     projectPane.setActiveCli(manager.getActiveCli());
@@ -288,7 +325,7 @@ export async function bootstrapWorkspaces(
   // modal and before the reducer removes the project — this keeps sidebar
   // listeners from reading liveCounts for an id state already dropped.
   const unwireDeleteHook = controller.setDeleteProjectHook(async (projectId) => {
-    await router.dispose(projectId);
+    await projectWindows.deleteProject(projectId);
     restored.delete(projectId);
   });
 
@@ -346,6 +383,8 @@ export async function bootstrapWorkspaces(
   const unwireActivation = wireActivationShortcuts(controller);
 
   const unsubscribe = (): void => {
+    router.setTearOffHandler(null);
+    projectWindows.dispose();
     unwireActivation();
     terminalDrop.detach();
     unsubscribeController();

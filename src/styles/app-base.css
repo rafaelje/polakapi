@@ -565,6 +565,12 @@ body {
   user-select: none;
 }
 
+/* Dragged past the window edge: releasing opens the pane in its own window. */
+.terminal-pane-tearing .pane-header.terminal-drag-handle--active {
+  outline: 2px dashed var(--accent);
+  outline-offset: -2px;
+}
+
 .terminal-dock-overlay {
   position: fixed;
   z-index: 1800;

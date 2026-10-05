@@ -8,6 +8,7 @@ use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::platform_command;
+use crate::pty_activity::{ai_cli_basename, AgentPane};
 use crate::shell_integration;
 
 #[cfg(target_os = "windows")]
@@ -24,7 +25,6 @@ const ALLOWED_SHELL_BASENAMES: &[&str] = &[
 const ALLOWED_SHELL_BASENAMES: &[&str] =
     &["sh", "bash", "zsh", "fish", "dash", "ksh", "tcsh", "csh"];
 
-const ALLOWED_AI_CLI_BASENAMES: &[&str] = &["claude", "codex", "opencode", "cursor-agent"];
 const CAPTURE_PTY_ID_ENV: &str = "POLAKAPI_PTY_ID";
 const CAPTURE_DB_PATH_ENV: &str = "POLAKAPI_DB_PATH";
 const CAPTURE_CLI_ENV: &str = "POLAKAPI_CLI";
@@ -38,22 +38,14 @@ pub struct PtySession {
     pub writer: Mutex<Box<dyn Write + Send>>,
     pub master: Mutex<Box<dyn MasterPty + Send>>,
     pub child: Mutex<Box<dyn Child + Send + Sync>>,
+    /// Recent output, so a window that attaches later can catch up.
+    pub replay: Mutex<crate::pty_replay::ReplayBuffer>,
     /// Lowercased basename, set only for panes running an allowlisted AI CLI.
     /// `None` for plain shells, which is what lets `agent_panes` filter them out
     /// without the frontend having to say which pane is which.
     pub cli: Option<String>,
     /// Working directory the process was actually spawned in, after falling
     /// back to the default when the request carried none.
-    pub cwd: Option<String>,
-}
-
-/// A live pane running an AI CLI. Enough for the /context window to locate the
-/// pane's transcript without reaching into the main window's state.
-#[derive(Debug, Clone, serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AgentPane {
-    pub pty_id: String,
-    pub cli: String,
     pub cwd: Option<String>,
 }
 
@@ -141,6 +133,8 @@ impl Drop for PtyStore {
 pub struct PtyDataPayload {
     pub id: String,
     pub data: String,
+    /// Offset right after this chunk in the PTY's output, see `pty_attach`.
+    pub offset: u64,
 }
 
 #[derive(Clone, Serialize)]
@@ -219,12 +213,14 @@ pub fn spawn_session(
         child: Mutex::new(child),
         cli: ai_cli_basename(&shell),
         cwd: effective_cwd,
+        replay: Mutex::new(Default::default()),
     });
-    store.insert_session(id.clone(), session);
+    store.insert_session(id.clone(), session.clone());
 
     let id_for_thread = id.clone();
     let app_for_thread = app.clone();
     let store_for_thread = store.clone();
+    let session_for_thread = session;
     std::thread::spawn(move || {
         let mut buf = [0u8; 4096];
         let mut pending: Vec<u8> = Vec::with_capacity(64);
@@ -235,11 +231,13 @@ pub fn spawn_session(
                     pending.extend_from_slice(&buf[..n]);
                     let chunk = drain_valid_utf8(&mut pending);
                     if !chunk.is_empty() {
+                        let offset = session_for_thread.replay.lock().push(&chunk);
                         let _ = app_for_thread.emit(
                             "pty:data",
                             PtyDataPayload {
                                 id: id_for_thread.clone(),
                                 data: chunk,
+                                offset,
                             },
                         );
                     }
@@ -249,11 +247,13 @@ pub fn spawn_session(
         }
         if !pending.is_empty() {
             let chunk = String::from_utf8_lossy(&pending).to_string();
+            let offset = session_for_thread.replay.lock().push(&chunk);
             let _ = app_for_thread.emit(
                 "pty:data",
                 PtyDataPayload {
                     id: id_for_thread.clone(),
                     data: chunk,
+                    offset,
                 },
             );
         }
@@ -292,21 +292,6 @@ fn resolve_command(command: Option<String>) -> Result<String, String> {
     }
 }
 
-/// Lowercased basename when `command` is one of the allowlisted AI CLIs, so the
-/// capture env and the pane registry agree on what counts as an agent.
-fn ai_cli_basename(command: &str) -> Option<String> {
-    if !basename_in(command, ALLOWED_AI_CLI_BASENAMES) {
-        return None;
-    }
-    Some(
-        Path::new(command)
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or(command)
-            .to_ascii_lowercase(),
-    )
-}
-
 fn basename_in(cmd: &str, list: &[&str]) -> bool {
     if cmd.contains('\0') {
         return false;
@@ -325,7 +310,7 @@ fn is_allowed_shell(cmd: &str) -> bool {
 }
 
 fn is_allowed_command(cmd: &str) -> bool {
-    is_allowed_shell(cmd) || basename_in(cmd, ALLOWED_AI_CLI_BASENAMES)
+    is_allowed_shell(cmd) || ai_cli_basename(cmd).is_some()
 }
 
 fn validate_args(args: Option<Vec<String>>) -> Result<Vec<String>, String> {
