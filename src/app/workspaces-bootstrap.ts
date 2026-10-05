@@ -275,7 +275,7 @@ export async function bootstrapWorkspaces(
   // modal and before the reducer removes the project — this keeps sidebar
   // listeners from reading liveCounts for an id state already dropped.
   const unwireDeleteHook = controller.setDeleteProjectHook(async (projectId) => {
-    await router.dispose(projectId);
+    await projectWindows.deleteProject(projectId);
     restored.delete(projectId);
   });
 

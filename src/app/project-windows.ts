@@ -1,4 +1,5 @@
 import { emitTo, listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { ptyKill } from "../modules/terminal/pty-client";
 import { invoke } from "../shared/tauri/invoke";
 import {
   PROJECT_WINDOW_ADOPT_EVENT,
@@ -37,14 +38,18 @@ export interface ProjectWindowsHandle {
   tearOff(project: Project, ptyId: string, at?: { x: number; y: number }): Promise<void>;
   bringBack(projectId: ProjectId): Promise<void>;
   focus(projectId: ProjectId): Promise<void>;
+  deleteProject(projectId: ProjectId): Promise<void>;
   dispose(): void;
 }
 
 interface OpenWindow {
   projectId: ProjectId;
-  /** A whole grid persists as the project's terminals; a torn-off pane does not. */
+  /** Distinguishes a whole grid from terminals torn off its local manager. */
   whole: boolean;
   grid: ReleasedGrid;
+  opening?: Promise<void>;
+  closing?: boolean;
+  pending?: Map<string, AdoptedPane>;
 }
 
 export async function createProjectWindows(
@@ -52,6 +57,7 @@ export async function createProjectWindows(
 ): Promise<ProjectWindowsHandle> {
   const { router } = deps;
   const open = new Map<string, OpenWindow>();
+  const deleted = new Set<ProjectId>();
 
   const open_ = async (
     windowId: string,
@@ -60,7 +66,15 @@ export async function createProjectWindows(
     title: string,
     at?: { x: number; y: number },
   ): Promise<void> => {
+    if (deleted.has(project.id)) {
+      await Promise.all(
+        entry.grid.specs.filter((spec) => !spec.suspended).map((spec) => ptyKill(spec.id)),
+      );
+      return;
+    }
     open.set(windowId, entry);
+    router.setExternalLayout(windowId, project.id, entry.grid.layout);
+    router.setExternalSpecs(windowId, project.id, entry.grid.specs);
     router.setExternalCount(
       windowId,
       project.id,
@@ -74,7 +88,8 @@ export async function createProjectWindows(
       position: at ? [at.x, at.y] : undefined,
     };
     try {
-      await invoke("project_window_open", { state }, { toastOnError: true });
+      entry.opening = invoke<void>("project_window_open", { state }, { toastOnError: true });
+      await entry.opening;
     } catch (error) {
       // The window never opened: put everything straight back.
       await returnWindow(windowId);
@@ -91,15 +106,43 @@ export async function createProjectWindows(
     if (!project) return;
     if (entry.whole) {
       await router.adopt(project, entry.grid);
+      router.setExternalSpecs(windowId, entry.projectId, null);
       deps.onReturned(entry.projectId);
       return;
     }
     // A torn-off pane goes back to wherever its project's grid is now.
     if (open.has(entry.projectId)) {
-      for (const spec of entry.grid.specs) {
-        const adopted: AdoptedPane = { spec, snapshot: entry.grid.snapshots?.[spec.id] ?? null };
+      const destination = open.get(entry.projectId)!;
+      destination.pending ??= new Map();
+      const returning = entry.grid.specs.map(
+        (spec): AdoptedPane => ({
+          adoptionId: crypto.randomUUID(),
+          spec,
+          snapshot: entry.grid.snapshots?.[spec.id] ?? null,
+        }),
+      );
+      for (const adopted of returning) {
+        const { spec } = adopted;
+        destination.pending.set(adopted.adoptionId, adopted);
+        destination.grid.specs = [
+          ...destination.grid.specs.filter((item) => item.id !== spec.id),
+          spec,
+        ];
+        if (adopted.snapshot) {
+          destination.grid.snapshots = {
+            ...destination.grid.snapshots,
+            [spec.id]: adopted.snapshot,
+          };
+        }
+      }
+      router.setExternalSpecs(entry.projectId, entry.projectId, destination.grid.specs);
+      for (const adopted of returning) {
+        if (destination.closing || open.get(entry.projectId) !== destination) break;
         // react-doctor-disable-next-line react-doctor/async-await-in-loop
-        await emitTo(`project-${entry.projectId}`, PROJECT_WINDOW_ADOPT_EVENT, adopted);
+        await emitTo(`project-${entry.projectId}`, PROJECT_WINDOW_ADOPT_EVENT, adopted).catch(
+          (error: unknown) =>
+            console.error("project window: could not deliver returned terminal", error),
+        );
       }
     } else if (
       !(await router.adoptPanes(entry.projectId, entry.grid.specs, entry.grid.snapshots))
@@ -107,6 +150,7 @@ export async function createProjectWindows(
       await router.adopt(project, entry.grid);
       deps.onReturned(entry.projectId);
     }
+    router.setExternalSpecs(windowId, entry.projectId, null);
   };
 
   const unlisten: UnlistenFn[] = [
@@ -115,19 +159,39 @@ export async function createProjectWindows(
       const entry = open.get(payload.windowId);
       if (!entry) return;
       const projectId = entry.projectId;
+      if (payload.projectId !== projectId) return;
+      if (payload.closing) entry.closing = true;
+      for (const adoptionId of payload.adopted ?? []) entry.pending?.delete(adoptionId);
       if (payload.specs) {
-        entry.grid.specs = payload.specs;
-        if (entry.whole) deps.persistSpecs(projectId, payload.specs);
+        const reported = new Set(payload.specs.map((spec) => spec.id));
+        entry.grid.specs = [
+          ...payload.specs,
+          ...[...(entry.pending?.values() ?? [])]
+            .map((pane) => pane.spec)
+            .filter((spec) => !reported.has(spec.id)),
+        ];
+        router.setExternalSpecs(payload.windowId, projectId, entry.grid.specs);
       }
       if ("layout" in payload) {
         entry.grid.layout = payload.layout ?? null;
-        if (entry.whole) deps.persistLayout(projectId, entry.grid.layout);
+        router.setExternalLayout(payload.windowId, projectId, entry.grid.layout);
       }
       if (payload.liveCount !== undefined) {
         router.setExternalCount(payload.windowId, projectId, payload.liveCount);
       }
       if (payload.bell) deps.onBell(projectId, payload.bell.paneId, payload.bell.pending);
-      if (payload.snapshots) entry.grid.snapshots = payload.snapshots;
+      if (payload.snapshots) entry.grid.snapshots = { ...payload.snapshots };
+      for (const pane of entry.pending?.values() ?? []) {
+        if (pane.snapshot && !entry.grid.snapshots?.[pane.spec.id]) {
+          entry.grid.snapshots = { ...entry.grid.snapshots, [pane.spec.id]: pane.snapshot };
+        }
+      }
+      if (entry.grid.snapshots) {
+        const ids = new Set(entry.grid.specs.map((spec) => spec.id));
+        entry.grid.snapshots = Object.fromEntries(
+          Object.entries(entry.grid.snapshots).filter(([id]) => ids.has(id)),
+        );
+      }
     }),
     await listen(PROJECT_WINDOW_CLOSED_EVENT, ({ payload }) => {
       if (!isProjectWindowClosed(payload)) return;
@@ -140,6 +204,7 @@ export async function createProjectWindows(
   return {
     isDetached: (projectId) => open.get(projectId)?.whole === true,
     async detach(project) {
+      if (deleted.has(project.id)) return;
       if (open.has(project.id)) {
         await invoke("project_window_focus", { windowId: project.id });
         return;
@@ -149,6 +214,7 @@ export async function createProjectWindows(
       await open_(project.id, project, { projectId: project.id, whole: true, grid }, project.name);
     },
     async tearOff(project, ptyId, at) {
+      if (deleted.has(project.id)) return;
       const torn = await router.tearOff(project.id, ptyId);
       if (!torn) return;
       const { spec, snapshot } = torn;
@@ -175,6 +241,24 @@ export async function createProjectWindows(
     async focus(projectId) {
       if (!open.has(projectId)) return;
       await invoke("project_window_focus", { windowId: projectId }, { toastOnError: false });
+    },
+    async deleteProject(projectId) {
+      deleted.add(projectId);
+      const windowIds: string[] = [];
+      const opening: Promise<void>[] = [];
+      for (const [windowId, entry] of open) {
+        if (entry.projectId !== projectId) continue;
+        open.delete(windowId);
+        windowIds.push(windowId);
+        if (entry.opening) opening.push(entry.opening);
+      }
+      await router.dispose(projectId);
+      await Promise.allSettled(opening);
+      await Promise.all(
+        windowIds.map((windowId) =>
+          invoke("project_window_close", { windowId }, { toastOnError: true }),
+        ),
+      );
     },
     dispose() {
       for (const stop of unlisten) stop();

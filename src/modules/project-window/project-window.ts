@@ -75,9 +75,11 @@ async function start(): Promise<void> {
     }
   });
 
+  let closing = false;
+  let closePromise: Promise<void> | null = null;
   const currentWindow = getCurrentWebviewWindow();
   // Listen before adopting, so nothing printed during the takeover is lost.
-  await Promise.all([
+  const initialized: Promise<void> = Promise.all([
     onPtyData(({ id, data, offset }) => {
       manager.get(id)?.write(data, offset);
     }),
@@ -89,29 +91,57 @@ async function start(): Promise<void> {
     }),
     // A terminal torn off this project comes back here while the grid is out.
     currentWindow.listen(PROJECT_WINDOW_ADOPT_EVENT, ({ payload: adopted }) => {
-      if (!isAdoptedPane(adopted) || manager.get(adopted.spec.id)) return;
-      void manager.addPane(adopted.spec, {
-        adoptPtyId: adopted.spec.id,
-        skipStartupCmd: true,
-        snapshot: adopted.snapshot ?? undefined,
-      });
+      if (closing || !isAdoptedPane(adopted)) return;
+      void manager
+        .addPane(adopted.spec, {
+          adoptPtyId: adopted.spec.id,
+          skipStartupCmd: true,
+          snapshot: adopted.snapshot ?? undefined,
+        })
+        .then((pane) => {
+          if (!pane) return;
+          send({
+            adopted: [adopted.adoptionId],
+            specs: manager.specs(),
+            layout: manager.layoutSnapshot,
+            liveCount: manager.size,
+          });
+        })
+        .catch((error: unknown) =>
+          console.error("project window: could not adopt terminal", error),
+        );
     }),
     // Hands main what every pane shows before the window goes, so the
     // terminals come back with their colors instead of a raw replay.
-    currentWindow.onCloseRequested(async () => {
-      try {
-        await emitTo("main", PROJECT_WINDOW_UPDATE_EVENT, {
-          windowId,
-          projectId,
-          snapshots: await snapshotPanes(manager),
-        });
-      } catch (error) {
-        console.error("project window: could not hand its terminals back", error);
-      }
+    currentWindow.onCloseRequested(() => {
+      if (closePromise) return closePromise;
+      closing = true;
+      document.body.inert = true;
+      closePromise = (async () => {
+        try {
+          send({ closing: true });
+          // Listener registration must finish before the initial panes can attach.
+          await initialized;
+          if (!(await manager.freeze())) return;
+          const snapshots = await snapshotPanes(manager);
+          await emitTo("main", PROJECT_WINDOW_UPDATE_EVENT, {
+            windowId,
+            projectId,
+            closing: true,
+            specs: manager.specs(),
+            layout: manager.layoutSnapshot,
+            liveCount: manager.size,
+            snapshots,
+          });
+        } catch (error) {
+          console.error("project window: could not hand its terminals back", error);
+        }
+      })();
+      return closePromise;
     }),
-  ]);
+  ]).then(() => manager.restoreSpecs(payload.specs, { adopt: true, snapshots: payload.snapshots }));
 
-  await manager.restoreSpecs(payload.specs, { adopt: true, snapshots: payload.snapshots });
+  await initialized;
   manager.refit();
   send({ liveCount: manager.size });
   const navigation = performance.getEntriesByType("navigation")[0] as
@@ -139,9 +169,15 @@ async function start(): Promise<void> {
 
   attachTerminalDrop({ gridEl: manager.gridEl, router: { getActiveHost: () => host } });
   wireShortcuts({
-    newPane: () => void manager.addPane(),
-    splitPane: (position) => void manager.addPane(undefined, { splitPosition: position }),
-    closeFocused: () => manager.closeFocused(),
+    newPane: () => {
+      if (!closing) void manager.addPane();
+    },
+    splitPane: (position) => {
+      if (!closing) void manager.addPane(undefined, { splitPosition: position });
+    },
+    closeFocused: () => {
+      if (!closing) manager.closeFocused();
+    },
     focusByIndex: (idx) => manager.focusByIndex(idx),
     focusPrev: () => manager.focusRelative(-1),
     focusNext: () => manager.focusRelative(1),

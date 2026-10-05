@@ -13,6 +13,10 @@ export interface PaneCreateOptions {
  * it covers; output after that offset is replayed on top. */
 export interface PaneSnapshot {
   screen: string;
+  /** Original stream after a parser-safe screen checkpoint, including partial sequences. */
+  replay?: string;
+  /** The screen includes the exit marker; no live PTY remains to attach. */
+  exited?: boolean;
   offset: number;
   cols: number;
   rows: number;

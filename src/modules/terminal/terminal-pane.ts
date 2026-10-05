@@ -54,6 +54,9 @@ export class TerminalPane {
   private readonly serializer = new SerializeAddon();
   /** Where the output written so far ends in the PTY's stream. */
   private outputOffset = 0;
+  private checkpointScreen = "";
+  private replay: string[] = [];
+  private replayLength = 0;
   /** Output that arrived while an adopted pane was still catching up. */
   private pendingOutput: Array<{ data: string; offset?: number }> | null = null;
   private readonly disposables: Array<{ dispose(): void }> = [];
@@ -64,6 +67,8 @@ export class TerminalPane {
   private shellCommandCallbacks: ShellCommandCallbacks | null = null;
   private spawnFailed = false;
   private suspended = false;
+  private exited = false;
+  private pendingExit = false;
 
   constructor() {
     this.el = document.createElement("div");
@@ -163,7 +168,7 @@ export class TerminalPane {
     attachTerminalCopyPasteKeys(this.term);
     this.disposables.push(
       attachTerminalKeybindings(this.term, (data) => {
-        if (this.spawnFailed || !this.ptyId) return;
+        if (this.spawnFailed || this.exited || !this.ptyId) return;
         void ptyWrite(this.ptyId, data);
       }),
     );
@@ -190,12 +195,12 @@ export class TerminalPane {
     this.lastActivityAt = Date.now();
     this.disposables.push(
       this.term.onData((data) => {
-        if (this.spawnFailed) return;
+        if (this.spawnFailed || this.exited) return;
         this.lastActivityAt = Date.now();
         void ptyWrite(this.ptyId, data);
       }),
       this.term.onResize(({ cols, rows }) => {
-        if (this.spawnFailed || !this.ptyId) return;
+        if (this.spawnFailed || this.exited || !this.ptyId) return;
         void ptyResize(this.ptyId, cols, rows);
       }),
     );
@@ -209,36 +214,55 @@ export class TerminalPane {
   private async catchUp(snapshot?: PaneSnapshot): Promise<void> {
     this.pendingOutput = [];
     try {
-      const { data, offset } = await ptyAttach(this.ptyId, snapshot?.offset);
       if (snapshot) {
         this.term.resize(snapshot.cols, snapshot.rows);
         this.term.write(snapshot.screen);
-        this.hasOutput = snapshot.screen.length > 0;
+        this.checkpointScreen = snapshot.screen;
+        if (snapshot.replay) this.writeToTerminal(snapshot.replay);
+        this.outputOffset = snapshot.offset;
+        this.exited = snapshot.exited ?? false;
+        this.hasOutput = snapshot.screen.length > 0 || (snapshot.replay?.length ?? 0) > 0;
       }
-      this.write(data, offset);
+      if (!this.exited) {
+        const { data, offset } = await ptyAttach(this.ptyId, snapshot?.offset);
+        const pending = this.pendingOutput;
+        this.pendingOutput = null;
+        this.write(data, offset);
+        this.pendingOutput = pending;
+      }
+    } catch (error) {
+      if (!this.exited) throw error;
     } finally {
       const pending = this.pendingOutput;
       this.pendingOutput = null;
-      for (const chunk of pending) this.write(chunk.data, chunk.offset);
+      for (const chunk of pending ?? []) this.write(chunk.data, chunk.offset);
+      if (this.pendingExit) {
+        this.pendingExit = false;
+        this.writeExitMarker();
+      }
     }
     this.safeFit();
-    void ptyResize(this.ptyId, this.term.cols, this.term.rows);
+    if (!this.exited) void ptyResize(this.ptyId, this.term.cols, this.term.rows);
   }
 
   /** What this pane shows, for another window to take it over. */
   snapshot(): Promise<PaneSnapshot | null> {
     if (!this.ptyId || this.spawnFailed || this.suspended) return Promise.resolve(null);
     const offset = this.outputOffset;
+    const exited = this.exited;
     // Serialized in the write callback, before anything queued later is parsed.
     return new Promise((resolve) => {
-      this.term.write("", () =>
+      this.term.write("", () => {
+        this.checkpoint();
         resolve({
-          screen: this.serializer.serialize(),
+          screen: this.checkpointScreen,
+          ...(this.replay.length > 0 ? { replay: this.replay.join("") } : {}),
+          ...(exited ? { exited: true } : {}),
           offset,
           cols: this.term.cols,
           rows: this.term.rows,
-        }),
-      );
+        });
+      });
     });
   }
 
@@ -249,18 +273,61 @@ export class TerminalPane {
     }
     if (offset !== undefined) {
       if (offset <= this.outputOffset) return;
+      const bytes = new TextEncoder().encode(data);
+      const overlap = this.outputOffset - (offset - bytes.length);
+      if (overlap > 0) data = new TextDecoder().decode(bytes.subarray(overlap));
       this.outputOffset = offset;
     }
     if (data.length > 0) {
       this.hasOutput = true;
       this.lastActivityAt = Date.now();
     }
-    this.term.write(data);
+    this.writeToTerminal(data);
+  }
+
+  private writeToTerminal(data: string): void {
+    this.term.write(data, () => {
+      this.replay.push(data);
+      this.replayLength += data.length;
+      if (this.replayLength >= 65536) this.checkpoint();
+    });
+  }
+
+  private checkpoint(): void {
+    // SerializeAddon cannot preserve the parser or an incomplete surrogate.
+    // Keep the original stream until xterm confirms a complete parsing boundary.
+    const input = (
+      this.term as unknown as {
+        _core?: {
+          _inputHandler?: {
+            _parser: { currentState: number };
+            _stringDecoder: { _interim: number };
+          };
+        };
+      }
+    )._core?._inputHandler;
+    if (!input || input._parser.currentState !== 0 || input._stringDecoder._interim !== 0) return;
+    this.checkpointScreen = this.serializer.serialize();
+    this.replay = [];
+    this.replayLength = 0;
   }
 
   markExited(): void {
-    if (this.suspended) return;
-    this.term.write("\r\n\x1b[90m[process exited]\x1b[0m\r\n");
+    if (this.suspended || this.exited) return;
+    this.exited = true;
+    if (this.pendingOutput) {
+      this.pendingExit = true;
+      return;
+    }
+    this.writeExitMarker();
+  }
+
+  private writeExitMarker(): void {
+    this.writeToTerminal("\r\n\x1b[90m[process exited]\x1b[0m\r\n");
+  }
+
+  get isExited(): boolean {
+    return this.exited;
   }
 
   get isSuspended(): boolean {
@@ -314,7 +381,7 @@ export class TerminalPane {
 
   fit(): void {
     this.safeFit();
-    if (!this.ptyId) return;
+    if (!this.ptyId || this.exited) return;
     void ptyResize(this.ptyId, this.term.cols, this.term.rows);
   }
 
