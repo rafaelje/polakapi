@@ -55,7 +55,13 @@ export class AgentNotificationPolicy {
   }
 }
 
-export async function startAgentNotifier(): Promise<() => void> {
+export function agentNotificationTitle(event: AgentEvent, project: string | null): string {
+  return `${project || "polakapi"} · ${event.cli}`;
+}
+
+export async function startAgentNotifier(
+  resolveProjectName: (ptyId: string) => string | null = () => null,
+): Promise<() => void> {
   let preferences = { ...defaults };
   let disposed = false;
   const policy = new AgentNotificationPolicy();
@@ -81,8 +87,12 @@ export async function startAgentNotifier(): Promise<() => void> {
         : event.kind === "waiting"
           ? "Agent waiting for input"
           : "Agent finished";
-    void deliverNotification(`polakapi · ${event.cli}`, message, preferences, event.kind).catch(
-      (error: unknown) => console.warn("Agent notification failed", error),
+    const title = agentNotificationTitle(
+      event,
+      resolveProjectName(event.ptyId.split(":subagent:")[0]),
+    );
+    void deliverNotification(title, message, preferences, event.kind).catch((error: unknown) =>
+      console.warn("Agent notification failed", error),
     );
   }
   let timer: ReturnType<typeof setTimeout>;

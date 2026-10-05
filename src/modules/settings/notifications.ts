@@ -46,13 +46,13 @@ export async function deliverNotification(
         if (granted)
           await invoke(
             "notification_send",
-            { title, body, defaultSound: p.sound === "default" },
+            { title, body, defaultSound: p.soundEnabled && p.sound === "default" },
             { toastOnError: false },
           );
       })(),
     );
   }
-  if (p.sound !== "default" && p.sound !== "none") {
+  if (p.soundEnabled && p.sound !== "default" && p.sound !== "none") {
     tasks.push(invoke("notification_play_sound", { path: p.sound }, { toastOnError: false }));
   }
   const results = await Promise.allSettled(tasks);
