@@ -21,7 +21,9 @@ mod notifications;
 mod open;
 mod paste_image;
 mod platform_command;
+mod project_windows;
 mod pty;
+mod pty_replay;
 mod shell_integration;
 mod skills;
 mod update_check;
@@ -42,8 +44,8 @@ use crate::adv_review::{
 use crate::agent_sessions::agent_list_sessions;
 use crate::commands::{
     app_exit, create_project_folder, fs_validate_path, open_file_in_editor, open_in_editor,
-    open_in_explorer, open_in_shell, open_local_path, open_url, pty_kill, pty_resize, pty_spawn,
-    pty_write,
+    open_in_explorer, open_in_shell, open_local_path, open_url, pty_attach, pty_kill, pty_resize,
+    pty_spawn, pty_write,
 };
 use crate::db::{
     prompt_delete_sessions, prompt_get, prompt_install_hooks, prompt_list_by_session,
@@ -66,6 +68,10 @@ use crate::loop_prompts::{
 use crate::memory::pty_memory_stats;
 use crate::memory_review::{memory_delete, memory_list, memory_read, memory_write};
 use crate::paste_image::save_pasted_image;
+use crate::project_windows::{
+    project_window_close, project_window_focus, project_window_open, project_window_ready,
+    project_window_state, ProjectWindows,
+};
 use crate::pty::PtyStore;
 use crate::skills::{skill_explain, skill_read, skill_write, skills_list};
 use crate::update_check::update_check;
@@ -129,6 +135,7 @@ pub fn run() {
             move |app| {
                 app_menu::install(app)?;
                 app.manage(store);
+                app.manage(ProjectWindows::default());
                 app.manage(ShellRegistry::default());
                 app.manage(notifications::SoundPlayback::default());
                 app.manage(notification_command::NotificationCommandState::default());
@@ -160,8 +167,13 @@ pub fn run() {
         .on_window_event({
             let store = store.clone();
             move |window, event| {
-                if window.label() == "main" && matches!(event, tauri::WindowEvent::Destroyed) {
+                if !matches!(event, tauri::WindowEvent::Destroyed) {
+                    return;
+                }
+                if window.label() == "main" {
                     store.kill_all();
+                } else if let Some(windows) = window.try_state::<ProjectWindows>() {
+                    project_windows::on_destroyed(window.app_handle(), &windows, window.label());
                 }
             }
         })
@@ -171,6 +183,12 @@ pub fn run() {
             pty_write,
             pty_resize,
             pty_kill,
+            pty_attach,
+            project_window_open,
+            project_window_state,
+            project_window_focus,
+            project_window_close,
+            project_window_ready,
             pty_memory_stats,
             save_pasted_image,
             keep_awake_set,

@@ -15,6 +15,8 @@ export interface ProjectPaneCallbacks {
   onOpenLayoutsMenu(this: void, anchor: HTMLElement): void;
   onSuspendAll(this: void): void;
   onResumeAll(this: void): void;
+  onOpenInWindow(this: void): void;
+  onBringBack(this: void): void;
   onRunInAll(this: void): void;
   onRevealFolder(this: void, path: string): void;
   onOpenInEditor(this: void, path: string): void;
@@ -32,6 +34,8 @@ export interface ProjectPaneHandle {
   setActiveProject(project: Project | null): void;
   setActiveCli(cliId: string): void;
   setSuspendResumeCounts(liveCount: number, suspendedCount: number): void;
+  /** The grid lives in the project's own window; only "bring back" applies here. */
+  setDetached(detached: boolean): void;
   dispose(): void;
 }
 
@@ -103,6 +107,7 @@ export function mountProjectPane(opts: ProjectPaneOptions): ProjectPaneHandle {
   let currentProject: Project | null = null;
   let currentCliId = "shell";
   let showResume = false;
+  let isDetached = false;
   let activeMenu: ProjectToolbarMenuHandle | null = null;
 
   host.replaceChildren(subToolbar, gridEl, emptyState.element);
@@ -162,6 +167,11 @@ export function mountProjectPane(opts: ProjectPaneOptions): ProjectPaneHandle {
           label: "Layouts…",
           onSelect: () => callbacks.onOpenLayoutsMenu(actionsBtn),
         },
+        {
+          id: "open-in-window",
+          label: isDetached ? "Bring back" : "Open in window",
+          onSelect: isDetached ? callbacks.onBringBack : callbacks.onOpenInWindow,
+        },
         { id: "run-all", label: "Run command in all…", onSelect: callbacks.onRunInAll },
         {
           label: showResume ? "Resume all" : "Suspend all",
@@ -200,10 +210,10 @@ export function mountProjectPane(opts: ProjectPaneOptions): ProjectPaneHandle {
   actionsBtn.addEventListener("click", onProjectActions);
 
   const setControlsDisabled = (disabled: boolean): void => {
-    startBtn.disabled = disabled;
-    profileBtn.disabled = disabled;
-    suspendBtn.disabled = disabled;
-    resumeBtn.disabled = disabled;
+    startBtn.disabled = disabled || isDetached;
+    profileBtn.disabled = disabled || isDetached;
+    suspendBtn.disabled = disabled || isDetached;
+    resumeBtn.disabled = disabled || isDetached;
     actionsBtn.disabled = disabled;
   };
   setControlsDisabled(true);
@@ -236,6 +246,12 @@ export function mountProjectPane(opts: ProjectPaneOptions): ProjectPaneHandle {
       status.textContent = parts.join(" · ") || "No terminals";
       status.classList.toggle("is-idle", liveCount === 0 && suspendedCount === 0);
       status.classList.toggle("is-suspended", liveCount === 0 && suspendedCount > 0);
+      if (isDetached) status.textContent = `${status.textContent} · in its own window`;
+    },
+    setDetached(detached: boolean): void {
+      isDetached = detached;
+      host.classList.toggle("detached", detached);
+      setControlsDisabled(currentProject === null);
     },
     dispose(): void {
       closeActiveMenu();

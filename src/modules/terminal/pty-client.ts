@@ -1,7 +1,8 @@
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { invoke } from "../../shared/tauri/invoke";
 
-export type PtyDataEvent = { id: string; data: string };
+/** `offset` is where the chunk ends in the PTY's output, see `ptyAttach`. */
+export type PtyDataEvent = { id: string; data: string; offset?: number };
 export type PtyExitEvent = { id: string };
 
 export interface PtySpawnOptions {
@@ -33,6 +34,21 @@ export function ptyWrite(id: string, data: string): Promise<void> {
 
 export function ptyResize(id: string, cols: number, rows: number): Promise<void> {
   return invoke("pty_resize", { id, cols, rows }, { toastOnError: false });
+}
+
+export interface PtyAttachment {
+  data: string;
+  offset: number;
+}
+
+/** Output of a running PTY after `since` (all that is kept when omitted), for
+ * a window taking over its rendering. */
+export function ptyAttach(id: string, since?: number): Promise<PtyAttachment> {
+  return invoke<PtyAttachment>(
+    "pty_attach",
+    { id, since: since ?? null },
+    { errorMessage: "Failed to attach terminal" },
+  );
 }
 
 export function ptyKill(id: string): Promise<void> {

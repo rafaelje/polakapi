@@ -38,6 +38,8 @@ pub struct PtySession {
     pub writer: Mutex<Box<dyn Write + Send>>,
     pub master: Mutex<Box<dyn MasterPty + Send>>,
     pub child: Mutex<Box<dyn Child + Send + Sync>>,
+    /// Recent output, so a window that attaches later can catch up.
+    pub replay: Mutex<crate::pty_replay::ReplayBuffer>,
 }
 
 #[derive(Default)]
@@ -109,6 +111,8 @@ impl Drop for PtyStore {
 pub struct PtyDataPayload {
     pub id: String,
     pub data: String,
+    /// Offset right after this chunk in the PTY's output, see `pty_attach`.
+    pub offset: u64,
 }
 
 #[derive(Clone, Serialize)]
@@ -178,12 +182,14 @@ pub fn spawn_session(
         writer: Mutex::new(writer),
         master: Mutex::new(pair.master),
         child: Mutex::new(child),
+        replay: Mutex::new(Default::default()),
     });
-    store.insert_session(id.clone(), session);
+    store.insert_session(id.clone(), session.clone());
 
     let id_for_thread = id.clone();
     let app_for_thread = app.clone();
     let store_for_thread = store.clone();
+    let session_for_thread = session;
     std::thread::spawn(move || {
         let mut buf = [0u8; 4096];
         let mut pending: Vec<u8> = Vec::with_capacity(64);
@@ -194,11 +200,13 @@ pub fn spawn_session(
                     pending.extend_from_slice(&buf[..n]);
                     let chunk = drain_valid_utf8(&mut pending);
                     if !chunk.is_empty() {
+                        let offset = session_for_thread.replay.lock().push(&chunk);
                         let _ = app_for_thread.emit(
                             "pty:data",
                             PtyDataPayload {
                                 id: id_for_thread.clone(),
                                 data: chunk,
+                                offset,
                             },
                         );
                     }
@@ -208,11 +216,13 @@ pub fn spawn_session(
         }
         if !pending.is_empty() {
             let chunk = String::from_utf8_lossy(&pending).to_string();
+            let offset = session_for_thread.replay.lock().push(&chunk);
             let _ = app_for_thread.emit(
                 "pty:data",
                 PtyDataPayload {
                     id: id_for_thread.clone(),
                     data: chunk,
+                    offset,
                 },
             );
         }
