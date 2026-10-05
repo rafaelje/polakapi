@@ -305,12 +305,40 @@ fn write_atomically(path: &Path, text: &str) -> Result<(), String> {
         std::fs::create_dir_all(parent)
             .map_err(|e| format!("could not create {}: {e}", parent.display()))?;
     }
-    let temp = target.with_extension("json.polakapi-tmp");
-    std::fs::write(&temp, text).map_err(|e| format!("could not write {}: {e}", temp.display()))?;
-    if let Ok(meta) = std::fs::metadata(&target) {
-        let _ = std::fs::set_permissions(&temp, meta.permissions());
+    let permissions = match std::fs::metadata(&target) {
+        Ok(meta) => Some(meta.permissions()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+        Err(error) => return Err(format!("could not inspect {}: {error}", target.display())),
+    };
+    let mut builder = tempfile::Builder::new();
+    builder.prefix(".polakapi-settings-");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        builder.permissions(std::fs::Permissions::from_mode(0o600));
     }
-    std::fs::rename(&temp, &target)
+    let mut temp = builder
+        .tempfile_in(target.parent().unwrap_or_else(|| Path::new(".")))
+        .map_err(|e| {
+            format!(
+                "could not create temporary file for {}: {e}",
+                target.display()
+            )
+        })?;
+    // Each writer owns its file; restrictive creation precedes all settings data.
+    // NamedTempFile also removes the file on write, permission, or persist errors.
+    std::io::Write::write_all(&mut temp, text.as_bytes())
+        .map_err(|e| format!("could not write {}: {e}", temp.path().display()))?;
+    if let Some(permissions) = permissions {
+        temp.as_file().set_permissions(permissions).map_err(|e| {
+            format!(
+                "could not preserve permissions for {}: {e}",
+                target.display()
+            )
+        })?;
+    }
+    temp.persist(&target)
+        .map(|_| ())
         .map_err(|e| format!("could not replace {}: {e}", target.display()))
 }
 

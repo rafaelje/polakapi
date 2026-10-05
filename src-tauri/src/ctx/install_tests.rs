@@ -2,6 +2,114 @@ use super::*;
 
 #[cfg(unix)]
 #[test]
+fn atomic_writes_do_not_follow_a_preexisting_temporary_symlink() {
+    let home = tempfile::tempdir().unwrap();
+    let path = home.path().join("settings.json");
+    let unrelated = home.path().join("unrelated.json");
+    std::fs::write(&unrelated, "{\"keep\":true}").unwrap();
+    let collision = path.with_extension("json.polakapi-tmp");
+    std::os::unix::fs::symlink(&unrelated, &collision).unwrap();
+    write_atomically(&path, "{\"updated\":true}\n").unwrap();
+    assert_eq!(
+        std::fs::read_to_string(&unrelated).unwrap(),
+        "{\"keep\":true}"
+    );
+    assert_eq!(std::fs::read_link(&collision).unwrap(), unrelated);
+    assert!(!std::fs::symlink_metadata(&path)
+        .unwrap()
+        .file_type()
+        .is_symlink());
+    assert_eq!(read(&path), json!({"updated": true}));
+}
+
+#[test]
+fn failed_atomic_replacement_leaves_no_temporary_file() {
+    let home = tempfile::tempdir().unwrap();
+    let path = home.path().join("settings.json");
+    std::fs::create_dir(&path).unwrap();
+    assert!(write_atomically(&path, "{}\n").is_err());
+    let entries: Vec<_> = std::fs::read_dir(home.path())
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .collect();
+    assert_eq!(entries, vec![path]);
+}
+
+#[cfg(unix)]
+#[test]
+fn atomic_writes_create_private_files_and_preserve_existing_modes() {
+    use std::os::unix::fs::PermissionsExt;
+    let home = tempfile::tempdir().unwrap();
+    for format in [Format::Claude, Format::Cursor] {
+        let path = home.path().join("settings.json");
+        sync_file(&path, "/opt/polakapi", true, format).unwrap();
+        assert_eq!(
+            std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+        for mode in [0o400, 0o600, 0o640] {
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(mode)).unwrap();
+            sync_file(&path, "/different/polakapi", true, format).unwrap();
+            sync_file(&path, "/opt/polakapi", true, format).unwrap();
+            assert_eq!(
+                std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+                mode
+            );
+        }
+        std::fs::remove_file(path).unwrap();
+    }
+}
+
+#[test]
+fn concurrent_hook_syncs_publish_whole_json_without_temporary_files() {
+    use std::sync::{Arc, Barrier};
+    let home = tempfile::tempdir().unwrap();
+    for format in [Format::Claude, Format::Cursor] {
+        let path = home.path().join("settings.json");
+        std::fs::write(&path, "{\"custom\":true}").unwrap();
+        sync_file(&path, "/initial/polakapi", true, format).unwrap();
+        let barrier = Arc::new(Barrier::new(8));
+        let writers: Vec<_> = (0..8)
+            .map(|writer| {
+                let path = path.clone();
+                let barrier = barrier.clone();
+                std::thread::spawn(move || {
+                    barrier.wait();
+                    for iteration in 0..8 {
+                        let bin =
+                            format!("/writer-{writer}-{iteration}-{}/polakapi", "x".repeat(4096));
+                        sync_file(&path, &bin, true, format)?;
+                    }
+                    Ok::<_, String>(())
+                })
+            })
+            .collect();
+        while writers.iter().any(|writer| !writer.is_finished()) {
+            let root = read(&path);
+            assert_eq!(root["custom"], true);
+            let (pre, start) = match format {
+                Format::Claude => (
+                    &root["hooks"]["PreToolUse"][0]["hooks"][0],
+                    &root["hooks"]["SessionStart"][0]["hooks"][0],
+                ),
+                Format::Cursor => (
+                    &root["hooks"]["preToolUse"][0],
+                    &root["hooks"]["sessionStart"][0],
+                ),
+            };
+            assert_eq!(pre["command"], start["command"]);
+        }
+        for writer in writers {
+            writer.join().unwrap().unwrap();
+        }
+        assert_eq!(read(&path)["custom"], true);
+        assert_eq!(std::fs::read_dir(home.path()).unwrap().count(), 1);
+        std::fs::remove_file(path).unwrap();
+    }
+}
+
+#[cfg(unix)]
+#[test]
 fn dangling_settings_symlinks_are_never_replaced() {
     for relative in [false, true] {
         let home = tempfile::tempdir().unwrap();
@@ -59,15 +167,19 @@ fn a_symlinked_settings_file_is_written_through_its_link() {
     std::fs::create_dir_all(link.parent().unwrap()).unwrap();
     std::os::unix::fs::symlink(&real, &link).unwrap();
 
-    write_atomically(&link, "{\"a\":1}\n").unwrap();
-
-    assert!(std::fs::symlink_metadata(&link)
-        .unwrap()
-        .file_type()
-        .is_symlink());
-    assert_eq!(std::fs::read_to_string(&real).unwrap(), "{\"a\":1}\n");
-    let mode = std::fs::metadata(&real).unwrap().permissions().mode();
-    assert_eq!(mode & 0o777, 0o600);
+    for target in [real.clone(), PathBuf::from("../dotfiles/settings.json")] {
+        std::fs::remove_file(&link).unwrap();
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+        for format in [Format::Claude, Format::Cursor] {
+            std::fs::write(&real, "{\"custom\":true}").unwrap();
+            assert!(sync_file(&link, "/opt/polakapi", true, format).unwrap());
+            assert_eq!(std::fs::read_link(&link).unwrap(), target);
+            assert_eq!(read(&real)["custom"], true);
+            assert!(read(&real)["hooks"].is_object());
+            let mode = std::fs::metadata(&real).unwrap().permissions().mode();
+            assert_eq!(mode & 0o777, 0o600);
+        }
+    }
 }
 
 fn read(path: &Path) -> Value {
