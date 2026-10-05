@@ -109,21 +109,22 @@ describe("project toolbar", () => {
     expect(handlers.onOpenLayoutsMenu).toHaveBeenCalledExactlyOnceWith(actions);
   });
 
-  it("moves the grid to its own window and back from one button", () => {
+  it("moves the grid to its own window and back from the project actions menu", () => {
     const { handlers, pane } = mount();
     pane.setActiveProject(project());
-    const button = document.querySelector<HTMLButtonElement>("#open-in-window")!;
+    const actions = document.querySelector<HTMLButtonElement>("#project-actions-menu")!;
 
-    expect(button.textContent).toBe("⧉ Open in window");
-    button.click();
+    expect(document.querySelector("#open-in-window")).toBeNull();
+    actions.click();
+    menuItem("Open in window").click();
     expect(handlers.onOpenInWindow).toHaveBeenCalledOnce();
 
     pane.setDetached(true);
-    expect(button.textContent).toBe("↩ Bring back");
     // Nothing can be started here while the terminals live elsewhere.
     expect(document.querySelector<HTMLButtonElement>("#add-pane")?.disabled).toBe(true);
     expect(document.querySelector<HTMLButtonElement>("#suspend-all")?.disabled).toBe(true);
-    button.click();
+    actions.click();
+    menuItem("Bring back").click();
     expect(handlers.onBringBack).toHaveBeenCalledOnce();
 
     pane.setDetached(false);

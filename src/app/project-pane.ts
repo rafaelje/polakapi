@@ -94,10 +94,6 @@ export function mountProjectPane(opts: ProjectPaneOptions): ProjectPaneHandle {
   resumeBtn.id = "resume-all";
   resumeBtn.title = "Resume every suspended terminal";
 
-  const windowBtn = createButton("project-toolbar-process", "⧉ Open in window");
-  windowBtn.id = "open-in-window";
-  windowBtn.title = "Move this project's terminals to their own window";
-
   const actionsBtn = createButton("project-toolbar-actions", "•••");
   actionsBtn.id = "project-actions-menu";
   actionsBtn.title = "Project actions";
@@ -105,7 +101,7 @@ export function mountProjectPane(opts: ProjectPaneOptions): ProjectPaneHandle {
   actionsBtn.setAttribute("aria-haspopup", "menu");
   actionsBtn.setAttribute("aria-expanded", "false");
 
-  subToolbar.append(splitControl, spacer, status, suspendBtn, resumeBtn, windowBtn, actionsBtn);
+  subToolbar.append(splitControl, spacer, status, suspendBtn, resumeBtn, actionsBtn);
 
   let emptyState: EmptyStateHandle | null = createProjectEmptyState();
   let currentProject: Project | null = null;
@@ -157,10 +153,6 @@ export function mountProjectPane(opts: ProjectPaneOptions): ProjectPaneHandle {
   };
   const onSuspendAll = (): void => callbacks.onSuspendAll();
   const onResumeAll = (): void => callbacks.onResumeAll();
-  const onWindow = (): void => {
-    if (isDetached) callbacks.onBringBack();
-    else callbacks.onOpenInWindow();
-  };
   const onProjectActions = (): void => {
     const wasOpen = actionsBtn.getAttribute("aria-expanded") === "true";
     closeActiveMenu();
@@ -174,6 +166,11 @@ export function mountProjectPane(opts: ProjectPaneOptions): ProjectPaneHandle {
           id: "layouts-menu",
           label: "Layouts…",
           onSelect: () => callbacks.onOpenLayoutsMenu(actionsBtn),
+        },
+        {
+          id: "open-in-window",
+          label: isDetached ? "Bring back" : "Open in window",
+          onSelect: isDetached ? callbacks.onBringBack : callbacks.onOpenInWindow,
         },
         { id: "run-all", label: "Run command in all…", onSelect: callbacks.onRunInAll },
         {
@@ -210,7 +207,6 @@ export function mountProjectPane(opts: ProjectPaneOptions): ProjectPaneHandle {
   profileBtn.addEventListener("click", onProfileMenu);
   suspendBtn.addEventListener("click", onSuspendAll);
   resumeBtn.addEventListener("click", onResumeAll);
-  windowBtn.addEventListener("click", onWindow);
   actionsBtn.addEventListener("click", onProjectActions);
 
   const setControlsDisabled = (disabled: boolean): void => {
@@ -218,7 +214,6 @@ export function mountProjectPane(opts: ProjectPaneOptions): ProjectPaneHandle {
     profileBtn.disabled = disabled || isDetached;
     suspendBtn.disabled = disabled || isDetached;
     resumeBtn.disabled = disabled || isDetached;
-    windowBtn.disabled = disabled;
     actionsBtn.disabled = disabled;
   };
   setControlsDisabled(true);
@@ -255,10 +250,6 @@ export function mountProjectPane(opts: ProjectPaneOptions): ProjectPaneHandle {
     },
     setDetached(detached: boolean): void {
       isDetached = detached;
-      windowBtn.textContent = detached ? "↩ Bring back" : "⧉ Open in window";
-      windowBtn.title = detached
-        ? "Close the project's window and show its terminals here again"
-        : "Move this project's terminals to their own window";
       host.classList.toggle("detached", detached);
       setControlsDisabled(currentProject === null);
     },
@@ -268,7 +259,6 @@ export function mountProjectPane(opts: ProjectPaneOptions): ProjectPaneHandle {
       profileBtn.removeEventListener("click", onProfileMenu);
       suspendBtn.removeEventListener("click", onSuspendAll);
       resumeBtn.removeEventListener("click", onResumeAll);
-      windowBtn.removeEventListener("click", onWindow);
       actionsBtn.removeEventListener("click", onProjectActions);
       emptyState?.dispose();
       emptyState = null;
