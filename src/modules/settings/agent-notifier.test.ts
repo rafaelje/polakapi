@@ -1,13 +1,20 @@
 import { describe, expect, it, vi } from "vitest";
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn(), emit: vi.fn() }));
 vi.mock("@tauri-apps/plugin-store", () => ({ load: vi.fn() }));
-import { AgentNotificationPolicy, type AgentEvent } from "./agent-notifier";
+import { AgentNotificationPolicy, agentNotificationTitle, type AgentEvent } from "./agent-notifier";
 import { defaults, normalizePreferences } from "./preferences";
 
 const event = (ptyId: string, kind: AgentEvent["kind"]): AgentEvent => ({
   ptyId,
   kind,
   cli: "claude",
+});
+
+describe("agent notification title", () => {
+  it("names the project that sent the notification", () => {
+    expect(agentNotificationTitle(event("a", "finished"), "api")).toBe("api · claude");
+    expect(agentNotificationTitle(event("a", "finished"), null)).toBe("polakapi · claude");
+  });
 });
 
 describe("agent notification policy", () => {
