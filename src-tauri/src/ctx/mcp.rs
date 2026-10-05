@@ -24,6 +24,9 @@ pub struct Server {
     project: Option<PathBuf>,
     config: CtxConfig,
     session: Option<CtxSession>,
+    /// Re-read before every store access: `/clear` starts a new CLI session
+    /// while this process keeps running.
+    resolve_key: Option<fn() -> Option<String>>,
 }
 
 impl Server {
@@ -33,11 +36,23 @@ impl Server {
             project,
             config,
             session: None,
+            resolve_key: None,
         }
+    }
+
+    pub fn with_key_resolver(mut self, resolve: fn() -> Option<String>) -> Self {
+        self.resolve_key = Some(resolve);
+        self
     }
 
     /// Opened on first use so an unused server never creates a store.
     fn session(&mut self) -> Result<&mut CtxSession, String> {
+        if let Some(current) = self.resolve_key.and_then(|resolve| resolve()) {
+            if current != self.session_id {
+                self.session_id = current;
+                self.session = None;
+            }
+        }
         if self.session.is_none() {
             self.session = Some(CtxSession::open(
                 &self.session_id,
@@ -279,9 +294,13 @@ fn plural(count: usize, one: &str, many: &str) -> String {
 
 /// Entry point for the `polakapi ctx-mcp` subcommand.
 pub fn run() -> i32 {
-    let session_id = crate::ctx::paths::session_key_from_env().unwrap_or_else(|| "unscoped".into());
+    // Outside a polakapi terminal there is no key; a per-process one keeps
+    // unrelated servers out of each other's store.
+    let session_id = crate::ctx::paths::session_key_from_env()
+        .unwrap_or_else(|| format!("unscoped-{}", uuid::Uuid::new_v4()));
     let project = crate::ctx::paths::project_dir_from_env();
-    let mut server = Server::new(session_id, project, config::load_from_env());
+    let mut server = Server::new(session_id, project, config::load_from_env())
+        .with_key_resolver(crate::ctx::paths::session_key_from_env);
 
     let stdin = std::io::stdin();
     let mut stdout = std::io::stdout();
@@ -446,6 +465,27 @@ mod tests {
             json!({ "command": "echo kept; exit 3" }),
         ));
         assert_eq!(reply, "kept\n\nExit status 3.");
+    }
+
+    static CLEARED_KEY: std::sync::Mutex<String> = std::sync::Mutex::new(String::new());
+
+    #[cfg(unix)]
+    #[test]
+    fn a_cleared_session_switches_to_its_own_store() {
+        let project = tempfile::tempdir().unwrap();
+        let server = server(project.path());
+        *CLEARED_KEY.lock().unwrap() = server.session_id.clone();
+        let mut server = server.with_key_resolver(|| Some(CLEARED_KEY.lock().unwrap().clone()));
+
+        call(
+            &mut server,
+            "ctx_exec",
+            json!({ "command": "for i in $(seq 1 400); do echo \"needle line $i\"; done" }),
+        );
+        assert!(!text(&call(&mut server, "ctx_list", json!({}))).contains("Nothing offloaded"));
+
+        *CLEARED_KEY.lock().unwrap() = format!("mcp-{}", uuid::Uuid::new_v4());
+        assert!(text(&call(&mut server, "ctx_list", json!({}))).contains("Nothing offloaded"));
     }
 
     #[test]

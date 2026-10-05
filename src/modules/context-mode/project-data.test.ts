@@ -3,21 +3,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("../../shared/tauri/invoke", () => ({ invoke: vi.fn() }));
 vi.mock("../../shared/ui/modal", () => ({ confirmModal: vi.fn() }));
 vi.mock("../../shared/ui/toast", () => ({ showToast: vi.fn() }));
-vi.mock("../settings/context-mode-preferences", () => ({
-  loadContextMode: vi.fn(),
-  watchContextMode: vi.fn(),
-}));
 
 import { invoke } from "../../shared/tauri/invoke";
 import { confirmModal } from "../../shared/ui/modal";
 import { showToast } from "../../shared/ui/toast";
-import { loadContextMode, watchContextMode } from "../settings/context-mode-preferences";
-import {
-  clearProjectContextData,
-  describeData,
-  formatBytes,
-  trackContextModeActivity,
-} from "./project-data";
+import { clearProjectContextData, describeData, formatBytes } from "./project-data";
 
 const project = { name: "ice-games", path: "/repos/ice-games" };
 const calls = (): string[] => vi.mocked(invoke).mock.calls.map((call) => call[0]);
@@ -60,28 +50,6 @@ describe("clearProjectContextData", () => {
     expect(confirmModal).not.toHaveBeenCalled();
     expect(calls()).toEqual(["ctx_project_data_summary"]);
     expect(showToast).toHaveBeenCalledWith(expect.stringContaining("No context mode data"), "info");
-  });
-});
-
-describe("trackContextModeActivity", () => {
-  it("follows the switch as Settings changes it", async () => {
-    let onChange: ((preferences: { enabled: boolean }) => void) | null = null;
-    vi.mocked(loadContextMode).mockResolvedValueOnce({ enabled: false } as never);
-    vi.mocked(watchContextMode).mockImplementationOnce((listener) => {
-      onChange = listener as never;
-      return Promise.resolve(() => {});
-    });
-
-    const activity = await trackContextModeActivity();
-    expect(activity.isActive()).toBe(false);
-    onChange!({ enabled: true });
-    expect(activity.isActive()).toBe(true);
-  });
-
-  it("stays inactive when the settings cannot be read", async () => {
-    vi.mocked(loadContextMode).mockRejectedValueOnce(new Error("store unavailable"));
-    const activity = await trackContextModeActivity();
-    expect(activity.isActive()).toBe(false);
   });
 });
 

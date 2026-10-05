@@ -64,16 +64,24 @@ export function settingsNumber(
   input.setAttribute("aria-label", label);
   input.min = String(bounds.min);
   input.max = String(bounds.max);
-  input.value = String(value);
+  setSettingsNumber(input, value);
   input.addEventListener("change", () => {
-    const parsed = Number(input.value);
+    // Number("") is 0, so a cleared field has to be caught before converting.
+    const raw = input.value.trim();
+    const parsed = raw === "" ? Number.NaN : Number(raw);
     // A cleared or nonsense field falls back to the value already in effect
     // rather than writing NaN into the store.
     const next = Number.isFinite(parsed)
       ? Math.min(bounds.max, Math.max(bounds.min, Math.round(parsed)))
-      : value;
-    input.value = String(next);
+      : Number(input.dataset.current);
+    setSettingsNumber(input, next);
     change(next);
   });
   return input;
+}
+
+/** Shows a value set from outside the control and makes it the fallback. */
+export function setSettingsNumber(input: HTMLInputElement, value: number): void {
+  input.value = String(value);
+  input.dataset.current = String(value);
 }

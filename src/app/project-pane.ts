@@ -29,8 +29,6 @@ export interface ProjectPaneOptions {
   host: HTMLElement;
   gridEl: HTMLDivElement;
   callbacks: ProjectPaneCallbacks;
-  /** Read each time the actions menu opens, so it follows Settings live. */
-  isContextModeActive?: () => boolean;
 }
 
 export interface ProjectPaneHandle {
@@ -174,16 +172,13 @@ export function mountProjectPane(opts: ProjectPaneOptions): ProjectPaneHandle {
         },
         { id: "reload-all", label: "Reload all", onSelect: callbacks.onReloadAll },
         { id: "close-all", label: "Close all", onSelect: callbacks.onCloseAll },
-        ...(opts.isContextModeActive?.()
-          ? [
-              {
-                id: "clear-context-data",
-                label: "Clear context mode data…",
-                disabled: !path,
-                onSelect: callbacks.onClearContextData,
-              },
-            ]
-          : []),
+        // Offered with context mode off too: that is when leftover data gets cleaned up.
+        {
+          id: "clear-context-data",
+          label: "Clear context mode data…",
+          disabled: !path,
+          onSelect: callbacks.onClearContextData,
+        },
         {
           label: "Reveal in file manager",
           separatorBefore: true,

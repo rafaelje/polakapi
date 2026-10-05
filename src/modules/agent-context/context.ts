@@ -375,19 +375,25 @@ async function toggleEntry(
     toggle.textContent = "read all";
     return;
   }
-  if (!activePtyId) return;
+  const ptyId = activePtyId;
+  if (!ptyId) return;
+  const request = detailRequest;
+  // Entry ids are per transcript: a late read must not land on another agent.
+  const isStale = (): boolean => request !== detailRequest || activePtyId !== ptyId;
   toggle.disabled = true;
   try {
     const full = await invoke<string | null>("agent_context_entry", {
-      ptyId: activePtyId,
+      ptyId,
       entryId: entry.id,
     });
+    if (isStale()) return;
     if (full !== null) {
       expanded.set(entry.id, full);
       body.textContent = full;
       toggle.textContent = "show less";
     }
   } catch (error) {
+    if (isStale()) return;
     body.textContent = `Could not read this entry: ${String(error)}`;
   } finally {
     toggle.disabled = false;

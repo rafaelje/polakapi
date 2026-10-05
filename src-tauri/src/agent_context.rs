@@ -341,6 +341,12 @@ fn codex_head(path: &Path) -> Option<CodexHead> {
         let Ok(event) = serde_json::from_str::<Value>(&line) else {
             continue;
         };
+        if event.get("type").and_then(Value::as_str) == Some("turn_context") {
+            if let Some(found) = event.pointer("/payload/model").and_then(Value::as_str) {
+                head.model = Some(found.to_string());
+            }
+            continue;
+        }
         if event.get("type").and_then(Value::as_str) != Some("event_msg") {
             continue;
         }
@@ -520,5 +526,24 @@ mod tests {
             claude_context_limit(Some("claude-something-new")),
             DEFAULT_CONTEXT_LIMIT
         );
+    }
+
+    #[test]
+    fn codex_reads_the_model_from_turn_context() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("rollout.jsonl");
+        std::fs::write(
+            &path,
+            [
+                r#"{"type":"turn_context","payload":{"cwd":"/x","model":"gpt-5-codex"}}"#,
+                r#"{"type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":1234},"model_context_window":272000}}}"#,
+            ]
+            .join("\n"),
+        )
+        .unwrap();
+        let head = codex_head(&path).unwrap();
+        assert_eq!(head.model.as_deref(), Some("gpt-5-codex"));
+        assert_eq!(head.tokens, 1234);
+        assert_eq!(head.context_window, Some(272_000));
     }
 }

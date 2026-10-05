@@ -1,7 +1,6 @@
 import { invoke } from "../../shared/tauri/invoke";
 import { confirmModal } from "../../shared/ui/modal";
 import { showToast } from "../../shared/ui/toast";
-import { loadContextMode, watchContextMode } from "../settings/context-mode-preferences";
 
 // Context mode data a project has persisted in `.polakapi/`, and the action that
 // lets the user delete it from the project actions menu.
@@ -9,33 +8,6 @@ import { loadContextMode, watchContextMode } from "../settings/context-mode-pref
 export interface ProjectData {
   sessions: number;
   bytes: number;
-}
-
-export interface ContextModeActivity {
-  /** Whether context mode is switched on right now, as last saved in Settings. */
-  isActive(): boolean;
-  dispose(): void;
-}
-
-/**
- * Follows the master switch across windows: Settings saves in its own window
- * and broadcasts, and the actions menu here has to reflect it without a reload.
- */
-export async function trackContextModeActivity(): Promise<ContextModeActivity> {
-  let active = false;
-  let stop: (() => void) | null = null;
-  try {
-    active = (await loadContextMode()).enabled;
-    stop = await watchContextMode((preferences) => {
-      active = preferences.enabled;
-    });
-  } catch {
-    // A store that cannot be read means the action simply stays hidden.
-  }
-  return {
-    isActive: () => active,
-    dispose: () => stop?.(),
-  };
 }
 
 export function formatBytes(bytes: number): string {

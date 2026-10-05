@@ -13,10 +13,7 @@ import {
   reloadAllPanes,
 } from "../modules/terminal/terminal-batch";
 import { openInEditor, openInShell, revealFolder } from "../modules/workspaces/open-external";
-import {
-  clearProjectContextData,
-  trackContextModeActivity,
-} from "../modules/context-mode/project-data";
+import { clearProjectContextData } from "../modules/context-mode/project-data";
 import { WorkspacesController } from "../modules/workspaces/state/workspaces-controller";
 import {
   mountWorkspacesPanel,
@@ -150,34 +147,39 @@ export async function bootstrapWorkspaces(
    * running inside them are listed in a confirmation first — an idle shell is
    * cheap to lose, a running build is not.
    */
+  // Overlapping batches would each snapshot the same layout and apply it again.
+  let batchRunning = false;
   const runTerminalBatch = async (action: "Close" | "Reload"): Promise<void> => {
+    if (batchRunning) return;
     const manager = router.getActive();
     if (!manager) return;
     const ids = manager.ids();
     if (ids.length === 0) return;
 
-    // A failed probe must not block the action; it only costs the warning.
-    const running = await fetchRunningPanes().catch(() => []);
-    const busy = busyPanes(ids, running);
-    if (busy.length > 0) {
-      const confirmed = await confirmModal({
-        title: `${action} ${ids.length} terminal${ids.length === 1 ? "" : "s"}?`,
-        message: busyMessage(busy),
-        confirmLabel: `${action} anyway`,
-        cancelLabel: "Cancel",
-        danger: true,
-      });
-      if (!confirmed) return;
-    }
+    batchRunning = true;
+    try {
+      // A failed probe must not block the action; it only costs the warning.
+      const running = await fetchRunningPanes().catch(() => []);
+      const busy = busyPanes(ids, running);
+      if (busy.length > 0) {
+        const confirmed = await confirmModal({
+          title: `${action} ${ids.length} terminal${ids.length === 1 ? "" : "s"}?`,
+          message: busyMessage(busy),
+          confirmLabel: `${action} anyway`,
+          cancelLabel: "Cancel",
+          danger: true,
+        });
+        if (!confirmed) return;
+      }
 
-    if (action === "Close") await closeAllPanes(manager);
-    else await reloadAllPanes(manager);
+      if (action === "Close") await closeAllPanes(manager);
+      else await reloadAllPanes(manager);
+    } finally {
+      batchRunning = false;
+    }
   };
 
-  const contextMode = await trackContextModeActivity();
-
   const projectPane = mountProjectPane({
-    isContextModeActive: () => contextMode.isActive(),
     host: elements.projectPaneHost,
     gridEl: elements.gridEl,
     callbacks: {
@@ -344,7 +346,6 @@ export async function bootstrapWorkspaces(
   const unwireActivation = wireActivationShortcuts(controller);
 
   const unsubscribe = (): void => {
-    contextMode.dispose();
     unwireActivation();
     terminalDrop.detach();
     unsubscribeController();

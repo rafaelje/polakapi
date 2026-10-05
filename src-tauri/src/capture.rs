@@ -89,13 +89,17 @@ fn try_run() -> Result<Option<CaptureEvent>, String> {
         cwd,
     } = &event
     {
-        crate::db::agent_session::record_start(
+        // ctx-hook records the same start, so a locked database only costs a
+        // log line here rather than failing a SessionStart that happened.
+        if let Err(error) = crate::db::agent_session::record_start(
             std::path::Path::new(&db_path),
             pty_id,
             cli,
             cli_session_id,
             cwd.as_deref(),
-        )?;
+        ) {
+            eprintln!("polakapi-capture: record session: {error}");
+        }
     }
     Ok(Some(event))
 }
