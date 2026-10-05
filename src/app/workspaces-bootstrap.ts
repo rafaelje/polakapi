@@ -144,9 +144,9 @@ export async function bootstrapWorkspaces(
   const restored = new Set<ProjectId>();
 
   /**
-   * Close or reload every terminal of the active project. Panes with a process
-   * running inside them are listed in a confirmation first — an idle shell is
-   * cheap to lose, a running build is not.
+   * Close or reload the active project's terminals in this window only.
+   * Other windows retain ownership of their panes. Running processes are
+   * listed in a confirmation first.
    */
   // Overlapping batches would each snapshot the same layout and apply it again.
   let batchRunning = false;
@@ -159,6 +159,10 @@ export async function bootstrapWorkspaces(
 
     batchRunning = true;
     try {
+      showToast(
+        `${action} affects only terminals in this window; other windows are unchanged.`,
+        "info",
+      );
       // A failed probe must not block the action; it only costs the warning.
       const running = await fetchRunningPanes().catch(() => []);
       const busy = busyPanes(ids, running);
@@ -173,8 +177,9 @@ export async function bootstrapWorkspaces(
         if (!confirmed) return;
       }
 
-      if (action === "Close") await closeAllPanes(manager);
-      else await reloadAllPanes(manager);
+      const admission = { expectedIds: ids, isCurrent: () => router.getActive() === manager };
+      if (action === "Close") await closeAllPanes(manager, admission);
+      else await reloadAllPanes(manager, admission);
     } finally {
       batchRunning = false;
     }

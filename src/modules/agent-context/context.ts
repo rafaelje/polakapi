@@ -60,6 +60,7 @@ let searchError: string | null = null;
 let searchTimer: ReturnType<typeof setTimeout> | null = null;
 // Bumped per request, so a slow answer for an earlier agent or pattern cannot
 // overwrite the one the user is now looking at.
+let listRequest = 0;
 let detailRequest = 0;
 let searchRequest = 0;
 const expanded = new Map<number, string>();
@@ -79,13 +80,18 @@ function message(host: HTMLElement, text: string, error = false): void {
   host.replaceChildren(el("p", error ? "ctx-empty ctx-error" : "ctx-empty", text));
 }
 
-async function loadAgents(): Promise<void> {
-  if (!listEl) return;
+async function loadAgents(): Promise<number | null> {
+  if (!listEl) return null;
+  const request = ++listRequest;
   try {
-    agents = await invoke<AgentSummary[]>("agent_context_list");
+    const next = await invoke<AgentSummary[]>("agent_context_list");
+    if (request !== listRequest) return null;
+    agents = next;
   } catch (error) {
-    message(listEl, `Could not list running agents: ${String(error)}`, true);
-    return;
+    if (request === listRequest) {
+      message(listEl, `Could not list running agents: ${String(error)}`, true);
+    }
+    return null;
   }
   if (counterEl) {
     counterEl.textContent =
@@ -95,8 +101,12 @@ async function loadAgents(): Promise<void> {
   if (activePtyId && !agents.some((agent) => agent.ptyId === activePtyId)) {
     activePtyId = null;
     detail = null;
+    detailRequest++;
+    searchRequest++;
+    expanded.clear();
     if (detailEl) message(detailEl, "That agent is no longer running.");
   }
+  return request;
 }
 
 function renderList(): void {
@@ -149,7 +159,7 @@ function agentRow(agent: AgentSummary): HTMLButtonElement {
   return row;
 }
 
-async function selectAgent(ptyId: string): Promise<void> {
+async function selectAgent(ptyId: string, retryStale = true): Promise<void> {
   const request = ++detailRequest;
   searchRequest++;
   activePtyId = ptyId;
@@ -167,7 +177,12 @@ async function selectAgent(ptyId: string): Promise<void> {
   try {
     next = await invoke<ContextDetail>("agent_context_detail", { ptyId });
   } catch (error) {
-    if (!isStale()) message(detailEl, `Could not read that context: ${String(error)}`, true);
+    if (isStale()) return;
+    if (retryStale && String(error).includes("STALE_CONTEXT")) {
+      await selectAgent(ptyId, false);
+      return;
+    }
+    message(detailEl, `Could not read that context: ${String(error)}`, true);
     return;
   }
   if (isStale()) return;
@@ -232,20 +247,30 @@ function renderDetail(): void {
 async function runSearch(): Promise<void> {
   const request = ++searchRequest;
   const ptyId = activePtyId;
-  if (!ptyId || pattern.trim() === "") {
+  const snapshot = detail;
+  if (!ptyId || !snapshot || pattern.trim() === "") {
     hits = null;
     searchError = null;
     renderDetail();
     return;
   }
-  const isStale = (): boolean => request !== searchRequest || activePtyId !== ptyId;
+  const isStale = (): boolean =>
+    request !== searchRequest || activePtyId !== ptyId || detail !== snapshot;
   try {
-    const found = await invoke<SearchHit[]>("agent_context_search", { ptyId, pattern });
+    const found = await invoke<SearchHit[]>("agent_context_search", {
+      ptyId,
+      pattern,
+      identity: snapshot.identity,
+    });
     if (isStale()) return;
     hits = new Map(found.map((hit) => [hit.entryId, hit]));
     searchError = null;
   } catch (error) {
     if (isStale()) return;
+    if (String(error).includes("STALE_CONTEXT")) {
+      await selectAgent(ptyId);
+      return;
+    }
     hits = null;
     searchError = String(error);
   }
@@ -376,15 +401,18 @@ async function toggleEntry(
     return;
   }
   const ptyId = activePtyId;
-  if (!ptyId) return;
+  const snapshot = detail;
+  if (!ptyId || !snapshot) return;
   const request = detailRequest;
   // Entry ids are per transcript: a late read must not land on another agent.
-  const isStale = (): boolean => request !== detailRequest || activePtyId !== ptyId;
+  const isStale = (): boolean =>
+    request !== detailRequest || activePtyId !== ptyId || detail !== snapshot;
   toggle.disabled = true;
   try {
     const full = await invoke<string | null>("agent_context_entry", {
       ptyId,
       entryId: entry.id,
+      identity: snapshot.identity,
     });
     if (isStale()) return;
     if (full !== null) {
@@ -394,6 +422,10 @@ async function toggleEntry(
     }
   } catch (error) {
     if (isStale()) return;
+    if (String(error).includes("STALE_CONTEXT")) {
+      await selectAgent(ptyId);
+      return;
+    }
     body.textContent = `Could not read this entry: ${String(error)}`;
   } finally {
     toggle.disabled = false;
@@ -404,6 +436,9 @@ if (searchEl instanceof HTMLInputElement) {
   const input = searchEl;
   input.addEventListener("input", () => {
     pattern = input.value;
+    searchRequest++;
+    hits = null;
+    searchError = null;
     if (searchTimer) clearTimeout(searchTimer);
     searchTimer = setTimeout(() => void runSearch(), 250);
   });
@@ -420,8 +455,8 @@ if (sortEl instanceof HTMLSelectElement) {
 }
 
 refreshEl?.addEventListener("click", () => {
-  void loadAgents().then(() => {
-    if (activePtyId) void selectAgent(activePtyId);
+  void loadAgents().then((current) => {
+    if (current === listRequest && activePtyId) void selectAgent(activePtyId);
   });
 });
 

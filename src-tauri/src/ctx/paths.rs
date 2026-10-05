@@ -105,6 +105,70 @@ pub fn lock_file(session: &str) -> Option<PathBuf> {
     )
 }
 
+/// Project operations take this lock before the session lock. Its generation
+/// survives deletion of `.polakapi/ctx`, so cached connections cannot mistake a
+/// newly created database for the one the user deleted.
+pub struct ProjectLock {
+    file: std::fs::File,
+    pub generation: u64,
+}
+
+impl ProjectLock {
+    pub fn acquire(project: &Path) -> Result<Self, String> {
+        use sha2::{Digest, Sha256};
+        use std::io::{Read, Seek, SeekFrom};
+        let project = project
+            .canonicalize()
+            .map_err(|e| format!("project path: {e}"))?;
+        let key = format!(
+            "{:x}",
+            Sha256::digest(project.as_os_str().as_encoded_bytes())
+        );
+        let root = std::env::temp_dir()
+            .join("polakapi")
+            .join("ctx-project-locks");
+        std::fs::create_dir_all(&root).map_err(|e| format!("project lock directory: {e}"))?;
+        let mut file = std::fs::OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .read(true)
+            .write(true)
+            .open(root.join(key))
+            .map_err(|e| format!("project lock: {e}"))?;
+        file.lock().map_err(|e| format!("project lock: {e}"))?;
+        file.seek(SeekFrom::Start(0))
+            .map_err(|e| format!("project generation: {e}"))?;
+        let mut bytes = Vec::new();
+        file.read_to_end(&mut bytes)
+            .map_err(|e| format!("project generation: {e}"))?;
+        let generation = if bytes.is_empty() {
+            0
+        } else {
+            u64::from_le_bytes(bytes.try_into().map_err(|_| "invalid project generation")?)
+        };
+        Ok(Self { file, generation })
+    }
+
+    pub fn invalidate(&mut self) -> Result<(), String> {
+        use std::io::{Seek, SeekFrom, Write};
+        let next = self
+            .generation
+            .checked_add(1)
+            .ok_or("project generation exhausted")?;
+        self.file
+            .seek(SeekFrom::Start(0))
+            .map_err(|e| format!("project generation: {e}"))?;
+        self.file
+            .write_all(&next.to_le_bytes())
+            .map_err(|e| format!("project generation: {e}"))?;
+        self.file
+            .sync_all()
+            .map_err(|e| format!("project generation: {e}"))?;
+        self.generation = next;
+        Ok(())
+    }
+}
+
 /// The session's store in the project: the existing directory, named or not,
 /// or `<session>` when there is none yet.
 pub fn project_store(project: &Path, session: &str) -> Option<PathBuf> {

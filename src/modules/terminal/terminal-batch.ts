@@ -15,6 +15,7 @@ export interface RunningPane {
 /** The slice of TerminalManager these operations need, kept structural so the
  * logic is unit-testable without a DOM or a live PTY. */
 export interface BatchTarget {
+  runBatch?(operation: () => Promise<void>): Promise<void>;
   ids(): string[];
   specs(): TerminalSpec[];
   isLive(id: string): boolean;
@@ -65,7 +66,32 @@ export function reloadSpec(spec: TerminalSpec): Partial<TerminalSpec> {
   };
 }
 
-export async function closeAllPanes(target: BatchTarget): Promise<void> {
+interface BatchAdmission {
+  expectedIds?: readonly string[];
+  isCurrent?: () => boolean;
+}
+
+function runBatch(
+  target: BatchTarget,
+  operation: () => Promise<void>,
+  admission?: BatchAdmission,
+): Promise<void> {
+  const ids = target.ids();
+  if (
+    admission?.isCurrent?.() === false ||
+    (admission?.expectedIds &&
+      (ids.length !== admission.expectedIds.length ||
+        ids.some((id, index) => id !== admission.expectedIds?.[index])))
+  )
+    return Promise.resolve();
+  return target.runBatch ? target.runBatch(operation) : operation();
+}
+
+export function closeAllPanes(target: BatchTarget, admission?: BatchAdmission): Promise<void> {
+  return runBatch(target, () => closeAllPanesNow(target), admission);
+}
+
+async function closeAllPanesNow(target: BatchTarget): Promise<void> {
   // Sequential on purpose: each close mutates the layout tree and pane order,
   // so overlapping calls would corrupt the grid.
   for (const id of [...target.ids()]) {
@@ -96,7 +122,11 @@ export function reloadTemplate(
   };
 }
 
-export async function reloadAllPanes(target: BatchTarget): Promise<void> {
+export function reloadAllPanes(target: BatchTarget, admission?: BatchAdmission): Promise<void> {
+  return runBatch(target, () => reloadAllPanesNow(target), admission);
+}
+
+async function reloadAllPanesNow(target: BatchTarget): Promise<void> {
   // Capture before closing: each close drops its spec and prunes the tree.
   const specs = target.specs();
   const template = reloadTemplate(specs, target.layoutSnapshot);

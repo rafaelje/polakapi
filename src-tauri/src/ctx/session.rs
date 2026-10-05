@@ -19,6 +19,7 @@ pub struct CtxSession {
     dir: PathBuf,
     store: Option<CtxStore>,
     persisted: bool,
+    generation: u64,
 }
 
 impl CtxSession {
@@ -28,6 +29,7 @@ impl CtxSession {
         config: CtxConfig,
     ) -> Result<Self, String> {
         // Not while another process is moving the store.
+        let lifecycle = project.map(paths::ProjectLock::acquire).transpose()?;
         let _lock = lock(session_id);
         // A session promoted by an earlier process already lives in the project.
         // Each hooked command runs as its own process, so this is the only way
@@ -46,14 +48,16 @@ impl CtxSession {
         }
         .ok_or_else(|| format!("unsafe session id: {session_id}"))?;
 
-        let store = CtxStore::open(&dir.join("ctx.db"))?;
+        // Idle MCP sessions must not pin files that deletion or rename needs.
+        drop(CtxStore::open(&dir.join("ctx.db"))?);
         Ok(Self {
             session_id: session_id.to_string(),
             project: project.map(Path::to_path_buf),
             config,
             dir,
-            store: Some(store),
+            store: None,
             persisted: persist_now,
+            generation: lifecycle.as_ref().map_or(0, |lock| lock.generation),
         })
     }
 
@@ -71,21 +75,21 @@ impl CtxSession {
         // Every hooked command is its own process, and parallel ones share this
         // session: one of them promoting the store while another writes to it
         // would lose that write.
-        let _lock = self.lock();
-        self.switch_to_promoted()?;
-        let artifacts = self.dir.join("artifacts");
-        let policy = self.config.policy;
-        let session_id = self.session_id.clone();
-        let result = offload(
-            self.store()?,
-            Some(&artifacts),
-            &session_id,
-            source,
-            text,
-            &policy,
-        )?;
-        self.promote_if_due()?;
-        Ok(result)
+        self.with_store(|session| {
+            let artifacts = session.dir.join("artifacts");
+            let policy = session.config.policy;
+            let session_id = session.session_id.clone();
+            let result = offload(
+                session.store()?,
+                Some(&artifacts),
+                &session_id,
+                source,
+                text,
+                &policy,
+            )?;
+            session.promote_if_due()?;
+            Ok(result)
+        })
     }
 
     pub fn search(
@@ -94,27 +98,31 @@ impl CtxSession {
         source: Option<&str>,
         limit: usize,
     ) -> Result<Vec<SearchRow>, String> {
-        self.follow_promotion()?;
-        let session_id = self.session_id.clone();
-        self.store()?.search(&session_id, query, source, limit)
+        self.with_store(|session| {
+            let session_id = session.session_id.clone();
+            session.store()?.search(&session_id, query, source, limit)
+        })
     }
 
     pub fn read(&mut self, source: &str, ordinal: i64) -> Result<Option<String>, String> {
-        self.follow_promotion()?;
-        let session_id = self.session_id.clone();
-        self.store()?.read_chunk(&session_id, source, ordinal)
+        self.with_store(|session| {
+            let session_id = session.session_id.clone();
+            session.store()?.read_chunk(&session_id, source, ordinal)
+        })
     }
 
     pub fn list(&mut self) -> Result<Vec<SourceRow>, String> {
-        self.follow_promotion()?;
-        let session_id = self.session_id.clone();
-        self.store()?.list_sources(&session_id)
+        self.with_store(|session| {
+            let session_id = session.session_id.clone();
+            session.store()?.list_sources(&session_id)
+        })
     }
 
     pub fn savings(&mut self) -> Result<(u64, u64), String> {
-        self.follow_promotion()?;
-        let session_id = self.session_id.clone();
-        self.store()?.savings(&session_id)
+        self.with_store(|session| {
+            let session_id = session.session_id.clone();
+            session.store()?.savings(&session_id)
+        })
     }
 
     fn lock(&self) -> Option<std::fs::File> {
@@ -131,14 +139,45 @@ impl CtxSession {
         (target != self.dir && target.join("ctx.db").is_file()).then_some(target)
     }
 
-    /// For readers: switches to the promoted store, waiting for a promotion
-    /// that is still copying files.
-    fn follow_promotion(&mut self) -> Result<(), String> {
-        if self.promoted_elsewhere().is_none() {
-            return Ok(());
-        }
+    fn with_store<T>(
+        &mut self,
+        operation: impl FnOnce(&mut Self) -> Result<T, String>,
+    ) -> Result<T, String> {
+        let lifecycle = self.project_lock()?;
         let _lock = self.lock();
-        self.switch_to_promoted()
+        let result = self
+            .refresh(lifecycle.as_ref())
+            .and_then(|()| operation(self));
+        // Close even on errors, and before releasing either lifecycle lock.
+        self.store = None;
+        result
+    }
+
+    fn project_lock(&self) -> Result<Option<paths::ProjectLock>, String> {
+        self.project
+            .as_deref()
+            .map(paths::ProjectLock::acquire)
+            .transpose()
+    }
+
+    /// Both locks stay held through the actual read/write, not just this check.
+    fn refresh(&mut self, lifecycle: Option<&paths::ProjectLock>) -> Result<(), String> {
+        let generation = lifecycle.map_or(0, |lock| lock.generation);
+        if generation != self.generation {
+            self.store = None;
+            self.generation = generation;
+            if self.persisted {
+                let project = self.project.as_deref().ok_or("missing project")?;
+                paths::ensure_self_ignored(project)?;
+                self.dir =
+                    paths::project_store(project, &self.session_id).ok_or("unsafe session id")?;
+            }
+        }
+        self.switch_to_promoted()?;
+        if self.store.is_none() {
+            self.store = Some(CtxStore::open(&self.dir.join("ctx.db"))?);
+        }
+        Ok(())
     }
 
     /// Callers hold the lock.
@@ -161,7 +200,8 @@ impl CtxSession {
         let Some(project) = self.project.clone() else {
             return Ok(());
         };
-        let sources = self.list()?.len() as u64;
+        let session_id = self.session_id.clone();
+        let sources = self.store()?.list_sources(&session_id)?.len() as u64;
         if !paths::should_persist(
             self.config.storage,
             sources,
@@ -195,6 +235,7 @@ pub fn rename_store(
     project: &Path,
     title: Option<&str>,
 ) -> Result<Option<PathBuf>, String> {
+    let _lifecycle = paths::ProjectLock::acquire(project)?;
     let _lock = lock(session_id);
     paths::rename_project_store(project, session_id, title)
 }
@@ -235,6 +276,57 @@ mod tests {
 
     fn body(tag: &str) -> String {
         (0..100).map(|i| format!("{tag} line {i}\n")).collect()
+    }
+
+    #[test]
+    fn clearing_revokes_open_readers_even_after_the_store_is_recreated() {
+        let project = tempfile::tempdir().unwrap();
+        let id = format!("sess-clear-{}", uuid::Uuid::new_v4());
+        let mut idle =
+            CtxSession::open(&id, Some(project.path()), config(Storage::Project, 1)).unwrap();
+        idle.offload("before", &body("forgotten")).unwrap();
+        let mut reader =
+            CtxSession::open(&id, Some(project.path()), config(Storage::Project, 1)).unwrap();
+        crate::ctx::project_data::clear(project.path()).unwrap();
+        let mut fresh =
+            CtxSession::open(&id, Some(project.path()), config(Storage::Project, 1)).unwrap();
+        fresh.offload("after", &body("retained")).unwrap();
+        assert!(reader.search("forgotten", None, 10).unwrap().is_empty());
+        assert!(reader.read("before", 0).unwrap().is_none());
+        assert_eq!(
+            idle.list()
+                .unwrap()
+                .iter()
+                .map(|r| r.source.as_str())
+                .collect::<Vec<_>>(),
+            vec!["after"]
+        );
+        assert_eq!(idle.savings().unwrap(), fresh.savings().unwrap());
+        idle.offload("later", &body("durable")).unwrap();
+        drop(idle);
+        drop(reader);
+        drop(fresh);
+        let mut reopened =
+            CtxSession::open(&id, Some(project.path()), config(Storage::Project, 1)).unwrap();
+        assert_eq!(reopened.list().unwrap().len(), 2);
+        assert!(reopened.read("before", 0).unwrap().is_none());
+    }
+
+    #[test]
+    fn clearing_an_open_store_allows_durable_subsequent_offloads() {
+        let project = tempfile::tempdir().unwrap();
+        let id = format!("sess-clear-write-{}", uuid::Uuid::new_v4());
+        let mut open =
+            CtxSession::open(&id, Some(project.path()), config(Storage::Promote, 1)).unwrap();
+        open.offload("before", &body("forgotten")).unwrap();
+        crate::ctx::project_data::clear(project.path()).unwrap();
+        open.offload("after", &body("durable")).unwrap();
+        drop(open);
+        let mut reopened =
+            CtxSession::open(&id, Some(project.path()), config(Storage::Promote, 1)).unwrap();
+        let sources = reopened.list().unwrap();
+        assert_eq!(sources.len(), 1);
+        assert_eq!(sources[0].source, "after");
     }
 
     #[test]

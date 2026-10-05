@@ -2,6 +2,7 @@ import { beforeEach, expect, it, vi } from "vitest";
 import { terminalManagerFixture as fake } from "./terminal-manager.test-support";
 import { TerminalRouter } from "../../app/terminal-router";
 import { createProjectWindows } from "../../app/project-windows";
+import { closeAllPanes, reloadAllPanes } from "./terminal-batch";
 import type { TerminalSpec } from "./types";
 import type { TerminalLayoutNode } from "./terminal-layout";
 import type { Project, ProjectId } from "../workspaces/state/types";
@@ -194,6 +195,147 @@ it("keeps exited and suspended configurations in the released and restored grid"
   );
   await router.dispose(project.id);
 });
+
+it("release drains the entire reload before taking the handoff inventory", async () => {
+  const router = new TerminalRouter({ onPersistSpecs: vi.fn(), onPersistLayout: vi.fn() });
+  const manager = router.getOrCreate(project);
+  await manager.addPane({ title: "one", cwd: "/one" });
+  await manager.addPane({ title: "two", cwd: "/two" });
+  const gate = deferred();
+  const pane = manager.get("pty-1")!;
+  const dispose = pane.dispose.bind(pane);
+  vi.spyOn(pane, "dispose").mockImplementation(async (opts) => {
+    await gate.promise;
+    await dispose(opts);
+  });
+  const reloading = reloadAllPanes(manager);
+  const releasing = router.release(project.id);
+  gate.resolve();
+  await reloading;
+  const grid = await releasing;
+  expect(grid?.specs.map((spec) => spec.title)).toEqual(["one", "two"]);
+  expect(grid?.specs.map((spec) => spec.cwd)).toEqual(["/one", "/two"]);
+  expect(fake.attachCalls).toHaveLength(4);
+  expect(grid?.layout).toEqual({
+    type: "split",
+    axis: "row",
+    ratio: 0.5,
+    first: { type: "pane", paneId: "pty-3" },
+    second: { type: "pane", paneId: "pty-4" },
+  });
+});
+
+it.each([closeAllPanes, reloadAllPanes])(
+  "rejects overlapping batches while reload owns the grid (%#)",
+  async (overlap) => {
+    const router = new TerminalRouter({ onPersistSpecs: vi.fn(), onPersistLayout: vi.fn() });
+    const manager = router.getOrCreate(project);
+    await manager.addPane({ title: "one" });
+    await manager.addPane({ title: "two" });
+    const gate = deferred();
+    const pane = manager.get("pty-1")!;
+    const dispose = pane.dispose.bind(pane);
+    vi.spyOn(pane, "dispose").mockImplementation(async (opts) => {
+      await gate.promise;
+      await dispose(opts);
+    });
+    const reloading = reloadAllPanes(manager);
+    await overlap(manager);
+    expect(manager.ids()).toEqual(["pty-2"]);
+    gate.resolve();
+    await reloading;
+    expect(manager.specs().map((spec) => spec.title)).toEqual(["one", "two"]);
+    expect(fake.attachCalls).toHaveLength(4);
+    await router.dispose(project.id);
+  },
+);
+
+it("release drains every close in an admitted close-all batch", async () => {
+  const router = new TerminalRouter({ onPersistSpecs: vi.fn(), onPersistLayout: vi.fn() });
+  const manager = router.getOrCreate(project);
+  await manager.addPane();
+  await manager.addPane();
+  const closing = closeAllPanes(manager);
+  const releasing = router.release(project.id);
+  await closing;
+  expect((await releasing)?.specs).toEqual([]);
+  expect(fake.disposeCalls.filter((call) => !call.keepPty).map((call) => call.id)).toEqual([
+    "pty-1",
+    "pty-2",
+  ]);
+});
+
+it("deletion cancels a reload without respawning its captured inventory", async () => {
+  const router = new TerminalRouter({ onPersistSpecs: vi.fn(), onPersistLayout: vi.fn() });
+  const manager = router.getOrCreate(project);
+  await manager.addPane();
+  await manager.addPane();
+  const reloading = reloadAllPanes(manager);
+  await router.dispose(project.id);
+  await reloading;
+  expect(manager.ids()).toEqual([]);
+  expect(fake.attachCalls).toHaveLength(2);
+  expect(fake.disposeCalls.map((call) => call.id)).toEqual(["pty-1", "pty-2"]);
+});
+
+it.each([closeAllPanes, reloadAllPanes])(
+  "rejects stale confirmed inventory after a tear-off (%#)",
+  async (batch) => {
+    const router = new TerminalRouter({ onPersistSpecs: vi.fn(), onPersistLayout: vi.fn() });
+    const manager = router.getOrCreate(project);
+    await manager.addPane({ title: "local" });
+    await manager.addPane({ title: "torn" });
+    const ids = manager.ids();
+    await router.tearOff(project.id, "pty-2");
+    await batch(manager, { expectedIds: ids });
+    expect(manager.specs()).toEqual([expect.objectContaining({ id: "pty-1", title: "local" })]);
+    expect(fake.attachCalls).toHaveLength(2);
+    await router.dispose(project.id);
+  },
+);
+
+it.each([closeAllPanes, reloadAllPanes])(
+  "rejects confirmation after the active manager changes (%#)",
+  async (batch) => {
+    const router = new TerminalRouter({ onPersistSpecs: vi.fn(), onPersistLayout: vi.fn() });
+    const manager = router.getOrCreate(project);
+    await manager.addPane();
+    router.mount(project.id, document.createElement("div"));
+    const ids = manager.ids();
+    router.unmount();
+    await batch(manager, { expectedIds: ids, isCurrent: () => router.getActive() === manager });
+    expect(manager.ids()).toEqual(ids);
+    expect(fake.disposeCalls).toEqual([]);
+    await router.dispose(project.id);
+  },
+);
+
+it.each([closeAllPanes, reloadAllPanes])(
+  "local batches preserve torn-window inventory (%#)",
+  async (batch) => {
+    const persist = vi.fn();
+    const router = new TerminalRouter({ onPersistSpecs: persist, onPersistLayout: vi.fn() });
+    const manager = router.getOrCreate(project);
+    await manager.addPane({ title: "local" });
+    await manager.addPane({ title: "external", cwd: "/external" });
+    const windows = await createProjectWindows({
+      router,
+      findProject: () => project,
+      persistSpecs: persist,
+      persistLayout: vi.fn(),
+      onBell: vi.fn(),
+      onReturned: vi.fn(),
+    });
+    await windows.tearOff(project, "pty-2");
+    await batch(manager);
+    expect(persist.mock.lastCall?.[1]).toContainEqual(
+      expect.objectContaining({ id: "pty-2", title: "external", cwd: "/external" }),
+    );
+    expect(fake.disposeCalls).not.toContainEqual({ id: "pty-2" });
+    windows.dispose();
+    await router.dispose(project.id);
+  },
+);
 
 const project: Project = { id: "p1" as ProjectId, name: "project", path: "/repo" };
 it("waits for native creation before closing a project deleted during open", async () => {

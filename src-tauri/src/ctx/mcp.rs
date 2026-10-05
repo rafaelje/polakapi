@@ -366,6 +366,48 @@ mod tests {
     }
 
     #[test]
+    fn project_clear_revokes_the_cached_mcp_session() {
+        let project = tempfile::tempdir().unwrap();
+        let mut server = server(project.path());
+        server.config.storage = Storage::Project;
+        server
+            .session()
+            .unwrap()
+            .offload("before", &"forgotten line\n".repeat(100))
+            .unwrap();
+        assert!(text(&call(
+            &mut server,
+            "ctx_search",
+            json!({"query": "forgotten"})
+        ))
+        .contains("before"));
+        crate::ctx::project_data::clear(project.path()).unwrap();
+        let listed = call(&mut server, "ctx_list", json!({}));
+        assert!(listed.get("error").is_none(), "{listed}");
+        assert!(text(&listed).contains("Nothing offloaded"));
+        let read = call(
+            &mut server,
+            "ctx_read",
+            json!({"source": "before", "section": 0}),
+        );
+        assert_eq!(
+            read.pointer("/error/message").and_then(Value::as_str),
+            Some("no section 0 in before")
+        );
+        server
+            .session()
+            .unwrap()
+            .offload("after", &"retained line\n".repeat(100))
+            .unwrap();
+        let mut resumed = Server::new(
+            server.session_id.clone(),
+            Some(project.path().to_path_buf()),
+            server.config.clone(),
+        );
+        assert!(text(&call(&mut resumed, "ctx_list", json!({}))).contains("after"));
+    }
+
+    #[test]
     fn initialize_reports_tool_capability() {
         let project = tempfile::tempdir().unwrap();
         let mut server = server(project.path());

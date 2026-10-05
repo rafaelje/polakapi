@@ -87,6 +87,9 @@ export class TerminalManager {
   freeze(): Promise<boolean> {
     return this.lifecycle.freeze();
   }
+  runBatch(operation: () => Promise<void>): Promise<void> {
+    return this.lifecycle.runBatch(operation);
+  }
   thaw(): void {
     this.lifecycle.thaw();
   }

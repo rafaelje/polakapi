@@ -1,3 +1,4 @@
+mod identity;
 mod process;
 mod transcript;
 
@@ -13,6 +14,7 @@ use crate::db::Db;
 use crate::platform_command;
 use crate::pty::PtyStore;
 
+pub use identity::ContextIdentity;
 pub use process::ProcessStats;
 pub use transcript::{ContextBreakdown, ContextEntry, SearchHit};
 
@@ -55,6 +57,7 @@ pub struct AgentSummary {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ContextDetail {
+    pub identity: ContextIdentity,
     pub summary: AgentSummary,
     pub breakdown: ContextBreakdown,
     pub entries: Vec<ContextEntry>,
@@ -101,54 +104,67 @@ pub fn agent_context_detail(
         .get(&pane.pty_id)
         .copied()
         .unwrap_or_default();
-    let summary = summarize(&pane.pty_id, &pane.cli, pane.cwd.as_deref(), &db, stats);
+    let identity = context_identity(&pane.pty_id, pane.cwd.as_deref(), &db);
+    identity::read_bound(
+        &identity,
+        || context_identity(&pane.pty_id, pane.cwd.as_deref(), &db),
+        |path| {
+            let summary = summarize(&pane.pty_id, &pane.cli, pane.cwd.as_deref(), &db, stats);
 
-    if pane.cli != "claude" {
-        return Ok(ContextDetail {
-            summary,
-            breakdown: ContextBreakdown::default(),
-            entries: Vec::new(),
-            note: Some(format!(
-                "Reading context content is implemented for Claude Code only. \
+            if pane.cli != "claude" {
+                return Ok(ContextDetail {
+                    identity: identity.clone(),
+                    summary,
+                    breakdown: ContextBreakdown::default(),
+                    entries: Vec::new(),
+                    note: Some(format!(
+                        "Reading context content is implemented for Claude Code only. \
                  {} writes a transcript in a layout polakapi has not verified yet.",
-                pane.cli
-            )),
-        });
-    }
+                        pane.cli
+                    )),
+                });
+            }
 
-    let Some(path) = claude_transcript(&pane.pty_id, pane.cwd.as_deref(), &db) else {
-        let session = current_session(&pane.pty_id, &db);
-        return Ok(ContextDetail {
-            summary,
-            breakdown: ContextBreakdown::default(),
-            entries: Vec::new(),
-            // Two different situations, and saying which one saves the user
-            // from reading an empty panel as a failure.
-            note: Some(match session {
-                Some(session) => format!(
+            let Some(path) = path else {
+                let session = identity.session_id.clone();
+                return Ok(ContextDetail {
+                    identity: identity.clone(),
+                    summary,
+                    breakdown: ContextBreakdown::default(),
+                    entries: Vec::new(),
+                    // Two different situations, and saying which one saves the user
+                    // from reading an empty panel as a failure.
+                    note: Some(match session {
+                        Some(session) => format!(
                     "Session {session} has not written anything yet — it starts empty after \
                      /clear or a fresh start. Its content appears here after the first exchange."
                 ),
-                None => "No session recorded for this terminal yet. It appears once the agent \
+                        None => {
+                            "No session recorded for this terminal yet. It appears once the agent \
                          starts, which needs the polakapi hooks enabled in Settings."
-                    .to_string(),
-            }),
-        });
-    };
-    let Some(parsed) = transcript::parse(&path) else {
-        return Ok(ContextDetail {
-            summary,
-            breakdown: ContextBreakdown::default(),
-            entries: Vec::new(),
-            note: Some(format!("Could not read {}", path.display())),
-        });
-    };
-    Ok(ContextDetail {
-        summary,
-        breakdown: parsed.breakdown,
-        entries: parsed.entries,
-        note: None,
-    })
+                                .to_string()
+                        }
+                    }),
+                });
+            };
+            let Some(parsed) = transcript::parse(path) else {
+                return Ok(ContextDetail {
+                    identity: identity.clone(),
+                    summary,
+                    breakdown: ContextBreakdown::default(),
+                    entries: Vec::new(),
+                    note: Some(format!("Could not read {}", path.display())),
+                });
+            };
+            Ok(ContextDetail {
+                identity: identity.clone(),
+                summary,
+                breakdown: parsed.breakdown,
+                entries: parsed.entries,
+                note: None,
+            })
+        },
+    )
 }
 
 /// Regex search across the full entry bodies. Runs in Rust because the listing
@@ -160,16 +176,21 @@ pub fn agent_context_search(
     db: State<'_, StdMutex<Db>>,
     pty_id: String,
     pattern: String,
+    identity: ContextIdentity,
 ) -> Result<Vec<SearchHit>, String> {
     let pane = store
         .agent_panes()
         .into_iter()
         .find(|pane| pane.pty_id == pty_id)
         .ok_or_else(|| format!("no running agent for pane {pty_id}"))?;
-    let Some(path) = claude_transcript(&pane.pty_id, pane.cwd.as_deref(), &db) else {
-        return Ok(Vec::new());
-    };
-    transcript::search(&path, &pattern)
+    identity::read_bound(
+        &identity,
+        || context_identity(&pane.pty_id, pane.cwd.as_deref(), &db),
+        |path| match path {
+            Some(path) => transcript::search(path, &pattern),
+            None => Ok(Vec::new()),
+        },
+    )
 }
 
 /// Full text of one entry, fetched on demand so the listing stays small.
@@ -179,16 +200,18 @@ pub fn agent_context_entry(
     db: State<'_, StdMutex<Db>>,
     pty_id: String,
     entry_id: usize,
+    identity: ContextIdentity,
 ) -> Result<Option<String>, String> {
     let pane = store
         .agent_panes()
         .into_iter()
         .find(|pane| pane.pty_id == pty_id)
         .ok_or_else(|| format!("no running agent for pane {pty_id}"))?;
-    let Some(path) = claude_transcript(&pane.pty_id, pane.cwd.as_deref(), &db) else {
-        return Ok(None);
-    };
-    Ok(transcript::entry_body(&path, entry_id))
+    identity::read_bound(
+        &identity,
+        || context_identity(&pane.pty_id, pane.cwd.as_deref(), &db),
+        |path| Ok(path.and_then(|path| transcript::entry_body(path, entry_id))),
+    )
 }
 
 fn summarize(
@@ -395,18 +418,18 @@ fn claude_transcript(
     cwd: Option<&str>,
     db: &State<'_, StdMutex<Db>>,
 ) -> Option<PathBuf> {
-    let dir = platform_command::user_home_dir()?
-        .join(".claude")
-        .join("projects")
-        .join(cwd_slug(cwd?));
-    let session_id = current_session(pty_id, db);
-    // When the session is known, only its own transcript will do. A session
-    // that has not written one yet (a fresh `/clear`) shows as empty rather than
-    // borrowing the previous session's, which is what the newest file would be.
-    match session_id {
-        Some(id) => Some(dir.join(format!("{id}.jsonl"))).filter(|path| path.is_file()),
-        None => newest_jsonl(&dir),
-    }
+    context_identity(pty_id, cwd, db).transcript_path
+}
+
+fn context_identity(
+    pty_id: &str,
+    cwd: Option<&str>,
+    db: &State<'_, StdMutex<Db>>,
+) -> ContextIdentity {
+    let dir = platform_command::user_home_dir()
+        .zip(cwd)
+        .map(|(home, cwd)| home.join(".claude").join("projects").join(cwd_slug(cwd)));
+    identity::resolve(dir.as_deref(), current_session(pty_id, db))
 }
 
 fn newest_jsonl(dir: &Path) -> Option<PathBuf> {
@@ -489,6 +512,32 @@ fn codex_cwd(path: &Path) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn detail_carries_transcript_identity() {
+        let detail = ContextDetail {
+            identity: ContextIdentity::default(),
+            summary: AgentSummary {
+                pty_id: "fixture".into(),
+                cli: "claude".into(),
+                cwd: None,
+                project: None,
+                model: None,
+                context_tokens: 0,
+                context_limit: 0,
+                readable: false,
+                process: ProcessStats::default(),
+            },
+            breakdown: ContextBreakdown::default(),
+            entries: Vec::new(),
+            note: None,
+        };
+        let wire = serde_json::to_value(detail).unwrap();
+        assert!(
+            wire.get("identity").is_some(),
+            "detail must bind later reads to its transcript"
+        );
+    }
 
     #[test]
     fn slugs_cwd_like_claude_code_does() {
