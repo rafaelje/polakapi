@@ -88,7 +88,12 @@ pub fn sync_cursor(path: &Path, bin: &str, enabled: bool) -> Result<bool, String
     sync_file(path, bin, enabled, Format::Cursor)
 }
 
+// Serialize the entire read/modify/replace transaction, including aliases of a
+// symlinked file. This is process-local; it does not lock out CLI readers.
+static SETTINGS_SYNC: parking_lot::Mutex<()> = parking_lot::Mutex::new(());
+
 fn sync_file(path: &Path, bin: &str, enabled: bool, format: Format) -> Result<bool, String> {
+    let _guard = SETTINGS_SYNC.lock();
     let original = match std::fs::read_to_string(path) {
         Ok(text) if !text.trim().is_empty() => Some(text),
         Ok(_) => None,
@@ -337,9 +342,40 @@ fn write_atomically(path: &Path, text: &str) -> Result<(), String> {
             )
         })?;
     }
-    temp.persist(&target)
-        .map(|_| ())
-        .map_err(|e| format!("could not replace {}: {e}", target.display()))
+    // NamedTempFile::persist keeps its writable handle open across publication.
+    // Close it first, retaining TempPath's cleanup ownership on every failure.
+    persist_settings(temp.into_temp_path(), &target)
+}
+
+fn persist_settings(temp: tempfile::TempPath, target: &Path) -> Result<(), String> {
+    #[cfg(not(windows))]
+    return temp
+        .persist(target)
+        .map_err(|error| format!("could not replace {}: {error}", target.display()));
+    #[cfg(windows)]
+    {
+        let mut temp = temp;
+        let mut retries = 0;
+        loop {
+            match temp.persist(target) {
+                Ok(()) => return Ok(()),
+                Err(error) => {
+                    // MoveFileExW replacement can lose a race with another process's
+                    // open/delete/rename. Retry only Windows access/sharing conflicts
+                    // with 50 retries spaced 10 ms apart; permanent failures
+                    // still return an error.
+                    #[cfg(windows)]
+                    if matches!(error.error.raw_os_error(), Some(5 | 32)) && retries < 50 {
+                        temp = error.path;
+                        retries += 1;
+                        std::thread::sleep(std::time::Duration::from_millis(10));
+                        continue;
+                    }
+                    return Err(format!("could not replace {}: {error}", target.display()));
+                }
+            }
+        }
+    }
 }
 
 #[cfg(test)]

@@ -108,6 +108,70 @@ fn concurrent_hook_syncs_publish_whole_json_without_temporary_files() {
     }
 }
 
+#[cfg(windows)]
+#[test]
+fn atomic_replacement_retries_a_short_lived_windows_handle_conflict() {
+    use std::os::windows::fs::OpenOptionsExt;
+    let home = tempfile::tempdir().unwrap();
+    let path = home.path().join("settings.json");
+    std::fs::write(&path, "{\"old\":true}").unwrap();
+    let reader = std::fs::OpenOptions::new()
+        .read(true)
+        .share_mode(1) // FILE_SHARE_READ, intentionally no FILE_SHARE_DELETE.
+        .open(&path)
+        .unwrap();
+    let release = std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        drop(reader);
+    });
+    write_atomically(&path, "{\"new\":true}\n").unwrap();
+    release.join().unwrap();
+    assert_eq!(read(&path), json!({"new": true}));
+    assert_eq!(std::fs::read_dir(home.path()).unwrap().count(), 1);
+}
+
+#[cfg(windows)]
+#[test]
+fn persistent_windows_handle_conflict_returns_error_and_cleans_up() {
+    use std::os::windows::fs::OpenOptionsExt;
+    let home = tempfile::tempdir().unwrap();
+    let path = home.path().join("settings.json");
+    std::fs::write(&path, "{\"old\":true}").unwrap();
+    let _reader = std::fs::OpenOptions::new()
+        .read(true)
+        .share_mode(1)
+        .open(&path)
+        .unwrap();
+    assert!(write_atomically(&path, "{\"new\":true}\n").is_err());
+    assert_eq!(read(&path), json!({"old": true}));
+    assert_eq!(std::fs::read_dir(home.path()).unwrap().count(), 1);
+}
+
+#[test]
+fn concurrent_identical_syncs_change_settings_only_once() {
+    use std::sync::{Arc, Barrier};
+    let home = tempfile::tempdir().unwrap();
+    let path = home.path().join("settings.json");
+    std::fs::write(&path, "{\"custom\":true}").unwrap();
+    let barrier = Arc::new(Barrier::new(8));
+    let writers: Vec<_> = (0..8)
+        .map(|_| {
+            let path = path.clone();
+            let barrier = barrier.clone();
+            std::thread::spawn(move || {
+                barrier.wait();
+                sync(&path, "/opt/polakapi", true).unwrap()
+            })
+        })
+        .collect();
+    let changed = writers
+        .into_iter()
+        .filter_map(|writer| writer.join().unwrap().then_some(()))
+        .count();
+    assert_eq!(changed, 1);
+    assert_eq!(read(&path)["custom"], true);
+}
+
 #[cfg(unix)]
 #[test]
 fn dangling_settings_symlinks_are_never_replaced() {
