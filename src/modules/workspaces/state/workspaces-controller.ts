@@ -120,6 +120,15 @@ export class WorkspacesController {
     return this.state.workspaces[before] ?? null;
   }
 
+  /** Non-interactive counterpart of `createWorkspaceInteractive`. */
+  createWorkspace(name: string): Workspace | null {
+    const trimmed = name.trim();
+    if (!trimmed) return null;
+    const before = this.state.workspaces.length;
+    this.commit(addWorkspace(this.state, trimmed));
+    return this.state.workspaces[before] ?? null;
+  }
+
   renameWorkspace(id: WorkspaceId, name: string): void {
     const trimmed = name.trim();
     if (!trimmed) return;

@@ -8,7 +8,8 @@ use tauri::State;
 
 use crate::pty::PtyStore;
 
-const ALLOWED_AI_CLI_BASENAMES: &[&str] = &["claude", "codex", "opencode", "cursor-agent"];
+const ALLOWED_AI_CLI_BASENAMES: &[&str] =
+    &["claude", "codex", "opencode", "cursor-agent", "gemini"];
 
 /// Keep capture attribution and the live agent-pane inventory on the same allowlist.
 pub(crate) fn ai_cli_basename(command: &str) -> Option<String> {

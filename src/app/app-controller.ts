@@ -27,6 +27,9 @@ import {
   mountCommandPalette,
   type CommandPaletteHandle,
 } from "../modules/workspaces/command-palette/command-palette";
+import { AdversarialRunner } from "../modules/app-agent/adversarial-runner";
+import { mountControlBridge, type ControlBridgeHandle } from "../modules/app-agent/control-bridge";
+import { createToolRegistry } from "../modules/app-agent/tools/registry";
 import { mountBottomPanel, type BottomPanelHandle } from "../modules/bottom-panel/bottom-panel";
 import { isBottomTab } from "../modules/bottom-panel/types";
 import { mountUsageToolbar, type UsageToolbarHandle } from "../modules/usage/usage-toolbar";
@@ -87,6 +90,7 @@ export class AppController {
   private workspaces: WorkspacesBootstrapHandle | null = null;
   private palette: CommandPaletteHandle | null = null;
   private bottomPanel: BottomPanelHandle | null = null;
+  private controlBridge: ControlBridgeHandle | null = null;
   private usageToolbar: UsageToolbarHandle | null = null;
   private updateIndicator: UpdateIndicatorHandle | null = null;
   private loopButton: LoopButtonHandle | null = null;
@@ -141,6 +145,8 @@ export class AppController {
     this.bottomPanel = mountBottomPanel({
       initialTab: isBottomTab(layout.activeBottomTab) ? layout.activeBottomTab : "notes",
       onTabChange: (tab) => queueSave({ activeBottomTab: tab }),
+      initialAgentCli: layout.agentCli,
+      onAgentCliChange: (cli) => queueSave({ agentCli: cli }),
     });
     const usageHost = document.getElementById("usage-indicators");
     if (usageHost) {
@@ -203,6 +209,17 @@ export class AppController {
 
     this.wireMemoryGuard(layout);
 
+    // The operator agent's tools act on the controller and router, so the
+    // bridge only opens once both exist. Until then the Rust side answers
+    // every tool call with "not ready".
+    this.controlBridge = await mountControlBridge(
+      createToolRegistry({
+        getController: () => this.workspaces?.controller ?? null,
+        router: this.router,
+        adversarial: new AdversarialRunner(),
+      }),
+    );
+
     // Wire the quit hook *after* workspaces is ready so the modal can resolve
     // project names by looking the controller's state up at confirm time.
     const workspaces = this.workspaces;
@@ -243,6 +260,13 @@ export class AppController {
     this.usageToolbar = null;
     this.updateIndicator?.dispose();
     this.updateIndicator = null;
+    const controlBridge = this.controlBridge;
+    this.controlBridge = null;
+    if (controlBridge) {
+      void controlBridge.dispose().catch((error) => {
+        console.error("Failed to dispose control bridge", error);
+      });
+    }
     const bottomPanel = this.bottomPanel;
     this.bottomPanel = null;
     if (bottomPanel) {

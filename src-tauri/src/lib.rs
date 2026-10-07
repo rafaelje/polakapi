@@ -4,6 +4,7 @@
 mod adv_review;
 mod agent_context;
 mod agent_sessions;
+pub mod app_control;
 mod app_menu;
 mod awake;
 pub mod capture;
@@ -16,6 +17,7 @@ mod git_review;
 mod git_worktree;
 mod loop_cli;
 mod loop_prompts;
+mod mcp_stdio;
 mod memory;
 mod memory_review;
 mod notification_command;
@@ -50,6 +52,9 @@ use crate::agent_context::{
     agent_context_detail, agent_context_entry, agent_context_list, agent_context_search,
 };
 use crate::agent_sessions::agent_list_sessions;
+use crate::app_control::{
+    agent_cli_detect, agent_home_prepare, app_control_respond, app_control_set_ready,
+};
 use crate::commands::{
     app_exit, create_project_folder, fs_validate_path, open_file_in_editor, open_in_editor,
     open_in_explorer, open_in_shell, open_local_path, open_url, pty_attach, pty_kill, pty_resize,
@@ -149,6 +154,16 @@ pub fn run() {
                 app.manage(notifications::SoundPlayback::default());
                 app.manage(notification_command::NotificationCommandState::default());
                 app.manage(AwakeState::default());
+                // The operator agent's MCP server reaches the app through this
+                // loopback channel; without it the agent tab still opens but
+                // every tool call reports the app as unreachable.
+                match app_control::server::start(app.handle()) {
+                    Ok(server) => app.manage(server),
+                    Err(error) => {
+                        eprintln!("polakapi: could not start agent control server: {error}");
+                        false
+                    }
+                };
                 // Ephemeral context stores whose pane died never clean up after
                 // themselves, and temp directories survive reboots.
                 if let Err(error) =
@@ -203,6 +218,10 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             agent_list_sessions,
+            agent_cli_detect,
+            agent_home_prepare,
+            app_control_respond,
+            app_control_set_ready,
             agent_context_list,
             agent_context_detail,
             agent_context_entry,
