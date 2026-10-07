@@ -33,6 +33,12 @@ vi.mock("../modules/terminal/terminal-manager", () => ({
       return () => undefined;
     }
     setNotificationContext(): void {}
+    waitForHandoff(): Promise<void> {
+      return Promise.resolve();
+    }
+    freeze(): Promise<boolean> {
+      return Promise.resolve(true);
+    }
     ids(): string[] {
       return [];
     }

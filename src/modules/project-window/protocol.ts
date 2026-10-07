@@ -27,6 +27,7 @@ export interface ProjectWindowPayload {
 
 /** Sent with PROJECT_WINDOW_ADOPT_EVENT. */
 export interface AdoptedPane {
+  adoptionId: string;
   spec: TerminalSpec;
   snapshot: PaneSnapshot | null;
 }
@@ -47,6 +48,9 @@ export interface ProjectWindowUpdate {
   specs?: TerminalSpec[];
   layout?: TerminalLayoutNode | null;
   liveCount?: number;
+  closing?: boolean;
+  /** Confirmed only after the requested panes have finished attaching. */
+  adopted?: string[];
   bell?: { paneId: string; pending: boolean };
   /** Sent while the window closes, so the panes come back looking the same. */
   snapshots?: PaneSnapshots;
@@ -61,6 +65,12 @@ export function isProjectWindowUpdate(value: unknown): value is ProjectWindowUpd
   if (typeof value.windowId !== "string") return false;
   if ("specs" in value && !Array.isArray(value.specs)) return false;
   if ("liveCount" in value && typeof value.liveCount !== "number") return false;
+  if ("closing" in value && typeof value.closing !== "boolean") return false;
+  if (
+    "adopted" in value &&
+    (!Array.isArray(value.adopted) || value.adopted.some((id) => typeof id !== "string"))
+  )
+    return false;
   if ("snapshots" in value && !isRecord(value.snapshots)) return false;
   if ("bell" in value) {
     const bell = value.bell;
@@ -75,5 +85,10 @@ export function isProjectWindowClosed(value: unknown): value is { windowId: stri
 }
 
 export function isAdoptedPane(value: unknown): value is AdoptedPane {
-  return isRecord(value) && isRecord(value.spec) && typeof value.spec.id === "string";
+  return (
+    isRecord(value) &&
+    typeof value.adoptionId === "string" &&
+    isRecord(value.spec) &&
+    typeof value.spec.id === "string"
+  );
 }

@@ -43,6 +43,8 @@ function router() {
     }),
     adoptPanes: vi.fn().mockResolvedValue(true),
     setExternalCount: vi.fn(),
+    setExternalSpecs: vi.fn(),
+    setExternalLayout: vi.fn(),
   };
 }
 
@@ -119,8 +121,8 @@ describe("a project's whole grid in its own window", () => {
       bell: { paneId: "pty-b", pending: true },
     });
 
-    expect(deps.persistSpecs).toHaveBeenCalledWith(project.id, specs);
-    expect(deps.persistLayout).toHaveBeenCalledWith(project.id, layout);
+    expect(fakeRouter.setExternalSpecs).toHaveBeenCalledWith("p1", project.id, specs);
+    expect(fakeRouter.setExternalLayout).toHaveBeenCalledWith("p1", project.id, layout);
     expect(fakeRouter.setExternalCount).toHaveBeenLastCalledWith("p1", project.id, 2);
     expect(deps.onBell).toHaveBeenCalledWith(project.id, "pty-b", true);
 
@@ -182,7 +184,7 @@ describe("a terminal dragged out of the grid", () => {
   });
 
   it("never overwrites the project's saved terminals with the lone pane", async () => {
-    const { windows, deps } = await setup();
+    const { windows, deps, fakeRouter } = await setup();
     await windows.tearOff(project, "pty-b");
     events.fire("project-window:update", {
       windowId: "p1--pty-b",
@@ -192,6 +194,9 @@ describe("a terminal dragged out of the grid", () => {
     });
     expect(deps.persistSpecs).not.toHaveBeenCalled();
     expect(deps.persistLayout).not.toHaveBeenCalled();
+    expect(fakeRouter.setExternalSpecs).toHaveBeenLastCalledWith("p1--pty-b", project.id, [
+      { id: "pty-b" },
+    ]);
   });
 
   it("goes back into the project's grid when its window closes", async () => {
@@ -218,10 +223,71 @@ describe("a terminal dragged out of the grid", () => {
 
     await vi.waitFor(() => expect(emitTo).toHaveBeenCalled());
     expect(emitTo).toHaveBeenCalledWith("project-p1", "project-window:adopt", {
+      adoptionId: expect.any(String) as string,
       spec: { id: "pty-b", cliId: "codex", title: "api" },
       snapshot: SNAPSHOT,
     });
     expect(fakeRouter.adoptPanes).not.toHaveBeenCalled();
+  });
+
+  it("retains every returning pane before waiting for transport to a closing target", async () => {
+    const { windows, fakeRouter } = await setup();
+    await windows.tearOff(project, "pty-b");
+    await windows.detach(project);
+    events.fire("project-window:update", {
+      windowId: "p1--pty-b",
+      projectId: "p1",
+      specs: [{ id: "pty-b" }, { id: "pty-c" }],
+      snapshots: { "pty-b": SNAPSHOT, "pty-c": { ...SNAPSHOT, screen: "final c", exited: true } },
+    });
+    let deliver!: () => void;
+    vi.mocked(emitTo).mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          deliver = resolve;
+        }),
+    );
+    events.fire("project-window:closed", { windowId: "p1--pty-b" });
+    await vi.waitFor(() => expect(emitTo).toHaveBeenCalled());
+    events.fire("project-window:update", {
+      windowId: "p1",
+      projectId: "p1",
+      closing: true,
+      specs: [{ id: "pty-a" }],
+      snapshots: {},
+    });
+    events.fire("project-window:closed", { windowId: "p1" });
+    await vi.waitFor(() => expect(fakeRouter.adopt).toHaveBeenCalled());
+    deliver();
+    expect(fakeRouter.adopt.mock.lastCall?.[1]).toMatchObject({
+      specs: [{ id: "pty-a" }, { id: "pty-b" }, { id: "pty-c" }],
+      snapshots: { "pty-b": SNAPSHOT, "pty-c": { screen: "final c", exited: true } },
+    });
+  });
+
+  it("keeps ownership and clears the torn source even when adoption transport rejects", async () => {
+    const { windows, fakeRouter } = await setup();
+    await windows.tearOff(project, "pty-b");
+    await windows.detach(project);
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.mocked(emitTo).mockRejectedValueOnce(new Error("target is closing"));
+    events.fire("project-window:closed", { windowId: "p1--pty-b" });
+    await vi.waitFor(() =>
+      expect(fakeRouter.setExternalSpecs).toHaveBeenCalledWith("p1--pty-b", project.id, null),
+    );
+    events.fire("project-window:update", {
+      windowId: "p1",
+      projectId: "p1",
+      specs: [{ id: "pty-a" }],
+      snapshots: {},
+    });
+    events.fire("project-window:closed", { windowId: "p1" });
+    await vi.waitFor(() => expect(fakeRouter.adopt).toHaveBeenCalled());
+    expect(fakeRouter.adopt.mock.lastCall?.[1]).toMatchObject({
+      specs: [{ id: "pty-a" }, { id: "pty-b" }],
+      snapshots: { "pty-b": SNAPSHOT },
+    });
+    error.mockRestore();
   });
 
   it("does nothing for a terminal that is not in the grid", async () => {

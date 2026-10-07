@@ -148,4 +148,32 @@ describe("context mode section", () => {
       expect(saveContextMode).toHaveBeenCalledWith(expect.objectContaining({ bypassKb: 1024 })),
     );
   });
+
+  it("raises the externalize threshold above a larger bypass before saving", async () => {
+    await mount({ enabled: true, bypassKb: 4, externalizeKb: 100 });
+    const bypass = control<HTMLInputElement>("Skip output under");
+    bypass.value = "200";
+    bypass.dispatchEvent(new Event("change"));
+
+    expect(control<HTMLInputElement>("Externalize output over").value).toBe("201");
+    await vi.waitFor(() =>
+      expect(saveContextMode).toHaveBeenCalledWith(
+        expect.objectContaining({ bypassKb: 200, externalizeKb: 201 }),
+      ),
+    );
+  });
+
+  it("keeps the threshold in effect when a number field is cleared", async () => {
+    await mount({ enabled: true, promoteAfterSources: 25, storage: "promote" });
+    const promoteAfter = control<HTMLInputElement>("Persist after");
+    promoteAfter.value = "";
+    promoteAfter.dispatchEvent(new Event("change"));
+
+    expect(promoteAfter.value).toBe("25");
+    await vi.waitFor(() =>
+      expect(saveContextMode).toHaveBeenCalledWith(
+        expect.objectContaining({ promoteAfterSources: 25 }),
+      ),
+    );
+  });
 });

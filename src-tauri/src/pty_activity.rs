@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet};
+use std::path::Path;
 use std::sync::Arc;
 
 use serde::Serialize;
@@ -6,6 +7,33 @@ use sysinfo::{ProcessesToUpdate, System};
 use tauri::State;
 
 use crate::pty::PtyStore;
+
+const ALLOWED_AI_CLI_BASENAMES: &[&str] = &["claude", "codex", "opencode", "cursor-agent"];
+
+/// Keep capture attribution and the live agent-pane inventory on the same allowlist.
+pub(crate) fn ai_cli_basename(command: &str) -> Option<String> {
+    if command.contains('\0') {
+        return None;
+    }
+    let basename = Path::new(command)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or(command)
+        .to_ascii_lowercase();
+    ALLOWED_AI_CLI_BASENAMES
+        .contains(&basename.as_str())
+        .then_some(basename)
+}
+
+/// A live pane running an AI CLI. Enough for the /context window to locate the
+/// pane's transcript without reaching into the main window's state.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentPane {
+    pub pty_id: String,
+    pub cli: String,
+    pub cwd: Option<String>,
+}
 
 // Answers "is anything actually running inside this pane?" so closing a batch
 // of terminals can warn about the ones doing work.

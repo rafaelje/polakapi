@@ -1,11 +1,18 @@
 import {
   CONTEXT_MODE_CLIS,
   loadContextMode,
+  normalizeContextMode,
   saveContextMode,
   type ContextModePreferences,
 } from "./context-mode-preferences";
 import { openContextModeInfo } from "./context-mode-info";
-import { settingsNumber, settingsRow, settingsSelect, settingsToggle } from "./controls";
+import {
+  setSettingsNumber,
+  settingsNumber,
+  settingsRow,
+  settingsSelect,
+  settingsToggle,
+} from "./controls";
 
 // The "Context Mode" settings section. Owns nothing but the configuration:
 // which agent CLIs route their tool output into a local store, and whether that
@@ -33,7 +40,9 @@ export async function mountContextModeSection(opts: ContextModeSectionOptions): 
   let saving = Promise.resolve();
 
   function save(patch: Partial<ContextModePreferences>): void {
-    preferences = { ...preferences, ...patch };
+    // Normalized before saving so the hooks, the controls and the info dialog
+    // all see the thresholds that are actually in effect.
+    preferences = normalizeContextMode({ ...preferences, ...patch });
     const snapshot = { ...preferences };
     // Hooks are synced only after the file is written: the sync reads the saved
     // settings, so running it earlier would install yesterday's choice.
@@ -123,6 +132,8 @@ export async function mountContextModeSection(opts: ContextModeSectionOptions): 
     storage.disabled = !on;
     bypass.disabled = !on;
     externalize.disabled = !on;
+    setSettingsNumber(bypass, preferences.bypassKb);
+    setSettingsNumber(externalize, preferences.externalizeKb);
     // Only the promote mode has anything to promote after.
     promoteAfter.disabled = !on || preferences.storage !== "promote";
   }

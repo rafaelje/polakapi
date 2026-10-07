@@ -149,10 +149,10 @@ than promise one behaviour for four targets.
 
 | CLI | Hooks in polakapi today | `PreToolUse` | Can rewrite tool input | Enforcement available |
 | --- | --- | --- | --- | --- |
-| **claude** | 8 events, `~/.claude/settings.json` | not installed yet, supported | yes (`updatedInput`) — *verify* | **hard**: deny + rewrite |
+| **claude** | 8 events + context mode's pre-tool-use / session-start, `~/.claude/settings.json` | installed by context mode | yes (`updatedInput`) — verified | **hard**: rewrite |
 | **codex** | 4 events, `~/.codex/hooks.json` | not installed yet | no — deny-only (openai/codex#18491) | **medium**: deny + reason |
 | **opencode** | none | n/a | n/a | **soft**: MCP + instructions |
-| **cursor-agent** | none | undocumented for the CLI binary | unknown | **soft**: MCP + instructions |
+| **cursor-agent** | context mode's `preToolUse` / `sessionStart`, `~/.cursor/hooks.json` | installed by context mode | yes (`updated_input`) — verified on 2026.09.15 (§0) | **hard**: rewrite |
 
 Two consequences:
 
@@ -167,7 +167,7 @@ Two consequences:
 
 Also note an existing id mismatch to fix: the registry uses profile id `cursor`
 for binary `cursor-agent` (`cli-registry.ts:17-40`), while
-`prompt_install_hooks` accepts only `"claude"`/`"codex"` (`hooks.rs:27-32`).
+`prompt_install_hooks` accepts only `"claude"`/`"codex"` (`db/hooks.rs`).
 
 ---
 

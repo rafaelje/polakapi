@@ -51,7 +51,13 @@ export interface ContextEntry {
   truncated: boolean;
 }
 
+export interface ContextIdentity {
+  sessionId: string | null;
+  transcriptPath: string | null;
+}
+
 export interface ContextDetail {
+  identity: ContextIdentity;
   summary: AgentSummary;
   breakdown: ContextBreakdown;
   entries: ContextEntry[];

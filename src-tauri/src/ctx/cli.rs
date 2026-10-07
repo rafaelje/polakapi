@@ -184,6 +184,67 @@ fn list() -> Result<String, String> {
 mod tests {
     use super::*;
 
+    #[cfg(unix)]
+    #[test]
+    fn intercepted_bash_preserves_bash_syntax() {
+        let command = r#"cat /dev/null; /usr/bin/printf '%s\n' "${PIPESTATUS[*]}""#;
+        let dir = tempfile::tempdir().unwrap();
+        let bin = dir.path().join("polakapi");
+        std::fs::write(&bin, "#!/bin/sh\nprintf '%s\\0' \"$@\"\n").unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let env = crate::ctx::hook::HookEnv {
+            target: crate::ctx::hook::Target::Claude,
+            in_polakapi_terminal: true,
+            cli: "claude".into(),
+            config: crate::ctx::config::CtxConfig {
+                enabled: true,
+                clis: vec!["claude".into()],
+                ..Default::default()
+            },
+            bin: bin.to_string_lossy().into_owned(),
+        };
+        let reply = crate::ctx::hook::respond(
+            &serde_json::json!({
+                "hook_event_name": "PreToolUse", "tool_name": "Bash",
+                "tool_input": {"command": command}
+            }),
+            &env,
+        )
+        .unwrap();
+        let rewritten = reply["hookSpecificOutput"]["updatedInput"]["command"]
+            .as_str()
+            .unwrap();
+        let args = std::process::Command::new("sh")
+            .arg("-c")
+            .arg(rewritten)
+            .output()
+            .unwrap()
+            .stdout;
+        let args: Vec<String> = args
+            .split(|byte| *byte == 0)
+            .filter(|arg| !arg.is_empty())
+            .map(|arg| String::from_utf8(arg.to_vec()).unwrap())
+            .collect();
+        temp_env_without_pty(|| {
+            let previous = std::env::var_os("SHELL");
+            std::env::set_var("SHELL", "/bin/dash");
+            let actual = exec(&args[2..]).unwrap();
+            if let Some(previous) = previous {
+                std::env::set_var("SHELL", previous);
+            } else {
+                std::env::remove_var("SHELL");
+            }
+            let direct = std::process::Command::new("bash")
+                .arg("-c")
+                .arg(command)
+                .output()
+                .unwrap();
+            assert_eq!(actual.1, direct.status.code().unwrap());
+            assert_eq!(actual.0, String::from_utf8(direct.stdout).unwrap());
+        });
+    }
+
     #[test]
     fn no_arguments_prints_the_usage() {
         assert!(dispatch(&[]).unwrap().contains("polakapi ctx exec"));

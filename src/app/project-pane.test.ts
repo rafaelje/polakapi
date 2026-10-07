@@ -30,14 +30,14 @@ function project(path = "/tmp/simple-c"): Project {
   };
 }
 
-function mount(isContextModeActive?: () => boolean) {
+function mount() {
   const host = document.createElement("div");
   const grid = document.createElement("div");
   grid.id = "grid";
   host.append(grid);
   document.body.append(host);
   const handlers = callbacks();
-  const pane = mountProjectPane({ host, gridEl: grid, callbacks: handlers, isContextModeActive });
+  const pane = mountProjectPane({ host, gridEl: grid, callbacks: handlers });
   return { host, grid, handlers, pane };
 }
 
@@ -148,19 +148,11 @@ describe("project toolbar", () => {
     expect(handlers.onCloseAll).toHaveBeenCalledOnce();
   });
 
-  it("offers clearing context mode data only while context mode is on", () => {
-    let active = false;
-    const { handlers, pane } = mount(() => active);
+  it("offers clearing context mode data from the actions menu", () => {
+    const { handlers, pane } = mount();
     pane.setActiveProject(project());
-    const actions = document.querySelector<HTMLButtonElement>("#project-actions-menu");
 
-    actions?.click();
-    expect(document.querySelector("#clear-context-data")).toBeNull();
-    actions?.click();
-
-    // Switched on in Settings while the app is running: no reload needed.
-    active = true;
-    actions?.click();
+    document.querySelector<HTMLButtonElement>("#project-actions-menu")?.click();
     menuItem("Clear context mode data…").click();
     expect(handlers.onClearContextData).toHaveBeenCalledOnce();
   });
@@ -175,6 +167,28 @@ describe("project toolbar", () => {
     expect(labels).toContain("⏸ Suspend all");
     expect(labels.some((label) => label.includes("Close all"))).toBe(false);
     expect(labels.some((label) => label.includes("Reload all"))).toBe(false);
+  });
+
+  it("moves the grid to its own window and back from the project actions menu", () => {
+    const { handlers, pane } = mount();
+    pane.setActiveProject(project());
+    const actions = document.querySelector<HTMLButtonElement>("#project-actions-menu")!;
+
+    expect(document.querySelector("#open-in-window")).toBeNull();
+    actions.click();
+    menuItem("Open in window").click();
+    expect(handlers.onOpenInWindow).toHaveBeenCalledOnce();
+
+    pane.setDetached(true);
+    // Nothing can be started here while the terminals live elsewhere.
+    expect(document.querySelector<HTMLButtonElement>("#add-pane")?.disabled).toBe(true);
+    expect(document.querySelector<HTMLButtonElement>("#suspend-all")?.disabled).toBe(true);
+    actions.click();
+    menuItem("Bring back").click();
+    expect(handlers.onBringBack).toHaveBeenCalledOnce();
+
+    pane.setDetached(false);
+    expect(document.querySelector<HTMLButtonElement>("#add-pane")?.disabled).toBe(false);
   });
 
   it("keeps the toolbar focused on terminal controls", () => {

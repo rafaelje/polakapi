@@ -113,12 +113,13 @@ describe("TerminalPane handover between windows", () => {
     expect(written(pane)).toEqual(["a", "c"]);
   });
 
-  it("snapshots its screen with the offset it covers", async () => {
+  it("retains raw output when parser boundary inspection is unavailable", async () => {
     const pane = new TerminalPane();
     pane.ptyId = "pty-1";
     pane.write("x", 12);
     await expect(pane.snapshot()).resolves.toEqual({
-      screen: "\u001b[31mred",
+      screen: "",
+      replay: "x",
       offset: 12,
       cols: 80,
       rows: 24,

@@ -338,7 +338,12 @@ fn pre_tool_use(event: &Value, env: &HookEnv) -> Result<Value, String> {
     // is the same whether the CLI merges or replaces it. No permission decision:
     // the rewritten command goes through the user's normal approval flow.
     let mut updated = input.clone();
-    updated["command"] = Value::String(intercept::rewrite(bin, command, kind));
+    let command = if target == Target::Claude {
+        format!("bash -c {}", intercept::shell_quote(command))
+    } else {
+        command.to_string()
+    };
+    updated["command"] = Value::String(intercept::rewrite(bin, &command, kind));
     Ok(match target {
         Target::Claude => json!({
             "hookSpecificOutput": {
@@ -488,7 +493,8 @@ mod tests {
         assert_eq!(output["hookEventName"], "PreToolUse");
         let command = output["updatedInput"]["command"].as_str().unwrap();
         assert!(command.starts_with("'/opt/polakapi' ctx exec --source 'read:"));
-        assert!(command.ends_with("'git log --oneline'"));
+        assert!(command.contains("bash -c"));
+        assert!(command.contains("git log --oneline"));
         // The description the agent wrote survives the rewrite.
         assert_eq!(output["updatedInput"]["description"], "Show history");
     }
