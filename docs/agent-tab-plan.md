@@ -33,11 +33,18 @@ control bridge (main webview)            control-bridge.ts
   `tools/list` and forwards every `tools/call`. Tool failures come back as
   `isError` content so the model can read the reason and retry.
 - **Loopback TCP with a per-launch token.** The app binds `127.0.0.1:0` at
-  startup and writes `<app_data>/agent-control.json` (`port`, `token`, `pid`,
-  mode 0600). The MCP process re-reads the file on every call, so it survives
-  an app restart. Requests without the token, or while the bridge is not
-  mounted, are refused immediately. TCP rather than a Unix socket keeps
-  Windows on the same code path.
+  startup and writes `<app_data>/agent-control-<pid>.json` (`port`, `token`,
+  `pid`, `exe`, mode 0600). The file is per instance: a dev build running next
+  to the installed one, or an accidental second launch, cannot hijack the
+  servers the first instance registered. Each agent launch points its MCP
+  config at the file of the instance that launched it; the file is removed
+  when the main window closes, and files of dead instances are swept at
+  startup. The MCP process re-reads the file on every call and reports the
+  instance as gone when it is missing or not answering. TCP rather than a Unix
+  socket keeps Windows on the same code path.
+- **Single instance in release builds.** `tauri-plugin-single-instance`
+  focuses the running window when the installed app is launched again. Debug
+  builds skip it so a dev build can run next to the installed one.
 - **Agent home.** The CLI runs in `<app_data>/agent-home/`, not in a project.
   Each launch rewrites the MCP registration for that CLI with the current
   binary path and the instructions (`AGENTS.md`, mirrored as `CLAUDE.md` and

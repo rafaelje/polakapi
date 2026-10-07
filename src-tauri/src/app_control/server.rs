@@ -20,8 +20,15 @@ use tauri::{AppHandle, Emitter, Manager};
 // A per-launch token guards the port. The token is stored next to the app's
 // other data, readable only by the user, and never sent over the wire by the
 // app itself.
+//
+// The file is named after the instance's pid: a second instance (a dev build
+// next to the installed one, or an accidental relaunch) must not hijack the
+// MCP servers of the first. Each agent launch registers the file of the
+// instance that launched it, and stale files of dead instances are swept at
+// startup.
 
-pub const CONTROL_FILE: &str = "agent-control.json";
+const CONTROL_FILE_PREFIX: &str = "agent-control-";
+const CONTROL_FILE_SUFFIX: &str = ".json";
 pub const REQUEST_EVENT: &str = "app-control:request";
 const MAIN_WINDOW: &str = "main";
 const RESPONSE_TIMEOUT: Duration = Duration::from_secs(180);
@@ -49,6 +56,12 @@ impl ControlServer {
 
     pub fn port(&self) -> u16 {
         self.port
+    }
+
+    /// Called when the main window goes away, so a later MCP call reports the
+    /// instance as gone instead of timing out on a dead port.
+    pub fn remove_control_file(&self) {
+        let _ = std::fs::remove_file(&self.file);
     }
 
     /// The webview flips this when its bridge mounts and unmounts, so callers
@@ -80,14 +93,52 @@ impl ControlServer {
     }
 }
 
-pub fn control_file_path(app: &AppHandle) -> Result<PathBuf, String> {
+fn control_dir(app: &AppHandle) -> Result<PathBuf, String> {
     let dir = app
         .path()
         .app_data_dir()
         .map_err(|e| format!("could not resolve app_data_dir: {e}"))?;
     std::fs::create_dir_all(&dir)
         .map_err(|e| format!("could not create {}: {e}", dir.display()))?;
-    Ok(dir.join(CONTROL_FILE))
+    Ok(dir)
+}
+
+pub fn control_file_name(pid: u32) -> String {
+    format!("{CONTROL_FILE_PREFIX}{pid}{CONTROL_FILE_SUFFIX}")
+}
+
+fn pid_from_file_name(name: &str) -> Option<u32> {
+    name.strip_prefix(CONTROL_FILE_PREFIX)?
+        .strip_suffix(CONTROL_FILE_SUFFIX)?
+        .parse()
+        .ok()
+}
+
+fn is_alive(pid: u32) -> bool {
+    let mut system = sysinfo::System::new();
+    system.refresh_processes(
+        sysinfo::ProcessesToUpdate::Some(&[sysinfo::Pid::from_u32(pid)]),
+        true,
+    );
+    system.process(sysinfo::Pid::from_u32(pid)).is_some()
+}
+
+/// Removes control files left behind by instances that are no longer running.
+/// The old single-name file from earlier builds is removed too.
+pub fn sweep_stale(dir: &Path, own_pid: u32) {
+    let _ = std::fs::remove_file(dir.join("agent-control.json"));
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let Some(pid) = name.to_str().and_then(pid_from_file_name) else {
+            continue;
+        };
+        if pid != own_pid && !is_alive(pid) {
+            let _ = std::fs::remove_file(entry.path());
+        }
+    }
 }
 
 /// Binds a loopback port, writes the control file and starts the accept loop.
@@ -103,7 +154,10 @@ pub fn start(app: &AppHandle) -> Result<Arc<ControlServer>, String> {
         uuid::Uuid::new_v4().simple(),
         uuid::Uuid::new_v4().simple()
     );
-    let file = control_file_path(app)?;
+    let dir = control_dir(app)?;
+    let pid = std::process::id();
+    sweep_stale(&dir, pid);
+    let file = dir.join(control_file_name(pid));
     write_control_file(&file, port, &token)?;
 
     let server = Arc::new(ControlServer {
@@ -133,10 +187,14 @@ pub fn start(app: &AppHandle) -> Result<Arc<ControlServer>, String> {
 }
 
 fn write_control_file(path: &Path, port: u16, token: &str) -> Result<(), String> {
+    let exe = std::env::current_exe()
+        .map(|path| path.to_string_lossy().into_owned())
+        .unwrap_or_default();
     let body = serde_json::to_string_pretty(&json!({
         "port": port,
         "token": token,
         "pid": std::process::id(),
+        "exe": exe,
     }))
     .map_err(|e| format!("serialize control file: {e}"))?;
     let mut options = std::fs::OpenOptions::new();
@@ -253,7 +311,7 @@ mod tests {
     #[test]
     fn control_file_is_private_json() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join(CONTROL_FILE);
+        let path = dir.path().join(control_file_name(4242));
         write_control_file(&path, 4321, "tok").unwrap();
         let parsed: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
         assert_eq!(parsed["port"], 4321);
@@ -264,5 +322,25 @@ mod tests {
             let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
             assert_eq!(mode, 0o600);
         }
+    }
+
+    #[test]
+    fn sweep_removes_dead_instances_and_keeps_live_ones() {
+        let dir = tempfile::tempdir().unwrap();
+        let own = std::process::id();
+        let dead = dir.path().join(control_file_name(u32::MAX - 7));
+        let live = dir.path().join(control_file_name(own));
+        let legacy = dir.path().join("agent-control.json");
+        let other = dir.path().join("notes.json");
+        for path in [&dead, &live, &legacy, &other] {
+            std::fs::write(path, "{}").unwrap();
+        }
+        sweep_stale(dir.path(), own);
+        assert!(!dead.exists());
+        assert!(!legacy.exists());
+        assert!(live.exists());
+        assert!(other.exists());
+        assert_eq!(pid_from_file_name("agent-control-12.json"), Some(12));
+        assert_eq!(pid_from_file_name("agent-control.json"), None);
     }
 }

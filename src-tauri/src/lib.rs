@@ -139,7 +139,20 @@ pub fn run() {
     import_user_path();
     let store: Arc<PtyStore> = Arc::new(PtyStore::default());
 
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    // A second launch of the installed app focuses the running window instead
+    // of starting another instance: two instances would restore the same
+    // terminals twice and fight over the agent control channel. Debug builds
+    // keep allowing it so a dev build can run next to the installed one.
+    #[cfg(not(debug_assertions))]
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+        if let Some(window) = app.get_webview_window("main") {
+            let _ = window.unminimize();
+            let _ = window.show();
+            let _ = window.set_focus();
+        }
+    }));
+    builder
         .plugin(tauri_plugin_store::Builder::default().build())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
@@ -211,6 +224,11 @@ pub fn run() {
                 }
                 if window.label() == "main" {
                     store.kill_all();
+                    if let Some(server) =
+                        window.try_state::<Arc<app_control::server::ControlServer>>()
+                    {
+                        server.remove_control_file();
+                    }
                 } else if let Some(windows) = window.try_state::<ProjectWindows>() {
                     project_windows::on_destroyed(window.app_handle(), &windows, window.label());
                 }

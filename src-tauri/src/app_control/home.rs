@@ -2,9 +2,11 @@ use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 use serde_json::{json, Value};
+use std::sync::Arc;
+
 use tauri::{AppHandle, Manager};
 
-use super::server::control_file_path;
+use super::server::ControlServer;
 
 // The operator agent runs in a private directory owned by polakapi rather than
 // in a user's project. Every CLI reads its MCP registration and its
@@ -42,7 +44,10 @@ pub fn prepare(app: &AppHandle, cli: &str) -> Result<LaunchSpec, String> {
         .map_err(|e| format!("resolve current exe: {e}"))?
         .to_string_lossy()
         .into_owned();
-    let control = control_file_path(app)?.to_string_lossy().into_owned();
+    let server = app
+        .try_state::<Arc<ControlServer>>()
+        .ok_or_else(|| "the agent control server is not running".to_string())?;
+    let control = server.control_file().to_string_lossy().into_owned();
     prepare_in(&home, cli, &bin, &control)
 }
 

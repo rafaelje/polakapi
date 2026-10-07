@@ -134,6 +134,6 @@ mod tests {
             .unwrap();
         assert_eq!(response["result"]["isError"], true);
         let text = response["result"]["content"][0]["text"].as_str().unwrap();
-        assert!(text.contains("not running"));
+        assert!(text.contains("no longer running"));
     }
 }

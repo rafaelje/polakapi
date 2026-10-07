@@ -20,6 +20,7 @@ pub struct ControlClient {
 struct Endpoint {
     addr: SocketAddr,
     token: String,
+    pid: Option<u64>,
 }
 
 impl ControlClient {
@@ -33,8 +34,14 @@ impl ControlClient {
 
     pub fn call(&self, method: &str, params: Value) -> Result<Value, String> {
         let endpoint = self.endpoint()?;
-        let stream = TcpStream::connect_timeout(&endpoint.addr, CONNECT_TIMEOUT)
-            .map_err(|_| "polakapi is not running (control port unreachable)".to_string())?;
+        let stream = TcpStream::connect_timeout(&endpoint.addr, CONNECT_TIMEOUT).map_err(|_| {
+            match endpoint.pid {
+                Some(pid) => format!(
+                    "the polakapi instance that launched this agent (pid {pid}) is not answering; restart the agent from the running polakapi"
+                ),
+                None => "polakapi is not running (control port unreachable)".to_string(),
+            }
+        })?;
         stream
             .set_read_timeout(Some(CALL_TIMEOUT))
             .map_err(|e| format!("control socket: {e}"))?;
@@ -69,7 +76,7 @@ impl ControlClient {
 fn read_endpoint(path: &Path) -> Result<Endpoint, String> {
     let raw = std::fs::read_to_string(path).map_err(|_| {
         format!(
-            "polakapi is not running (no control file at {})",
+            "the polakapi instance that launched this agent is no longer running (no control file at {}); restart the agent from the running polakapi",
             path.display()
         )
     })?;
@@ -89,6 +96,7 @@ fn read_endpoint(path: &Path) -> Result<Endpoint, String> {
     Ok(Endpoint {
         addr: SocketAddr::from(([127, 0, 0, 1], port)),
         token,
+        pid: parsed.get("pid").and_then(Value::as_u64),
     })
 }
 
@@ -109,6 +117,6 @@ mod tests {
     #[test]
     fn missing_file_reports_app_not_running() {
         let err = read_endpoint(Path::new("/nonexistent/agent-control.json")).unwrap_err();
-        assert!(err.contains("not running"));
+        assert!(err.contains("no longer running"));
     }
 }
