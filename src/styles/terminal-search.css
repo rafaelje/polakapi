@@ -1,0 +1,128 @@
+.terminal-search {
+  position: absolute;
+  top: 8px;
+  right: 12px;
+  z-index: 10;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  width: min(480px, calc(100% - 24px));
+  box-sizing: border-box;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: 0 4px 16px #0005;
+  font-size: 12px;
+}
+
+.terminal-search[hidden] {
+  display: none;
+}
+
+.terminal-search-field {
+  display: flex;
+  flex: 1 1 240px;
+  align-items: center;
+  min-width: 0;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--bg);
+}
+
+.terminal-search-field:focus-within {
+  border-color: var(--accent);
+}
+
+.terminal-search input {
+  flex: 1;
+  width: 0;
+  min-width: 0;
+  border: none;
+  outline: none;
+  padding: 5px 6px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+}
+
+.terminal-search input[aria-invalid="true"] {
+  color: #ff6b6b;
+}
+
+.terminal-search button {
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.terminal-search button:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--text) 12%, transparent);
+}
+
+.terminal-search button[aria-pressed="true"] {
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.terminal-search button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.terminal-search button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.terminal-search-word {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.terminal-search-controls {
+  display: flex;
+  flex: 1 0 auto;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 2px;
+  max-width: 100%;
+}
+
+.terminal-search-status {
+  min-width: 32px;
+  margin: 0 4px;
+  overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
+}
+
+.terminal-search-highlights {
+  position: absolute;
+  inset: 0;
+  z-index: 7;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.terminal-search-match {
+  position: absolute;
+  box-sizing: border-box;
+  background: #82aaff40;
+  border-bottom: 1px solid #82aaff;
+}
+
+.terminal-search-match.active {
+  background: #ff8c2a55;
+  border: 1px solid #ff8c2a;
+}
