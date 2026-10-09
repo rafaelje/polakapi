@@ -13,6 +13,7 @@
 //! - `projects`: `/projects`, `/active` and project lookup.
 //! - `notify`: agent notifications and permission buttons.
 //! - `turn`: one headless CLI turn and its parsed answer.
+//! - `voice`: voice notes transcribed locally with whisper.cpp.
 
 pub mod actions;
 pub mod api;
@@ -27,6 +28,7 @@ mod projects;
 mod queue;
 mod terminals;
 pub mod turn;
+mod voice;
 
 use std::sync::Arc;
 
@@ -63,6 +65,12 @@ pub async fn telegram_notify(
 #[tauri::command]
 pub fn telegram_status(service: State<'_, Arc<TelegramService>>) -> StatusView {
     service.status()
+}
+
+/// Finds whisper-cli, ffmpeg and a model for voice notes.
+#[tauri::command]
+pub fn telegram_voice_check(service: State<'_, Arc<TelegramService>>) -> Result<String, String> {
+    voice::locate(&service.config()).map(|whisper| whisper.summary())
 }
 
 /// Checks a token with `getMe`. Without one, checks the saved token.

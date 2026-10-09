@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   describeStatus,
   mountTelegramSection,
+  parseNames,
   parseUserIds,
   type TelegramConfigPatch,
   type TelegramConfigView,
@@ -22,16 +23,21 @@ const baseConfig: TelegramConfigView = {
   profile: "readonly",
   turnTimeoutSecs: 600,
   replyStyle: "",
+  addressAs: [],
   forwardNotifications: false,
   remoteApprovals: false,
   confirmActions: true,
   allowSudo: false,
+  voiceNotes: false,
+  whisperModel: "",
+  voiceLanguage: "auto",
 };
 
 const onError = vi.fn();
 const onMessage = vi.fn();
 const setConfig = vi.fn<(patch: TelegramConfigPatch) => Promise<TelegramConfigView>>();
 const test = vi.fn(() => Promise.resolve("@polabot"));
+const checkVoice = vi.fn(() => Promise.resolve("/usr/bin/whisper-cli with ggml-small.bin"));
 
 async function mount(patch: Partial<TelegramConfigView> = {}): Promise<void> {
   document.body.innerHTML = '<div class="settings-group"></div>';
@@ -58,6 +64,7 @@ async function mount(patch: Partial<TelegramConfigView> = {}): Promise<void> {
         ignored: 0,
       }),
     test,
+    checkVoice,
     watchStatus: () => Promise.resolve(() => {}),
   };
   await mountTelegramSection({
@@ -122,6 +129,35 @@ describe("telegram section", () => {
     style.dispatchEvent(new Event("change"));
     await vi.waitFor(() =>
       expect(setConfig).toHaveBeenCalledWith({ replyStyle: "en español, informal" }),
+    );
+  });
+
+  it("saves the names to address the user by", async () => {
+    await mount({ addressAs: ["Miguel"] });
+    const address = control<HTMLInputElement>("Address me as");
+    expect(address.value).toBe("Miguel");
+    address.value = " Miguel, jefe,, miguel ";
+    address.dispatchEvent(new Event("change"));
+    await vi.waitFor(() =>
+      expect(setConfig).toHaveBeenCalledWith({ addressAs: ["Miguel", "jefe"] }),
+    );
+    expect(parseNames("")).toEqual([]);
+  });
+
+  it("turns voice notes on and checks whisper", async () => {
+    await mount();
+    const language = control<HTMLSelectElement>("Voice language");
+    expect(language.disabled).toBe(true);
+    const voice = control<HTMLInputElement>("Voice notes");
+    voice.checked = true;
+    voice.dispatchEvent(new Event("change"));
+    await vi.waitFor(() => expect(language.disabled).toBe(false));
+    expect(setConfig).toHaveBeenCalledWith({ voiceNotes: true });
+    button("Check").click();
+    await vi.waitFor(() =>
+      expect(onMessage).toHaveBeenCalledWith(
+        "Voice notes ready: /usr/bin/whisper-cli with ggml-small.bin.",
+      ),
     );
   });
 

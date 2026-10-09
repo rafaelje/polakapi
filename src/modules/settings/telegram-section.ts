@@ -14,10 +14,14 @@ export interface TelegramConfigView {
   profile: string;
   turnTimeoutSecs: number;
   replyStyle: string;
+  addressAs: string[];
   forwardNotifications: boolean;
   remoteApprovals: boolean;
   confirmActions: boolean;
   allowSudo: boolean;
+  voiceNotes: boolean;
+  whisperModel: string;
+  voiceLanguage: string;
 }
 
 export type TelegramConfigPatch = Partial<
@@ -29,10 +33,14 @@ export type TelegramConfigPatch = Partial<
     | "profile"
     | "turnTimeoutSecs"
     | "replyStyle"
+    | "addressAs"
     | "forwardNotifications"
     | "remoteApprovals"
     | "confirmActions"
     | "allowSudo"
+    | "voiceNotes"
+    | "whisperModel"
+    | "voiceLanguage"
   >
 > & { token?: string };
 
@@ -49,6 +57,8 @@ export interface TelegramApi {
   getStatus(): Promise<TelegramStatusView>;
   /** Resolves to the bot's @username. */
   test(token?: string): Promise<string>;
+  /** Resolves to the whisper-cli and model voice notes would use. */
+  checkVoice(): Promise<string>;
   watchStatus(onChange: (status: TelegramStatusView) => void): Promise<() => void>;
 }
 
@@ -69,6 +79,16 @@ const PROFILE_OPTIONS: ReadonlyArray<readonly [string, string]> = [
   ["full", "Full — can type into terminals and change workspaces"],
 ];
 
+const VOICE_LANGUAGE_OPTIONS: ReadonlyArray<readonly [string, string]> = [
+  ["auto", "Detect"],
+  ["es", "Spanish"],
+  ["en", "English"],
+  ["pt", "Portuguese"],
+  ["fr", "French"],
+  ["de", "German"],
+  ["it", "Italian"],
+];
+
 /** Accepts ids separated by commas, spaces or new lines; null if any is not one. */
 export function parseUserIds(raw: string): number[] | null {
   const parts = raw.split(/[\s,]+/).filter(Boolean);
@@ -80,6 +100,16 @@ export function parseUserIds(raw: string): number[] | null {
     if (!ids.includes(id)) ids.push(id);
   }
   return ids;
+}
+
+/** Names separated by commas, trimmed, without empties or repeats. */
+export function parseNames(raw: string): string[] {
+  const names: string[] = [];
+  for (const part of raw.split(",")) {
+    const name = part.trim();
+    if (name && !names.some((seen) => seen.toLowerCase() === name.toLowerCase())) names.push(name);
+  }
+  return names;
 }
 
 export function describeStatus(status: TelegramStatusView): string {
@@ -243,6 +273,23 @@ export async function mountTelegramSection(opts: TelegramSectionOptions): Promis
     "How the agent should write its answers. A chat can override it with /style; /style reset goes back to this.",
   ).append(style);
 
+  const address = document.createElement("input");
+  address.type = "text";
+  address.className = "telegram-address";
+  address.spellcheck = false;
+  address.placeholder = "Miguel, jefe";
+  address.setAttribute("aria-label", "Address me as");
+  address.addEventListener("change", () => {
+    void save({ addressAs: parseNames(address.value) }).then((ok) => {
+      if (ok) onMessage("Saved. The bot uses these names from the next message.");
+    });
+  });
+  settingsRow(
+    group,
+    "Address me as",
+    "Names the bot calls you, separated by commas, so you know an answer is meant for you. With several, it varies between them.",
+  ).append(address);
+
   const confirm = settingsToggle("Ask before acting", config.confirmActions, (checked) => {
     void save({ confirmActions: checked });
   });
@@ -279,6 +326,57 @@ export async function mountTelegramSection(opts: TelegramSectionOptions): Promis
     "Permission alerts from Claude Code get Allow, Always and Deny buttons. polakapi checks the prompt is still on screen before it answers. In the chat: /approvals on or off.",
   ).append(approvals);
 
+  const voice = settingsToggle("Voice notes", config.voiceNotes, (checked) => {
+    void save({ voiceNotes: checked });
+  });
+  const checkVoice = document.createElement("button");
+  checkVoice.type = "button";
+  checkVoice.textContent = "Check";
+  checkVoice.addEventListener("click", () => {
+    checkVoice.disabled = true;
+    api
+      .checkVoice()
+      .then((found) => onMessage(`Voice notes ready: ${found}.`))
+      .catch((error: unknown) => onError(`Voice notes unavailable: ${errorText(error)}`))
+      .finally(() => {
+        checkVoice.disabled = false;
+      });
+  });
+  settingsRow(
+    group,
+    "Voice notes",
+    "Transcribe voice notes on this computer with whisper.cpp and ffmpeg, then handle them like typed messages. The audio never leaves this machine. The bot first replies with what it heard.",
+  ).append(checkVoice, voice);
+
+  const language = settingsSelect(
+    "Voice language",
+    VOICE_LANGUAGE_OPTIONS,
+    config.voiceLanguage,
+    (value) => {
+      void save({ voiceLanguage: value });
+    },
+  );
+  settingsRow(
+    group,
+    "Voice language",
+    "Setting the language you speak is faster and more accurate than detecting it.",
+  ).append(language);
+
+  const model = document.createElement("input");
+  model.type = "text";
+  model.className = "telegram-model";
+  model.spellcheck = false;
+  model.placeholder = "~/.local/share/whisper/ggml-*.bin";
+  model.setAttribute("aria-label", "Whisper model");
+  model.addEventListener("change", () => {
+    void save({ whisperModel: model.value.trim() });
+  });
+  settingsRow(
+    group,
+    "Whisper model",
+    "Path to a whisper.cpp ggml model. Empty uses the first one in ~/.local/share/whisper.",
+  ).append(model);
+
   function render(): void {
     enabled.checked = config.enabled;
     confirm.checked = config.confirmActions;
@@ -296,6 +394,12 @@ export async function mountTelegramSection(opts: TelegramSectionOptions): Promis
     cli.value = config.cli;
     profile.value = config.profile;
     if (document.activeElement !== style) style.value = config.replyStyle;
+    voice.checked = config.voiceNotes;
+    language.value = config.voiceLanguage;
+    language.disabled = !config.voiceNotes;
+    model.disabled = !config.voiceNotes;
+    if (document.activeElement !== model) model.value = config.whisperModel;
+    if (document.activeElement !== address) address.value = config.addressAs.join(", ");
     timeout.value = String(config.turnTimeoutSecs);
     timeout.dataset.current = String(config.turnTimeoutSecs);
   }

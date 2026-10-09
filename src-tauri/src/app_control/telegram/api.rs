@@ -11,6 +11,7 @@ use serde_json::{json, Value};
 
 const API_BASE: &str = "https://api.telegram.org";
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
+const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(60);
 pub const POLL_TIMEOUT_SECS: u64 = 50;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -63,6 +64,26 @@ pub struct Message {
     /// Unix seconds.
     #[serde(default)]
     pub date: i64,
+    #[serde(default)]
+    pub voice: Option<AudioFile>,
+    #[serde(default)]
+    pub audio: Option<AudioFile>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct AudioFile {
+    pub file_id: String,
+    /// Seconds.
+    #[serde(default)]
+    pub duration: u64,
+    #[serde(default)]
+    pub file_size: Option<u64>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct FileInfo {
+    #[serde(default)]
+    file_path: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -97,6 +118,7 @@ pub struct Update {
 pub struct Api {
     client: reqwest::Client,
     base: String,
+    files: String,
 }
 
 impl Api {
@@ -112,6 +134,7 @@ impl Api {
         Ok(Self {
             client,
             base: format!("{}/bot{token}", base.trim_end_matches('/')),
+            files: format!("{}/file/bot{token}", base.trim_end_matches('/')),
         })
     }
 
@@ -135,6 +158,34 @@ impl Api {
             .await
             .map_err(|e| ApiError::Other(format!("{method}: {}", e.without_url())))?;
         parse_envelope(status, &text)
+    }
+
+    /// The bytes of a file a user sent, by its `file_id`.
+    pub async fn download(&self, file_id: &str) -> Result<Vec<u8>, ApiError> {
+        let info: FileInfo = self
+            .call("getFile", json!({ "file_id": file_id }), REQUEST_TIMEOUT)
+            .await?;
+        let path = info
+            .file_path
+            .ok_or_else(|| ApiError::Other("Telegram did not return the file".to_string()))?;
+        let response = self
+            .client
+            .get(format!("{}/{path}", self.files))
+            .timeout(DOWNLOAD_TIMEOUT)
+            .send()
+            .await
+            .map_err(|e| ApiError::Other(format!("download: {}", e.without_url())))?;
+        if !response.status().is_success() {
+            return Err(ApiError::Other(format!(
+                "download: HTTP {}",
+                response.status().as_u16()
+            )));
+        }
+        let body = response
+            .bytes()
+            .await
+            .map_err(|e| ApiError::Other(format!("download: {}", e.without_url())))?;
+        Ok(body.to_vec())
     }
 
     pub async fn get_me(&self) -> Result<User, ApiError> {

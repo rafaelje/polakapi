@@ -88,6 +88,8 @@ select,
 .notification-command,
 .telegram-token,
 .telegram-users,
+.telegram-address,
+.telegram-model,
 .telegram-style {
   font: inherit;
   font-size: 11px;
@@ -160,6 +162,8 @@ select {
 .notification-command,
 .telegram-token,
 .telegram-users,
+.telegram-address,
+.telegram-model,
 .telegram-style {
   min-width: 0;
   width: 200px;
@@ -261,6 +265,8 @@ select {
   .notification-command,
   .telegram-token,
   .telegram-users,
+  .telegram-address,
+  .telegram-model,
   .telegram-style {
     background: #f1f2f3;
     border-color: #c9cdd0;

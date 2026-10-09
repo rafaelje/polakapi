@@ -25,6 +25,7 @@ use super::overview::format_overview;
 use super::queue::{Chats, Enqueued, Incoming};
 use super::terminals;
 use super::turn::{self, TELEGRAM_MESSAGE_LIMIT};
+use super::voice;
 use crate::app_control::server::ControlServer;
 
 // The bot lives inside the app and dies with the main window. One task long-
@@ -369,24 +370,23 @@ async fn handle(ctx: &Arc<Ctx>, message: Message) {
         return;
     };
     let chat_id = message.chat.id;
-    let Some(text) = message
-        .text
-        .as_deref()
-        .map(str::trim)
-        .filter(|t| !t.is_empty())
-    else {
-        reply(ctx, chat_id, "Only text messages are supported.").await;
-        return;
-    };
     if now_secs() - message.date > STALE_AFTER_SECS {
+        let what = match message.text.as_deref() {
+            Some(text) => format!("\"{}\"", preview(text.trim())),
+            None => "a message".to_string(),
+        };
         reply(
             ctx,
             chat_id,
-            &format!("Skipped because polakapi was closed when you sent it: \"{}\". Send it again to run it.", preview(text)),
+            &format!("Skipped because polakapi was closed when you sent {what}. Send it again to run it."),
         )
         .await;
         return;
     }
+    let Some(text) = voice::message_text(ctx, &config, &message).await else {
+        return;
+    };
+    let text = text.as_str();
     let command = text.strip_prefix('/').map(|rest| {
         rest.split(|c: char| c.is_whitespace() || c == '@')
             .next()
@@ -535,6 +535,8 @@ mod tests {
             }),
             text: Some("hi".into()),
             date: now_secs(),
+            voice: None,
+            audio: None,
         }
     }
 

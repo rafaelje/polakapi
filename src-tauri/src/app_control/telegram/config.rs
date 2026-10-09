@@ -17,6 +17,9 @@ pub const HEADLESS_CLIS: &[&str] = &["claude", "codex"];
 const MIN_TIMEOUT_SECS: u64 = 30;
 const MAX_TIMEOUT_SECS: u64 = 3600;
 pub const MAX_STYLE_CHARS: usize = 1000;
+const MAX_NAMES: usize = 10;
+const MAX_NAME_CHARS: usize = 40;
+const VOICE_LANGUAGES: &[&str] = &["auto", "es", "en", "pt", "fr", "de", "it"];
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
@@ -30,6 +33,8 @@ pub struct TelegramConfig {
     /// How the agent should answer, in the user's words. Chats can override
     /// it with `/style`.
     pub reply_style: String,
+    /// What the agent calls the user, so the answers read as meant for them.
+    pub address_as: Vec<String>,
     /// Send the desktop agent notifications to the allowed users too.
     pub forward_notifications: bool,
     /// Offer Allow / Always / Deny buttons on permission notifications.
@@ -40,6 +45,12 @@ pub struct TelegramConfig {
     /// Let commands sent from Telegram use sudo, doas, su and the like.
     /// Only the settings window can change it, never the chat.
     pub allow_sudo: bool,
+    /// Transcribe voice notes with whisper.cpp on this computer.
+    pub voice_notes: bool,
+    /// A whisper.cpp ggml model; empty finds one in ~/.local/share/whisper.
+    pub whisper_model: String,
+    /// Spoken language passed to whisper, or `auto`.
+    pub voice_language: String,
 }
 
 impl Default for TelegramConfig {
@@ -52,10 +63,14 @@ impl Default for TelegramConfig {
             profile: "readonly".to_string(),
             turn_timeout_secs: 600,
             reply_style: String::new(),
+            address_as: Vec::new(),
             forward_notifications: false,
             remote_approvals: false,
             confirm_actions: true,
             allow_sudo: false,
+            voice_notes: false,
+            whisper_model: String::new(),
+            voice_language: "auto".to_string(),
         }
     }
 }
@@ -90,6 +105,11 @@ impl TelegramConfig {
             .turn_timeout_secs
             .clamp(MIN_TIMEOUT_SECS, MAX_TIMEOUT_SECS);
         self.reply_style = normalize_style(&self.reply_style);
+        self.address_as = normalize_names(&self.address_as);
+        self.whisper_model = self.whisper_model.trim().to_string();
+        if !VOICE_LANGUAGES.contains(&self.voice_language.as_str()) {
+            self.voice_language = defaults.voice_language;
+        }
         self
     }
 
@@ -116,10 +136,14 @@ impl TelegramConfig {
             profile: self.profile.clone(),
             turn_timeout_secs: self.turn_timeout_secs,
             reply_style: self.reply_style.clone(),
+            address_as: self.address_as.clone(),
             forward_notifications: self.forward_notifications,
             remote_approvals: self.remote_approvals,
             confirm_actions: self.confirm_actions,
             allow_sudo: self.allow_sudo,
+            voice_notes: self.voice_notes,
+            whisper_model: self.whisper_model.clone(),
+            voice_language: self.voice_language.clone(),
         }
     }
 
@@ -153,6 +177,9 @@ impl TelegramConfig {
         if let Some(style) = patch.reply_style {
             next.reply_style = style;
         }
+        if let Some(names) = patch.address_as {
+            next.address_as = names;
+        }
         if let Some(forward) = patch.forward_notifications {
             next.forward_notifications = forward;
         }
@@ -164,6 +191,15 @@ impl TelegramConfig {
         }
         if let Some(allow) = patch.allow_sudo {
             next.allow_sudo = allow;
+        }
+        if let Some(voice) = patch.voice_notes {
+            next.voice_notes = voice;
+        }
+        if let Some(model) = patch.whisper_model {
+            next.whisper_model = model;
+        }
+        if let Some(language) = patch.voice_language {
+            next.voice_language = language;
         }
         Ok(next.normalized())
     }
@@ -180,10 +216,14 @@ pub struct ConfigView {
     pub profile: String,
     pub turn_timeout_secs: u64,
     pub reply_style: String,
+    pub address_as: Vec<String>,
     pub forward_notifications: bool,
     pub remote_approvals: bool,
     pub confirm_actions: bool,
     pub allow_sudo: bool,
+    pub voice_notes: bool,
+    pub whisper_model: String,
+    pub voice_language: String,
 }
 
 /// A partial update from the settings window. `token: Some("")` clears it.
@@ -197,14 +237,30 @@ pub struct ConfigPatch {
     pub profile: Option<String>,
     pub turn_timeout_secs: Option<u64>,
     pub reply_style: Option<String>,
+    pub address_as: Option<Vec<String>>,
     pub forward_notifications: Option<bool>,
     pub remote_approvals: Option<bool>,
     pub confirm_actions: Option<bool>,
     pub allow_sudo: Option<bool>,
+    pub voice_notes: Option<bool>,
+    pub whisper_model: Option<String>,
+    pub voice_language: Option<String>,
 }
 
 pub fn normalize_style(style: &str) -> String {
     style.trim().chars().take(MAX_STYLE_CHARS).collect()
+}
+
+fn normalize_names(names: &[String]) -> Vec<String> {
+    let mut kept: Vec<String> = Vec::new();
+    for name in names {
+        let name: String = name.trim().chars().take(MAX_NAME_CHARS).collect();
+        if !name.is_empty() && !kept.iter().any(|seen| seen.eq_ignore_ascii_case(&name)) {
+            kept.push(name);
+        }
+    }
+    kept.truncate(MAX_NAMES);
+    kept
 }
 
 fn token_hint(token: &str) -> String {
@@ -346,9 +402,13 @@ mod tests {
             cli: "gemini".into(),
             profile: "root".into(),
             turn_timeout_secs: 1,
+            voice_language: "klingon".into(),
+            address_as: vec![" Miguel ".into(), "".into(), "jefe".into(), "miguel".into()],
             ..TelegramConfig::default()
         }
         .normalized();
+        assert_eq!(config.address_as, vec!["Miguel", "jefe"]);
+        assert_eq!(config.voice_language, "auto");
         assert_eq!(config.allowed_user_ids, vec![5, 9]);
         assert_eq!(config.cli, "claude");
         assert_eq!(config.profile, "readonly");

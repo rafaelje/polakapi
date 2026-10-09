@@ -146,7 +146,16 @@ async fn run_turn(ctx: &Ctx, chat_id: i64, incoming: &Incoming) -> Result<String
     let cli = config.cli.as_str();
     let style = ctx.service.style(chat_id, &config.reply_style);
     let focus = ctx.service.focus(chat_id);
-    let (prompt, system) = build_turn(cli, &incoming.name, &incoming.text, &style, focus.as_ref());
+    let (prompt, system) = build_turn(
+        cli,
+        &incoming.name,
+        &incoming.text,
+        &Voice {
+            style: &style,
+            names: &config.address_as,
+        },
+        focus.as_ref(),
+    );
     let resume = ctx.service.session(chat_id, cli);
     let first = attempt(
         ctx,
@@ -210,15 +219,40 @@ async fn attempt(
     turn::run(&spec, prompt, Duration::from_secs(config.turn_timeout_secs)).await
 }
 
-/// The prompt for one turn and, for Claude, the reply style as a system prompt
-/// addition. Codex has no such flag, so the style rides along in the prompt,
+/// How the answers should sound: the reply style and the names the user goes by.
+struct Voice<'a> {
+    style: &'a str,
+    names: &'a [String],
+}
+
+impl Voice<'_> {
+    fn rules(&self) -> Option<String> {
+        let mut rules = Vec::new();
+        if !self.names.is_empty() {
+            rules.push(format!(
+                "Address the user as {}, so they know the answer is for them. Use one of these names in each answer, varying naturally if there are several.",
+                self.names.join(", ")
+            ));
+        }
+        if !self.style.is_empty() {
+            rules.push(format!(
+                "The user asked for Telegram answers in this style. Follow it over the default Telegram guidance:\n{}",
+                self.style
+            ));
+        }
+        (!rules.is_empty()).then(|| rules.join("\n\n"))
+    }
+}
+
+/// The prompt for one turn and, for Claude, the reply rules as a system prompt
+/// addition. Codex has no such flag, so the rules ride along in the prompt,
 /// restated every turn so a `/style` change applies to an ongoing chat. The
 /// header names the chat's project, also restated every turn.
 fn build_turn(
     cli: &str,
     name: &str,
     text: &str,
-    style: &str,
+    voice: &Voice,
     focus: Option<&Focus>,
 ) -> (String, Option<String>) {
     let project = match focus {
@@ -226,16 +260,13 @@ fn build_turn(
         None => "project: none selected".to_string(),
     };
     let prompt = format!("[telegram] {name} · {project}\n{text}");
-    if style.is_empty() {
+    let Some(rules) = voice.rules() else {
         return (prompt, None);
-    }
-    let rule = format!(
-        "The user asked for Telegram answers in this style. Follow it over the default Telegram guidance:\n{style}"
-    );
+    };
     if cli == "claude" {
-        (prompt, Some(rule))
+        (prompt, Some(rules))
     } else {
-        (format!("{rule}\n\n{prompt}"), None)
+        (format!("{rules}\n\n{prompt}"), None)
     }
 }
 
@@ -260,13 +291,21 @@ mod tests {
 
     #[test]
     fn style_goes_to_claude_system_prompt_and_into_codex_prompt() {
-        let (prompt, system) = build_turn("claude", "Ana", "hola", "", None);
+        let plain = Voice {
+            style: "",
+            names: &[],
+        };
+        let styled = Voice {
+            style: "en español, breve",
+            names: &[],
+        };
+        let (prompt, system) = build_turn("claude", "Ana", "hola", &plain, None);
         assert_eq!(prompt, "[telegram] Ana · project: none selected\nhola");
         assert!(system.is_none());
-        let (prompt, system) = build_turn("claude", "Ana", "hola", "en español, breve", None);
+        let (prompt, system) = build_turn("claude", "Ana", "hola", &styled, None);
         assert_eq!(prompt, "[telegram] Ana · project: none selected\nhola");
         assert!(system.unwrap().ends_with("en español, breve"));
-        let (prompt, system) = build_turn("codex", "Ana", "hola", "en español, breve", None);
+        let (prompt, system) = build_turn("codex", "Ana", "hola", &styled, None);
         assert!(system.is_none());
         assert!(
             prompt.contains("en español, breve\n\n[telegram] Ana · project: none selected\nhola")
@@ -276,10 +315,23 @@ mod tests {
             name: "polakapi".into(),
             path: "/w/polakapi".into(),
         };
-        let (prompt, _) = build_turn("claude", "Ana", "git status", "", Some(&focus));
+        let (prompt, _) = build_turn("claude", "Ana", "git status", &plain, Some(&focus));
         assert_eq!(
             prompt,
             "[telegram] Ana · project: polakapi (id p1, /w/polakapi)\ngit status"
         );
+    }
+
+    #[test]
+    fn names_tell_the_agent_how_to_address_the_user() {
+        let names = vec!["Miguel".to_string(), "jefe".to_string()];
+        let voice = Voice {
+            style: "breve",
+            names: &names,
+        };
+        let (_, system) = build_turn("claude", "Ana", "hola", &voice, None);
+        let system = system.unwrap();
+        assert!(system.starts_with("Address the user as Miguel, jefe,"));
+        assert!(system.ends_with("breve"));
     }
 }

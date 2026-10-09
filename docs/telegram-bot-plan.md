@@ -254,6 +254,9 @@ Where the implementation differs from the plan above:
   override. Claude gets it through `--append-system-prompt`; codex gets it in
   front of the prompt. It is restated every turn, so a change applies to an
   ongoing conversation.
+- **Address as.** `addressAs` (settings, comma separated) lists the names
+  the agent calls the user, so an answer reads as meant for them. It rides
+  with the reply style in the same system prompt addition.
 - **Notifications.** `forwardNotifications` (settings, or `/notify on|off`)
   mirrors the agent alerts the main window already delivers: same events, same
   preferences, same timing. `agent-notifier.ts` calls `forwardToTelegram`
@@ -330,3 +333,19 @@ Where the implementation differs from the plan above:
   and `polakapi_send_to_terminal` to a shell pane are refused before
   anything is typed. Aliases, functions and scripts that call sudo
   themselves are not detected; the setting's help says so.
+
+## 16. Voice notes
+
+- `voiceNotes` (settings) turns them on. A `voice` or `audio` message is
+  downloaded with `getFile`, converted to 16 kHz WAV with ffmpeg and
+  transcribed by whisper.cpp's `whisper-cli` on this computer; the audio never
+  leaves it. Notes over five minutes or 20 MB are refused.
+- The bot replies with `🎤 <transcript>` and then handles the text exactly like
+  a typed message: commands, `$ …`, project focus, held actions and the sudo
+  check all apply.
+- `whisper-cli` and `ffmpeg` are looked up on PATH, then in `~/.local/bin`,
+  `/usr/local/bin` and `/opt/homebrew/bin`. `whisperModel` is a ggml model
+  path; empty takes the first `ggml-*.bin` in `~/.local/share/whisper`.
+  `voiceLanguage` is `auto` or a fixed language. Settings → Check reports what
+  was found.
+

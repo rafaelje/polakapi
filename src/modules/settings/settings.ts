@@ -334,6 +334,7 @@ const telegramApi: TelegramApi = {
   setConfig: (patch) => call<TelegramConfigView>("telegram_config_set", { patch }),
   getStatus: () => call<TelegramStatusView>("telegram_status"),
   test: (token) => call<string>("telegram_test", { token: token ?? null }),
+  checkVoice: () => call<string>("telegram_voice_check"),
   watchStatus: (onChange) =>
     listen<TelegramStatusView>("telegram-status", (event) => onChange(event.payload)),
 };
