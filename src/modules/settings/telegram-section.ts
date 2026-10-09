@@ -277,7 +277,7 @@ export async function mountTelegramSection(opts: TelegramSectionOptions): Promis
   address.type = "text";
   address.className = "telegram-address";
   address.spellcheck = false;
-  address.placeholder = "Miguel, jefe";
+  address.placeholder = "name1, name2, nameN...";
   address.setAttribute("aria-label", "Address me as");
   address.addEventListener("change", () => {
     void save({ addressAs: parseNames(address.value) }).then((ok) => {
