@@ -3,13 +3,17 @@
 //! - `api`: the few Bot API methods the bot uses.
 //! - `config`: settings, the bot's offset and sessions, private file writes.
 //! - `bot`: long polling, allowlist and commands.
+//! - `commands`: `/style`, `/notify` and `/approvals`.
 //! - `queue`: per-chat workers that run turns in order.
 //! - `overview`: the `/status` text.
+//! - `notify`: agent notifications and permission buttons.
 //! - `turn`: one headless CLI turn and its parsed answer.
 
 pub mod api;
 pub mod bot;
+mod commands;
 pub mod config;
+mod notify;
 mod overview;
 mod queue;
 pub mod turn;
@@ -35,6 +39,15 @@ pub fn telegram_config_set(
     let next = service.config().apply(patch)?;
     service.save_config(next.clone())?;
     Ok(next.view())
+}
+
+/// Mirrors an agent notification the main window just delivered.
+#[tauri::command]
+pub async fn telegram_notify(
+    service: State<'_, Arc<TelegramService>>,
+    notice: notify::Notice,
+) -> Result<bool, String> {
+    service.inner().clone().notify(notice).await
 }
 
 #[tauri::command]

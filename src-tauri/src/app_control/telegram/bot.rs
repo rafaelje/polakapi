@@ -11,9 +11,11 @@ use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::Semaphore;
 
 use super::api::{Api, ApiError, Message};
+use super::commands::{command_argument, style_command, toggle_command};
 use super::config::{
     load_json, save_json, BotState, TelegramConfig, AUDIT_FILE, CONFIG_FILE, STATE_FILE,
 };
+use super::notify::{handle_callback, Approvals};
 use super::overview::format_overview;
 use super::queue::{Chats, Enqueued, Incoming};
 use super::turn::{self, TELEGRAM_MESSAGE_LIMIT};
@@ -32,6 +34,12 @@ const COMMANDS: &[(&str, &str)] = &[
     ("new", "Start a new conversation"),
     ("stop", "Cancel the running turn"),
     ("status", "Workspaces and projects, without the model"),
+    ("style", "Show or set how the bot answers in this chat"),
+    ("notify", "Agent notifications here: on or off"),
+    (
+        "approvals",
+        "Permission buttons on notifications: on or off",
+    ),
     ("help", "What this bot does"),
 ];
 
@@ -56,21 +64,22 @@ pub struct TelegramService {
     pub(super) app: AppHandle,
     paths: Paths,
     config: Mutex<TelegramConfig>,
-    state: Mutex<BotState>,
+    pub(super) state: Mutex<BotState>,
     status: Mutex<StatusView>,
     ignored: AtomicU64,
     runtime: Mutex<Option<Runtime>>,
+    pub(super) approvals: Approvals,
 }
 
 struct Runtime {
     poller: JoinHandle<()>,
     chats: Arc<Chats>,
+    api: Api,
 }
 
 pub(super) struct Ctx {
     pub(super) service: Arc<TelegramService>,
     pub(super) api: Api,
-    pub(super) config: TelegramConfig,
     pub(super) chats: Arc<Chats>,
     pub(super) turns: Semaphore,
 }
@@ -99,6 +108,7 @@ impl TelegramService {
             }),
             ignored: AtomicU64::new(0),
             runtime: Mutex::new(None),
+            approvals: Approvals::default(),
         }))
     }
 
@@ -106,10 +116,17 @@ impl TelegramService {
         lock(&self.config).clone()
     }
 
+    /// Only the token and the on/off switch need a new poller; everything else
+    /// is read live, so changing it never cancels a running turn.
     pub fn save_config(self: &Arc<Self>, next: TelegramConfig) -> Result<(), String> {
         save_json(&self.paths.config, &next)?;
-        *lock(&self.config) = next;
-        self.restart();
+        let previous = std::mem::replace(&mut *lock(&self.config), next.clone());
+        if previous.token != next.token
+            || previous.enabled != next.enabled
+            || previous.blocker() != next.blocker()
+        {
+            self.restart();
+        }
         Ok(())
     }
 
@@ -155,14 +172,20 @@ impl TelegramService {
         let chats = Arc::new(Chats::default());
         let ctx = Arc::new(Ctx {
             service: self.clone(),
-            api,
-            config,
+            api: api.clone(),
             chats: chats.clone(),
             turns: Semaphore::new(MAX_PARALLEL_TURNS),
         });
         self.set_status("starting", "", None);
         let poller = tauri::async_runtime::spawn(poll(ctx));
-        *lock(&self.runtime) = Some(Runtime { poller, chats });
+        *lock(&self.runtime) = Some(Runtime { poller, chats, api });
+    }
+
+    /// The running bot's client, if the bot is running.
+    pub(super) fn api(&self) -> Option<Api> {
+        lock(&self.runtime)
+            .as_ref()
+            .map(|runtime| runtime.api.clone())
     }
 
     pub fn stop(&self) {
@@ -172,6 +195,10 @@ impl TelegramService {
         runtime.poller.abort();
         runtime.chats.abort_all();
         self.set_status("stopped", "", None);
+    }
+
+    pub(super) fn style(&self, chat_id: i64, default: &str) -> String {
+        lock(&self.state).style_for(chat_id, default).to_string()
     }
 
     pub(super) fn session(&self, chat_id: i64, cli: &str) -> Option<String> {
@@ -219,6 +246,12 @@ impl TelegramService {
     }
 }
 
+impl Ctx {
+    pub(super) fn config(&self) -> TelegramConfig {
+        self.service.config()
+    }
+}
+
 async fn poll(ctx: Arc<Ctx>) {
     let service = &ctx.service;
     let username = loop {
@@ -253,6 +286,8 @@ async fn poll(ctx: Arc<Ctx>) {
                     offset = offset.max(update.update_id + 1);
                     if let Some(message) = update.message {
                         handle(&ctx, message).await;
+                    } else if let Some(press) = update.callback_query {
+                        handle_callback(&ctx, press).await;
                     }
                 }
                 if offset != before {
@@ -294,7 +329,8 @@ fn is_allowed(config: &TelegramConfig, message: &Message) -> Option<i64> {
 }
 
 async fn handle(ctx: &Arc<Ctx>, message: Message) {
-    let Some(user_id) = is_allowed(&ctx.config, &message) else {
+    let config = ctx.config();
+    let Some(user_id) = is_allowed(&config, &message) else {
         ctx.service.ignored.fetch_add(1, Ordering::Relaxed);
         let view = ctx.service.status();
         let _ = ctx.service.app.emit(STATUS_EVENT, view);
@@ -327,10 +363,19 @@ async fn handle(ctx: &Arc<Ctx>, message: Message) {
     match command {
         Some("start") | Some("help") => {
             let help = format!(
-                "polakapi operator bot. Messages go to {} with the {} tool profile.\n/new starts a new conversation, /stop cancels the running turn, /status lists workspaces without the model.",
-                ctx.config.cli, ctx.config.profile
+                "polakapi operator bot. Messages go to {} with the {} tool profile.\n/new starts a new conversation, /stop cancels the running turn, /status lists workspaces without the model, /style shows or sets how answers are written (/style reset goes back to the default), /notify on|off mirrors agent notifications here, /approvals on|off adds Allow / Deny buttons to permission requests.",
+                config.cli, config.profile
             );
             reply(ctx, chat_id, &help).await;
+        }
+        Some(name @ ("notify" | "approvals")) => {
+            let answer = toggle_command(ctx, name, command_argument(text));
+            reply(ctx, chat_id, &answer).await;
+        }
+        Some("style") => {
+            let argument = command_argument(text);
+            let answer = style_command(ctx, chat_id, argument);
+            reply(ctx, chat_id, &answer).await;
         }
         Some("new") => {
             ctx.service.update_state(|state| {

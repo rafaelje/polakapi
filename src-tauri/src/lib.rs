@@ -53,7 +53,7 @@ use crate::agent_context::{
 };
 use crate::agent_sessions::agent_list_sessions;
 use crate::app_control::telegram::{
-    telegram_config_get, telegram_config_set, telegram_status, telegram_test,
+    telegram_config_get, telegram_config_set, telegram_notify, telegram_status, telegram_test,
 };
 use crate::app_control::{
     agent_cli_detect, agent_home_prepare, app_control_respond, app_control_set_ready,
@@ -259,6 +259,7 @@ pub fn run() {
             app_control_set_ready,
             telegram_config_get,
             telegram_config_set,
+            telegram_notify,
             telegram_status,
             telegram_test,
             agent_context_list,

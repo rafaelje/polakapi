@@ -246,3 +246,27 @@ Where the implementation differs from the plan above:
   against Claude Code 2.1. Codex's headless flags follow `loop_cli.rs` and
   are not verified against an installed codex yet. The manual checklist in
   section 10 still needs a real bot token.
+
+## 13. Reply style, notifications and remote approvals
+
+- **Reply style.** `replyStyle` in settings is the default; `/style <text>`
+  overrides it per chat, `/style` shows it and `/style reset` drops the
+  override. Claude gets it through `--append-system-prompt`; codex gets it in
+  front of the prompt. It is restated every turn, so a change applies to an
+  ongoing conversation.
+- **Notifications.** `forwardNotifications` (settings, or `/notify on|off`)
+  mirrors the agent alerts the main window already delivers: same events, same
+  preferences, same timing. `agent-notifier.ts` calls `forwardToTelegram`
+  after the desktop delivery, and the `telegram_notify` command sends the text
+  to every allowed user.
+- **Remote approvals.** With `remoteApprovals` on (settings, or
+  `/approvals on|off`), a permission alert carries the prompt read from the
+  pane and Allow / Always / Deny buttons. A press is relayed to the main
+  window as `permission.respond`; `telegram-relay.ts` re-reads the pane, and
+  only if Claude Code's "Do you want to …" prompt is still there it types `1`
+  (allow), `2` (always, only when option 2 is a "Yes") or Esc (deny). Each
+  prompt answers once and expires after 15 minutes. Verified against Claude
+  Code 2.1 in tmux: `1` runs the tool, Esc interrupts it.
+- **Live settings.** Only the token and the on/off switch restart the poller.
+  Every other setting is read per message, so toggling from the chat never
+  cancels a running turn.

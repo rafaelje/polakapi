@@ -30,6 +30,12 @@ import {
 import { AdversarialRunner } from "../modules/app-agent/adversarial-runner";
 import { mountControlBridge, type ControlBridgeHandle } from "../modules/app-agent/control-bridge";
 import { createToolRegistry } from "../modules/app-agent/tools/registry";
+import {
+  forwardToTelegram,
+  isPermissionChoice,
+  respondToPermission,
+  type PaneLookup,
+} from "../modules/app-agent/telegram-relay";
 import { mountBottomPanel, type BottomPanelHandle } from "../modules/bottom-panel/bottom-panel";
 import { isBottomTab } from "../modules/bottom-panel/types";
 import { mountUsageToolbar, type UsageToolbarHandle } from "../modules/usage/usage-toolbar";
@@ -119,6 +125,12 @@ export class AppController {
    */
   private windowFocused = false;
   private disposed = false;
+  private readonly paneLookup: PaneLookup = {
+    findPane: (ptyId) => {
+      const found = this.router.findPaneById(ptyId);
+      return found && found.manager.isLive(ptyId) ? found.pane : null;
+    },
+  };
 
   constructor(private readonly elements: AppElements) {
     this.router = new TerminalRouter({
@@ -135,11 +147,16 @@ export class AppController {
     this.unlistenUpdateMenu = await listen("check-updates", () => {
       void checkForUpdatesManually();
     });
-    this.stopAgentNotifier = await startAgentNotifier((ptyId) => {
-      const projectId = this.router.findPaneById(ptyId)?.manager.projectId;
-      if (!projectId || !this.workspaces) return null;
-      return findProject(this.workspaces.controller.getState(), projectId)?.project.name ?? null;
-    });
+    this.stopAgentNotifier = await startAgentNotifier(
+      (ptyId) => {
+        const projectId = this.router.findPaneById(ptyId)?.manager.projectId;
+        if (!projectId || !this.workspaces) return null;
+        return findProject(this.workspaces.controller.getState(), projectId)?.project.name ?? null;
+      },
+      (event, title, message) => {
+        void forwardToTelegram(this.paneLookup, event, title, message);
+      },
+    );
     const layout = await this.loadSavedLayout();
     this.applyLayout(layout);
     this.bottomPanel = mountBottomPanel({
@@ -218,6 +235,15 @@ export class AppController {
         router: this.router,
         adversarial: new AdversarialRunner(),
       }),
+      {
+        "permission.respond": (params) => {
+          const { ptyId, choice } = params;
+          if (typeof ptyId !== "string" || !isPermissionChoice(choice)) {
+            return Promise.reject(new Error("permission.respond needs a ptyId and a choice"));
+          }
+          return respondToPermission(this.paneLookup, ptyId, choice);
+        },
+      },
     );
 
     // Wire the quit hook *after* workspaces is ready so the modal can resolve

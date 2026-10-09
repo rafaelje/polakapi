@@ -21,6 +21,9 @@ const baseConfig: TelegramConfigView = {
   cli: "claude",
   profile: "readonly",
   turnTimeoutSecs: 600,
+  replyStyle: "",
+  forwardNotifications: false,
+  remoteApprovals: false,
 };
 
 const onError = vi.fn();
@@ -107,6 +110,28 @@ describe("telegram section", () => {
     users.value = "12, 34 12";
     users.dispatchEvent(new Event("change"));
     await vi.waitFor(() => expect(setConfig).toHaveBeenCalledWith({ allowedUserIds: [12, 34] }));
+  });
+
+  it("saves the reply style trimmed", async () => {
+    await mount({ replyStyle: "brief" });
+    const style = control<HTMLTextAreaElement>("Reply style");
+    expect(style.value).toBe("brief");
+    style.value = "  en español, informal  ";
+    style.dispatchEvent(new Event("change"));
+    await vi.waitFor(() =>
+      expect(setConfig).toHaveBeenCalledWith({ replyStyle: "en español, informal" }),
+    );
+  });
+
+  it("only offers permission buttons while notifications are forwarded", async () => {
+    await mount();
+    const approvals = control<HTMLInputElement>("Permission buttons");
+    expect(approvals.disabled).toBe(true);
+    const forward = control<HTMLInputElement>("Agent notifications");
+    forward.checked = true;
+    forward.dispatchEvent(new Event("change"));
+    await vi.waitFor(() => expect(approvals.disabled).toBe(false));
+    expect(setConfig).toHaveBeenCalledWith({ forwardNotifications: true });
   });
 
   it("surfaces a rejected save", async () => {

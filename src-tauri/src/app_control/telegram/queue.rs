@@ -7,7 +7,7 @@ use tauri::async_runtime::JoinHandle;
 use tauri::Manager;
 
 use super::bot::{lock, now_secs, reply, send_long, Ctx};
-use super::config::Session;
+use super::config::{Session, TelegramConfig};
 use super::turn;
 use crate::app_control::home;
 use crate::app_control::server::ControlServer;
@@ -99,13 +99,14 @@ async fn work(ctx: Arc<Ctx>, chat_id: i64) {
         };
         let started = std::time::Instant::now();
         let result = with_typing(&ctx, chat_id, run_turn(&ctx, chat_id, &incoming)).await;
+        let config = ctx.config();
         ctx.service.audit(json!({
             "ts": now_secs(),
             "chatId": chat_id,
             "userId": incoming.user_id,
             "text": incoming.text,
-            "cli": ctx.config.cli,
-            "profile": ctx.config.profile,
+            "cli": config.cli,
+            "profile": config.profile,
             "ok": result.is_ok(),
             "error": result.as_ref().err(),
             "ms": started.elapsed().as_millis() as u64,
@@ -131,13 +132,15 @@ async fn with_typing<F: std::future::Future>(ctx: &Ctx, chat_id: i64, future: F)
 }
 
 async fn run_turn(ctx: &Ctx, chat_id: i64, incoming: &Incoming) -> Result<String, String> {
-    let cli = ctx.config.cli.as_str();
-    let prompt = format!("[telegram] {}:\n{}", incoming.name, incoming.text);
+    let config = ctx.config();
+    let cli = config.cli.as_str();
+    let style = ctx.service.style(chat_id, &config.reply_style);
+    let (prompt, system) = build_turn(cli, &incoming.name, &incoming.text, &style);
     let resume = ctx.service.session(chat_id, cli);
-    let first = attempt(ctx, &prompt, resume.as_deref()).await;
+    let first = attempt(ctx, &config, &prompt, resume.as_deref(), system.as_deref()).await;
     let output = match first {
         Err(error) if resume.is_some() && looks_like_lost_session(&error) => {
-            attempt(ctx, &prompt, None).await?
+            attempt(ctx, &config, &prompt, None, system.as_deref()).await?
         }
         other => other?,
     };
@@ -157,8 +160,10 @@ async fn run_turn(ctx: &Ctx, chat_id: i64, incoming: &Incoming) -> Result<String
 
 async fn attempt(
     ctx: &Ctx,
+    config: &TelegramConfig,
     prompt: &str,
     resume: Option<&str>,
+    system: Option<&str>,
 ) -> Result<turn::TurnOutput, String> {
     let app = &ctx.service.app;
     let server = app
@@ -171,18 +176,32 @@ async fn attempt(
     let control = server.control_file().to_string_lossy().into_owned();
     let spec = home::prepare_headless(
         &home::home_dir(app)?,
-        &ctx.config.cli,
+        &config.cli,
         &bin,
         &control,
-        &ctx.config.profile,
+        &config.profile,
         resume,
+        system,
     )?;
-    turn::run(
-        &spec,
-        prompt,
-        Duration::from_secs(ctx.config.turn_timeout_secs),
-    )
-    .await
+    turn::run(&spec, prompt, Duration::from_secs(config.turn_timeout_secs)).await
+}
+
+/// The prompt for one turn and, for Claude, the reply style as a system prompt
+/// addition. Codex has no such flag, so the style rides along in the prompt,
+/// restated every turn so a `/style` change applies to an ongoing chat.
+fn build_turn(cli: &str, name: &str, text: &str, style: &str) -> (String, Option<String>) {
+    let prompt = format!("[telegram] {name}:\n{text}");
+    if style.is_empty() {
+        return (prompt, None);
+    }
+    let rule = format!(
+        "The user asked for Telegram answers in this style. Follow it over the default Telegram guidance:\n{style}"
+    );
+    if cli == "claude" {
+        (prompt, Some(rule))
+    } else {
+        (format!("{rule}\n\n{prompt}"), None)
+    }
 }
 
 fn looks_like_lost_session(error: &str) -> bool {
@@ -202,5 +221,18 @@ mod tests {
             "No conversation found with session ID: abc"
         ));
         assert!(!looks_like_lost_session("timed out after 600s"));
+    }
+
+    #[test]
+    fn style_goes_to_claude_system_prompt_and_into_codex_prompt() {
+        let (prompt, system) = build_turn("claude", "Ana", "hola", "");
+        assert_eq!(prompt, "[telegram] Ana:\nhola");
+        assert!(system.is_none());
+        let (prompt, system) = build_turn("claude", "Ana", "hola", "en español, breve");
+        assert_eq!(prompt, "[telegram] Ana:\nhola");
+        assert!(system.unwrap().ends_with("en español, breve"));
+        let (prompt, system) = build_turn("codex", "Ana", "hola", "en español, breve");
+        assert!(system.is_none());
+        assert!(prompt.contains("en español, breve\n\n[telegram] Ana:\nhola"));
     }
 }

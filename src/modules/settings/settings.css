@@ -87,7 +87,8 @@ button,
 select,
 .notification-command,
 .telegram-token,
-.telegram-users {
+.telegram-users,
+.telegram-style {
   font: inherit;
   font-size: 11px;
   color: inherit;
@@ -158,7 +159,8 @@ select {
 }
 .notification-command,
 .telegram-token,
-.telegram-users {
+.telegram-users,
+.telegram-style {
   min-width: 0;
   width: 200px;
   flex: 1;
@@ -203,6 +205,10 @@ select {
 }
 .telegram-status {
   font-size: 11px;
+}
+.telegram-style {
+  width: 100%;
+  resize: vertical;
 }
 .telegram-status.is-error {
   color: #f4b75f;
@@ -254,7 +260,8 @@ select {
   select,
   .notification-command,
   .telegram-token,
-  .telegram-users {
+  .telegram-users,
+  .telegram-style {
     background: #f1f2f3;
     border-color: #c9cdd0;
   }

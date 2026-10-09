@@ -145,6 +145,8 @@ pub fn prepare_in(home: &Path, cli: &str, bin: &str, control: &str) -> Result<La
 /// written to stdin, so text that looks like a flag is never parsed as one.
 /// Only CLIs whose MCP registration can be passed per process are supported:
 /// the others read a shared file in the home that the agent tab also uses.
+/// `system` is appended to Claude's system prompt; codex has no such flag, so
+/// callers fold it into the prompt instead.
 pub fn prepare_headless(
     home: &Path,
     cli: &str,
@@ -152,6 +154,7 @@ pub fn prepare_headless(
     control: &str,
     profile: &str,
     resume: Option<&str>,
+    system: Option<&str>,
 ) -> Result<LaunchSpec, String> {
     let server_args = vec![
         "app-mcp".to_string(),
@@ -186,6 +189,9 @@ pub fn prepare_headless(
             ];
             if let Some(id) = resume {
                 args.extend(["--resume".to_string(), id.to_string()]);
+            }
+            if let Some(text) = system {
+                args.extend(["--append-system-prompt".to_string(), text.to_string()]);
             }
             ("claude", args)
         }
@@ -306,12 +312,16 @@ mod tests {
             "/c.json",
             "readonly",
             Some("abc"),
+            Some("be brief"),
         )
         .unwrap();
         assert_eq!(&spec.args[..3], ["-p", "--output-format", "json"]);
         let tools = spec.args.iter().position(|a| a == "--tools").unwrap();
         assert_eq!(spec.args[tools + 1], "");
-        assert_eq!(spec.args[spec.args.len() - 2..], ["--resume", "abc"]);
+        assert_eq!(
+            spec.args[spec.args.len() - 4..],
+            ["--resume", "abc", "--append-system-prompt", "be brief"]
+        );
         let config: Value = serde_json::from_str(
             &std::fs::read_to_string(dir.path().join("mcp/claude-readonly.json")).unwrap(),
         )
@@ -324,20 +334,37 @@ mod tests {
     fn headless_codex_reads_the_prompt_from_stdin() {
         let dir = tempfile::tempdir().unwrap();
         let fresh =
-            prepare_headless(dir.path(), "codex", "/bin/p", "/c.json", "full", None).unwrap();
+            prepare_headless(dir.path(), "codex", "/bin/p", "/c.json", "full", None, None).unwrap();
         assert_eq!(fresh.args[0], "exec");
         assert_eq!(fresh.args.last().unwrap(), "-");
         assert!(fresh.args.contains(
             &r#"mcp_servers.polakapi.args=["app-mcp","--control","/c.json","--profile","full"]"#
                 .to_string()
         ));
-        let resumed =
-            prepare_headless(dir.path(), "codex", "/bin/p", "/c.json", "full", Some("t1")).unwrap();
+        let resumed = prepare_headless(
+            dir.path(),
+            "codex",
+            "/bin/p",
+            "/c.json",
+            "full",
+            Some("t1"),
+            None,
+        )
+        .unwrap();
         assert_eq!(
             resumed.args[resumed.args.len() - 3..],
             ["resume", "t1", "-"]
         );
-        assert!(prepare_headless(dir.path(), "gemini", "/bin/p", "/c.json", "full", None).is_err());
+        assert!(prepare_headless(
+            dir.path(),
+            "gemini",
+            "/bin/p",
+            "/c.json",
+            "full",
+            None,
+            None
+        )
+        .is_err());
     }
 
     #[test]

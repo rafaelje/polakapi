@@ -9,6 +9,9 @@ import type { ControlRequest } from "./types";
 
 const REQUEST_EVENT = "app-control:request";
 
+/** Control methods that are not model tools, e.g. answers coming from Telegram. */
+export type ControlMethods = Record<string, (params: Record<string, unknown>) => Promise<unknown>>;
+
 export interface ControlBridgeHandle {
   dispose(): Promise<void>;
 }
@@ -19,7 +22,11 @@ function isControlRequest(value: unknown): value is ControlRequest {
   return typeof candidate.id === "number" && typeof candidate.method === "string";
 }
 
-async function dispatch(registry: ToolRegistry, request: ControlRequest): Promise<unknown> {
+async function dispatch(
+  registry: ToolRegistry,
+  methods: ControlMethods,
+  request: ControlRequest,
+): Promise<unknown> {
   const params = (request.params ?? {}) as {
     name?: unknown;
     arguments?: unknown;
@@ -33,8 +40,13 @@ async function dispatch(registry: ToolRegistry, request: ControlRequest): Promis
       if (typeof params.name !== "string") throw new Error("tools.call needs a name");
       return registry.call(params.name, params.arguments, profile);
     }
-    default:
-      throw new Error(`unknown control method: ${request.method}`);
+    default: {
+      const method = Object.prototype.hasOwnProperty.call(methods, request.method)
+        ? methods[request.method]
+        : undefined;
+      if (!method) throw new Error(`unknown control method: ${request.method}`);
+      return method(params);
+    }
   }
 }
 
@@ -46,12 +58,15 @@ async function respond(id: number, ok: boolean, payload: unknown): Promise<void>
   }
 }
 
-export async function mountControlBridge(registry: ToolRegistry): Promise<ControlBridgeHandle> {
+export async function mountControlBridge(
+  registry: ToolRegistry,
+  methods: ControlMethods = {},
+): Promise<ControlBridgeHandle> {
   let disposed = false;
   const unlisten: UnlistenFn = await listen<unknown>(REQUEST_EVENT, (event) => {
     if (disposed || !isControlRequest(event.payload)) return;
     const request = event.payload;
-    void dispatch(registry, request).then(
+    void dispatch(registry, methods, request).then(
       (result) => respond(request.id, true, result),
       (error: unknown) => respond(request.id, false, String(error)),
     );

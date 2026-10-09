@@ -16,6 +16,7 @@ pub const AUDIT_FILE: &str = "telegram-audit.jsonl";
 pub const HEADLESS_CLIS: &[&str] = &["claude", "codex"];
 const MIN_TIMEOUT_SECS: u64 = 30;
 const MAX_TIMEOUT_SECS: u64 = 3600;
+pub const MAX_STYLE_CHARS: usize = 1000;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
@@ -26,6 +27,13 @@ pub struct TelegramConfig {
     pub cli: String,
     pub profile: String,
     pub turn_timeout_secs: u64,
+    /// How the agent should answer, in the user's words. Chats can override
+    /// it with `/style`.
+    pub reply_style: String,
+    /// Send the desktop agent notifications to the allowed users too.
+    pub forward_notifications: bool,
+    /// Offer Allow / Always / Deny buttons on permission notifications.
+    pub remote_approvals: bool,
 }
 
 impl Default for TelegramConfig {
@@ -37,6 +45,9 @@ impl Default for TelegramConfig {
             cli: "claude".to_string(),
             profile: "readonly".to_string(),
             turn_timeout_secs: 600,
+            reply_style: String::new(),
+            forward_notifications: false,
+            remote_approvals: false,
         }
     }
 }
@@ -57,6 +68,7 @@ impl TelegramConfig {
         self.turn_timeout_secs = self
             .turn_timeout_secs
             .clamp(MIN_TIMEOUT_SECS, MAX_TIMEOUT_SECS);
+        self.reply_style = normalize_style(&self.reply_style);
         self
     }
 
@@ -82,6 +94,9 @@ impl TelegramConfig {
             cli: self.cli.clone(),
             profile: self.profile.clone(),
             turn_timeout_secs: self.turn_timeout_secs,
+            reply_style: self.reply_style.clone(),
+            forward_notifications: self.forward_notifications,
+            remote_approvals: self.remote_approvals,
         }
     }
 
@@ -112,6 +127,15 @@ impl TelegramConfig {
         if let Some(secs) = patch.turn_timeout_secs {
             next.turn_timeout_secs = secs;
         }
+        if let Some(style) = patch.reply_style {
+            next.reply_style = style;
+        }
+        if let Some(forward) = patch.forward_notifications {
+            next.forward_notifications = forward;
+        }
+        if let Some(approvals) = patch.remote_approvals {
+            next.remote_approvals = approvals;
+        }
         Ok(next.normalized())
     }
 }
@@ -126,6 +150,9 @@ pub struct ConfigView {
     pub cli: String,
     pub profile: String,
     pub turn_timeout_secs: u64,
+    pub reply_style: String,
+    pub forward_notifications: bool,
+    pub remote_approvals: bool,
 }
 
 /// A partial update from the settings window. `token: Some("")` clears it.
@@ -138,6 +165,13 @@ pub struct ConfigPatch {
     pub cli: Option<String>,
     pub profile: Option<String>,
     pub turn_timeout_secs: Option<u64>,
+    pub reply_style: Option<String>,
+    pub forward_notifications: Option<bool>,
+    pub remote_approvals: Option<bool>,
+}
+
+pub fn normalize_style(style: &str) -> String {
+    style.trim().chars().take(MAX_STYLE_CHARS).collect()
 }
 
 fn token_hint(token: &str) -> String {
@@ -174,6 +208,8 @@ pub struct BotState {
     pub offset: i64,
     /// Keyed by chat id. A session only resumes with the CLI that made it.
     pub sessions: HashMap<String, Session>,
+    /// `/style` overrides of the configured reply style, keyed by chat id.
+    pub styles: HashMap<String, String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -184,6 +220,13 @@ pub struct Session {
 }
 
 impl BotState {
+    pub fn style_for<'a>(&'a self, chat_id: i64, default: &'a str) -> &'a str {
+        self.styles
+            .get(&chat_id.to_string())
+            .map(String::as_str)
+            .unwrap_or(default)
+    }
+
     pub fn session_for(&self, chat_id: i64, cli: &str) -> Option<&str> {
         self.sessions
             .get(&chat_id.to_string())
@@ -322,6 +365,20 @@ mod tests {
         assert_eq!(state.session_for(42, "claude"), Some("s1"));
         assert_eq!(state.session_for(42, "codex"), None);
         assert_eq!(state.session_for(43, "claude"), None);
+    }
+
+    #[test]
+    fn chat_styles_override_the_default() {
+        let mut state = BotState::default();
+        assert_eq!(state.style_for(42, "brief"), "brief");
+        state.styles.insert("42".into(), "formal".into());
+        assert_eq!(state.style_for(42, "brief"), "formal");
+        assert_eq!(state.style_for(43, "brief"), "brief");
+        let long = "x".repeat(MAX_STYLE_CHARS + 50);
+        assert_eq!(
+            normalize_style(&format!("  {long} ")).len(),
+            MAX_STYLE_CHARS
+        );
     }
 
     #[test]

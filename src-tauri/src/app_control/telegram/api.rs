@@ -66,10 +66,31 @@ pub struct Message {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+pub struct CallbackMessage {
+    pub message_id: i64,
+    pub chat: Chat,
+    #[serde(default)]
+    pub text: Option<String>,
+}
+
+/// A press on an inline button.
+#[derive(Debug, Clone, Deserialize)]
+pub struct CallbackQuery {
+    pub id: String,
+    pub from: User,
+    #[serde(default)]
+    pub message: Option<CallbackMessage>,
+    #[serde(default)]
+    pub data: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
 pub struct Update {
     pub update_id: i64,
     #[serde(default)]
     pub message: Option<Message>,
+    #[serde(default)]
+    pub callback_query: Option<CallbackQuery>,
 }
 
 #[derive(Clone)]
@@ -126,7 +147,7 @@ impl Api {
             json!({
                 "offset": offset,
                 "timeout": POLL_TIMEOUT_SECS,
-                "allowed_updates": ["message"],
+                "allowed_updates": ["message", "callback_query"],
             }),
             Duration::from_secs(POLL_TIMEOUT_SECS + 20),
         )
@@ -139,6 +160,58 @@ impl Api {
         self.call::<Value>(
             "sendMessage",
             json!({ "chat_id": chat_id, "text": text, "link_preview_options": { "is_disabled": true } }),
+            REQUEST_TIMEOUT,
+        )
+        .await
+        .map(|_| ())
+    }
+
+    /// One row of inline buttons, each `(label, callback data)`.
+    pub async fn send_with_buttons(
+        &self,
+        chat_id: i64,
+        text: &str,
+        buttons: &[(&str, String)],
+    ) -> Result<(), ApiError> {
+        let row: Vec<Value> = buttons
+            .iter()
+            .map(|(label, data)| json!({ "text": label, "callback_data": data }))
+            .collect();
+        self.call::<Value>(
+            "sendMessage",
+            json!({
+                "chat_id": chat_id,
+                "text": text,
+                "link_preview_options": { "is_disabled": true },
+                "reply_markup": { "inline_keyboard": [row] },
+            }),
+            REQUEST_TIMEOUT,
+        )
+        .await
+        .map(|_| ())
+    }
+
+    /// Replaces a message's text; leaving out `reply_markup` drops its buttons.
+    pub async fn edit_text(
+        &self,
+        chat_id: i64,
+        message_id: i64,
+        text: &str,
+    ) -> Result<(), ApiError> {
+        self.call::<Value>(
+            "editMessageText",
+            json!({ "chat_id": chat_id, "message_id": message_id, "text": text }),
+            REQUEST_TIMEOUT,
+        )
+        .await
+        .map(|_| ())
+    }
+
+    /// Stops the button's spinner; `text` shows as a short toast.
+    pub async fn answer_callback(&self, callback_id: &str, text: &str) -> Result<(), ApiError> {
+        self.call::<Value>(
+            "answerCallbackQuery",
+            json!({ "callback_query_id": callback_id, "text": text }),
             REQUEST_TIMEOUT,
         )
         .await
@@ -215,6 +288,16 @@ mod tests {
         assert_eq!(message.from.as_ref().unwrap().id, 42);
         assert_eq!(message.text.as_deref(), Some("hola"));
         assert!(updates[1].message.is_none());
+    }
+
+    #[test]
+    fn parses_button_presses() {
+        let body = r#"{"ok":true,"result":[{"update_id":9,"callback_query":{"id":"cb1","from":{"id":42,"is_bot":false,"first_name":"Ana"},"message":{"message_id":5,"chat":{"id":42,"type":"private"},"text":"needs permission"},"data":"perm:3:allow"}}]}"#;
+        let updates: Vec<Update> = parse_envelope(200, body).unwrap();
+        let press = updates[0].callback_query.as_ref().unwrap();
+        assert_eq!(press.from.id, 42);
+        assert_eq!(press.data.as_deref(), Some("perm:3:allow"));
+        assert_eq!(press.message.as_ref().unwrap().message_id, 5);
     }
 
     #[test]

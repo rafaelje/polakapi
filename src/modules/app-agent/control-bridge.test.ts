@@ -89,6 +89,27 @@ describe("control bridge", () => {
     expect(call).toHaveBeenCalledWith("x", undefined, "full");
   });
 
+  it("routes extra control methods to their handlers", async () => {
+    const respond = vi.fn(() => Promise.resolve({ answered: "allow" }));
+    await mountControlBridge(registry, { "permission.respond": respond });
+    listeners[0]({
+      payload: { id: 6, method: "permission.respond", params: { ptyId: "p", choice: "allow" } },
+    });
+    listeners[0]({ payload: { id: 7, method: "toString" } });
+    await flush();
+    expect(respond).toHaveBeenCalledWith({ ptyId: "p", choice: "allow" });
+    expect(invoke).toHaveBeenCalledWith(
+      "app_control_respond",
+      { id: 6, ok: true, payload: { answered: "allow" } },
+      { toastOnError: false },
+    );
+    expect(invoke).toHaveBeenCalledWith(
+      "app_control_respond",
+      { id: 7, ok: false, payload: "Error: unknown control method: toString" },
+      { toastOnError: false },
+    );
+  });
+
   it("rejects unknown methods and ignores malformed payloads", async () => {
     await mountControlBridge(registry);
     listeners[0]({ payload: { id: 3, method: "bogus" } });

@@ -13,10 +13,23 @@ export interface TelegramConfigView {
   cli: string;
   profile: string;
   turnTimeoutSecs: number;
+  replyStyle: string;
+  forwardNotifications: boolean;
+  remoteApprovals: boolean;
 }
 
 export type TelegramConfigPatch = Partial<
-  Pick<TelegramConfigView, "enabled" | "allowedUserIds" | "cli" | "profile" | "turnTimeoutSecs">
+  Pick<
+    TelegramConfigView,
+    | "enabled"
+    | "allowedUserIds"
+    | "cli"
+    | "profile"
+    | "turnTimeoutSecs"
+    | "replyStyle"
+    | "forwardNotifications"
+    | "remoteApprovals"
+  >
 > & { token?: string };
 
 export interface TelegramStatusView {
@@ -208,8 +221,47 @@ export async function mountTelegramSection(opts: TelegramSectionOptions): Promis
   );
   settingsRow(group, "Turn timeout (seconds)", "A turn running longer is killed.").append(timeout);
 
+  const style = document.createElement("textarea");
+  style.className = "telegram-style";
+  style.rows = 3;
+  style.maxLength = 1000;
+  style.spellcheck = true;
+  style.placeholder = "Answer in Spanish, informal, at most five lines.";
+  style.setAttribute("aria-label", "Reply style");
+  style.addEventListener("change", () => {
+    void save({ replyStyle: style.value.trim() }).then((ok) => {
+      if (ok) onMessage("Reply style saved. It applies from the next message.");
+    });
+  });
+  settingsRow(
+    group,
+    "Reply style",
+    "How the agent should write its answers. A chat can override it with /style; /style reset goes back to this.",
+  ).append(style);
+
+  const forward = settingsToggle("Agent notifications", config.forwardNotifications, (checked) => {
+    void save({ forwardNotifications: checked });
+  });
+  settingsRow(
+    group,
+    "Agent notifications",
+    "Also send the agent alerts from the App section to the allowed users. Same rules as the desktop alerts. In the chat: /notify on or off.",
+  ).append(forward);
+
+  const approvals = settingsToggle("Permission buttons", config.remoteApprovals, (checked) => {
+    void save({ remoteApprovals: checked });
+  });
+  settingsRow(
+    group,
+    "Permission buttons",
+    "Permission alerts from Claude Code get Allow, Always and Deny buttons. polakapi checks the prompt is still on screen before it answers. In the chat: /approvals on or off.",
+  ).append(approvals);
+
   function render(): void {
     enabled.checked = config.enabled;
+    forward.checked = config.forwardNotifications;
+    approvals.checked = config.remoteApprovals;
+    approvals.disabled = !config.forwardNotifications;
     token.placeholder = config.hasToken ? `Saved (${config.tokenHint})` : "123456:ABC-DEF…";
     saveToken.disabled = !token.value.trim();
     testToken.disabled = !token.value.trim() && !config.hasToken;
@@ -217,6 +269,7 @@ export async function mountTelegramSection(opts: TelegramSectionOptions): Promis
     if (document.activeElement !== users) users.value = config.allowedUserIds.join(", ");
     cli.value = config.cli;
     profile.value = config.profile;
+    if (document.activeElement !== style) style.value = config.replyStyle;
     timeout.value = String(config.turnTimeoutSecs);
     timeout.dataset.current = String(config.turnTimeoutSecs);
   }
