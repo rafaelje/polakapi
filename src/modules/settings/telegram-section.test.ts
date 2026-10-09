@@ -134,7 +134,7 @@ describe("telegram helpers", () => {
     );
     expect(
       describeStatus({ state: "stopped", detail: "disabled", botUsername: null, ignored: 0 }),
-    ).toBe("Stopped");
+    ).toBe("Off. Turn the switch on to start listening.");
     expect(
       describeStatus({ state: "stopped", detail: "no bot token", botUsername: null, ignored: 0 }),
     ).toBe("Stopped: no bot token");

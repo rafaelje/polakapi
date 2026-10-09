@@ -76,9 +76,8 @@ export function describeStatus(status: TelegramStatusView): string {
     case "error":
       return `Error: ${status.detail}${ignored}`;
     default:
-      return status.detail && status.detail !== "disabled"
-        ? `Stopped: ${status.detail}`
-        : "Stopped";
+      if (status.detail === "disabled") return "Off. Turn the switch on to start listening.";
+      return status.detail ? `Stopped: ${status.detail}` : "Stopped";
   }
 }
 
