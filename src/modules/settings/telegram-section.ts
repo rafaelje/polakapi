@@ -15,6 +15,7 @@ export interface TelegramConfigView {
   turnTimeoutSecs: number;
   replyStyle: string;
   addressAs: string[];
+  botName: string;
   forwardNotifications: boolean;
   remoteApprovals: boolean;
   confirmActions: boolean;
@@ -36,6 +37,7 @@ export type TelegramConfigPatch = Partial<
     | "turnTimeoutSecs"
     | "replyStyle"
     | "addressAs"
+    | "botName"
     | "forwardNotifications"
     | "remoteApprovals"
     | "confirmActions"
@@ -283,6 +285,24 @@ export async function mountTelegramSection(opts: TelegramSectionOptions): Promis
     "How the agent should write its answers. A chat can override it with /style; /style reset goes back to this.",
   ).append(style);
 
+  const botName = document.createElement("input");
+  botName.type = "text";
+  botName.className = "telegram-address";
+  botName.spellcheck = false;
+  botName.maxLength = 40;
+  botName.placeholder = "name";
+  botName.setAttribute("aria-label", "Bot name");
+  botName.addEventListener("change", () => {
+    void save({ botName: botName.value.trim() }).then((ok) => {
+      if (ok) onMessage("Saved. The bot goes by this name from the next message.");
+    });
+  });
+  settingsRow(
+    group,
+    "Bot name",
+    "The name the bot goes by. It knows that a message calling it by this name is for it, and introduces itself with it.",
+  ).append(botName);
+
   const address = document.createElement("input");
   address.type = "text";
   address.className = "telegram-address";
@@ -441,6 +461,7 @@ export async function mountTelegramSection(opts: TelegramSectionOptions): Promis
     replies.value = config.voiceReplies;
     piper.disabled = config.voiceReplies === "off";
     if (document.activeElement !== piper) piper.value = config.piperVoice;
+    if (document.activeElement !== botName) botName.value = config.botName;
     if (document.activeElement !== address) address.value = config.addressAs.join(", ");
     timeout.value = String(config.turnTimeoutSecs);
     timeout.dataset.current = String(config.turnTimeoutSecs);

@@ -24,6 +24,7 @@ const baseConfig: TelegramConfigView = {
   turnTimeoutSecs: 600,
   replyStyle: "",
   addressAs: [],
+  botName: "",
   forwardNotifications: false,
   remoteApprovals: false,
   confirmActions: true,
@@ -132,6 +133,15 @@ describe("telegram section", () => {
     await vi.waitFor(() =>
       expect(setConfig).toHaveBeenCalledWith({ replyStyle: "en español, informal" }),
     );
+  });
+
+  it("saves the bot's name trimmed", async () => {
+    await mount({ botName: "Daniela" });
+    const name = control<HTMLInputElement>("Bot name");
+    expect(name.value).toBe("Daniela");
+    name.value = "  Dani  ";
+    name.dispatchEvent(new Event("change"));
+    await vi.waitFor(() => expect(setConfig).toHaveBeenCalledWith({ botName: "Dani" }));
   });
 
   it("saves the names to address the user by", async () => {

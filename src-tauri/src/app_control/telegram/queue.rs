@@ -159,6 +159,8 @@ async fn run_turn(ctx: &Ctx, chat_id: i64, incoming: &Incoming) -> Result<String
         &Voice {
             style: &style,
             names: &config.address_as,
+            bot_name: &config.bot_name,
+            spoken_reply: speech::wants_voice(&config.voice_replies, incoming.spoken),
         },
         focus.as_ref(),
     );
@@ -229,11 +231,23 @@ async fn attempt(
 struct Voice<'a> {
     style: &'a str,
     names: &'a [String],
+    bot_name: &'a str,
+    /// polakapi will read this answer aloud as a voice note.
+    spoken_reply: bool,
 }
 
 impl Voice<'_> {
     fn rules(&self) -> Option<String> {
         let mut rules = Vec::new();
+        if !self.bot_name.is_empty() {
+            rules.push(format!(
+                "Your name is {name}. The user calls you {name}: a message that starts with or mentions {name} is talking to you, not about someone else. If asked who you are, you are {name}, polakapi's assistant.",
+                name = self.bot_name
+            ));
+        }
+        if self.spoken_reply {
+            rules.push("polakapi will read your answer aloud and send it as a voice note after the text, so you do answer with voice. Write the answer so it sounds natural spoken: plain sentences, no lists or symbols in the prose. Code and command output stay in ``` fences; they are shown, not read.".to_string());
+        }
         if !self.names.is_empty() {
             rules.push(format!(
                 "Address the user as {}, so they know the answer is for them. Use one of these names in each answer, varying naturally if there are several.",
@@ -300,10 +314,14 @@ mod tests {
         let plain = Voice {
             style: "",
             names: &[],
+            bot_name: "",
+            spoken_reply: false,
         };
         let styled = Voice {
             style: "en español, breve",
             names: &[],
+            bot_name: "",
+            spoken_reply: false,
         };
         let (prompt, system) = build_turn("claude", "Ana", "hola", &plain, None);
         assert_eq!(prompt, "[telegram] Ana · project: none selected\nhola");
@@ -334,10 +352,28 @@ mod tests {
         let voice = Voice {
             style: "breve",
             names: &names,
+            bot_name: "",
+            spoken_reply: false,
         };
         let (_, system) = build_turn("claude", "Ana", "hola", &voice, None);
         let system = system.unwrap();
         assert!(system.starts_with("Address the user as Miguel, jefe,"));
         assert!(system.ends_with("breve"));
+    }
+
+    #[test]
+    fn the_bot_knows_its_own_name() {
+        let names = vec!["Miguel".to_string()];
+        let voice = Voice {
+            style: "",
+            names: &names,
+            bot_name: "Daniela",
+            spoken_reply: true,
+        };
+        let (_, system) = build_turn("claude", "Ana", "Daniela, git status", &voice, None);
+        let system = system.unwrap();
+        assert!(system.starts_with("Your name is Daniela."));
+        assert!(system.contains("send it as a voice note"));
+        assert!(system.contains("\n\nAddress the user as Miguel"));
     }
 }

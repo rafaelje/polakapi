@@ -257,6 +257,9 @@ Where the implementation differs from the plan above:
 - **Address as.** `addressAs` (settings, comma separated) lists the names
   the agent calls the user, so an answer reads as meant for them. It rides
   with the reply style in the same system prompt addition.
+- **Bot name.** `botName` (settings) is the name the agent goes by: it
+  knows a message calling it by that name is for it and introduces itself
+  with it. Same system prompt addition, placed first.
 - **Notifications.** `forwardNotifications` (settings, or `/notify on|off`)
   mirrors the agent alerts the main window already delivers: same events, same
   preferences, same timing. `agent-notifier.ts` calls `forwardToTelegram`

@@ -35,6 +35,8 @@ pub struct TelegramConfig {
     pub reply_style: String,
     /// What the agent calls the user, so the answers read as meant for them.
     pub address_as: Vec<String>,
+    /// The name the agent goes by and answers to.
+    pub bot_name: String,
     /// Send the desktop agent notifications to the allowed users too.
     pub forward_notifications: bool,
     /// Offer Allow / Always / Deny buttons on permission notifications.
@@ -69,6 +71,7 @@ impl Default for TelegramConfig {
             turn_timeout_secs: 600,
             reply_style: String::new(),
             address_as: Vec::new(),
+            bot_name: String::new(),
             forward_notifications: false,
             remote_approvals: false,
             confirm_actions: true,
@@ -113,6 +116,7 @@ impl TelegramConfig {
             .clamp(MIN_TIMEOUT_SECS, MAX_TIMEOUT_SECS);
         self.reply_style = normalize_style(&self.reply_style);
         self.address_as = normalize_names(&self.address_as);
+        self.bot_name = self.bot_name.trim().chars().take(MAX_NAME_CHARS).collect();
         self.whisper_model = self.whisper_model.trim().to_string();
         if !VOICE_LANGUAGES.contains(&self.voice_language.as_str()) {
             self.voice_language = defaults.voice_language;
@@ -148,6 +152,7 @@ impl TelegramConfig {
             turn_timeout_secs: self.turn_timeout_secs,
             reply_style: self.reply_style.clone(),
             address_as: self.address_as.clone(),
+            bot_name: self.bot_name.clone(),
             forward_notifications: self.forward_notifications,
             remote_approvals: self.remote_approvals,
             confirm_actions: self.confirm_actions,
@@ -193,6 +198,9 @@ impl TelegramConfig {
         if let Some(names) = patch.address_as {
             next.address_as = names;
         }
+        if let Some(name) = patch.bot_name {
+            next.bot_name = name;
+        }
         if let Some(forward) = patch.forward_notifications {
             next.forward_notifications = forward;
         }
@@ -236,6 +244,7 @@ pub struct ConfigView {
     pub turn_timeout_secs: u64,
     pub reply_style: String,
     pub address_as: Vec<String>,
+    pub bot_name: String,
     pub forward_notifications: bool,
     pub remote_approvals: bool,
     pub confirm_actions: bool,
@@ -259,6 +268,7 @@ pub struct ConfigPatch {
     pub turn_timeout_secs: Option<u64>,
     pub reply_style: Option<String>,
     pub address_as: Option<Vec<String>>,
+    pub bot_name: Option<String>,
     pub forward_notifications: Option<bool>,
     pub remote_approvals: Option<bool>,
     pub confirm_actions: Option<bool>,

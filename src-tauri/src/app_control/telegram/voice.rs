@@ -39,6 +39,15 @@ impl Whisper {
     }
 }
 
+/// A path from settings, with a leading `~` meaning the home directory.
+pub(super) fn expand_home(path: &str, home: Option<&Path>) -> PathBuf {
+    match (path.strip_prefix("~/").or(path.strip_prefix("~\\")), home) {
+        (Some(rest), Some(home)) => home.join(rest),
+        _ if path == "~" => home.map(Path::to_path_buf).unwrap_or_default(),
+        _ => PathBuf::from(path),
+    }
+}
+
 pub(super) fn find_program(name: &str, home: Option<&Path>) -> Option<PathBuf> {
     let file = if cfg!(windows) {
         format!("{name}.exe")
@@ -62,11 +71,14 @@ pub(super) fn find_program(name: &str, home: Option<&Path>) -> Option<PathBuf> {
 /// The model in settings, or the first `ggml-*.bin` in ~/.local/share/whisper.
 fn find_model(configured: &str, home: Option<&Path>) -> Result<PathBuf, String> {
     if !configured.is_empty() {
-        let path = PathBuf::from(configured);
+        let path = expand_home(configured, home);
         return if path.is_file() {
             Ok(path)
         } else {
-            Err(format!("the whisper model {configured} does not exist"))
+            Err(format!(
+                "the whisper model {} does not exist",
+                path.display()
+            ))
         };
     }
     let dir = home
@@ -286,6 +298,10 @@ mod tests {
         std::fs::write(&custom, "").unwrap();
         assert_eq!(
             find_model(&custom.to_string_lossy(), Some(home.path())).unwrap(),
+            custom
+        );
+        assert_eq!(
+            find_model("~/model.bin", Some(home.path())).unwrap(),
             custom
         );
     }

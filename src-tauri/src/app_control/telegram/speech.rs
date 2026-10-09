@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use super::bot::{reply, Ctx};
 use super::config::TelegramConfig;
-use super::voice::{find_program, run};
+use super::voice::{expand_home, find_program, run};
 use crate::platform_command;
 
 // Spoken answers with Piper on this computer: the prose of an answer becomes
@@ -39,11 +39,11 @@ impl Speaker {
 /// preferring one for the voice note language.
 fn find_voice(configured: &str, language: &str, home: Option<&Path>) -> Result<PathBuf, String> {
     if !configured.is_empty() {
-        let path = PathBuf::from(configured);
+        let path = expand_home(configured, home);
         return if path.is_file() {
             Ok(path)
         } else {
-            Err(format!("the Piper voice {configured} does not exist"))
+            Err(format!("the Piper voice {} does not exist", path.display()))
         };
     }
     let dir = home
@@ -239,5 +239,14 @@ mod tests {
         assert_eq!(pick("es"), dir.join("es_MX-claude-high.onnx"));
         assert_eq!(pick("auto"), dir.join("en_US-lessac-medium.onnx"));
         assert!(find_voice("/nope.onnx", "es", Some(home.path())).is_err());
+        assert_eq!(
+            find_voice(
+                "~/.local/share/piper/es_MX-claude-high.onnx",
+                "en",
+                Some(home.path())
+            )
+            .unwrap(),
+            dir.join("es_MX-claude-high.onnx")
+        );
     }
 }
