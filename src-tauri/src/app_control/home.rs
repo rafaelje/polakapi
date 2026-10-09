@@ -141,6 +141,88 @@ pub fn prepare_in(home: &Path, cli: &str, bin: &str, control: &str) -> Result<La
     })
 }
 
+/// Launch spec for one non-interactive turn (the Telegram bot). The prompt is
+/// written to stdin, so text that looks like a flag is never parsed as one.
+/// Only CLIs whose MCP registration can be passed per process are supported:
+/// the others read a shared file in the home that the agent tab also uses.
+pub fn prepare_headless(
+    home: &Path,
+    cli: &str,
+    bin: &str,
+    control: &str,
+    profile: &str,
+    resume: Option<&str>,
+) -> Result<LaunchSpec, String> {
+    let server_args = vec![
+        "app-mcp".to_string(),
+        "--control".to_string(),
+        control.to_string(),
+        "--profile".to_string(),
+        profile.to_string(),
+    ];
+    write_instructions(home)?;
+
+    let (command, args) = match cli {
+        "claude" => {
+            let config = home.join("mcp").join(format!("claude-{profile}.json"));
+            write_json(
+                &config,
+                &json!({ "mcpServers": { SERVER_NAME: { "command": bin, "args": server_args } } }),
+            )?;
+            let mut args = vec![
+                "-p".to_string(),
+                "--output-format".to_string(),
+                "json".to_string(),
+                "--mcp-config".to_string(),
+                config.to_string_lossy().into_owned(),
+                "--strict-mcp-config".to_string(),
+                // Nobody can answer a permission prompt, so the built-in shell
+                // and file tools are removed rather than left to the user's
+                // global allow rules.
+                "--tools".to_string(),
+                String::new(),
+                "--allowedTools".to_string(),
+                format!("mcp__{SERVER_NAME}"),
+            ];
+            if let Some(id) = resume {
+                args.extend(["--resume".to_string(), id.to_string()]);
+            }
+            ("claude", args)
+        }
+        "codex" => {
+            let mut args = vec![
+                "exec".to_string(),
+                "--json".to_string(),
+                "--skip-git-repo-check".to_string(),
+                "--sandbox".to_string(),
+                "read-only".to_string(),
+                "-c".to_string(),
+                "approval_policy=\"never\"".to_string(),
+                "-c".to_string(),
+                format!("mcp_servers.{SERVER_NAME}.command={}", toml_string(bin)),
+                "-c".to_string(),
+                format!(
+                    "mcp_servers.{SERVER_NAME}.args={}",
+                    toml_array(&server_args)
+                ),
+            ];
+            if let Some(id) = resume {
+                args.extend(["resume".to_string(), id.to_string()]);
+            }
+            args.push("-".to_string());
+            ("codex", args)
+        }
+        other => return Err(format!("{other} cannot run headless turns")),
+    };
+
+    Ok(LaunchSpec {
+        cli: cli.to_string(),
+        cwd: home.to_string_lossy().into_owned(),
+        command: command.to_string(),
+        args,
+    })
+}
+
 /// One body under the three names the CLIs look for, so each reads the same
 /// brief without import syntax that differs per CLI.
 fn write_instructions(home: &Path) -> Result<(), String> {
@@ -212,6 +294,50 @@ mod tests {
         );
         assert!(dir.path().join("CLAUDE.md").is_file());
         assert!(dir.path().join("AGENTS.md").is_file());
+    }
+
+    #[test]
+    fn headless_claude_uses_its_own_config_and_no_builtin_tools() {
+        let dir = tempfile::tempdir().unwrap();
+        let spec = prepare_headless(
+            dir.path(),
+            "claude",
+            "/opt/polakapi",
+            "/c.json",
+            "readonly",
+            Some("abc"),
+        )
+        .unwrap();
+        assert_eq!(&spec.args[..3], ["-p", "--output-format", "json"]);
+        let tools = spec.args.iter().position(|a| a == "--tools").unwrap();
+        assert_eq!(spec.args[tools + 1], "");
+        assert_eq!(spec.args[spec.args.len() - 2..], ["--resume", "abc"]);
+        let config: Value = serde_json::from_str(
+            &std::fs::read_to_string(dir.path().join("mcp/claude-readonly.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(config["mcpServers"]["polakapi"]["args"][4], "readonly");
+        assert!(!dir.path().join("mcp/claude.json").exists());
+    }
+
+    #[test]
+    fn headless_codex_reads_the_prompt_from_stdin() {
+        let dir = tempfile::tempdir().unwrap();
+        let fresh =
+            prepare_headless(dir.path(), "codex", "/bin/p", "/c.json", "full", None).unwrap();
+        assert_eq!(fresh.args[0], "exec");
+        assert_eq!(fresh.args.last().unwrap(), "-");
+        assert!(fresh.args.contains(
+            &r#"mcp_servers.polakapi.args=["app-mcp","--control","/c.json","--profile","full"]"#
+                .to_string()
+        ));
+        let resumed =
+            prepare_headless(dir.path(), "codex", "/bin/p", "/c.json", "full", Some("t1")).unwrap();
+        assert_eq!(
+            resumed.args[resumed.args.len() - 3..],
+            ["resume", "t1", "-"]
+        );
+        assert!(prepare_headless(dir.path(), "gemini", "/bin/p", "/c.json", "full", None).is_err());
     }
 
     #[test]

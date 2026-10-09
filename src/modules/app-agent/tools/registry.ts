@@ -18,9 +18,38 @@ import { workspaceTools } from "./workspace-tools";
 
 const MAX_RESULT_CHARS = 200_000;
 
+/** `full` is the agent tab; `readonly` is what the Telegram bot gets by default. */
+export type ToolProfile = "full" | "readonly";
+
+export const READONLY_TOOLS: ReadonlySet<string> = new Set([
+  "polakapi_overview",
+  "polakapi_project_status",
+  "polakapi_agents_status",
+  "polakapi_read_terminal",
+  "polakapi_skills_list",
+  "polakapi_skill_read",
+  "polakapi_memory_list",
+  "polakapi_memory_read",
+  "polakapi_agent_context",
+  "polakapi_agent_context_search",
+  "polakapi_agent_context_entry",
+  "polakapi_adversarial_status",
+  "polakapi_adversarial_findings",
+  "polakapi_context_mode_status",
+]);
+
+/** Anything but an explicit "readonly" keeps today's behaviour for the agent tab. */
+export function toProfile(value: unknown): ToolProfile {
+  return value === "readonly" ? "readonly" : "full";
+}
+
+function allowed(name: string, profile: ToolProfile): boolean {
+  return profile === "full" || READONLY_TOOLS.has(name);
+}
+
 export interface ToolRegistry {
-  list(): ToolDescriptor[];
-  call(name: string, args: unknown): Promise<ToolResult>;
+  list(profile?: ToolProfile): ToolDescriptor[];
+  call(name: string, args: unknown, profile?: ToolProfile): Promise<ToolResult>;
 }
 
 export function allTools(): ToolDef[] {
@@ -49,15 +78,20 @@ export function createToolRegistry(ctx: ToolContext): ToolRegistry {
   }
 
   return {
-    list: () =>
-      [...tools.values()].map(({ name, description, inputSchema }) => ({
-        name,
-        description,
-        inputSchema,
-      })),
-    call: async (name, args) => {
+    list: (profile = "full") =>
+      [...tools.values()]
+        .filter((tool) => allowed(tool.name, profile))
+        .map(({ name, description, inputSchema }) => ({
+          name,
+          description,
+          inputSchema,
+        })),
+    call: async (name, args, profile = "full") => {
       const tool = tools.get(name);
       if (!tool) return { text: `unknown tool: ${name}`, isError: true };
+      if (!allowed(name, profile)) {
+        return { text: `${name} is not available in the ${profile} profile`, isError: true };
+      }
       const safeArgs: ToolArgs =
         args && typeof args === "object" && !Array.isArray(args) ? (args as ToolArgs) : {};
       try {

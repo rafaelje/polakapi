@@ -1,7 +1,7 @@
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
 import { invoke } from "../../shared/tauri/invoke";
-import type { ToolRegistry } from "./tools/registry";
+import { toProfile, type ToolRegistry } from "./tools/registry";
 import type { ControlRequest } from "./types";
 
 // Answers the control server's relayed requests. One listener per main
@@ -20,13 +20,18 @@ function isControlRequest(value: unknown): value is ControlRequest {
 }
 
 async function dispatch(registry: ToolRegistry, request: ControlRequest): Promise<unknown> {
+  const params = (request.params ?? {}) as {
+    name?: unknown;
+    arguments?: unknown;
+    profile?: unknown;
+  };
+  const profile = toProfile(params.profile);
   switch (request.method) {
     case "tools.list":
-      return { tools: registry.list() };
+      return { tools: registry.list(profile) };
     case "tools.call": {
-      const params = (request.params ?? {}) as { name?: unknown; arguments?: unknown };
       if (typeof params.name !== "string") throw new Error("tools.call needs a name");
-      return registry.call(params.name, params.arguments);
+      return registry.call(params.name, params.arguments, profile);
     }
     default:
       throw new Error(`unknown control method: ${request.method}`);

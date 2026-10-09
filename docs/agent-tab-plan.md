@@ -107,3 +107,8 @@ and reported the live state. cursor-agent reached the model with `--trust`
   reviews are polled).
 - Project windows: the bridge lives in the main window only, which is also
   where the workspaces state lives.
+
+## 6. Telegram
+
+The same tools can be reached from a Telegram bot that runs headless turns of
+the operator agent. See `telegram-bot-plan.md`.

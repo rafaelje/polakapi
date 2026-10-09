@@ -19,7 +19,7 @@ vi.mock("../adversarial-runner", () => ({
   isLoopCli: () => true,
 }));
 
-import { allTools, createToolRegistry } from "./registry";
+import { allTools, createToolRegistry, READONLY_TOOLS } from "./registry";
 import type { ToolContext } from "./types";
 
 const ctx = {
@@ -63,5 +63,19 @@ describe("tool registry", () => {
     expect(result).toEqual({ text: '"ptyId" is required', isError: true });
     const bad = await registry.call("polakapi_send_to_terminal", "not-an-object");
     expect(bad.isError).toBe(true);
+  });
+
+  it("limits the readonly profile to tools that only read", async () => {
+    const registry = createToolRegistry(ctx);
+    const names = new Set(allTools().map((tool) => tool.name));
+    for (const name of READONLY_TOOLS) expect(names.has(name)).toBe(true);
+    const listed = registry.list("readonly").map((tool) => tool.name);
+    expect(listed.length).toBe(READONLY_TOOLS.size);
+    expect(listed).not.toContain("polakapi_send_to_terminal");
+    const refused = await registry.call("polakapi_send_to_terminal", {}, "readonly");
+    expect(refused).toEqual({
+      text: "polakapi_send_to_terminal is not available in the readonly profile",
+      isError: true,
+    });
   });
 });

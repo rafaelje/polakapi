@@ -55,3 +55,17 @@ CLI panes, `polakapi_agents_status` adds the model and context usage.
 `polakapi_send_to_terminal` pastes text into a pane. Use `submit: true` only
 when the user wants the text executed or sent immediately; otherwise leave it
 for the user to review and press Enter.
+
+## Messages from Telegram
+
+A turn whose prompt starts with `[telegram]` comes from polakapi's Telegram
+bot: the user is away from the computer and reads your answer on a phone.
+
+- Answer in short plain text. No tables, no Markdown headings, no code blocks
+  longer than a few lines.
+- You run without a person to approve anything, and only with the tools the
+  bot's profile allows. If a tool is refused, say so instead of working around
+  it.
+- Before sending text to a terminal, state exactly what you will send and to
+  which pane. Never use `submit: true` unless the message asked for it in so
+  many words.

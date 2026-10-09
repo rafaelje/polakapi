@@ -78,6 +78,35 @@ impl ControlServer {
         }
     }
 
+    /// Relays one request to the main webview and blocks until it answers.
+    /// Used by the TCP listener and, in-process, by the Telegram bot.
+    pub fn relay(&self, app: &AppHandle, method: &str, params: Value) -> Result<Value, String> {
+        if !self.ready.load(Ordering::SeqCst) {
+            return Err("polakapi's main window is not ready to take requests".to_string());
+        }
+        let (id, receiver) = self.register();
+        let emitted = app.emit_to(
+            MAIN_WINDOW,
+            REQUEST_EVENT,
+            json!({ "id": id, "method": method, "params": params }),
+        );
+        if emitted.is_err() {
+            self.forget(id);
+            return Err("could not reach polakapi's main window".to_string());
+        }
+        match receiver.recv_timeout(RESPONSE_TIMEOUT) {
+            Ok(Reply { ok: true, payload }) => Ok(payload),
+            Ok(Reply { ok: false, payload }) => Err(payload
+                .as_str()
+                .map(str::to_string)
+                .unwrap_or_else(|| payload.to_string())),
+            Err(_) => {
+                self.forget(id);
+                Err("polakapi did not answer in time".to_string())
+            }
+        }
+    }
+
     fn register(&self) -> (u64, Receiver<Reply>) {
         let id = self.next_id.fetch_add(1, Ordering::SeqCst);
         let (tx, rx) = mpsc::channel();
@@ -257,33 +286,10 @@ fn handle_line(line: &str, server: &ControlServer, app: &AppHandle) -> Value {
     let Some(method) = request.get("method").and_then(Value::as_str) else {
         return error_line("missing method");
     };
-    if !server.ready.load(Ordering::SeqCst) {
-        return error_line("polakapi's main window is not ready to take requests");
-    }
     let params = request.get("params").cloned().unwrap_or(Value::Null);
-    let (id, receiver) = server.register();
-    let emitted = app.emit_to(
-        MAIN_WINDOW,
-        REQUEST_EVENT,
-        json!({ "id": id, "method": method, "params": params }),
-    );
-    if emitted.is_err() {
-        server.forget(id);
-        return error_line("could not reach polakapi's main window");
-    }
-    match receiver.recv_timeout(RESPONSE_TIMEOUT) {
-        Ok(Reply { ok: true, payload }) => json!({ "ok": true, "result": payload }),
-        Ok(Reply { ok: false, payload }) => {
-            let message = payload
-                .as_str()
-                .map(str::to_string)
-                .unwrap_or_else(|| payload.to_string());
-            error_line(&message)
-        }
-        Err(_) => {
-            server.forget(id);
-            error_line("polakapi did not answer in time")
-        }
+    match server.relay(app, method, params) {
+        Ok(result) => json!({ "ok": true, "result": result }),
+        Err(message) => error_line(&message),
     }
 }
 

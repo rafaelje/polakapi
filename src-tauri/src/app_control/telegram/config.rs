@@ -1,0 +1,348 @@
+use std::collections::HashMap;
+use std::io::Write;
+use std::path::Path;
+
+use serde::{Deserialize, Serialize};
+
+use crate::app_control::mcp::PROFILES;
+
+// Bot configuration and the bot's own state. Both files hold secrets or chat
+// ids, so they are written readable only by the user. The token never goes
+// back to the webview once saved: `ConfigView` carries a hint instead.
+
+pub const CONFIG_FILE: &str = "telegram.json";
+pub const STATE_FILE: &str = "telegram-state.json";
+pub const AUDIT_FILE: &str = "telegram-audit.jsonl";
+pub const HEADLESS_CLIS: &[&str] = &["claude", "codex"];
+const MIN_TIMEOUT_SECS: u64 = 30;
+const MAX_TIMEOUT_SECS: u64 = 3600;
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct TelegramConfig {
+    pub enabled: bool,
+    pub token: String,
+    pub allowed_user_ids: Vec<i64>,
+    pub cli: String,
+    pub profile: String,
+    pub turn_timeout_secs: u64,
+}
+
+impl Default for TelegramConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            token: String::new(),
+            allowed_user_ids: Vec::new(),
+            cli: "claude".to_string(),
+            profile: "readonly".to_string(),
+            turn_timeout_secs: 600,
+        }
+    }
+}
+
+impl TelegramConfig {
+    pub fn normalized(mut self) -> Self {
+        let defaults = Self::default();
+        self.token = self.token.trim().to_string();
+        let mut seen = std::collections::HashSet::new();
+        self.allowed_user_ids
+            .retain(|id| *id > 0 && seen.insert(*id));
+        if !HEADLESS_CLIS.contains(&self.cli.as_str()) {
+            self.cli = defaults.cli;
+        }
+        if !PROFILES.contains(&self.profile.as_str()) {
+            self.profile = defaults.profile;
+        }
+        self.turn_timeout_secs = self
+            .turn_timeout_secs
+            .clamp(MIN_TIMEOUT_SECS, MAX_TIMEOUT_SECS);
+        self
+    }
+
+    /// Why the bot must stay stopped, if anything.
+    pub fn blocker(&self) -> Option<&'static str> {
+        if !self.enabled {
+            Some("disabled")
+        } else if self.token.is_empty() {
+            Some("no bot token")
+        } else if self.allowed_user_ids.is_empty() {
+            Some("no allowed user ids")
+        } else {
+            None
+        }
+    }
+
+    pub fn view(&self) -> ConfigView {
+        ConfigView {
+            enabled: self.enabled,
+            has_token: !self.token.is_empty(),
+            token_hint: token_hint(&self.token),
+            allowed_user_ids: self.allowed_user_ids.clone(),
+            cli: self.cli.clone(),
+            profile: self.profile.clone(),
+            turn_timeout_secs: self.turn_timeout_secs,
+        }
+    }
+
+    pub fn apply(&self, patch: ConfigPatch) -> Result<Self, String> {
+        let mut next = self.clone();
+        if let Some(token) = patch.token {
+            let token = token.trim().to_string();
+            if !token.is_empty() && !is_token_shaped(&token) {
+                return Err(
+                    "that does not look like a bot token (expected <digits>:<secret> from @BotFather)"
+                        .to_string(),
+                );
+            }
+            next.token = token;
+        }
+        if let Some(enabled) = patch.enabled {
+            next.enabled = enabled;
+        }
+        if let Some(ids) = patch.allowed_user_ids {
+            next.allowed_user_ids = ids;
+        }
+        if let Some(cli) = patch.cli {
+            next.cli = cli;
+        }
+        if let Some(profile) = patch.profile {
+            next.profile = profile;
+        }
+        if let Some(secs) = patch.turn_timeout_secs {
+            next.turn_timeout_secs = secs;
+        }
+        Ok(next.normalized())
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConfigView {
+    pub enabled: bool,
+    pub has_token: bool,
+    pub token_hint: String,
+    pub allowed_user_ids: Vec<i64>,
+    pub cli: String,
+    pub profile: String,
+    pub turn_timeout_secs: u64,
+}
+
+/// A partial update from the settings window. `token: Some("")` clears it.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConfigPatch {
+    pub enabled: Option<bool>,
+    pub token: Option<String>,
+    pub allowed_user_ids: Option<Vec<i64>>,
+    pub cli: Option<String>,
+    pub profile: Option<String>,
+    pub turn_timeout_secs: Option<u64>,
+}
+
+fn token_hint(token: &str) -> String {
+    if token.is_empty() {
+        return String::new();
+    }
+    let tail: String = token
+        .chars()
+        .rev()
+        .take(4)
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect();
+    format!("••••{tail}")
+}
+
+pub fn is_token_shaped(token: &str) -> bool {
+    let Some((id, secret)) = token.split_once(':') else {
+        return false;
+    };
+    !id.is_empty()
+        && id.chars().all(|c| c.is_ascii_digit())
+        && secret.len() >= 20
+        && secret
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct BotState {
+    /// Next `update_id` to ask for, so a restart does not replay messages.
+    pub offset: i64,
+    /// Keyed by chat id. A session only resumes with the CLI that made it.
+    pub sessions: HashMap<String, Session>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Session {
+    pub cli: String,
+    pub id: String,
+}
+
+impl BotState {
+    pub fn session_for(&self, chat_id: i64, cli: &str) -> Option<&str> {
+        self.sessions
+            .get(&chat_id.to_string())
+            .filter(|session| session.cli == cli)
+            .map(|session| session.id.as_str())
+    }
+}
+
+pub fn load_json<T: for<'de> Deserialize<'de> + Default>(path: &Path) -> T {
+    std::fs::read_to_string(path)
+        .ok()
+        .and_then(|raw| serde_json::from_str(&raw).ok())
+        .unwrap_or_default()
+}
+
+pub fn save_json<T: Serialize>(path: &Path, value: &T) -> Result<(), String> {
+    let body = serde_json::to_string_pretty(value).map_err(|e| format!("serialize: {e}"))?;
+    write_private(path, body.as_bytes())
+}
+
+/// Writes through a private temporary file in the same directory and renames
+/// it into place, so a crash never leaves a half-written token behind.
+pub fn write_private(path: &Path, body: &[u8]) -> Result<(), String> {
+    let dir = path
+        .parent()
+        .ok_or_else(|| format!("{} has no parent directory", path.display()))?;
+    std::fs::create_dir_all(dir).map_err(|e| format!("create {}: {e}", dir.display()))?;
+    let mut file = tempfile::Builder::new()
+        .prefix(".telegram-")
+        .tempfile_in(dir)
+        .map_err(|e| format!("write {}: {e}", path.display()))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        file.as_file()
+            .set_permissions(std::fs::Permissions::from_mode(0o600))
+            .map_err(|e| format!("write {}: {e}", path.display()))?;
+    }
+    file.write_all(body)
+        .and_then(|_| file.flush())
+        .map_err(|e| format!("write {}: {e}", path.display()))?;
+    file.persist(path)
+        .map(|_| ())
+        .map_err(|e| format!("write {}: {}", path.display(), e.error))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const TOKEN: &str = "123456:AAH-abcdefghijklmnopqrstu_vwxyz";
+
+    #[test]
+    fn empty_allowlist_or_token_keeps_the_bot_stopped() {
+        let mut config = TelegramConfig {
+            enabled: true,
+            ..TelegramConfig::default()
+        };
+        assert_eq!(config.blocker(), Some("no bot token"));
+        config.token = TOKEN.into();
+        assert_eq!(config.blocker(), Some("no allowed user ids"));
+        config.allowed_user_ids = vec![1];
+        assert_eq!(config.blocker(), None);
+        config.enabled = false;
+        assert_eq!(config.blocker(), Some("disabled"));
+    }
+
+    #[test]
+    fn normalizes_untrusted_values() {
+        let config = TelegramConfig {
+            allowed_user_ids: vec![5, -3, 0, 5, 9],
+            cli: "gemini".into(),
+            profile: "root".into(),
+            turn_timeout_secs: 1,
+            ..TelegramConfig::default()
+        }
+        .normalized();
+        assert_eq!(config.allowed_user_ids, vec![5, 9]);
+        assert_eq!(config.cli, "claude");
+        assert_eq!(config.profile, "readonly");
+        assert_eq!(config.turn_timeout_secs, 30);
+    }
+
+    #[test]
+    fn view_hides_the_token() {
+        let config = TelegramConfig {
+            token: TOKEN.into(),
+            ..TelegramConfig::default()
+        };
+        let view = serde_json::to_value(config.view()).unwrap();
+        assert_eq!(view["tokenHint"], "••••wxyz");
+        assert_eq!(view["hasToken"], true);
+        assert!(!view.to_string().contains("AAH-"));
+    }
+
+    #[test]
+    fn patch_validates_the_token_and_keeps_the_rest() {
+        let base = TelegramConfig {
+            token: TOKEN.into(),
+            allowed_user_ids: vec![7],
+            ..TelegramConfig::default()
+        };
+        assert!(base
+            .apply(ConfigPatch {
+                token: Some("not a token".into()),
+                ..ConfigPatch::default()
+            })
+            .is_err());
+        let next = base
+            .apply(ConfigPatch {
+                enabled: Some(true),
+                ..ConfigPatch::default()
+            })
+            .unwrap();
+        assert_eq!(next.token, TOKEN);
+        assert_eq!(next.allowed_user_ids, vec![7]);
+        let cleared = next
+            .apply(ConfigPatch {
+                token: Some(String::new()),
+                ..ConfigPatch::default()
+            })
+            .unwrap();
+        assert!(cleared.token.is_empty());
+    }
+
+    #[test]
+    fn sessions_only_resume_with_the_same_cli() {
+        let mut state = BotState::default();
+        state.sessions.insert(
+            "42".into(),
+            Session {
+                cli: "claude".into(),
+                id: "s1".into(),
+            },
+        );
+        assert_eq!(state.session_for(42, "claude"), Some("s1"));
+        assert_eq!(state.session_for(42, "codex"), None);
+        assert_eq!(state.session_for(43, "claude"), None);
+    }
+
+    #[test]
+    fn private_files_round_trip() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(CONFIG_FILE);
+        let config = TelegramConfig {
+            token: TOKEN.into(),
+            ..TelegramConfig::default()
+        };
+        save_json(&path, &config).unwrap();
+        assert_eq!(load_json::<TelegramConfig>(&path), config);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(&path).unwrap().permissions().mode();
+            assert_eq!(mode & 0o777, 0o600);
+        }
+        assert_eq!(
+            load_json::<TelegramConfig>(&dir.path().join("missing.json")),
+            TelegramConfig::default()
+        );
+    }
+}

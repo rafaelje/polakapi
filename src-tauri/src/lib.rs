@@ -52,6 +52,9 @@ use crate::agent_context::{
     agent_context_detail, agent_context_entry, agent_context_list, agent_context_search,
 };
 use crate::agent_sessions::agent_list_sessions;
+use crate::app_control::telegram::{
+    telegram_config_get, telegram_config_set, telegram_status, telegram_test,
+};
 use crate::app_control::{
     agent_cli_detect, agent_home_prepare, app_control_respond, app_control_set_ready,
 };
@@ -177,6 +180,15 @@ pub fn run() {
                         false
                     }
                 };
+                match app_control::telegram::bot::TelegramService::new(app.handle()) {
+                    Ok(telegram) => {
+                        telegram.restart();
+                        app.manage(telegram);
+                    }
+                    Err(error) => {
+                        eprintln!("polakapi: could not start the telegram bot: {error}");
+                    }
+                }
                 // Ephemeral context stores whose pane died never clean up after
                 // themselves, and temp directories survive reboots.
                 if let Err(error) =
@@ -229,6 +241,11 @@ pub fn run() {
                     {
                         server.remove_control_file();
                     }
+                    if let Some(telegram) =
+                        window.try_state::<Arc<app_control::telegram::bot::TelegramService>>()
+                    {
+                        telegram.stop();
+                    }
                 } else if let Some(windows) = window.try_state::<ProjectWindows>() {
                     project_windows::on_destroyed(window.app_handle(), &windows, window.label());
                 }
@@ -240,6 +257,10 @@ pub fn run() {
             agent_home_prepare,
             app_control_respond,
             app_control_set_ready,
+            telegram_config_get,
+            telegram_config_set,
+            telegram_status,
+            telegram_test,
             agent_context_list,
             agent_context_detail,
             agent_context_entry,

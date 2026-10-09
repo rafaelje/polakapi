@@ -9,14 +9,26 @@ use super::client::ControlClient;
 
 const PROTOCOL_VERSION: &str = "2024-11-05";
 const CONTROL_FLAG: &str = "--control";
+const PROFILE_FLAG: &str = "--profile";
+pub const PROFILES: &[&str] = &["full", "readonly"];
 
 pub struct Server {
     client: ControlClient,
+    profile: String,
 }
 
 impl Server {
     pub fn new(client: ControlClient) -> Self {
-        Self { client }
+        Self::with_profile(client, "full")
+    }
+
+    /// The profile travels with every request; the main webview decides which
+    /// tools it covers, next to the tool definitions.
+    pub fn with_profile(client: ControlClient, profile: &str) -> Self {
+        Self {
+            client,
+            profile: profile.to_string(),
+        }
     }
 
     pub fn handle(&self, request: &Value) -> Option<Value> {
@@ -44,7 +56,9 @@ impl Server {
     }
 
     fn list(&self) -> Result<Value, String> {
-        let result = self.client.call("tools.list", json!({}))?;
+        let result = self
+            .client
+            .call("tools.list", json!({ "profile": self.profile }))?;
         let tools = result.get("tools").cloned().unwrap_or_else(|| json!([]));
         Ok(json!({ "tools": tools }))
     }
@@ -63,7 +77,7 @@ impl Server {
             .unwrap_or_else(|| json!({}));
         match self.client.call(
             "tools.call",
-            json!({ "name": name, "arguments": arguments }),
+            json!({ "name": name, "arguments": arguments, "profile": self.profile }),
         ) {
             Ok(result) => {
                 let text = result
@@ -87,15 +101,21 @@ impl Server {
 
 /// Entry point for the `polakapi app-mcp` subcommand.
 pub fn run(args: &[String]) -> i32 {
-    let control = args
-        .windows(2)
-        .find(|pair| pair[0] == CONTROL_FLAG)
-        .map(|pair| pair[1].clone());
-    let Some(control) = control else {
+    let flag = |name: &str| {
+        args.windows(2)
+            .find(|pair| pair[0] == name)
+            .map(|pair| pair[1].clone())
+    };
+    let Some(control) = flag(CONTROL_FLAG) else {
         eprintln!("polakapi app-mcp: missing {CONTROL_FLAG} <file>");
         return 2;
     };
-    let server = Server::new(ControlClient::new(control));
+    let profile = flag(PROFILE_FLAG).unwrap_or_else(|| "full".to_string());
+    if !PROFILES.contains(&profile.as_str()) {
+        eprintln!("polakapi app-mcp: unknown {PROFILE_FLAG} {profile}");
+        return 2;
+    }
+    let server = Server::with_profile(ControlClient::new(control), &profile);
     crate::mcp_stdio::serve("polakapi app-mcp", |request| server.handle(request))
 }
 

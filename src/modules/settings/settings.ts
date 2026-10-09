@@ -5,6 +5,13 @@ import { loadPreferences, savePreferences, type NotificationPreferences } from "
 import { deliverNotification, runNotificationCommand } from "./notifications";
 import { settingsRow, settingsToggle } from "./controls";
 import { mountContextModeSection } from "./context-mode-section";
+import { listen } from "@tauri-apps/api/event";
+import {
+  mountTelegramSection,
+  type TelegramApi,
+  type TelegramConfigView,
+  type TelegramStatusView,
+} from "./telegram-section";
 import "./settings.css";
 
 interface SystemSound {
@@ -17,10 +24,12 @@ async function start(): Promise<void> {
   host.innerHTML = `<aside><h1>Settings</h1>
       <button type="button" class="settings-nav-item selected" data-section="app" aria-current="page"><span aria-hidden="true">⚙</span> App</button>
       <button type="button" class="settings-nav-item" data-section="context" aria-current="false"><span aria-hidden="true">◫</span> Context Mode</button>
+      <button type="button" class="settings-nav-item" data-section="telegram" aria-current="false"><span aria-hidden="true">✈</span> Telegram</button>
     </aside>
     <main>
       <section class="settings-panel" data-panel="app"><h2>App</h2><div class="settings-group"></div><p class="settings-note">Agent alerts require CLI hooks. Permission and input alerts are available for Claude; completion alerts work with Claude and Codex hooks. Restart agent sessions after enabling hooks.</p></section>
       <section class="settings-panel" data-panel="context" hidden><h2>Context Mode</h2><div class="settings-group settings-group-context"></div><p class="settings-note">Switching a CLI on installs two hooks — in <code>~/.claude/settings.json</code> for Claude Code, <code>~/.cursor/hooks.json</code> for Cursor: one reroutes large shell output, the other tells the agent how to search it. They only act inside polakapi terminals and are removed when you switch the CLI off. Restart agent sessions that were already open.</p></section>
+      <section class="settings-panel" data-panel="telegram" hidden><h2>Telegram</h2><div class="settings-group settings-group-telegram"></div><p class="settings-note">The bot runs inside polakapi and only answers while it is open. Each message starts the chosen CLI without a terminal, with polakapi's tools and none of the CLI's own shell or file tools. Turns are logged to <code>telegram-audit.jsonl</code> in polakapi's data folder.</p></section>
       <p class="settings-status" role="status"></p>
     </main>`;
   const group = host.querySelector<HTMLDivElement>(".settings-group")!;
@@ -296,7 +305,38 @@ async function start(): Promise<void> {
   } catch (error) {
     status.textContent = `Could not load context mode settings: ${String(error)}`;
   }
+  try {
+    await mountTelegramSection({
+      group: host.querySelector<HTMLDivElement>(".settings-group-telegram")!,
+      api: telegramApi,
+      onError: (message) => {
+        status.textContent = message;
+      },
+      onMessage: (message) => {
+        status.textContent = message;
+      },
+    });
+  } catch (error) {
+    status.textContent = `Could not load Telegram settings: ${String(error)}`;
+  }
 }
+
+/** Rejects with the command's own message rather than the invoke wrapper's. */
+function call<T>(command: string, args?: Record<string, unknown>): Promise<T> {
+  return invoke<T>(command, args, { toastOnError: false }).catch((error: unknown) => {
+    const cause = error instanceof InvokeError ? error.cause : error;
+    return Promise.reject(new Error(typeof cause === "string" ? cause : String(cause)));
+  });
+}
+
+const telegramApi: TelegramApi = {
+  getConfig: () => call<TelegramConfigView>("telegram_config_get"),
+  setConfig: (patch) => call<TelegramConfigView>("telegram_config_set", { patch }),
+  getStatus: () => call<TelegramStatusView>("telegram_status"),
+  test: (token) => call<string>("telegram_test", { token: token ?? null }),
+  watchStatus: (onChange) =>
+    listen<TelegramStatusView>("telegram-status", (event) => onChange(event.payload)),
+};
 
 function wireSectionNav(host: HTMLElement): void {
   const panels = [...host.querySelectorAll<HTMLElement>(".settings-panel")];

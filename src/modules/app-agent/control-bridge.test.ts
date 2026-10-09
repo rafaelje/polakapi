@@ -76,6 +76,19 @@ describe("control bridge", () => {
     );
   });
 
+  it("forwards the caller's tool profile and defaults to full", async () => {
+    const list = vi.fn(() => []);
+    const call = vi.fn(() => Promise.resolve({ text: "ok", isError: false }));
+    await mountControlBridge({ list, call });
+    listeners[0]({ payload: { id: 4, method: "tools.list", params: { profile: "readonly" } } });
+    listeners[0]({
+      payload: { id: 5, method: "tools.call", params: { name: "x", profile: "root" } },
+    });
+    await flush();
+    expect(list).toHaveBeenCalledWith("readonly");
+    expect(call).toHaveBeenCalledWith("x", undefined, "full");
+  });
+
   it("rejects unknown methods and ignores malformed payloads", async () => {
     await mountControlBridge(registry);
     listeners[0]({ payload: { id: 3, method: "bogus" } });

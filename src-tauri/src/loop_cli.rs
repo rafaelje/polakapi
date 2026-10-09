@@ -30,7 +30,7 @@ use std::time::Duration;
 use crate::platform_command;
 use serde::{Deserialize, Serialize};
 
-mod parsers;
+pub(crate) mod parsers;
 mod process;
 mod scope;
 
