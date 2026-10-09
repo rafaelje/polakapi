@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { parseShellCommandPayload } from "./terminal-shell-integration";
+import { parseShellCommandPayload, parseCommandDonePayload } from "./terminal-shell-integration";
 
 function b64(text: string): string {
   return btoa(String.fromCharCode(...new TextEncoder().encode(text)));
@@ -36,5 +36,15 @@ describe("parseShellCommandPayload", () => {
     expect(parseShellCommandPayload(`${token};c;not-base64!!!`, token)).toBeNull();
     expect(parseShellCommandPayload(`${token};c;${b64("   ")}`, token)).toBeNull();
     expect(parseShellCommandPayload("", token)).toBeNull();
+  });
+});
+
+describe("command done payload", () => {
+  it("reads the exit code for this pane only", () => {
+    expect(parseCommandDonePayload("pty-1;0", "pty-1")).toBe(0);
+    expect(parseCommandDonePayload("pty-1;130", "pty-1")).toBe(130);
+    expect(parseCommandDonePayload("pty-2;0", "pty-1")).toBeNull();
+    expect(parseCommandDonePayload("pty-1;", "pty-1")).toBeNull();
+    expect(parseCommandDonePayload("pty-1;x", "pty-1")).toBeNull();
   });
 });

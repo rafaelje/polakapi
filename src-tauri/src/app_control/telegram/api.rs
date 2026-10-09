@@ -166,6 +166,21 @@ impl Api {
         .map(|_| ())
     }
 
+    pub async fn send_html(&self, chat_id: i64, html: &str) -> Result<(), ApiError> {
+        self.call::<Value>(
+            "sendMessage",
+            json!({
+                "chat_id": chat_id,
+                "text": html,
+                "parse_mode": "HTML",
+                "link_preview_options": { "is_disabled": true },
+            }),
+            REQUEST_TIMEOUT,
+        )
+        .await
+        .map(|_| ())
+    }
+
     /// One row of inline buttons, each `(label, callback data)`.
     pub async fn send_with_buttons(
         &self,
@@ -173,9 +188,27 @@ impl Api {
         text: &str,
         buttons: &[(&str, String)],
     ) -> Result<(), ApiError> {
-        let row: Vec<Value> = buttons
+        let row: Vec<(String, String)> = buttons
             .iter()
-            .map(|(label, data)| json!({ "text": label, "callback_data": data }))
+            .map(|(label, data)| (label.to_string(), data.clone()))
+            .collect();
+        self.send_with_keyboard(chat_id, text, &[row]).await
+    }
+
+    /// Several rows of inline buttons, each `(label, callback data)`.
+    pub async fn send_with_keyboard(
+        &self,
+        chat_id: i64,
+        text: &str,
+        rows: &[Vec<(String, String)>],
+    ) -> Result<(), ApiError> {
+        let keyboard: Vec<Vec<Value>> = rows
+            .iter()
+            .map(|row| {
+                row.iter()
+                    .map(|(label, data)| json!({ "text": label, "callback_data": data }))
+                    .collect()
+            })
             .collect();
         self.call::<Value>(
             "sendMessage",
@@ -183,7 +216,7 @@ impl Api {
                 "chat_id": chat_id,
                 "text": text,
                 "link_preview_options": { "is_disabled": true },
-                "reply_markup": { "inline_keyboard": [row] },
+                "reply_markup": { "inline_keyboard": keyboard },
             }),
             REQUEST_TIMEOUT,
         )

@@ -24,6 +24,8 @@ const baseConfig: TelegramConfigView = {
   replyStyle: "",
   forwardNotifications: false,
   remoteApprovals: false,
+  confirmActions: true,
+  allowSudo: false,
 };
 
 const onError = vi.fn();
@@ -132,6 +134,27 @@ describe("telegram section", () => {
     forward.dispatchEvent(new Event("change"));
     await vi.waitFor(() => expect(approvals.disabled).toBe(false));
     expect(setConfig).toHaveBeenCalledWith({ forwardNotifications: true });
+  });
+
+  it("only asks before acting when the agent can act", async () => {
+    await mount();
+    const confirm = control<HTMLInputElement>("Ask before acting");
+    expect(confirm.checked).toBe(true);
+    expect(confirm.disabled).toBe(true);
+    const profile = control<HTMLSelectElement>("Tool profile");
+    profile.value = "full";
+    profile.dispatchEvent(new Event("change"));
+    await vi.waitFor(() => expect(confirm.disabled).toBe(false));
+  });
+
+  it("keeps sudo off until it is switched on in settings", async () => {
+    await mount({ profile: "full" });
+    const sudo = control<HTMLInputElement>("Allow sudo");
+    expect(sudo.checked).toBe(false);
+    expect(sudo.disabled).toBe(false);
+    sudo.checked = true;
+    sudo.dispatchEvent(new Event("change"));
+    await vi.waitFor(() => expect(setConfig).toHaveBeenCalledWith({ allowSudo: true }));
   });
 
   it("surfaces a rejected save", async () => {

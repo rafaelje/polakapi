@@ -10,14 +10,20 @@ use tauri::async_runtime::JoinHandle;
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::Semaphore;
 
+use super::actions::Actions;
+use super::api::CallbackQuery;
 use super::api::{Api, ApiError, Message};
-use super::commands::{command_argument, style_command, toggle_command};
+use super::commands::{
+    command_argument, focus_callback, list_projects, project_command, run_command, style_command,
+    toggle_command,
+};
 use super::config::{
     load_json, save_json, BotState, TelegramConfig, AUDIT_FILE, CONFIG_FILE, STATE_FILE,
 };
 use super::notify::{handle_callback, Approvals};
 use super::overview::format_overview;
 use super::queue::{Chats, Enqueued, Incoming};
+use super::terminals;
 use super::turn::{self, TELEGRAM_MESSAGE_LIMIT};
 use crate::app_control::server::ControlServer;
 
@@ -31,6 +37,17 @@ const MAX_PARALLEL_TURNS: usize = 2;
 /// run: a command typed hours ago should not fire when the laptop opens.
 const STALE_AFTER_SECS: i64 = 300;
 const COMMANDS: &[(&str, &str)] = &[
+    ("projects", "List every project"),
+    ("active", "List projects with live terminals"),
+    ("project", "Show or switch this chat's project"),
+    ("run", "Run a shell command in this chat's project"),
+    ("terminals", "List open terminals by folder"),
+    ("terminal", "Pick the terminal /sh and $ commands go to"),
+    (
+        "sh",
+        "Run a command in the chosen terminal (or start a message with $)",
+    ),
+    ("peek", "Show the last lines of the chosen terminal"),
     ("new", "Start a new conversation"),
     ("stop", "Cancel the running turn"),
     ("status", "Workspaces and projects, without the model"),
@@ -39,6 +56,10 @@ const COMMANDS: &[(&str, &str)] = &[
     (
         "approvals",
         "Permission buttons on notifications: on or off",
+    ),
+    (
+        "confirm",
+        "Ask before typing into terminals or running commands",
     ),
     ("help", "What this bot does"),
 ];
@@ -69,6 +90,7 @@ pub struct TelegramService {
     ignored: AtomicU64,
     runtime: Mutex<Option<Runtime>>,
     pub(super) approvals: Approvals,
+    pub(super) actions: Actions,
 }
 
 struct Runtime {
@@ -109,6 +131,7 @@ impl TelegramService {
             ignored: AtomicU64::new(0),
             runtime: Mutex::new(None),
             approvals: Approvals::default(),
+            actions: Actions::default(),
         }))
     }
 
@@ -228,7 +251,7 @@ impl TelegramService {
         }
     }
 
-    fn relay_overview(&self) -> Result<Value, String> {
+    pub(super) fn relay_overview(&self) -> Result<Value, String> {
         let server = self
             .app
             .try_state::<Arc<ControlServer>>()
@@ -287,7 +310,7 @@ async fn poll(ctx: Arc<Ctx>) {
                     if let Some(message) = update.message {
                         handle(&ctx, message).await;
                     } else if let Some(press) = update.callback_query {
-                        handle_callback(&ctx, press).await;
+                        route_callback(&ctx, press).await;
                     }
                 }
                 if offset != before {
@@ -313,6 +336,15 @@ async fn poll(ctx: Arc<Ctx>) {
                 backoff = (backoff * 2).min(60);
             }
         }
+    }
+}
+
+async fn route_callback(ctx: &Arc<Ctx>, press: CallbackQuery) {
+    match press.data.as_deref().unwrap_or("") {
+        data if data.starts_with("act:") => super::actions::handle_callback(ctx, press).await,
+        data if data.starts_with("focus:") => focus_callback(ctx, press).await,
+        data if data.starts_with("term:") => terminals::select_callback(ctx, press).await,
+        _ => handle_callback(ctx, press).await,
     }
 }
 
@@ -363,12 +395,23 @@ async fn handle(ctx: &Arc<Ctx>, message: Message) {
     match command {
         Some("start") | Some("help") => {
             let help = format!(
-                "polakapi operator bot. Messages go to {} with the {} tool profile.\n/new starts a new conversation, /stop cancels the running turn, /status lists workspaces without the model, /style shows or sets how answers are written (/style reset goes back to the default), /notify on|off mirrors agent notifications here, /approvals on|off adds Allow / Deny buttons to permission requests.",
+                "polakapi operator bot. Messages go to {} with the {} tool profile.\n\n/projects and /active list projects, /project picks the one this chat works on, /run <command> runs a shell command there.\n/terminals lists open terminals by folder, /terminal picks one, then /sh <command> or a message starting with $ runs it there; /peek shows its screen.\n/new starts a new conversation, /stop cancels the running turn, /status shows workspaces.\n/style sets how answers are written, /notify and /approvals mirror agent alerts with permission buttons, /confirm on|off decides whether the agent asks before typing into terminals or running commands.",
                 config.cli, config.profile
             );
             reply(ctx, chat_id, &help).await;
         }
-        Some(name @ ("notify" | "approvals")) => {
+        Some("projects") => list_projects(ctx, chat_id, false).await,
+        Some("active") => list_projects(ctx, chat_id, true).await,
+        Some("project") => project_command(ctx, chat_id, command_argument(text)).await,
+        Some("run") => run_command(ctx, chat_id, command_argument(text)).await,
+        Some("terminals") => terminals::list(ctx, chat_id).await,
+        Some("terminal") => terminals::select(ctx, chat_id, command_argument(text)).await,
+        Some("sh") => terminals::run(ctx, chat_id, command_argument(text)).await,
+        Some("peek") => terminals::peek(ctx, chat_id, command_argument(text)).await,
+        None if text.starts_with("$ ") || text == "$" => {
+            terminals::run(ctx, chat_id, text.trim_start_matches('$').trim()).await
+        }
+        Some(name @ ("notify" | "approvals" | "confirm")) => {
             let answer = toggle_command(ctx, name, command_argument(text));
             reply(ctx, chat_id, &answer).await;
         }

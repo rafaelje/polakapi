@@ -52,6 +52,7 @@ use crate::agent_context::{
     agent_context_detail, agent_context_entry, agent_context_list, agent_context_search,
 };
 use crate::agent_sessions::agent_list_sessions;
+use crate::app_control::run::app_run_command;
 use crate::app_control::telegram::{
     telegram_config_get, telegram_config_set, telegram_notify, telegram_status, telegram_test,
 };
@@ -89,7 +90,7 @@ use crate::project_windows::{
     project_window_state, ProjectWindows,
 };
 use crate::pty::PtyStore;
-use crate::pty_activity::pty_running_commands;
+use crate::pty_activity::{pty_cwds, pty_running_commands};
 use crate::skills::{skill_explain, skill_read, skill_write, skills_list};
 use crate::update_check::update_check;
 use crate::usage::usage_summary;
@@ -257,6 +258,7 @@ pub fn run() {
             agent_home_prepare,
             app_control_respond,
             app_control_set_ready,
+            app_run_command,
             telegram_config_get,
             telegram_config_set,
             telegram_notify,
@@ -281,6 +283,7 @@ pub fn run() {
             project_window_ready,
             pty_memory_stats,
             pty_running_commands,
+            pty_cwds,
             save_pasted_image,
             keep_awake_set,
             app_exit,

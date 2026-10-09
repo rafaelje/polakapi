@@ -6,12 +6,14 @@
 //!   which turns MCP tool calls into control requests.
 //! - `home`: the private working directory with per-CLI MCP registration.
 //! - `detect`: which agent CLIs are installed.
+//! - `run`: one shell command in a project, output as a terminal shows it.
 //! - `telegram`: a Telegram bot that runs headless operator turns.
 
 pub mod client;
 pub mod detect;
 pub mod home;
 pub mod mcp;
+pub mod run;
 pub mod server;
 pub mod telegram;
 

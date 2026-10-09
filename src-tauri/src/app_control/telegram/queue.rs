@@ -6,8 +6,10 @@ use serde_json::json;
 use tauri::async_runtime::JoinHandle;
 use tauri::Manager;
 
-use super::bot::{lock, now_secs, reply, send_long, Ctx};
+use super::bot::{lock, now_secs, reply, Ctx};
+use super::config::Focus;
 use super::config::{Session, TelegramConfig};
+use super::format::send_rich;
 use super::turn;
 use crate::app_control::home;
 use crate::app_control::server::ControlServer;
@@ -112,13 +114,21 @@ async fn work(ctx: Arc<Ctx>, chat_id: i64) {
             "ms": started.elapsed().as_millis() as u64,
         }));
         match result {
-            Ok(text) => send_long(&ctx, chat_id, &text).await,
+            Ok(text) => {
+                if send_rich(&ctx.api, chat_id, &text).await.is_err() {
+                    reply(&ctx, chat_id, &text).await;
+                }
+            }
             Err(error) => reply(&ctx, chat_id, &format!("Error: {error}")).await,
         }
     }
 }
 
-async fn with_typing<F: std::future::Future>(ctx: &Ctx, chat_id: i64, future: F) -> F::Output {
+pub(super) async fn with_typing<F: std::future::Future>(
+    ctx: &Ctx,
+    chat_id: i64,
+    future: F,
+) -> F::Output {
     tokio::pin!(future);
     let mut tick = tokio::time::interval(TYPING_EVERY);
     loop {
@@ -135,12 +145,21 @@ async fn run_turn(ctx: &Ctx, chat_id: i64, incoming: &Incoming) -> Result<String
     let config = ctx.config();
     let cli = config.cli.as_str();
     let style = ctx.service.style(chat_id, &config.reply_style);
-    let (prompt, system) = build_turn(cli, &incoming.name, &incoming.text, &style);
+    let focus = ctx.service.focus(chat_id);
+    let (prompt, system) = build_turn(cli, &incoming.name, &incoming.text, &style, focus.as_ref());
     let resume = ctx.service.session(chat_id, cli);
-    let first = attempt(ctx, &config, &prompt, resume.as_deref(), system.as_deref()).await;
+    let first = attempt(
+        ctx,
+        chat_id,
+        &config,
+        &prompt,
+        resume.as_deref(),
+        system.as_deref(),
+    )
+    .await;
     let output = match first {
         Err(error) if resume.is_some() && looks_like_lost_session(&error) => {
-            attempt(ctx, &config, &prompt, None, system.as_deref()).await?
+            attempt(ctx, chat_id, &config, &prompt, None, system.as_deref()).await?
         }
         other => other?,
     };
@@ -160,6 +179,7 @@ async fn run_turn(ctx: &Ctx, chat_id: i64, incoming: &Incoming) -> Result<String
 
 async fn attempt(
     ctx: &Ctx,
+    chat_id: i64,
     config: &TelegramConfig,
     prompt: &str,
     resume: Option<&str>,
@@ -174,23 +194,38 @@ async fn attempt(
         .to_string_lossy()
         .into_owned();
     let control = server.control_file().to_string_lossy().into_owned();
+    let origin = format!("telegram:{chat_id}");
     let spec = home::prepare_headless(
         &home::home_dir(app)?,
-        &config.cli,
         &bin,
         &control,
-        &config.profile,
-        resume,
-        system,
+        &home::HeadlessTurn {
+            cli: &config.cli,
+            profile: &config.profile,
+            resume,
+            system,
+            origin: Some(&origin),
+        },
     )?;
     turn::run(&spec, prompt, Duration::from_secs(config.turn_timeout_secs)).await
 }
 
 /// The prompt for one turn and, for Claude, the reply style as a system prompt
 /// addition. Codex has no such flag, so the style rides along in the prompt,
-/// restated every turn so a `/style` change applies to an ongoing chat.
-fn build_turn(cli: &str, name: &str, text: &str, style: &str) -> (String, Option<String>) {
-    let prompt = format!("[telegram] {name}:\n{text}");
+/// restated every turn so a `/style` change applies to an ongoing chat. The
+/// header names the chat's project, also restated every turn.
+fn build_turn(
+    cli: &str,
+    name: &str,
+    text: &str,
+    style: &str,
+    focus: Option<&Focus>,
+) -> (String, Option<String>) {
+    let project = match focus {
+        Some(focus) => format!("project: {} (id {}, {})", focus.name, focus.id, focus.path),
+        None => "project: none selected".to_string(),
+    };
+    let prompt = format!("[telegram] {name} · {project}\n{text}");
     if style.is_empty() {
         return (prompt, None);
     }
@@ -225,14 +260,26 @@ mod tests {
 
     #[test]
     fn style_goes_to_claude_system_prompt_and_into_codex_prompt() {
-        let (prompt, system) = build_turn("claude", "Ana", "hola", "");
-        assert_eq!(prompt, "[telegram] Ana:\nhola");
+        let (prompt, system) = build_turn("claude", "Ana", "hola", "", None);
+        assert_eq!(prompt, "[telegram] Ana · project: none selected\nhola");
         assert!(system.is_none());
-        let (prompt, system) = build_turn("claude", "Ana", "hola", "en español, breve");
-        assert_eq!(prompt, "[telegram] Ana:\nhola");
+        let (prompt, system) = build_turn("claude", "Ana", "hola", "en español, breve", None);
+        assert_eq!(prompt, "[telegram] Ana · project: none selected\nhola");
         assert!(system.unwrap().ends_with("en español, breve"));
-        let (prompt, system) = build_turn("codex", "Ana", "hola", "en español, breve");
+        let (prompt, system) = build_turn("codex", "Ana", "hola", "en español, breve", None);
         assert!(system.is_none());
-        assert!(prompt.contains("en español, breve\n\n[telegram] Ana:\nhola"));
+        assert!(
+            prompt.contains("en español, breve\n\n[telegram] Ana · project: none selected\nhola")
+        );
+        let focus = Focus {
+            id: "p1".into(),
+            name: "polakapi".into(),
+            path: "/w/polakapi".into(),
+        };
+        let (prompt, _) = build_turn("claude", "Ana", "git status", "", Some(&focus));
+        assert_eq!(
+            prompt,
+            "[telegram] Ana · project: polakapi (id p1, /w/polakapi)\ngit status"
+        );
     }
 }

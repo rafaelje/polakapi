@@ -10,11 +10,15 @@ use super::client::ControlClient;
 const PROTOCOL_VERSION: &str = "2024-11-05";
 const CONTROL_FLAG: &str = "--control";
 const PROFILE_FLAG: &str = "--profile";
+const ORIGIN_FLAG: &str = "--origin";
 pub const PROFILES: &[&str] = &["full", "readonly"];
 
 pub struct Server {
     client: ControlClient,
     profile: String,
+    /// Who drives this agent, e.g. `telegram:<chat id>`. Lets the app hold
+    /// actions for confirmation in the right place.
+    origin: Option<String>,
 }
 
 impl Server {
@@ -28,6 +32,7 @@ impl Server {
         Self {
             client,
             profile: profile.to_string(),
+            origin: None,
         }
     }
 
@@ -56,9 +61,10 @@ impl Server {
     }
 
     fn list(&self) -> Result<Value, String> {
-        let result = self
-            .client
-            .call("tools.list", json!({ "profile": self.profile }))?;
+        let result = self.client.call(
+            "tools.list",
+            json!({ "profile": self.profile, "origin": self.origin }),
+        )?;
         let tools = result.get("tools").cloned().unwrap_or_else(|| json!([]));
         Ok(json!({ "tools": tools }))
     }
@@ -77,7 +83,12 @@ impl Server {
             .unwrap_or_else(|| json!({}));
         match self.client.call(
             "tools.call",
-            json!({ "name": name, "arguments": arguments, "profile": self.profile }),
+            json!({
+                "name": name,
+                "arguments": arguments,
+                "profile": self.profile,
+                "origin": self.origin,
+            }),
         ) {
             Ok(result) => {
                 let text = result
@@ -115,7 +126,8 @@ pub fn run(args: &[String]) -> i32 {
         eprintln!("polakapi app-mcp: unknown {PROFILE_FLAG} {profile}");
         return 2;
     }
-    let server = Server::with_profile(ControlClient::new(control), &profile);
+    let mut server = Server::with_profile(ControlClient::new(control), &profile);
+    server.origin = flag(ORIGIN_FLAG);
     crate::mcp_stdio::serve("polakapi app-mcp", |request| server.handle(request))
 }
 

@@ -15,3 +15,11 @@ _polakapi_report_cmd() {
 
 autoload -Uz add-zsh-hook
 add-zsh-hook preexec _polakapi_report_cmd
+
+# Reports that the previous command finished, with its exit status, so the
+# app can tell when a command it typed is done.
+_polakapi_report_done() {
+  local polakapi_status=$?
+  printf '\033]9932;%s;%s\007' "$_polakapi_shell_token" "$polakapi_status"
+}
+add-zsh-hook precmd _polakapi_report_done

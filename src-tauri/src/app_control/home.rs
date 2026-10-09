@@ -141,6 +141,16 @@ pub fn prepare_in(home: &Path, cli: &str, bin: &str, control: &str) -> Result<La
     })
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct HeadlessTurn<'a> {
+    pub cli: &'a str,
+    pub profile: &'a str,
+    pub resume: Option<&'a str>,
+    pub system: Option<&'a str>,
+    /// Passed to `app-mcp --origin`, e.g. `telegram:<chat id>`.
+    pub origin: Option<&'a str>,
+}
+
 /// Launch spec for one non-interactive turn (the Telegram bot). The prompt is
 /// written to stdin, so text that looks like a flag is never parsed as one.
 /// Only CLIs whose MCP registration can be passed per process are supported:
@@ -149,25 +159,39 @@ pub fn prepare_in(home: &Path, cli: &str, bin: &str, control: &str) -> Result<La
 /// callers fold it into the prompt instead.
 pub fn prepare_headless(
     home: &Path,
-    cli: &str,
     bin: &str,
     control: &str,
-    profile: &str,
-    resume: Option<&str>,
-    system: Option<&str>,
+    turn: &HeadlessTurn<'_>,
 ) -> Result<LaunchSpec, String> {
-    let server_args = vec![
+    let HeadlessTurn {
+        cli,
+        profile,
+        resume,
+        system,
+        origin,
+    } = *turn;
+    let mut server_args = vec![
         "app-mcp".to_string(),
         "--control".to_string(),
         control.to_string(),
         "--profile".to_string(),
         profile.to_string(),
     ];
+    if let Some(origin) = origin {
+        server_args.extend(["--origin".to_string(), origin.to_string()]);
+    }
     write_instructions(home)?;
 
     let (command, args) = match cli {
         "claude" => {
-            let config = home.join("mcp").join(format!("claude-{profile}.json"));
+            // One file per origin: two chats running at once must not
+            // overwrite each other's registration.
+            let suffix = origin
+                .map(|origin| format!("-{}", file_safe(origin)))
+                .unwrap_or_default();
+            let config = home
+                .join("mcp")
+                .join(format!("claude-{profile}{suffix}.json"));
             write_json(
                 &config,
                 &json!({ "mcpServers": { SERVER_NAME: { "command": bin, "args": server_args } } }),
@@ -254,6 +278,19 @@ fn write_if_changed(path: &Path, body: &str) -> Result<(), String> {
     std::fs::write(path, body).map_err(|e| format!("could not write {}: {e}", path.display()))
 }
 
+fn file_safe(value: &str) -> String {
+    value
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect()
+}
+
 fn toml_string(value: &str) -> String {
     let mut out = String::with_capacity(value.len() + 2);
     out.push('"');
@@ -307,12 +344,15 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let spec = prepare_headless(
             dir.path(),
-            "claude",
             "/opt/polakapi",
             "/c.json",
-            "readonly",
-            Some("abc"),
-            Some("be brief"),
+            &HeadlessTurn {
+                cli: "claude",
+                profile: "readonly",
+                resume: Some("abc"),
+                system: Some("be brief"),
+                origin: Some("telegram:42"),
+            },
         )
         .unwrap();
         assert_eq!(&spec.args[..3], ["-p", "--output-format", "json"]);
@@ -323,18 +363,31 @@ mod tests {
             ["--resume", "abc", "--append-system-prompt", "be brief"]
         );
         let config: Value = serde_json::from_str(
-            &std::fs::read_to_string(dir.path().join("mcp/claude-readonly.json")).unwrap(),
+            &std::fs::read_to_string(dir.path().join("mcp/claude-readonly-telegram_42.json"))
+                .unwrap(),
         )
         .unwrap();
         assert_eq!(config["mcpServers"]["polakapi"]["args"][4], "readonly");
+        assert_eq!(config["mcpServers"]["polakapi"]["args"][6], "telegram:42");
         assert!(!dir.path().join("mcp/claude.json").exists());
     }
 
     #[test]
     fn headless_codex_reads_the_prompt_from_stdin() {
         let dir = tempfile::tempdir().unwrap();
-        let fresh =
-            prepare_headless(dir.path(), "codex", "/bin/p", "/c.json", "full", None, None).unwrap();
+        let fresh = prepare_headless(
+            dir.path(),
+            "/bin/p",
+            "/c.json",
+            &HeadlessTurn {
+                cli: "codex",
+                profile: "full",
+                resume: None,
+                system: None,
+                origin: None,
+            },
+        )
+        .unwrap();
         assert_eq!(fresh.args[0], "exec");
         assert_eq!(fresh.args.last().unwrap(), "-");
         assert!(fresh.args.contains(
@@ -343,12 +396,15 @@ mod tests {
         ));
         let resumed = prepare_headless(
             dir.path(),
-            "codex",
             "/bin/p",
             "/c.json",
-            "full",
-            Some("t1"),
-            None,
+            &HeadlessTurn {
+                cli: "codex",
+                profile: "full",
+                resume: Some("t1"),
+                system: None,
+                origin: None,
+            },
         )
         .unwrap();
         assert_eq!(
@@ -357,12 +413,15 @@ mod tests {
         );
         assert!(prepare_headless(
             dir.path(),
-            "gemini",
             "/bin/p",
             "/c.json",
-            "full",
-            None,
-            None
+            &HeadlessTurn {
+                cli: "gemini",
+                profile: "full",
+                resume: None,
+                system: None,
+                origin: None,
+            },
         )
         .is_err());
     }

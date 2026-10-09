@@ -287,7 +287,9 @@ fn handle_line(line: &str, server: &ControlServer, app: &AppHandle) -> Value {
         return error_line("missing method");
     };
     let params = request.get("params").cloned().unwrap_or(Value::Null);
-    match server.relay(app, method, params) {
+    let answer = super::telegram::actions::intercept(server, app, method, &params)
+        .unwrap_or_else(|| server.relay(app, method, params));
+    match answer {
         Ok(result) => json!({ "ok": true, "result": result }),
         Err(message) => error_line(&message),
     }

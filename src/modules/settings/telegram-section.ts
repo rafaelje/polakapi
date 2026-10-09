@@ -16,6 +16,8 @@ export interface TelegramConfigView {
   replyStyle: string;
   forwardNotifications: boolean;
   remoteApprovals: boolean;
+  confirmActions: boolean;
+  allowSudo: boolean;
 }
 
 export type TelegramConfigPatch = Partial<
@@ -29,6 +31,8 @@ export type TelegramConfigPatch = Partial<
     | "replyStyle"
     | "forwardNotifications"
     | "remoteApprovals"
+    | "confirmActions"
+    | "allowSudo"
   >
 > & { token?: string };
 
@@ -239,6 +243,24 @@ export async function mountTelegramSection(opts: TelegramSectionOptions): Promis
     "How the agent should write its answers. A chat can override it with /style; /style reset goes back to this.",
   ).append(style);
 
+  const confirm = settingsToggle("Ask before acting", config.confirmActions, (checked) => {
+    void save({ confirmActions: checked });
+  });
+  settingsRow(
+    group,
+    "Ask before acting",
+    "When the agent wants to type into a terminal or run a command, the chat gets Run and Cancel buttons. Off: it acts directly. In the chat: /confirm on or off.",
+  ).append(confirm);
+
+  const sudo = settingsToggle("Allow sudo", config.allowSudo, (checked) => {
+    void save({ allowSudo: checked });
+  });
+  settingsRow(
+    group,
+    "Allow sudo",
+    "Let commands from Telegram use sudo, doas, su, pkexec or run0. Off, they are refused before anything is typed. Only this switch can change it, not the chat. It cannot see sudo hidden inside an alias, a function or a script. When sudo asks for a password, type it at the computer; the bot never relays it.",
+  ).append(sudo);
+
   const forward = settingsToggle("Agent notifications", config.forwardNotifications, (checked) => {
     void save({ forwardNotifications: checked });
   });
@@ -259,6 +281,10 @@ export async function mountTelegramSection(opts: TelegramSectionOptions): Promis
 
   function render(): void {
     enabled.checked = config.enabled;
+    confirm.checked = config.confirmActions;
+    sudo.checked = config.allowSudo;
+    sudo.disabled = config.profile !== "full";
+    confirm.disabled = config.profile !== "full";
     forward.checked = config.forwardNotifications;
     approvals.checked = config.remoteApprovals;
     approvals.disabled = !config.forwardNotifications;

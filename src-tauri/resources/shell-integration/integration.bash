@@ -60,14 +60,17 @@ fi
 trap "$_polakapi_combined_debug_command" DEBUG
 unset _polakapi_combined_debug_command _polakapi_user_debug_command
 
+# Each prompt also reports that the previous command finished, with its exit
+# status, so the app can tell when a command it typed is done.
 _polakapi_precmd() {
   _polakapi_running_prompt_command=""
   _polakapi_prompt_active=1
+  printf '\033]9932;%s;%s\007' "$_polakapi_shell_token" "$_polakapi_status"
 }
 if declare -p PROMPT_COMMAND 2>/dev/null | grep -q '^declare -a'; then
-  PROMPT_COMMAND=("_polakapi_running_prompt_command=1" "${PROMPT_COMMAND[@]}" "_polakapi_precmd")
+  PROMPT_COMMAND=("_polakapi_status=\$?; _polakapi_running_prompt_command=1" "${PROMPT_COMMAND[@]}" "_polakapi_precmd")
 else
   _polakapi_orig_prompt_command="$(printf '%s' "$PROMPT_COMMAND" | sed -E 's/[[:space:];]+$//')"
-  PROMPT_COMMAND="_polakapi_running_prompt_command=1${_polakapi_orig_prompt_command:+; $_polakapi_orig_prompt_command}; _polakapi_precmd"
+  PROMPT_COMMAND="_polakapi_status=\$?; _polakapi_running_prompt_command=1${_polakapi_orig_prompt_command:+; $_polakapi_orig_prompt_command}; _polakapi_precmd"
   unset _polakapi_orig_prompt_command
 fi

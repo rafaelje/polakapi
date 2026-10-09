@@ -21,7 +21,7 @@ import {
   openLinkFromText,
 } from "./terminal-links";
 import { openPaneMenu, openCliRespawnMenu, openTerminalContextMenu } from "./terminal-pane-menu";
-import { attachShellCommandCapture } from "./terminal-shell-integration";
+import { attachCommandDoneCapture, attachShellCommandCapture } from "./terminal-shell-integration";
 import type {
   CliRespawnCallbacks,
   DockMenuCallbacks,
@@ -50,6 +50,8 @@ export class TerminalPane {
   readonly closeBtn: HTMLButtonElement;
   readonly menuBtn: HTMLButtonElement;
   private term: Terminal;
+  private commandsDone = 0;
+  private readonly doneListeners = new Set<(exitCode: number) => void>();
   private fitAddon: FitAddon;
   private readonly serializer = new SerializeAddon();
   /** Where the output written so far ends in the PTY's stream. */
@@ -160,6 +162,16 @@ export class TerminalPane {
         },
       ),
     );
+    this.disposables.push(
+      attachCommandDoneCapture(
+        this.term,
+        () => this.ptyId,
+        (exitCode) => {
+          this.commandsDone += 1;
+          for (const listener of [...this.doneListeners]) listener(exitCode);
+        },
+      ),
+    );
     this.disposables.push(attachTerminalClipboard(this.term));
     this.disposables.push(attachTerminalImagePaste(this.term));
     this.disposables.push(
@@ -252,6 +264,34 @@ export class TerminalPane {
    * operator agent to read what a pane shows without the escape sequences
    * `snapshot()` keeps for faithful re-rendering.
    */
+  /** How many prompts the shell integration has reported; 0 without it. */
+  get finishedCommands(): number {
+    return this.commandsDone;
+  }
+
+  /** Calls `listener` with the exit code each time a command finishes. */
+  onCommandDone(listener: (exitCode: number) => void): () => void {
+    this.doneListeners.add(listener);
+    return () => this.doneListeners.delete(listener);
+  }
+
+  /** Absolute buffer row the cursor is on, scrollback included. */
+  cursorRow(): number {
+    const buffer = this.term.buffer.active;
+    return buffer.baseY + buffer.cursorY;
+  }
+
+  /** Plain text from buffer row `row` to the end, trailing blank rows dropped. */
+  readFrom(row: number): string {
+    const buffer = this.term.buffer.active;
+    const lines: string[] = [];
+    for (let i = Math.max(0, row); i < buffer.length; i += 1) {
+      lines.push(buffer.getLine(i)?.translateToString(true) ?? "");
+    }
+    while (lines.length > 0 && lines[lines.length - 1].trim() === "") lines.pop();
+    return lines.join("\n");
+  }
+
   readScreen(maxLines = 80): string {
     const buffer = this.term.buffer.active;
     const lines: string[] = [];

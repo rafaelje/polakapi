@@ -1,4 +1,5 @@
 import { stringifyError } from "../../../shared/errors";
+import { commandTools } from "./command-tools";
 import { contextModeTools } from "./context-mode-tools";
 import { libraryTools } from "./library-tools";
 import { reviewTools } from "./review-tools";
@@ -26,6 +27,7 @@ export const READONLY_TOOLS: ReadonlySet<string> = new Set([
   "polakapi_project_status",
   "polakapi_agents_status",
   "polakapi_read_terminal",
+  "polakapi_terminals",
   "polakapi_skills_list",
   "polakapi_skill_read",
   "polakapi_memory_list",
@@ -56,6 +58,7 @@ export function allTools(): ToolDef[] {
   return [
     ...workspaceTools,
     ...terminalTools,
+    ...commandTools,
     ...libraryTools,
     ...reviewTools,
     ...contextModeTools,

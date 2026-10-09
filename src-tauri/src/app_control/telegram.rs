@@ -1,21 +1,31 @@
 //! Telegram bot in front of the operator agent. See docs/telegram-bot-plan.md.
 //!
+//! - `actions`: tool calls from Telegram turns: project focus, held actions.
 //! - `api`: the few Bot API methods the bot uses.
 //! - `config`: settings, the bot's offset and sessions, private file writes.
 //! - `bot`: long polling, allowlist and commands.
 //! - `commands`: `/style`, `/notify` and `/approvals`.
+//! - `terminals`: `/terminals`, `/terminal`, `/sh`, `$ …` and `/peek`.
 //! - `queue`: per-chat workers that run turns in order.
 //! - `overview`: the `/status` text.
+//! - `format`: Markdown answers as Telegram HTML, terminal blocks.
+//! - `privilege`: spots sudo and friends in a command line.
+//! - `projects`: `/projects`, `/active` and project lookup.
 //! - `notify`: agent notifications and permission buttons.
 //! - `turn`: one headless CLI turn and its parsed answer.
 
+pub mod actions;
 pub mod api;
 pub mod bot;
 mod commands;
 pub mod config;
+mod format;
 mod notify;
 mod overview;
+pub mod privilege;
+mod projects;
 mod queue;
+mod terminals;
 pub mod turn;
 
 use std::sync::Arc;

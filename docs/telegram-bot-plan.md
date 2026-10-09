@@ -270,3 +270,63 @@ Where the implementation differs from the plan above:
 - **Live settings.** Only the token and the on/off switch restart the poller.
   Every other setting is read per message, so toggling from the chat never
   cancels a running turn.
+
+## 14. Projects, direct actions and terminal output
+
+- **Project commands.** `/projects` lists every project, numbered in sidebar
+  order; `/active` only those with a live terminal or recent output.
+  `/project` shows the chat's project with a button per project; `/project
+  <number, name or id>` switches and `/project none` forgets it. All of them
+  read `polakapi_overview` and spend no model tokens.
+- **Chat project.** Each chat keeps a project in `telegram-state.json`
+  (`focus`). Every turn's header names it, `polakapi_chat_focus` (a tool only
+  Telegram turns see, answered by the Rust side) switches it when the user
+  talks about another project, and tools that take `project` get it filled
+  in when the model leaves it out.
+- **Direct actions.** Turns pass `--origin telegram:<chat>` to `app-mcp`.
+  `actions::intercept` sees those calls before the main window does. With
+  "Ask before acting" on (settings or `/confirm on|off`) and the Full
+  profile, `polakapi_send_to_terminal` and `polakapi_run_command` are held:
+  the chat gets the exact text or command with Run / Cancel buttons, and the
+  model is told not to ask again in words. Off, they run directly. Each held
+  action answers once, only in its chat, and expires after 15 minutes.
+- **Terminal output.** `polakapi_run_command` (and `/run <command>` without
+  the model) runs the command through the user's login shell in the project
+  folder with stdout and stderr merged, no pager and no colors, and returns
+  `$ command`, the output and `[exit N]`. Answers are sent as Telegram HTML:
+  ``` fences become monospaced `<pre>` blocks, reopened across messages when
+  the output is long; anything Telegram rejects is resent as plain text.
+
+## 15. The user's terminals and sudo
+
+- **Commands.** `/terminals` lists every live pane, numbered, with its
+  project, its current working directory and what it runs. `/terminal
+  <number, ptyId or part of the path>` picks the pane a chat types into (or
+  shows buttons); without a choice, the only idle shell of the chat's
+  project is used. `/sh <command>` and messages starting with `$ ` run a
+  command there; `/peek [lines]` shows the end of the screen.
+- **Working directory.** `pty_cwds` reads the cwd of each pane's root process
+  (its shell) through sysinfo, so it follows every `cd`. It works on Linux
+  and macOS; on Windows the pane's starting folder is shown instead when the
+  process cannot be read.
+- **When a command is done.** The bash and zsh integration scripts now print
+  `OSC 9932;<ptyId>;<exit status>` at every prompt. `runInTerminal`
+  (`terminal-remote.ts`) types the command, waits for that marker and
+  returns the rows printed since, minus the echoed command and the next
+  prompt, plus `[exit N]` on failure. Shells without the integration fall
+  back to 1.5 s of quiet output. After 60 s it returns what it has with
+  "still running"; a password prompt stops it with "type it at the
+  computer", and the password is never relayed. Busy panes and AI CLI panes
+  are refused.
+- **Agent tools.** `polakapi_terminals` (also in the read-only profile) and
+  `polakapi_run_in_terminal`, which is held for Run / Cancel like the other
+  actions when "Ask before acting" is on.
+- **Sudo.** `privilege::elevation` reads a command line the way a shell
+  splits it (separators, pipes, subshells, `$( )` and backticks, `VAR=x`
+  prefixes, wrappers such as `env`, `nohup` or `timeout`, and `sh -c`
+  scripts) and finds sudo, doas, su, pkexec, run0 and sudoedit. Unless
+  "Allow sudo" is on in settings, which the chat cannot change, `/sh`, `$`,
+  `/run` and the agent's `polakapi_run_command`, `polakapi_run_in_terminal`
+  and `polakapi_send_to_terminal` to a shell pane are refused before
+  anything is typed. Aliases, functions and scripts that call sudo
+  themselves are not detected; the setting's help says so.

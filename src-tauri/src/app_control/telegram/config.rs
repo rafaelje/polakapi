@@ -34,6 +34,12 @@ pub struct TelegramConfig {
     pub forward_notifications: bool,
     /// Offer Allow / Always / Deny buttons on permission notifications.
     pub remote_approvals: bool,
+    /// Ask in the chat before the agent types into a terminal or runs a
+    /// command. Off means it acts directly.
+    pub confirm_actions: bool,
+    /// Let commands sent from Telegram use sudo, doas, su and the like.
+    /// Only the settings window can change it, never the chat.
+    pub allow_sudo: bool,
 }
 
 impl Default for TelegramConfig {
@@ -48,11 +54,26 @@ impl Default for TelegramConfig {
             reply_style: String::new(),
             forward_notifications: false,
             remote_approvals: false,
+            confirm_actions: true,
+            allow_sudo: false,
         }
     }
 }
 
 impl TelegramConfig {
+    /// Why a command from Telegram must not run, if it elevates privileges
+    /// and settings do not allow that.
+    pub fn sudo_block(&self, command: &str) -> Option<String> {
+        if self.allow_sudo {
+            return None;
+        }
+        super::privilege::elevation(command).map(|program| {
+            format!(
+                "Blocked: this command uses {program}. Commands with elevated privileges are off for Telegram; allow them in polakapi Settings → Telegram."
+            )
+        })
+    }
+
     pub fn normalized(mut self) -> Self {
         let defaults = Self::default();
         self.token = self.token.trim().to_string();
@@ -97,6 +118,8 @@ impl TelegramConfig {
             reply_style: self.reply_style.clone(),
             forward_notifications: self.forward_notifications,
             remote_approvals: self.remote_approvals,
+            confirm_actions: self.confirm_actions,
+            allow_sudo: self.allow_sudo,
         }
     }
 
@@ -136,6 +159,12 @@ impl TelegramConfig {
         if let Some(approvals) = patch.remote_approvals {
             next.remote_approvals = approvals;
         }
+        if let Some(confirm) = patch.confirm_actions {
+            next.confirm_actions = confirm;
+        }
+        if let Some(allow) = patch.allow_sudo {
+            next.allow_sudo = allow;
+        }
         Ok(next.normalized())
     }
 }
@@ -153,6 +182,8 @@ pub struct ConfigView {
     pub reply_style: String,
     pub forward_notifications: bool,
     pub remote_approvals: bool,
+    pub confirm_actions: bool,
+    pub allow_sudo: bool,
 }
 
 /// A partial update from the settings window. `token: Some("")` clears it.
@@ -168,6 +199,8 @@ pub struct ConfigPatch {
     pub reply_style: Option<String>,
     pub forward_notifications: Option<bool>,
     pub remote_approvals: Option<bool>,
+    pub confirm_actions: Option<bool>,
+    pub allow_sudo: Option<bool>,
 }
 
 pub fn normalize_style(style: &str) -> String {
@@ -210,6 +243,18 @@ pub struct BotState {
     pub sessions: HashMap<String, Session>,
     /// `/style` overrides of the configured reply style, keyed by chat id.
     pub styles: HashMap<String, String>,
+    /// The project each chat is working on, keyed by chat id.
+    pub focus: HashMap<String, Focus>,
+    /// The terminal (ptyId) each chat's `/sh` and `$ …` messages go to.
+    pub terminal: HashMap<String, String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Focus {
+    pub id: String,
+    pub name: String,
+    pub path: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -379,6 +424,18 @@ mod tests {
             normalize_style(&format!("  {long} ")).len(),
             MAX_STYLE_CHARS
         );
+    }
+
+    #[test]
+    fn sudo_is_blocked_until_settings_allow_it() {
+        let mut config = TelegramConfig::default();
+        assert!(config.sudo_block("git status").is_none());
+        assert!(config
+            .sudo_block("cd x && sudo ls")
+            .unwrap()
+            .contains("uses sudo"));
+        config.allow_sudo = true;
+        assert!(config.sudo_block("sudo ls").is_none());
     }
 
     #[test]
