@@ -22,6 +22,8 @@ export interface TelegramConfigView {
   voiceNotes: boolean;
   whisperModel: string;
   voiceLanguage: string;
+  voiceReplies: string;
+  piperVoice: string;
 }
 
 export type TelegramConfigPatch = Partial<
@@ -41,6 +43,8 @@ export type TelegramConfigPatch = Partial<
     | "voiceNotes"
     | "whisperModel"
     | "voiceLanguage"
+    | "voiceReplies"
+    | "piperVoice"
   >
 > & { token?: string };
 
@@ -87,6 +91,12 @@ const VOICE_LANGUAGE_OPTIONS: ReadonlyArray<readonly [string, string]> = [
   ["fr", "French"],
   ["de", "German"],
   ["it", "Italian"],
+];
+
+const VOICE_REPLY_OPTIONS: ReadonlyArray<readonly [string, string]> = [
+  ["off", "Off"],
+  ["reply", "When I send a voice note"],
+  ["always", "Always"],
 ];
 
 /** Accepts ids separated by commas, spaces or new lines; null if any is not one. */
@@ -377,6 +387,35 @@ export async function mountTelegramSection(opts: TelegramSectionOptions): Promis
     "Path to a whisper.cpp ggml model. Empty uses the first one in ~/.local/share/whisper.",
   ).append(model);
 
+  const replies = settingsSelect(
+    "Voice answers",
+    VOICE_REPLY_OPTIONS,
+    config.voiceReplies,
+    (value) => {
+      void save({ voiceReplies: value });
+    },
+  );
+  settingsRow(
+    group,
+    "Voice answers",
+    "Also send the answer as a voice note, read aloud on this computer with Piper. Code and terminal output stay in the text. In the chat: /voice off, reply or always.",
+  ).append(replies);
+
+  const piper = document.createElement("input");
+  piper.type = "text";
+  piper.className = "telegram-model";
+  piper.spellcheck = false;
+  piper.placeholder = "~/.local/share/piper/*.onnx";
+  piper.setAttribute("aria-label", "Piper voice");
+  piper.addEventListener("change", () => {
+    void save({ piperVoice: piper.value.trim() });
+  });
+  settingsRow(
+    group,
+    "Piper voice",
+    "Path to a Piper .onnx voice. Empty picks one in ~/.local/share/piper, preferring the voice language above.",
+  ).append(piper);
+
   function render(): void {
     enabled.checked = config.enabled;
     confirm.checked = config.confirmActions;
@@ -399,6 +438,9 @@ export async function mountTelegramSection(opts: TelegramSectionOptions): Promis
     language.disabled = !config.voiceNotes;
     model.disabled = !config.voiceNotes;
     if (document.activeElement !== model) model.value = config.whisperModel;
+    replies.value = config.voiceReplies;
+    piper.disabled = config.voiceReplies === "off";
+    if (document.activeElement !== piper) piper.value = config.piperVoice;
     if (document.activeElement !== address) address.value = config.addressAs.join(", ");
     timeout.value = String(config.turnTimeoutSecs);
     timeout.dataset.current = String(config.turnTimeoutSecs);

@@ -37,7 +37,7 @@ tempfile = "3"
 rusqlite = { version = "0.32", features = ["bundled"] }
 sysinfo = "0.33"
 keepawake = "0.5"
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls-native-roots"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "multipart", "rustls-tls-native-roots"] }
 sha2 = "0.10"
 regex = "1"
 tauri-plugin-single-instance = "2"

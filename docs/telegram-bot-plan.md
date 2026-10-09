@@ -348,4 +348,10 @@ Where the implementation differs from the plan above:
   path; empty takes the first `ggml-*.bin` in `~/.local/share/whisper`.
   `voiceLanguage` is `auto` or a fixed language. Settings → Check reports what
   was found.
-
+- Voice answers (trial): `voiceReplies` is `off`, `reply` (only to voice
+  notes) or `always`; `/voice` changes it from the chat. After the text answer,
+  Piper reads its prose aloud (code blocks, links and formatting are dropped,
+  about 1200 characters at most, cut at a sentence) and ffmpeg encodes it as
+  Ogg/Opus for `sendVoice`. `piperVoice` is an `.onnx` path; empty takes one
+  from `~/.local/share/piper`, preferring `voiceLanguage`. A failure only
+  costs the voice note.

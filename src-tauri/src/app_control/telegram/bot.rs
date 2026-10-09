@@ -15,7 +15,7 @@ use super::api::CallbackQuery;
 use super::api::{Api, ApiError, Message};
 use super::commands::{
     command_argument, focus_callback, list_projects, project_command, run_command, style_command,
-    toggle_command,
+    toggle_command, voice_command,
 };
 use super::config::{
     load_json, save_json, BotState, TelegramConfig, AUDIT_FILE, CONFIG_FILE, STATE_FILE,
@@ -54,6 +54,7 @@ const COMMANDS: &[(&str, &str)] = &[
     ("status", "Workspaces and projects, without the model"),
     ("style", "Show or set how the bot answers in this chat"),
     ("notify", "Agent notifications here: on or off"),
+    ("voice", "Answer with voice notes: off, reply or always"),
     (
         "approvals",
         "Permission buttons on notifications: on or off",
@@ -383,7 +384,7 @@ async fn handle(ctx: &Arc<Ctx>, message: Message) {
         .await;
         return;
     }
-    let Some(text) = voice::message_text(ctx, &config, &message).await else {
+    let Some((text, spoken)) = voice::message_text(ctx, &config, &message).await else {
         return;
     };
     let text = text.as_str();
@@ -395,7 +396,7 @@ async fn handle(ctx: &Arc<Ctx>, message: Message) {
     match command {
         Some("start") | Some("help") => {
             let help = format!(
-                "polakapi operator bot. Messages go to {} with the {} tool profile.\n\n/projects and /active list projects, /project picks the one this chat works on, /run <command> runs a shell command there.\n/terminals lists open terminals by folder, /terminal picks one, then /sh <command> or a message starting with $ runs it there; /peek shows its screen.\n/new starts a new conversation, /stop cancels the running turn, /status shows workspaces.\n/style sets how answers are written, /notify and /approvals mirror agent alerts with permission buttons, /confirm on|off decides whether the agent asks before typing into terminals or running commands.",
+                "polakapi operator bot. Messages go to {} with the {} tool profile.\n\n/projects and /active list projects, /project picks the one this chat works on, /run <command> runs a shell command there.\n/terminals lists open terminals by folder, /terminal picks one, then /sh <command> or a message starting with $ runs it there; /peek shows its screen.\n/new starts a new conversation, /stop cancels the running turn, /status shows workspaces.\n/style sets how answers are written, /notify and /approvals mirror agent alerts with permission buttons, /confirm on|off decides whether the agent asks before typing into terminals or running commands.\nVoice notes are transcribed when enabled in settings; /voice off|reply|always decides when answers also come as voice notes.",
                 config.cli, config.profile
             );
             reply(ctx, chat_id, &help).await;
@@ -410,6 +411,10 @@ async fn handle(ctx: &Arc<Ctx>, message: Message) {
         Some("peek") => terminals::peek(ctx, chat_id, command_argument(text)).await,
         None if text.starts_with("$ ") || text == "$" => {
             terminals::run(ctx, chat_id, text.trim_start_matches('$').trim()).await
+        }
+        Some("voice") => {
+            let answer = voice_command(ctx, command_argument(text));
+            reply(ctx, chat_id, &answer).await;
         }
         Some(name @ ("notify" | "approvals" | "confirm")) => {
             let answer = toggle_command(ctx, name, command_argument(text));
@@ -465,6 +470,7 @@ async fn handle(ctx: &Arc<Ctx>, message: Message) {
                     .map(|user| user.first_name.clone())
                     .unwrap_or_default(),
                 text: text.to_string(),
+                spoken,
             };
             match ctx.chats.enqueue(ctx, chat_id, incoming) {
                 Enqueued::Started => {}

@@ -10,6 +10,7 @@ use super::bot::{lock, now_secs, reply, Ctx};
 use super::config::Focus;
 use super::config::{Session, TelegramConfig};
 use super::format::send_rich;
+use super::speech;
 use super::turn;
 use crate::app_control::home;
 use crate::app_control::server::ControlServer;
@@ -37,6 +38,8 @@ pub(super) struct Incoming {
     pub(super) user_id: i64,
     pub(super) name: String,
     pub(super) text: String,
+    /// Sent as a voice note.
+    pub(super) spoken: bool,
 }
 
 #[derive(Debug, PartialEq)]
@@ -117,6 +120,9 @@ async fn work(ctx: Arc<Ctx>, chat_id: i64) {
             Ok(text) => {
                 if send_rich(&ctx.api, chat_id, &text).await.is_err() {
                     reply(&ctx, chat_id, &text).await;
+                }
+                if speech::wants_voice(&config.voice_replies, incoming.spoken) {
+                    speech::speak_answer(&ctx, chat_id, &config, &text).await;
                 }
             }
             Err(error) => reply(&ctx, chat_id, &format!("Error: {error}")).await,

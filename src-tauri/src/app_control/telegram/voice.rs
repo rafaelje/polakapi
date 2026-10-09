@@ -39,7 +39,7 @@ impl Whisper {
     }
 }
 
-fn find_program(name: &str, home: Option<&Path>) -> Option<PathBuf> {
+pub(super) fn find_program(name: &str, home: Option<&Path>) -> Option<PathBuf> {
     let file = if cfg!(windows) {
         format!("{name}.exe")
     } else {
@@ -100,7 +100,11 @@ pub fn locate(config: &TelegramConfig) -> Result<Whisper, String> {
     })
 }
 
-async fn run(program: &Path, args: &[&str], timeout: Duration) -> Result<String, String> {
+pub(super) async fn run(
+    program: &Path,
+    args: &[&str],
+    timeout: Duration,
+) -> Result<String, String> {
     let name = program
         .file_name()
         .map(|name| name.to_string_lossy().into_owned())
@@ -191,13 +195,18 @@ pub async fn transcribe(whisper: &Whisper, language: &str, audio: &[u8]) -> Resu
     Ok(text)
 }
 
-/// The text of a message: typed, or transcribed from a voice note. `None`
-/// when there is nothing to act on; the chat has been told why.
-pub async fn message_text(ctx: &Ctx, config: &TelegramConfig, message: &Message) -> Option<String> {
+/// The text of a message, typed or transcribed from a voice note, and
+/// whether it was spoken. `None` when there is nothing to act on; the chat
+/// has been told why.
+pub async fn message_text(
+    ctx: &Ctx,
+    config: &TelegramConfig,
+    message: &Message,
+) -> Option<(String, bool)> {
     let chat_id = message.chat.id;
     if let Some(text) = message.text.as_deref().map(str::trim) {
         if !text.is_empty() {
-            return Some(text.to_string());
+            return Some((text.to_string(), false));
         }
     }
     let Some(note) = message.voice.as_ref().or(message.audio.as_ref()) else {
@@ -236,7 +245,7 @@ pub async fn message_text(ctx: &Ctx, config: &TelegramConfig, message: &Message)
     match result {
         Ok(text) => {
             reply(ctx, chat_id, &format!("🎤 {text}")).await;
-            Some(text)
+            Some((text, true))
         }
         Err(error) => {
             reply(ctx, chat_id, &format!("Could not transcribe it: {error}")).await;

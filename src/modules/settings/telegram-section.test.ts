@@ -31,6 +31,8 @@ const baseConfig: TelegramConfigView = {
   voiceNotes: false,
   whisperModel: "",
   voiceLanguage: "auto",
+  voiceReplies: "off",
+  piperVoice: "",
 };
 
 const onError = vi.fn();
@@ -153,6 +155,13 @@ describe("telegram section", () => {
     voice.dispatchEvent(new Event("change"));
     await vi.waitFor(() => expect(language.disabled).toBe(false));
     expect(setConfig).toHaveBeenCalledWith({ voiceNotes: true });
+    const piper = control<HTMLInputElement>("Piper voice");
+    expect(piper.disabled).toBe(true);
+    const replies = control<HTMLSelectElement>("Voice answers");
+    replies.value = "reply";
+    replies.dispatchEvent(new Event("change"));
+    await vi.waitFor(() => expect(piper.disabled).toBe(false));
+    expect(setConfig).toHaveBeenCalledWith({ voiceReplies: "reply" });
     button("Check").click();
     await vi.waitFor(() =>
       expect(onMessage).toHaveBeenCalledWith(

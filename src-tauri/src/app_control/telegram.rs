@@ -14,6 +14,7 @@
 //! - `notify`: agent notifications and permission buttons.
 //! - `turn`: one headless CLI turn and its parsed answer.
 //! - `voice`: voice notes transcribed locally with whisper.cpp.
+//! - `speech`: answers read aloud locally with Piper.
 
 pub mod actions;
 pub mod api;
@@ -26,6 +27,7 @@ mod overview;
 pub mod privilege;
 mod projects;
 mod queue;
+mod speech;
 mod terminals;
 pub mod turn;
 mod voice;
@@ -67,10 +69,17 @@ pub fn telegram_status(service: State<'_, Arc<TelegramService>>) -> StatusView {
     service.status()
 }
 
-/// Finds whisper-cli, ffmpeg and a model for voice notes.
+/// Finds whisper-cli, ffmpeg and a model for voice notes, and Piper with a
+/// voice when answers are spoken.
 #[tauri::command]
 pub fn telegram_voice_check(service: State<'_, Arc<TelegramService>>) -> Result<String, String> {
-    voice::locate(&service.config()).map(|whisper| whisper.summary())
+    let config = service.config();
+    let whisper = voice::locate(&config)?.summary();
+    if config.voice_replies == "off" {
+        return Ok(whisper);
+    }
+    let speaker = speech::locate(&config)?.summary();
+    Ok(format!("{whisper}; answers with {speaker}"))
 }
 
 /// Checks a token with `getMe`. Without one, checks the saved token.

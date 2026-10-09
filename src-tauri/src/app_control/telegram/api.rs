@@ -302,6 +302,30 @@ impl Api {
         .map(|_| ())
     }
 
+    pub async fn send_voice(&self, chat_id: i64, ogg: Vec<u8>) -> Result<(), ApiError> {
+        let part = reqwest::multipart::Part::bytes(ogg)
+            .file_name("answer.ogg")
+            .mime_str("audio/ogg")
+            .map_err(|e| ApiError::Other(format!("sendVoice: {}", e.without_url())))?;
+        let form = reqwest::multipart::Form::new()
+            .text("chat_id", chat_id.to_string())
+            .part("voice", part);
+        let response = self
+            .client
+            .post(format!("{}/sendVoice", self.base))
+            .multipart(form)
+            .timeout(DOWNLOAD_TIMEOUT)
+            .send()
+            .await
+            .map_err(|e| ApiError::Other(format!("sendVoice: {}", e.without_url())))?;
+        let status = response.status().as_u16();
+        let text = response
+            .text()
+            .await
+            .map_err(|e| ApiError::Other(format!("sendVoice: {}", e.without_url())))?;
+        parse_envelope::<Value>(status, &text).map(|_| ())
+    }
+
     pub async fn send_typing(&self, chat_id: i64) -> Result<(), ApiError> {
         self.call::<Value>(
             "sendChatAction",

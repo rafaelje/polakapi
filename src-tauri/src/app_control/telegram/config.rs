@@ -51,6 +51,11 @@ pub struct TelegramConfig {
     pub whisper_model: String,
     /// Spoken language passed to whisper, or `auto`.
     pub voice_language: String,
+    /// When answers also come as a voice note: `off`, `reply` (to voice
+    /// notes) or `always`.
+    pub voice_replies: String,
+    /// A Piper `.onnx` voice; empty finds one in ~/.local/share/piper.
+    pub piper_voice: String,
 }
 
 impl Default for TelegramConfig {
@@ -71,6 +76,8 @@ impl Default for TelegramConfig {
             voice_notes: false,
             whisper_model: String::new(),
             voice_language: "auto".to_string(),
+            voice_replies: "off".to_string(),
+            piper_voice: String::new(),
         }
     }
 }
@@ -110,6 +117,10 @@ impl TelegramConfig {
         if !VOICE_LANGUAGES.contains(&self.voice_language.as_str()) {
             self.voice_language = defaults.voice_language;
         }
+        if !super::speech::VOICE_REPLY_MODES.contains(&self.voice_replies.as_str()) {
+            self.voice_replies = defaults.voice_replies;
+        }
+        self.piper_voice = self.piper_voice.trim().to_string();
         self
     }
 
@@ -144,6 +155,8 @@ impl TelegramConfig {
             voice_notes: self.voice_notes,
             whisper_model: self.whisper_model.clone(),
             voice_language: self.voice_language.clone(),
+            voice_replies: self.voice_replies.clone(),
+            piper_voice: self.piper_voice.clone(),
         }
     }
 
@@ -201,6 +214,12 @@ impl TelegramConfig {
         if let Some(language) = patch.voice_language {
             next.voice_language = language;
         }
+        if let Some(mode) = patch.voice_replies {
+            next.voice_replies = mode;
+        }
+        if let Some(voice) = patch.piper_voice {
+            next.piper_voice = voice;
+        }
         Ok(next.normalized())
     }
 }
@@ -224,6 +243,8 @@ pub struct ConfigView {
     pub voice_notes: bool,
     pub whisper_model: String,
     pub voice_language: String,
+    pub voice_replies: String,
+    pub piper_voice: String,
 }
 
 /// A partial update from the settings window. `token: Some("")` clears it.
@@ -245,6 +266,8 @@ pub struct ConfigPatch {
     pub voice_notes: Option<bool>,
     pub whisper_model: Option<String>,
     pub voice_language: Option<String>,
+    pub voice_replies: Option<String>,
+    pub piper_voice: Option<String>,
 }
 
 pub fn normalize_style(style: &str) -> String {

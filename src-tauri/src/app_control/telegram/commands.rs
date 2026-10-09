@@ -5,6 +5,7 @@ use super::bot::{lock, reply, Ctx};
 use super::config::{normalize_style, ConfigPatch};
 use super::format::{send_rich, terminal_block};
 use super::projects::{self, ProjectRow};
+use super::speech::VOICE_REPLY_MODES;
 use crate::app_control::run;
 
 // Chat commands answered without the model: settings (`/style`, `/notify`,
@@ -68,6 +69,36 @@ pub(super) fn toggle_command(ctx: &Ctx, name: &str, argument: &str) -> String {
         );
     }
     answer
+}
+
+/// `/voice` sets when answers also come as voice notes.
+pub(super) fn voice_command(ctx: &Ctx, argument: &str) -> String {
+    let config = ctx.config();
+    let describe = |mode: &str| match mode {
+        "reply" => "when you send a voice note",
+        "always" => "always",
+        _ => "off",
+    };
+    let wanted = argument.to_lowercase();
+    if wanted.is_empty() {
+        return format!(
+            "Voice answers: {}. Send /voice off, /voice reply or /voice always.",
+            describe(&config.voice_replies)
+        );
+    }
+    if !VOICE_REPLY_MODES.contains(&wanted.as_str()) {
+        return "Use /voice off, /voice reply or /voice always.".to_string();
+    }
+    let saved = config
+        .apply(ConfigPatch {
+            voice_replies: Some(wanted.clone()),
+            ..ConfigPatch::default()
+        })
+        .and_then(|next| ctx.service.save_config(next));
+    match saved {
+        Ok(()) => format!("Voice answers: {}.", describe(&wanted)),
+        Err(error) => format!("Could not save: {error}"),
+    }
 }
 
 fn on_off(value: bool) -> &'static str {
