@@ -4,8 +4,6 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-use crate::app_control::mcp::PROFILES;
-
 // Bot configuration and the bot's own state. Both files hold secrets or chat
 // ids, so they are written readable only by the user. The token never goes
 // back to the webview once saved: `ConfigView` carries a hint instead.
@@ -14,6 +12,8 @@ pub const CONFIG_FILE: &str = "telegram.json";
 pub const STATE_FILE: &str = "telegram-state.json";
 pub const AUDIT_FILE: &str = "telegram-audit.jsonl";
 pub const HEADLESS_CLIS: &[&str] = &["claude", "codex"];
+/// Tool profiles a chat turn can use; `delegate` is only for delegated jobs.
+const BOT_PROFILES: &[&str] = &["full", "readonly"];
 const MIN_TIMEOUT_SECS: u64 = 30;
 const MAX_TIMEOUT_SECS: u64 = 3600;
 pub const MAX_STYLE_CHARS: usize = 1000;
@@ -113,7 +113,7 @@ impl TelegramConfig {
         if !HEADLESS_CLIS.contains(&self.cli.as_str()) {
             self.cli = defaults.cli;
         }
-        if !PROFILES.contains(&self.profile.as_str()) {
+        if !BOT_PROFILES.contains(&self.profile.as_str()) {
             self.profile = defaults.profile;
         }
         self.turn_timeout_secs = self
@@ -348,6 +348,9 @@ pub struct BotState {
     pub focus: HashMap<String, Focus>,
     /// The terminal (ptyId) each chat's `/sh` and `$ …` messages go to.
     pub terminal: HashMap<String, String>,
+    /// The Claude conversation of each chat's delegated jobs, keyed by
+    /// `<chat id>:<project id>`, so follow-ups continue it.
+    pub delegates: HashMap<String, Session>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

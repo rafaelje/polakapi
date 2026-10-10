@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use super::bot::{reply, Ctx};
+use super::api::Api;
 use super::config::TelegramConfig;
 use super::voice::{expand_home, find_program, run};
 use crate::platform_command;
@@ -189,21 +189,22 @@ pub async fn synthesize(
 
 /// Sends the answer as a voice note, ahead of its text. Failures only cost the
 /// voice note, so they are reported briefly.
-pub async fn speak_answer(ctx: &Ctx, chat_id: i64, config: &TelegramConfig, answer: &str) {
+pub async fn speak_answer(api: &Api, chat_id: i64, config: &TelegramConfig, answer: &str) {
     let Some(text) = spoken_text(answer) else {
         return;
     };
     let result = async {
         let speaker = locate(config)?;
         let audio = synthesize(&speaker, &text, config.voice_speed).await?;
-        ctx.api
-            .send_voice(chat_id, audio)
+        api.send_voice(chat_id, audio)
             .await
             .map_err(|e| e.to_string())
     }
     .await;
     if let Err(error) = result {
-        reply(ctx, chat_id, &format!("No voice note: {error}")).await;
+        let _ = api
+            .send_message(chat_id, &format!("No voice note: {error}"))
+            .await;
     }
 }
 

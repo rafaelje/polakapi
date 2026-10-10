@@ -253,6 +253,53 @@ pub fn prepare_headless(
     })
 }
 
+/// MCP tool through which a delegated Claude asks for permission.
+pub const APPROVE_TOOL: &str = "polakapi_approve";
+
+/// Launch spec for a coding task handed to Claude in a project folder (the
+/// Telegram bot's delegated jobs). Unlike the operator's turns, this Claude
+/// keeps its own tools: file edits are accepted, and anything else that
+/// needs permission goes through `APPROVE_TOOL`, which asks the user in
+/// Telegram. The user's own Claude settings and MCP servers still apply.
+pub fn prepare_delegate(
+    home: &Path,
+    bin: &str,
+    control: &str,
+    project_dir: &str,
+    origin: &str,
+    resume: Option<&str>,
+) -> Result<LaunchSpec, String> {
+    let config = home
+        .join("mcp")
+        .join(format!("claude-delegate-{}.json", file_safe(origin)));
+    write_json(
+        &config,
+        &json!({ "mcpServers": { SERVER_NAME: { "command": bin, "args": [
+            "app-mcp", "--control", control, "--profile", "delegate", "--origin", origin,
+        ] } } }),
+    )?;
+    let mut args = vec![
+        "-p".to_string(),
+        "--output-format".to_string(),
+        "json".to_string(),
+        "--mcp-config".to_string(),
+        config.to_string_lossy().into_owned(),
+        "--permission-mode".to_string(),
+        "acceptEdits".to_string(),
+        "--permission-prompt-tool".to_string(),
+        format!("mcp__{SERVER_NAME}__{APPROVE_TOOL}"),
+    ];
+    if let Some(id) = resume {
+        args.extend(["--resume".to_string(), id.to_string()]);
+    }
+    Ok(LaunchSpec {
+        cli: "claude".to_string(),
+        cwd: project_dir.to_string(),
+        command: "claude".to_string(),
+        args,
+    })
+}
+
 /// One body under the three names the CLIs look for, so each reads the same
 /// brief without import syntax that differs per CLI.
 fn write_instructions(home: &Path) -> Result<(), String> {

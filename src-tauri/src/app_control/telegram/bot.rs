@@ -20,6 +20,8 @@ use super::commands::{
 use super::config::{
     load_json, save_json, BotState, TelegramConfig, AUDIT_FILE, CONFIG_FILE, STATE_FILE,
 };
+use super::delegate::{self, Jobs};
+use super::jobs;
 use super::notify::{handle_callback, Approvals};
 use super::overview::format_overview;
 use super::queue::{Chats, Enqueued, Incoming};
@@ -49,6 +51,8 @@ const COMMANDS: &[(&str, &str)] = &[
         "Run a command in the chosen terminal (or start a message with $)",
     ),
     ("peek", "Show the last lines of the chosen terminal"),
+    ("jobs", "Coding tasks Claude is working on"),
+    ("cancel", "Stop a job: /cancel <number>"),
     ("new", "Start a new conversation"),
     ("stop", "Cancel the running turn"),
     ("status", "Workspaces and projects, without the model"),
@@ -93,6 +97,7 @@ pub struct TelegramService {
     runtime: Mutex<Option<Runtime>>,
     pub(super) approvals: Approvals,
     pub(super) actions: Actions,
+    pub(super) jobs: Jobs,
 }
 
 struct Runtime {
@@ -134,6 +139,7 @@ impl TelegramService {
             runtime: Mutex::new(None),
             approvals: Approvals::default(),
             actions: Actions::default(),
+            jobs: Jobs::default(),
         }))
     }
 
@@ -219,6 +225,7 @@ impl TelegramService {
         };
         runtime.poller.abort();
         runtime.chats.abort_all();
+        self.jobs.abort_all();
         self.set_status("stopped", "", None);
     }
 
@@ -346,6 +353,7 @@ async fn route_callback(ctx: &Arc<Ctx>, press: CallbackQuery) {
         data if data.starts_with("act:") => super::actions::handle_callback(ctx, press).await,
         data if data.starts_with("focus:") => focus_callback(ctx, press).await,
         data if data.starts_with("term:") => terminals::select_callback(ctx, press).await,
+        data if data.starts_with("dlg:") => delegate::handle_callback(ctx, press).await,
         _ => handle_callback(ctx, press).await,
     }
 }
@@ -396,7 +404,7 @@ async fn handle(ctx: &Arc<Ctx>, message: Message) {
     match command {
         Some("start") | Some("help") => {
             let help = format!(
-                "polakapi operator bot. Messages go to {} with the {} tool profile.\n\n/projects and /active list projects, /project picks the one this chat works on, /run <command> runs a shell command there.\n/terminals lists open terminals by folder, /terminal picks one, then /sh <command> or a message starting with $ runs it there; /peek shows its screen.\n/new starts a new conversation, /stop cancels the running turn, /status shows workspaces.\n/style sets how answers are written, /notify and /approvals mirror agent alerts with permission buttons, /confirm on|off decides whether the agent asks before typing into terminals or running commands.\nVoice notes are transcribed when enabled in settings; /voice off|reply|always decides when answers also come as voice notes.",
+                "polakapi operator bot. Messages go to {} with the {} tool profile.\n\n/projects and /active list projects, /project picks the one this chat works on, /run <command> runs a shell command there.\nWork in a repo (\"fix the failing test in X\") goes to Claude in that project as a background job; /jobs lists them and /cancel stops one.\n/terminals lists open terminals by folder, /terminal picks one, then /sh <command> or a message starting with $ runs it there; /peek shows its screen.\n/new starts a new conversation, /stop cancels the running turn, /status shows workspaces.\n/style sets how answers are written, /notify and /approvals mirror agent alerts with permission buttons, /confirm on|off decides whether the agent asks before typing into terminals or running commands.\nVoice notes are transcribed when enabled in settings; /voice off|reply|always decides when answers also come as voice notes.",
                 config.cli, config.profile
             );
             reply(ctx, chat_id, &help).await;
@@ -408,6 +416,8 @@ async fn handle(ctx: &Arc<Ctx>, message: Message) {
         Some("terminals") => terminals::list(ctx, chat_id).await,
         Some("terminal") => terminals::select(ctx, chat_id, command_argument(text)).await,
         Some("sh") => terminals::run(ctx, chat_id, command_argument(text)).await,
+        Some("jobs") => jobs::list_command(ctx, chat_id).await,
+        Some("cancel") => jobs::cancel_command(ctx, chat_id, command_argument(text)).await,
         Some("peek") => terminals::peek(ctx, chat_id, command_argument(text)).await,
         None if text.starts_with("$ ") || text == "$" => {
             terminals::run(ctx, chat_id, text.trim_start_matches('$').trim()).await

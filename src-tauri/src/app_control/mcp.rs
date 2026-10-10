@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use serde_json::{json, Value};
 
 use super::client::ControlClient;
@@ -11,7 +13,11 @@ const PROTOCOL_VERSION: &str = "2024-11-05";
 const CONTROL_FLAG: &str = "--control";
 const PROFILE_FLAG: &str = "--profile";
 const ORIGIN_FLAG: &str = "--origin";
-pub const PROFILES: &[&str] = &["full", "readonly"];
+/// `delegate` serves a delegated Claude in a project: only the permission
+/// tool, answered by the Telegram bot.
+pub const PROFILES: &[&str] = &["full", "readonly", "delegate"];
+/// A permission waits for the user's tap; the bot gives up after 30 minutes.
+const APPROVAL_CALL_TIMEOUT: Duration = Duration::from_secs(31 * 60);
 
 pub struct Server {
     client: ControlClient,
@@ -81,7 +87,12 @@ impl Server {
             .get("arguments")
             .cloned()
             .unwrap_or_else(|| json!({}));
-        match self.client.call(
+        let timeout = if self.profile == "delegate" {
+            APPROVAL_CALL_TIMEOUT
+        } else {
+            super::client::CALL_TIMEOUT
+        };
+        match self.client.call_with_timeout(
             "tools.call",
             json!({
                 "name": name,
@@ -89,6 +100,7 @@ impl Server {
                 "profile": self.profile,
                 "origin": self.origin,
             }),
+            timeout,
         ) {
             Ok(result) => {
                 let text = result

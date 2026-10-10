@@ -10,6 +10,9 @@
 //! - `overview`: the `/status` text.
 //! - `format`: Markdown answers as Telegram HTML, terminal blocks.
 //! - `privilege`: spots sudo and friends in a command line.
+//! - `danger`: spots destructive commands.
+//! - `delegate`: coding jobs handed to Claude in a project folder.
+//! - `jobs`: `/jobs` and `/cancel`.
 //! - `projects`: `/projects`, `/active` and project lookup.
 //! - `notify`: agent notifications and permission buttons.
 //! - `turn`: one headless CLI turn and its parsed answer.
@@ -22,7 +25,9 @@ pub mod bot;
 mod commands;
 pub mod config;
 mod danger;
+mod delegate;
 mod format;
+mod jobs;
 mod notify;
 mod overview;
 pub mod privilege;

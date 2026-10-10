@@ -119,7 +119,7 @@ async fn work(ctx: Arc<Ctx>, chat_id: i64) {
         match result {
             Ok(text) => {
                 if speech::wants_voice(&config.voice_replies, incoming.spoken) {
-                    speech::speak_answer(&ctx, chat_id, &config, &text).await;
+                    speech::speak_answer(&ctx.api, chat_id, &config, &text).await;
                 }
                 if send_rich(&ctx.api, chat_id, &text).await.is_err() {
                     reply(&ctx, chat_id, &text).await;
@@ -292,7 +292,7 @@ fn build_turn(
     (prompt, system)
 }
 
-fn looks_like_lost_session(error: &str) -> bool {
+pub(super) fn looks_like_lost_session(error: &str) -> bool {
     let error = error.to_lowercase();
     ["session", "conversation", "thread"]
         .iter()

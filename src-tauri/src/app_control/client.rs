@@ -10,7 +10,7 @@ use serde_json::{json, Value};
 // token each launch, and the MCP process may outlive one of those launches.
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(3);
-const CALL_TIMEOUT: Duration = Duration::from_secs(200);
+pub const CALL_TIMEOUT: Duration = Duration::from_secs(200);
 
 pub struct ControlClient {
     file: PathBuf,
@@ -33,6 +33,16 @@ impl ControlClient {
     }
 
     pub fn call(&self, method: &str, params: Value) -> Result<Value, String> {
+        self.call_with_timeout(method, params, CALL_TIMEOUT)
+    }
+
+    /// For calls that wait on a person, like a permission asked in Telegram.
+    pub fn call_with_timeout(
+        &self,
+        method: &str,
+        params: Value,
+        timeout: Duration,
+    ) -> Result<Value, String> {
         let endpoint = self.endpoint()?;
         let stream = TcpStream::connect_timeout(&endpoint.addr, CONNECT_TIMEOUT).map_err(|_| {
             match endpoint.pid {
@@ -43,7 +53,7 @@ impl ControlClient {
             }
         })?;
         stream
-            .set_read_timeout(Some(CALL_TIMEOUT))
+            .set_read_timeout(Some(timeout))
             .map_err(|e| format!("control socket: {e}"))?;
         let mut writer = stream
             .try_clone()

@@ -9,6 +9,7 @@ use tauri::{AppHandle, Manager};
 use super::api::CallbackQuery;
 use super::bot::{lock, Ctx, TelegramService};
 use super::danger;
+use super::delegate;
 use super::format::{send_rich, terminal_block};
 use super::projects;
 use crate::app_control::server::ControlServer;
@@ -33,7 +34,7 @@ const FOCUSED_TOOLS: &[&str] = &[
 ];
 const ACTION_TTL: Duration = Duration::from_secs(15 * 60);
 const MAX_PENDING: usize = 50;
-const HELD_REPLY: &str = "Held: polakapi asked the user to confirm this in Telegram with buttons, and will report the result there itself. Tell the user it is waiting for their tap. Do not retry it and do not ask for confirmation in your own words.";
+pub(super) const HELD_REPLY: &str = "Held: polakapi asked the user to confirm this in Telegram with buttons, and will report the result there itself. Tell the user it is waiting for their tap. Do not retry it and do not ask for confirmation in your own words.";
 
 struct Pending {
     chat_id: i64,
@@ -78,6 +79,8 @@ pub fn chat_of(params: &Value) -> Option<i64> {
         .get("origin")
         .and_then(Value::as_str)?
         .strip_prefix("telegram:")?
+        .split(':')
+        .next()?
         .parse()
         .ok()
 }
@@ -97,7 +100,7 @@ pub fn focus_tool() -> Value {
     })
 }
 
-fn tool_text(text: impl Into<String>, is_error: bool) -> Value {
+pub(super) fn tool_text(text: impl Into<String>, is_error: bool) -> Value {
     json!({ "text": text.into(), "isError": is_error })
 }
 
@@ -110,10 +113,18 @@ pub fn intercept(
 ) -> Option<Result<Value, String>> {
     let chat_id = chat_of(params)?;
     let service = app.try_state::<Arc<TelegramService>>()?;
+    let profile = params.get("profile").and_then(Value::as_str);
+    if profile == Some(delegate::DELEGATE_PROFILE) {
+        return Some(delegate::serve(&service, method, params));
+    }
+    let full = profile == Some("full");
     if method == "tools.list" {
         return Some(server.relay(app, method, params.clone()).map(|mut result| {
             if let Some(tools) = result.get_mut("tools").and_then(Value::as_array_mut) {
                 tools.push(focus_tool());
+                if full {
+                    tools.push(delegate::delegate_tool());
+                }
             }
             result
         }));
@@ -139,6 +150,12 @@ pub fn intercept(
             Err(error) => tool_text(error, true),
         }));
     }
+    if name == delegate::DELEGATE_TOOL {
+        let service = service.inner().clone();
+        return Some(Ok(delegate::request(
+            server, app, &service, chat_id, full, &arguments,
+        )));
+    }
     let mut changed = false;
     if FOCUSED_TOOLS.contains(&name.as_str()) && arguments.get("project").is_none() {
         if let (Some(focus), Some(object)) = (service.focus(chat_id), arguments.as_object_mut()) {
@@ -158,7 +175,6 @@ pub fn intercept(
         )));
     }
     let danger = command.as_deref().and_then(danger::assess);
-    let full = params.get("profile").and_then(Value::as_str) == Some("full");
     if HELD_TOOLS.contains(&name.as_str()) && full && (config.confirm_actions || danger.is_some()) {
         let label = warn(danger.as_deref(), describe(server, app, &name, &arguments));
         let sent = service.api().map(|api| {
@@ -193,7 +209,7 @@ pub(super) fn warn(danger: Option<&str>, label: String) -> String {
 }
 
 /// Holds a tool call and asks the chat with Run / Cancel buttons.
-async fn ask(
+pub(super) async fn ask(
     actions: &Actions,
     api: &super::api::Api,
     chat_id: i64,
@@ -474,6 +490,22 @@ pub(super) async fn handle_callback(ctx: &Arc<Ctx>, press: CallbackQuery) {
                 chat_id,
                 message.message_id,
                 &format!("{original}\n\n→ Cancelled."),
+            )
+            .await;
+        return;
+    }
+    if held.name == delegate::DELEGATE_TOOL {
+        let outcome = match delegate::start_held(&ctx.service, chat_id, &held.arguments) {
+            Ok(id) => format!("→ Started job #{id}. The result comes here when it ends."),
+            Err(error) => format!("→ Not started: {error}"),
+        };
+        let _ = ctx.api.answer_callback(&press.id, "Started.").await;
+        let _ = ctx
+            .api
+            .edit_text(
+                chat_id,
+                message.message_id,
+                &format!("{original}\n\n{outcome}"),
             )
             .await;
         return;

@@ -22,9 +22,19 @@ pub struct TurnOutput {
 }
 
 pub async fn run(spec: &LaunchSpec, prompt: &str, timeout: Duration) -> Result<TurnOutput, String> {
+    run_with_env(spec, prompt, timeout, &[]).await
+}
+
+pub async fn run_with_env(
+    spec: &LaunchSpec,
+    prompt: &str,
+    timeout: Duration,
+    env: &[(&str, &str)],
+) -> Result<TurnOutput, String> {
     let mut command = platform_command::tokio_command(&spec.command)?;
     command
         .args(&spec.args)
+        .envs(env.iter().copied())
         .current_dir(&spec.cwd)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
