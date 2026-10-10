@@ -73,7 +73,7 @@ header names the chat's project, e.g.
   why X fails") goes to `polakapi_delegate` with a complete, self-contained
   `task` in the user's words and language. Claude Code then works in that
   folder with its own tools, polakapi asks the user in Telegram before it
-  runs commands, and the result is posted to the chat when it ends. Reply in
+  runs commands when confirmation is on (destructive ones always), and the result is posted to the chat when it ends. Reply in
   one short line that the job started; do not wait for it and do not run the
   same work yourself with commands. Follow-ups about the same work ("now run
   the tests", "also update the docs") go to `polakapi_delegate` again: it

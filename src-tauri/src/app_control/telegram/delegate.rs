@@ -24,9 +24,10 @@ use crate::app_control::server::ControlServer;
 // Jobs: coding tasks the operator agent hands to Claude (`claude -p`) in a
 // project folder instead of running commands itself. A job runs in the
 // background and posts its result to the chat when it ends. File edits are
-// accepted; anything else that needs permission comes to the chat as
-// Allow / Deny buttons through `polakapi_approve`, with the sudo block and the
-// destructive-command warning applied. One job per project at a time.
+// accepted; when "Ask before acting" is on, anything else that needs
+// permission comes to the chat as Allow / Deny buttons through
+// `polakapi_approve`. The sudo block applies and destructive commands ask
+// either way. One job per project at a time.
 
 pub const DELEGATE_TOOL: &str = "polakapi_delegate";
 pub const DELEGATE_PROFILE: &str = "delegate";
@@ -84,7 +85,7 @@ impl Jobs {
 pub fn delegate_tool() -> Value {
     json!({
         "name": DELEGATE_TOOL,
-        "description": "Hand a coding task in a project to Claude Code, which works in the project's folder with its own file and shell tools. Use it for any work inside a repository (fix, implement, review, investigate, refactor, run the tests and fix them...). It runs in the background: polakapi posts the result to the chat when it ends and asks the user in Telegram before Claude runs commands. Follow-ups in the same project continue the same Claude conversation unless `fresh` is true.",
+        "description": "Hand a coding task in a project to Claude Code, which works in the project's folder with its own file and shell tools. Use it for any work inside a repository (fix, implement, review, investigate, refactor, run the tests and fix them...). It runs in the background: polakapi posts the result to the chat when it ends and, when confirmation is on, asks the user in Telegram before Claude runs commands. Follow-ups in the same project continue the same Claude conversation unless `fresh` is true.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -199,6 +200,9 @@ fn approve(service: &TelegramService, chat_id: i64, job_id: u64, arguments: &Val
             }
             let warning = danger::assess(command);
             if warning.is_none() {
+                if !config.confirm_actions {
+                    return allow(&input);
+                }
                 programs = programs_of(command);
                 if !programs.is_empty() && programs.iter().all(|name| allowed.contains(name)) {
                     return allow(&input);
@@ -209,6 +213,7 @@ fn approve(service: &TelegramService, chat_id: i64, job_id: u64, arguments: &Val
                 format!("🤖 Job #{job_id} · {project}\nClaude wants to run:\n\n$ {command}"),
             )
         }
+        None if !config.confirm_actions => return allow(&input),
         None => format!(
             "🤖 Job #{job_id} · {project}\nClaude wants to use {tool}:\n\n{}",
             short(&input)
