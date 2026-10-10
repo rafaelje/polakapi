@@ -68,6 +68,30 @@ pnpm tauri dev
 
 AI coding CLIs are optional and must be installed separately and available on your `PATH`.
 
+### Search Terminal Output
+
+Press **Cmd + F** on macOS or **Ctrl + F** on Linux and Windows while a terminal
+pane is focused. The search bar covers only that pane's visible output and all
+retained scrollback (up to 5,000 history lines).
+
+Use **Enter** / **Shift + Enter**, or the arrow buttons, to move between matches.
+Navigation wraps around. The bar shows the current match and total, with toggles
+for regular expressions, case sensitivity, and whole-word matching. Matches are
+blue; the active match is orange with a border.
+
+**Escape** or the close button returns focus to the terminal. Switching panes
+closes search; reopening it recalls that pane's query and options until the pane
+is closed or respawned. Output continues arriving during search without forcing
+the view to the bottom when you are reading history. Closing search keeps the
+current view.
+
+Search uses the active screen buffer, so full-screen programs expose their current
+screen rather than the shell's hidden scrollback. For Codex conversation history,
+start Codex with `--no-alt-screen` (for example, `cy --no-alt-screen` if you use a
+`cy` alias). This keeps its output in the terminal's searchable scrollback.
+Empty regex matches are skipped.
+Invalid or overly slow expressions show an error; simplify the query to retry.
+
 ### Split Terminals
 
 In the main project workspace on macOS, **Cmd + D** splits the focused terminal

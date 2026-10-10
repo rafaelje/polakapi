@@ -3,6 +3,7 @@
 @import "./styles/workspaces.css";
 @import "./styles/project-pane.css";
 @import "./styles/pane-badge.css";
+@import "./styles/terminal-search.css";
 @import "./styles/appearance.css";
 @import "./styles/command-palette.css";
 @import "./styles/agents-modal.css";
