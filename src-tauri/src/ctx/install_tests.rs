@@ -197,6 +197,9 @@ fn dangling_settings_symlinks_are_never_replaced() {
 #[test]
 fn unreadable_settings_are_preserved() {
     use std::os::unix::fs::PermissionsExt;
+    if unsafe { libc::geteuid() } == 0 {
+        return;
+    }
     let home = tempfile::tempdir().unwrap();
     for format in [Format::Claude, Format::Cursor] {
         for enabled in [true, false] {
