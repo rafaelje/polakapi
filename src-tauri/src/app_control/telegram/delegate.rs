@@ -30,7 +30,6 @@ use crate::app_control::server::ControlServer;
 
 pub const DELEGATE_TOOL: &str = "polakapi_delegate";
 pub const DELEGATE_PROFILE: &str = "delegate";
-const MAX_JOBS: usize = 3;
 const JOB_TIMEOUT: Duration = Duration::from_secs(60 * 60);
 const APPROVAL_TIMEOUT: Duration = Duration::from_secs(30 * 60);
 /// Claude Code's own limit on an MCP tool call, in milliseconds: longer than
@@ -415,9 +414,10 @@ fn start(
             project.name
         ));
     }
-    if running.len() >= MAX_JOBS {
+    let limit = service.config().max_jobs as usize;
+    if running.len() >= limit {
         return Err(format!(
-            "{MAX_JOBS} jobs are already running. /jobs lists them."
+            "{limit} jobs are already running, the most polakapi's Telegram settings allow. /jobs lists them."
         ));
     }
     let id = service.jobs.next.fetch_add(1, Ordering::Relaxed) + 1;

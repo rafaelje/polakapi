@@ -21,6 +21,7 @@ const MAX_NAMES: usize = 10;
 const MAX_NAME_CHARS: usize = 40;
 const MIN_VOICE_SPEED: u32 = 50;
 const MAX_VOICE_SPEED: u32 = 150;
+const MAX_JOBS_LIMIT: u32 = 20;
 const VOICE_LANGUAGES: &[&str] = &["auto", "es", "en", "pt", "fr", "de", "it"];
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -62,6 +63,8 @@ pub struct TelegramConfig {
     pub piper_voice: String,
     /// Speaking speed in percent of the voice's own pace; 90 is 10% slower.
     pub voice_speed: u32,
+    /// Delegated jobs running at once across projects; one per project.
+    pub max_jobs: u32,
 }
 
 impl Default for TelegramConfig {
@@ -86,6 +89,7 @@ impl Default for TelegramConfig {
             voice_replies: "off".to_string(),
             piper_voice: String::new(),
             voice_speed: 100,
+            max_jobs: 3,
         }
     }
 }
@@ -131,6 +135,7 @@ impl TelegramConfig {
         }
         self.piper_voice = self.piper_voice.trim().to_string();
         self.voice_speed = self.voice_speed.clamp(MIN_VOICE_SPEED, MAX_VOICE_SPEED);
+        self.max_jobs = self.max_jobs.clamp(1, MAX_JOBS_LIMIT);
         self
     }
 
@@ -169,6 +174,7 @@ impl TelegramConfig {
             voice_replies: self.voice_replies.clone(),
             piper_voice: self.piper_voice.clone(),
             voice_speed: self.voice_speed,
+            max_jobs: self.max_jobs,
         }
     }
 
@@ -238,6 +244,9 @@ impl TelegramConfig {
         if let Some(speed) = patch.voice_speed {
             next.voice_speed = speed;
         }
+        if let Some(jobs) = patch.max_jobs {
+            next.max_jobs = jobs;
+        }
         Ok(next.normalized())
     }
 }
@@ -265,6 +274,7 @@ pub struct ConfigView {
     pub voice_replies: String,
     pub piper_voice: String,
     pub voice_speed: u32,
+    pub max_jobs: u32,
 }
 
 /// A partial update from the settings window. `token: Some("")` clears it.
@@ -290,6 +300,7 @@ pub struct ConfigPatch {
     pub voice_replies: Option<String>,
     pub piper_voice: Option<String>,
     pub voice_speed: Option<u32>,
+    pub max_jobs: Option<u32>,
 }
 
 pub fn normalize_style(style: &str) -> String {
@@ -452,6 +463,7 @@ mod tests {
             turn_timeout_secs: 1,
             voice_language: "klingon".into(),
             voice_speed: 5,
+            max_jobs: 0,
             address_as: vec![" Miguel ".into(), "".into(), "jefe".into(), "miguel".into()],
             ..TelegramConfig::default()
         }
@@ -459,6 +471,7 @@ mod tests {
         assert_eq!(config.address_as, vec!["Miguel", "jefe"]);
         assert_eq!(config.voice_language, "auto");
         assert_eq!(config.voice_speed, 50);
+        assert_eq!(config.max_jobs, 1);
         assert_eq!(config.allowed_user_ids, vec![5, 9]);
         assert_eq!(config.cli, "claude");
         assert_eq!(config.profile, "readonly");

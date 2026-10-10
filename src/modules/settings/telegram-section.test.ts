@@ -35,6 +35,7 @@ const baseConfig: TelegramConfigView = {
   voiceReplies: "off",
   piperVoice: "",
   voiceSpeed: 100,
+  maxJobs: 3,
 };
 
 const onError = vi.fn();
@@ -184,6 +185,20 @@ describe("telegram section", () => {
         "Voice notes ready: /usr/bin/whisper-cli with ggml-small.bin.",
       ),
     );
+  });
+
+  it("warns from five parallel jobs", async () => {
+    await mount({ profile: "full" });
+    const jobs = control<HTMLInputElement>("Parallel jobs");
+    const warning = jobs.parentElement!.querySelector<HTMLElement>(".telegram-status")!;
+    expect(jobs.value).toBe("3");
+    expect(warning.hidden).toBe(true);
+    jobs.value = "5";
+    jobs.dispatchEvent(new Event("input"));
+    expect(warning.hidden).toBe(false);
+    jobs.dispatchEvent(new Event("change"));
+    await vi.waitFor(() => expect(setConfig).toHaveBeenCalledWith({ maxJobs: 5 }));
+    expect(warning.hidden).toBe(false);
   });
 
   it("only offers permission buttons while notifications are forwarded", async () => {

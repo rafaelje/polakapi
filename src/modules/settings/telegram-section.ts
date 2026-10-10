@@ -25,6 +25,7 @@ export interface TelegramConfigView {
   voiceReplies: string;
   piperVoice: string;
   voiceSpeed: number;
+  maxJobs: number;
 }
 
 export type TelegramConfigPatch = Partial<
@@ -48,6 +49,7 @@ export type TelegramConfigPatch = Partial<
     | "voiceReplies"
     | "piperVoice"
     | "voiceSpeed"
+    | "maxJobs"
   >
 > & { token?: string };
 
@@ -101,6 +103,9 @@ const VOICE_REPLY_OPTIONS: ReadonlyArray<readonly [string, string]> = [
   ["reply", "When I send a voice note"],
   ["always", "Always"],
 ];
+
+/** From this many parallel jobs the settings warn. */
+export const MANY_JOBS = 5;
 
 /** Accepts ids separated by commas, spaces or new lines; null if any is not one. */
 export function parseUserIds(raw: string): number[] | null {
@@ -330,6 +335,22 @@ export async function mountTelegramSection(opts: TelegramSectionOptions): Promis
     "When the agent wants to type into a terminal or run a command, the chat gets Run and Cancel buttons. Off: it acts directly. Destructive commands (deleting, overwriting, killing, uninstalling, git resets and force pushes, dropping data…) always ask, even when you type them with /run, /sh or $. In the chat: /confirm on or off.",
   ).append(confirm);
 
+  const jobs = settingsNumber("Parallel jobs", config.maxJobs, { min: 1, max: 20 }, (maxJobs) => {
+    void save({ maxJobs });
+  });
+  const jobsWarning = document.createElement("span");
+  jobsWarning.className = "telegram-status is-error";
+  jobsWarning.textContent =
+    "Many jobs at once: approval buttons pile up in the chat, builds and tests compete for this computer, and they all spend the same Claude plan.";
+  jobs.addEventListener("input", () => {
+    jobsWarning.hidden = Number(jobs.value) < MANY_JOBS;
+  });
+  settingsRow(
+    group,
+    "Parallel jobs",
+    "Coding jobs Claude can run at once, across projects. A project never has more than one, so two Claudes do not edit the same folder. /jobs lists them, /cancel stops one.",
+  ).append(jobsWarning, jobs);
+
   const sudo = settingsToggle("Allow sudo", config.allowSudo, (checked) => {
     void save({ allowSudo: checked });
   });
@@ -455,6 +476,10 @@ export async function mountTelegramSection(opts: TelegramSectionOptions): Promis
     enabled.checked = config.enabled;
     confirm.checked = config.confirmActions;
     sudo.checked = config.allowSudo;
+    jobs.value = String(config.maxJobs);
+    jobs.dataset.current = String(config.maxJobs);
+    jobs.disabled = config.profile !== "full";
+    jobsWarning.hidden = config.maxJobs < MANY_JOBS;
     sudo.disabled = config.profile !== "full";
     confirm.disabled = config.profile !== "full";
     forward.checked = config.forwardNotifications;
