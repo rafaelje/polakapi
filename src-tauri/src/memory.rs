@@ -31,6 +31,27 @@ pub fn pty_memory_stats(store: State<'_, Arc<PtyStore>>) -> Result<MemoryStats, 
     sys.refresh_memory();
     sys.refresh_processes(ProcessesToUpdate::All, true);
 
+    let (mem_by_pid, children) = tree_maps(&sys);
+
+    let sessions = session_pids
+        .into_iter()
+        .map(|(id, pid)| SessionMemory {
+            id,
+            rss_mb: tree_rss(pid, &mem_by_pid, &children) / MB,
+        })
+        .collect();
+
+    Ok(MemoryStats {
+        total_mb: sys.total_memory() / MB,
+        available_mb: sys.available_memory() / MB,
+        sessions,
+    })
+}
+
+/// Builds `(rss by pid, children by parent pid)` from a refreshed `System`.
+/// Shared with `agent_context`, which walks the same trees for its per-pane
+/// process stats.
+pub(crate) fn tree_maps(sys: &System) -> (HashMap<u32, u64>, HashMap<u32, Vec<u32>>) {
     let mut mem_by_pid: HashMap<u32, u64> = HashMap::new();
     let mut children: HashMap<u32, Vec<u32>> = HashMap::new();
     for (pid, process) in sys.processes() {
@@ -47,20 +68,7 @@ pub fn pty_memory_stats(store: State<'_, Arc<PtyStore>>) -> Result<MemoryStats, 
                 .push(pid.as_u32());
         }
     }
-
-    let sessions = session_pids
-        .into_iter()
-        .map(|(id, pid)| SessionMemory {
-            id,
-            rss_mb: tree_rss(pid, &mem_by_pid, &children) / MB,
-        })
-        .collect();
-
-    Ok(MemoryStats {
-        total_mb: sys.total_memory() / MB,
-        available_mb: sys.available_memory() / MB,
-        sessions,
-    })
+    (mem_by_pid, children)
 }
 
 fn tree_rss(root: u32, mem_by_pid: &HashMap<u32, u64>, children: &HashMap<u32, Vec<u32>>) -> u64 {

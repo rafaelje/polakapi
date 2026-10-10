@@ -57,6 +57,17 @@ export class ManagerLifecycle {
     return this.handoff;
   }
   private readonly pending = new Set<Promise<unknown>>();
+  private batchRunning = false;
+
+  async runBatch(operation: () => Promise<void>): Promise<void> {
+    if (this.disposed || this.frozen || this.batchRunning) return;
+    this.batchRunning = true;
+    try {
+      await this.track(operation());
+    } finally {
+      this.batchRunning = false;
+    }
+  }
 
   track<T>(operation: Promise<T>): Promise<T> {
     this.pending.add(operation);

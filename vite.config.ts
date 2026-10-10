@@ -42,6 +42,7 @@ export default defineConfig(async () => ({
         loop: resolve(projectRoot, "loop.html"),
         sessions: resolve(projectRoot, "sessions.html"),
         adversarial: resolve(projectRoot, "adversarial.html"),
+        context: resolve(projectRoot, "context.html"),
         terminals: resolve(projectRoot, "terminals.html"),
       },
     },

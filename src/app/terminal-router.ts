@@ -337,21 +337,32 @@ export class TerminalRouter {
     projectId: ProjectId;
     cliId?: string;
     lastActivityAt: number;
+    cwd?: string;
+    title?: string;
+    index: number;
   }> {
     const out: Array<{
       paneId: string;
       projectId: ProjectId;
       cliId?: string;
       lastActivityAt: number;
+      cwd?: string;
+      title?: string;
+      index: number;
     }> = [];
     for (const [projectId, manager] of this.managers) {
+      let index = 0;
       for (const spec of manager.specs()) {
+        index += 1;
         if (!manager.isLive(spec.id)) continue;
         out.push({
           paneId: spec.id,
           projectId,
           cliId: spec.cliId,
           lastActivityAt: manager.get(spec.id)?.lastActivityAt ?? 0,
+          cwd: spec.cwd,
+          title: spec.title,
+          index,
         });
       }
     }

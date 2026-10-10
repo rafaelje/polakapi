@@ -7,6 +7,7 @@ import type { TerminalSpec } from "./types";
 import { terminalManagerFixture as fake } from "./terminal-manager.test-support";
 import { splitFocusedTerminal } from "./terminal-splits";
 
+import { reloadAllPanes } from "./terminal-batch";
 import { TerminalManager } from "./terminal-manager";
 function pid(id: string): ProjectId {
   return id as ProjectId;
@@ -268,6 +269,55 @@ describe("TerminalManager CLI wiring", () => {
       first: { type: "pane", paneId: "pty-1" },
       second: { type: "pane", paneId: "pty-2" },
     });
+  });
+
+  it("reload all puts every pane back in its place, size and directory", async () => {
+    const arrangement: TerminalLayoutNode = {
+      type: "split",
+      axis: "row",
+      ratio: 0.3,
+      first: { type: "pane", paneId: "old-a" },
+      second: {
+        type: "split",
+        axis: "column",
+        ratio: 0.8,
+        first: { type: "pane", paneId: "old-b" },
+        second: { type: "pane", paneId: "old-c" },
+      },
+    };
+    const manager = makeManager({ layout: arrangement });
+    await manager.restoreSpecs([
+      { id: "old-a", title: "a", cwd: "/one", cliId: "claude", launchArgs: ["--continue"] },
+      { id: "old-b", title: "b", cwd: "/two" },
+      { id: "old-c", title: "c", cwd: "/three", startupCmd: "pnpm dev" },
+    ]);
+    const before = manager.ids();
+
+    await reloadAllPanes(manager);
+
+    const after = manager.ids();
+    expect(after).toHaveLength(3);
+    expect(after.some((id) => before.includes(id))).toBe(false);
+    // Same tree, same axes, same ratios — only the ids are new.
+    expect(manager.layoutSnapshot).toEqual({
+      type: "split",
+      axis: "row",
+      ratio: 0.3,
+      first: { type: "pane", paneId: after[0] },
+      second: {
+        type: "split",
+        axis: "column",
+        ratio: 0.8,
+        first: { type: "pane", paneId: after[1] },
+        second: { type: "pane", paneId: after[2] },
+      },
+    });
+    const byTitle = new Map(manager.specs().map((spec) => [spec.title, spec]));
+    expect(byTitle.get("a")).toMatchObject({ id: after[0], cwd: "/one", cliId: "claude" });
+    expect(byTitle.get("b")).toMatchObject({ id: after[1], cwd: "/two" });
+    expect(byTitle.get("c")).toMatchObject({ id: after[2], cwd: "/three", startupCmd: "pnpm dev" });
+    // Reopened fresh: the resume flag does not come back.
+    expect(byTitle.get("a")?.launchArgs).toBeUndefined();
   });
 
   it("repairs a partial restored layout and includes each pane once", async () => {

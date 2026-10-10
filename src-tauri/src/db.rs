@@ -25,10 +25,13 @@ use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager, State};
 
+pub mod agent_session;
 mod hooks;
 mod migrations;
 
-pub use hooks::{install_hooks_for_cli, prompt_install_hooks, InstallHooksResult};
+pub use hooks::{
+    install_hooks_for_cli, prompt_install_hooks, refresh_installed_hooks, InstallHooksResult,
+};
 
 const MIGRATIONS: &[(i64, &str)] = &[(1, migrations::M_0001_INIT)];
 
@@ -230,6 +233,24 @@ impl Db {
             )
             .map_err(|e| format!("set response: {e}"))?;
         Ok(())
+    }
+
+    /// Newest `cli_session_id` the capture hooks recorded for a PTY, used to
+    /// locate that pane's transcript on disk. `None` when the hooks are not
+    /// installed, which is why callers keep a filesystem fallback.
+    pub fn cli_session_id_for_pty(&self, pty_id: &str) -> Result<Option<String>, String> {
+        let row = self.conn.query_row(
+            "SELECT cli_session_id FROM sessions
+             WHERE pty_id = ?1 AND cli_session_id IS NOT NULL
+             ORDER BY id DESC LIMIT 1",
+            params![pty_id],
+            |r| r.get::<_, Option<String>>(0),
+        );
+        match row {
+            Ok(value) => Ok(value),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(format!("cli_session_id for pty {pty_id}: {e}")),
+        }
     }
 
     fn list_sessions(&self) -> Result<Vec<SessionRow>, String> {

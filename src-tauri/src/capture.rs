@@ -32,6 +32,7 @@ use std::path::PathBuf;
 use crate::db::CaptureEvent;
 
 const LOG_ENV: &str = "POLAKAPI_LOG_PATH";
+const MAX_LOG_BYTES: u64 = 1024 * 1024;
 
 /// Entry point for `polakapi capture` — always returns 0 (best-effort,
 /// never break the hook chain).
@@ -78,8 +79,28 @@ fn try_run() -> Result<Option<CaptureEvent>, String> {
     } else {
         translate_cli_hook(&v)?
     };
-    // Prompt and session capture was replaced by the global agent sessions
-    // view, so lifecycle events are only translated for the diagnostics log.
+    // Prompts and responses are not stored: the global agent sessions view
+    // replaced that. Which session is running in each terminal still is, because
+    // the /context window and the context mode store both depend on it.
+    if let CaptureEvent::SessionStart {
+        pty_id,
+        cli,
+        cli_session_id: Some(cli_session_id),
+        cwd,
+    } = &event
+    {
+        // ctx-hook records the same start, so a locked database only costs a
+        // log line here rather than failing a SessionStart that happened.
+        if let Err(error) = crate::db::agent_session::record_start(
+            std::path::Path::new(&db_path),
+            pty_id,
+            cli,
+            cli_session_id,
+            cwd.as_deref(),
+        ) {
+            eprintln!("polakapi-capture: record session: {error}");
+        }
+    }
     Ok(Some(event))
 }
 
@@ -99,15 +120,32 @@ fn log_path() -> Option<PathBuf> {
 }
 
 fn log_line(payload: &LogPayload) {
+    append_log_line(&payload.format());
+}
+
+/// Appends one line to the diagnostics log next to the database. Shared with
+/// the context mode hook so every hook polakapi installs reports to one place.
+pub(crate) fn append_log_line(line: &str) {
     let Some(path) = log_path() else {
         return;
     };
-    let line = payload.format();
     if let Some(parent) = path.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
+    rotate_if_full(&path);
     if let Ok(mut f) = OpenOptions::new().create(true).append(true).open(&path) {
         let _ = writeln!(f, "{line}");
+    }
+}
+
+/// Every hook invocation appends a line, so the log is kept to its latest
+/// `MAX_LOG_BYTES` plus one previous file instead of growing forever.
+fn rotate_if_full(path: &std::path::Path) {
+    let full = std::fs::metadata(path).is_ok_and(|meta| meta.len() > MAX_LOG_BYTES);
+    if full {
+        let mut previous = path.as_os_str().to_owned();
+        previous.push(".1");
+        let _ = std::fs::rename(path, previous);
     }
 }
 
@@ -212,7 +250,7 @@ fn env_cli() -> String {
     std::env::var("POLAKAPI_CLI").unwrap_or_default()
 }
 
-fn now_ts() -> String {
+pub(crate) fn now_ts() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
     let secs = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -305,5 +343,24 @@ fn translate_cli_hook(v: &serde_json::Value) -> Result<CaptureEvent, String> {
         }
         "SessionEnd" => Ok(CaptureEvent::SessionEnd { pty_id }),
         other => Err(format!("unsupported hook_event_name: {other}")),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_full_log_is_set_aside_and_a_small_one_is_kept() {
+        let dir = tempfile::tempdir().unwrap();
+        let log = dir.path().join("polakapi.db.log");
+        std::fs::write(&log, "short\n").unwrap();
+        rotate_if_full(&log);
+        assert!(log.exists());
+
+        std::fs::write(&log, vec![b'x'; MAX_LOG_BYTES as usize + 1]).unwrap();
+        rotate_if_full(&log);
+        assert!(!log.exists());
+        assert!(dir.path().join("polakapi.db.log.1").exists());
     }
 }

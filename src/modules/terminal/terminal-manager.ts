@@ -87,6 +87,9 @@ export class TerminalManager {
   freeze(): Promise<boolean> {
     return this.lifecycle.freeze();
   }
+  runBatch(operation: () => Promise<void>): Promise<void> {
+    return this.lifecycle.runBatch(operation);
+  }
   thaw(): void {
     this.lifecycle.thaw();
   }
@@ -562,10 +565,7 @@ export class TerminalManager {
     const idMap = await executeTemplatePlan(
       planTemplateApplication(template.specs, live),
       async (spec) => {
-        const pane = await this.addPane(
-          { title: spec.title, startupCmd: spec.startupCmd, cliId: spec.cliId },
-          { silent: true },
-        );
+        const pane = await this.addPane(spec, { silent: true });
         return pane?.el.dataset.ptyId ?? null;
       },
     );
