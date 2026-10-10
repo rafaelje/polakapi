@@ -1,5 +1,8 @@
 use std::sync::Arc;
 
+use serde_json::json;
+
+use super::actions::{hold_if_destructive, RUN_TOOL};
 use super::api::CallbackQuery;
 use super::bot::{lock, reply, Ctx};
 use super::config::{normalize_style, ConfigPatch};
@@ -279,6 +282,11 @@ pub(super) async fn run_command(ctx: &Ctx, chat_id: i64, command: &str) {
             &format!("Usage: /run git status (runs in {})", focus.name),
         )
         .await;
+        return;
+    }
+    let label = format!("▶ Run in {}?\n\n$ {command}", focus.name);
+    let arguments = json!({ "project": focus.id, "command": command });
+    if hold_if_destructive(ctx, chat_id, command, label, RUN_TOOL, arguments).await {
         return;
     }
     let _ = ctx.api.send_typing(chat_id).await;

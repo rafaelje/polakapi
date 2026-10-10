@@ -8,6 +8,7 @@ use tauri::{AppHandle, Manager};
 
 use super::api::CallbackQuery;
 use super::bot::{lock, Ctx, TelegramService};
+use super::danger;
 use super::format::{send_rich, terminal_block};
 use super::projects;
 use crate::app_control::server::ControlServer;
@@ -17,12 +18,13 @@ use crate::app_control::server::ControlServer;
 // - the chat's project is filled in when the model leaves `project` out;
 // - `polakapi_chat_focus`, a tool only Telegram turns see, changes that project;
 // - typing into a terminal or running a command is held until the user taps
-//   Run or Cancel in the chat, when "Ask before acting" is on.
+//   Run or Cancel in the chat, when "Ask before acting" is on, and always
+//   when the command is destructive.
 
 pub const FOCUS_TOOL: &str = "polakapi_chat_focus";
 const SEND_TOOL: &str = "polakapi_send_to_terminal";
-const RUN_TOOL: &str = "polakapi_run_command";
-const TERMINAL_TOOL: &str = "polakapi_run_in_terminal";
+pub(super) const RUN_TOOL: &str = "polakapi_run_command";
+pub(super) const TERMINAL_TOOL: &str = "polakapi_run_in_terminal";
 const HELD_TOOLS: &[&str] = &[SEND_TOOL, RUN_TOOL, TERMINAL_TOOL];
 const FOCUSED_TOOLS: &[&str] = &[
     RUN_TOOL,
@@ -145,31 +147,28 @@ pub fn intercept(
         }
     }
     let config = service.config();
-    if let Some(reason) =
-        command_of(server, app, &name, &arguments).and_then(|command| config.sudo_block(&command))
+    let command = command_of(server, app, &name, &arguments);
+    if let Some(reason) = command
+        .as_deref()
+        .and_then(|command| config.sudo_block(command))
     {
         return Some(Ok(tool_text(
             format!("{reason} Tell the user; do not try another way."),
             true,
         )));
     }
+    let danger = command.as_deref().and_then(danger::assess);
     let full = params.get("profile").and_then(Value::as_str) == Some("full");
-    if HELD_TOOLS.contains(&name.as_str()) && full && config.confirm_actions {
-        let label = describe(server, app, &name, &arguments);
-        let id = service.actions.register(Pending {
-            chat_id,
-            name,
-            arguments,
-            at: Instant::now(),
-        });
+    if HELD_TOOLS.contains(&name.as_str()) && full && (config.confirm_actions || danger.is_some()) {
+        let label = warn(danger.as_deref(), describe(server, app, &name, &arguments));
         let sent = service.api().map(|api| {
-            tauri::async_runtime::block_on(api.send_with_buttons(
+            tauri::async_runtime::block_on(ask(
+                &service.actions,
+                &api,
                 chat_id,
                 &label,
-                &[
-                    ("▶ Run", format!("act:{id}:yes")),
-                    ("✖ Cancel", format!("act:{id}:no")),
-                ],
+                name,
+                arguments,
             ))
         });
         return Some(Ok(match sent {
@@ -184,6 +183,73 @@ pub fn intercept(
     let mut params = params.clone();
     params["arguments"] = arguments;
     Some(server.relay(app, method, params))
+}
+
+pub(super) fn warn(danger: Option<&str>, label: String) -> String {
+    match danger {
+        Some(reason) => format!("⚠️ Destructive: this {reason}.\n\n{label}"),
+        None => label,
+    }
+}
+
+/// Holds a tool call and asks the chat with Run / Cancel buttons.
+async fn ask(
+    actions: &Actions,
+    api: &super::api::Api,
+    chat_id: i64,
+    label: &str,
+    name: String,
+    arguments: Value,
+) -> Result<(), super::api::ApiError> {
+    let id = actions.register(Pending {
+        chat_id,
+        name,
+        arguments,
+        at: Instant::now(),
+    });
+    api.send_with_buttons(
+        chat_id,
+        label,
+        &[
+            ("▶ Run", format!("act:{id}:yes")),
+            ("✖ Cancel", format!("act:{id}:no")),
+        ],
+    )
+    .await
+}
+
+/// Holds a command the user typed in the chat when it is destructive, and
+/// returns whether it did; the buttons then run it.
+pub(super) async fn hold_if_destructive(
+    ctx: &Ctx,
+    chat_id: i64,
+    command: &str,
+    label: String,
+    name: &str,
+    arguments: Value,
+) -> bool {
+    let Some(reason) = danger::assess(command) else {
+        return false;
+    };
+    let label = warn(Some(&reason), label);
+    let asked = ask(
+        &ctx.service.actions,
+        &ctx.api,
+        chat_id,
+        &label,
+        name.to_string(),
+        arguments,
+    )
+    .await;
+    if let Err(error) = asked {
+        super::bot::reply(
+            ctx,
+            chat_id,
+            &format!("Not run: could not ask you to confirm ({error})."),
+        )
+        .await;
+    }
+    true
 }
 
 /// The shell command a tool call would run. Text sent to an AI CLI pane is a

@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use serde_json::{json, Value};
 
-use super::actions::tool;
+use super::actions::{hold_if_destructive, tool, TERMINAL_TOOL};
 use super::api::CallbackQuery;
 use super::bot::{lock, reply, Ctx, TelegramService};
 use super::format::{send_rich, terminal_block};
@@ -331,16 +331,21 @@ pub(super) async fn run(ctx: &Ctx, chat_id: i64, command: &str) {
         .await;
         return;
     }
-    let result = with_typing(
+    let arguments = json!({ "ptyId": row.pty_id, "command": command });
+    let label = format!("⌨ Run in {}?\n\n$ {command}", row.label());
+    if hold_if_destructive(
         ctx,
         chat_id,
-        tool(
-            ctx,
-            "polakapi_run_in_terminal",
-            json!({ "ptyId": row.pty_id, "command": command }),
-        ),
+        command,
+        label,
+        TERMINAL_TOOL,
+        arguments.clone(),
     )
-    .await;
+    .await
+    {
+        return;
+    }
+    let result = with_typing(ctx, chat_id, tool(ctx, TERMINAL_TOOL, arguments)).await;
     let text = match result {
         Ok(transcript) => format!("{}\n{}", row.label(), terminal_block(&transcript)),
         Err(error) => format!("Could not run it: {error}"),

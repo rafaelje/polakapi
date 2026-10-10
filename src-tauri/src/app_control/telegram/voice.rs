@@ -160,7 +160,13 @@ pub fn clean_transcript(stdout: &str) -> String {
         .join(" ")
 }
 
-pub async fn transcribe(whisper: &Whisper, language: &str, audio: &[u8]) -> Result<String, String> {
+/// `hint` primes whisper with words it should spell right, like names.
+pub async fn transcribe(
+    whisper: &Whisper,
+    language: &str,
+    hint: &str,
+    audio: &[u8],
+) -> Result<String, String> {
     let dir = tempfile::tempdir().map_err(|e| format!("temp dir: {e}"))?;
     let input = dir.path().join("voice.ogg");
     let wav = dir.path().join("voice.wav");
@@ -192,19 +198,28 @@ pub async fn transcribe(whisper: &Whisper, language: &str, audio: &[u8]) -> Resu
         .unwrap_or(4)
         .to_string();
     let model = whisper.model.to_string_lossy();
-    let stdout = run(
-        &whisper.cli,
-        &[
-            "-m", &model, "-l", language, "-t", &threads, "-nt", "-np", "-f", &wav,
-        ],
-        TRANSCRIBE_TIMEOUT,
-    )
-    .await?;
+    let mut args = vec![
+        "-m", &model, "-l", language, "-t", &threads, "-nt", "-np", "-f", &wav,
+    ];
+    if !hint.is_empty() {
+        args.extend(["--prompt", hint]);
+    }
+    let stdout = run(&whisper.cli, &args, TRANSCRIBE_TIMEOUT).await?;
     let text = clean_transcript(&stdout);
     if text.is_empty() {
         return Err("could not hear any words".to_string());
     }
     Ok(text)
+}
+
+/// The bot's name, the user's names and polakapi, so a transcript spells them
+/// as the settings do.
+pub fn names_hint(config: &TelegramConfig) -> String {
+    let mut names = vec![config.bot_name.clone()];
+    names.extend(config.address_as.iter().cloned());
+    names.push("polakapi".to_string());
+    names.retain(|name| !name.is_empty());
+    names.join(", ")
 }
 
 /// The text of a message, typed or transcribed from a voice note, and
@@ -251,7 +266,13 @@ pub async fn message_text(
             .download(&note.file_id)
             .await
             .map_err(|e| format!("could not download the voice note: {e}"))?;
-        transcribe(&whisper, &config.voice_language, &audio).await
+        transcribe(
+            &whisper,
+            &config.voice_language,
+            &names_hint(config),
+            &audio,
+        )
+        .await
     })
     .await;
     match result {
@@ -269,6 +290,17 @@ pub async fn message_text(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn hint_lists_the_names_to_spell_right() {
+        let config = TelegramConfig {
+            bot_name: "Suryami".into(),
+            address_as: vec!["M.".into()],
+            ..TelegramConfig::default()
+        };
+        assert_eq!(names_hint(&config), "Suryami, M., polakapi");
+        assert_eq!(names_hint(&TelegramConfig::default()), "polakapi");
+    }
 
     #[test]
     fn transcript_drops_noise_markers() {

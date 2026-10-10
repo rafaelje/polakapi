@@ -1,4 +1,4 @@
-//! Telegram bot in front of the operator agent. See docs/telegram-bot-plan.md.
+//! Telegram bot in front of the operator agent.
 //!
 //! - `actions`: tool calls from Telegram turns: project focus, held actions.
 //! - `api`: the few Bot API methods the bot uses.
@@ -21,6 +21,7 @@ pub mod api;
 pub mod bot;
 mod commands;
 pub mod config;
+mod danger;
 mod format;
 mod notify;
 mod overview;

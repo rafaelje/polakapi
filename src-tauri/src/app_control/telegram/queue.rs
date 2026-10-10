@@ -118,11 +118,11 @@ async fn work(ctx: Arc<Ctx>, chat_id: i64) {
         }));
         match result {
             Ok(text) => {
-                if send_rich(&ctx.api, chat_id, &text).await.is_err() {
-                    reply(&ctx, chat_id, &text).await;
-                }
                 if speech::wants_voice(&config.voice_replies, incoming.spoken) {
                     speech::speak_answer(&ctx, chat_id, &config, &text).await;
+                }
+                if send_rich(&ctx.api, chat_id, &text).await.is_err() {
+                    reply(&ctx, chat_id, &text).await;
                 }
             }
             Err(error) => reply(&ctx, chat_id, &format!("Error: {error}")).await,
@@ -227,6 +227,8 @@ async fn attempt(
     turn::run(&spec, prompt, Duration::from_secs(config.turn_timeout_secs)).await
 }
 
+const RULES_HEADER: &str = "[polakapi rules for this answer, from the user's settings; they override anything said earlier in this chat]";
+
 /// How the answers should sound: the reply style and the names the user goes by.
 struct Voice<'a> {
     style: &'a str,
@@ -246,7 +248,7 @@ impl Voice<'_> {
             ));
         }
         if self.spoken_reply {
-            rules.push("polakapi will read your answer aloud and send it as a voice note after the text, so you do answer with voice. Write the answer so it sounds natural spoken: plain sentences, no lists or symbols in the prose. Code and command output stay in ``` fences; they are shown, not read.".to_string());
+            rules.push("polakapi will read your answer aloud and send it as a voice note before the text, so you do answer with voice. Write the answer so it sounds natural spoken: plain sentences, no lists or symbols in the prose. Code and command output stay in ``` fences; they are shown, not read.".to_string());
         }
         if !self.names.is_empty() {
             rules.push(format!(
@@ -265,9 +267,11 @@ impl Voice<'_> {
 }
 
 /// The prompt for one turn and, for Claude, the reply rules as a system prompt
-/// addition. Codex has no such flag, so the rules ride along in the prompt,
-/// restated every turn so a `/style` change applies to an ongoing chat. The
-/// header names the chat's project, also restated every turn.
+/// addition. The rules also ride along in the prompt, restated every turn:
+/// in a resumed chat the model follows its own earlier answers over the
+/// system prompt (it kept calling itself Claude after a name was set), and
+/// codex has no system prompt flag at all. The header names the chat's
+/// project, also restated every turn.
 fn build_turn(
     cli: &str,
     name: &str,
@@ -283,11 +287,9 @@ fn build_turn(
     let Some(rules) = voice.rules() else {
         return (prompt, None);
     };
-    if cli == "claude" {
-        (prompt, Some(rules))
-    } else {
-        (format!("{rules}\n\n{prompt}"), None)
-    }
+    let prompt = format!("{RULES_HEADER}\n{rules}\n\n{prompt}");
+    let system = (cli == "claude").then_some(rules);
+    (prompt, system)
 }
 
 fn looks_like_lost_session(error: &str) -> bool {
@@ -327,12 +329,15 @@ mod tests {
         assert_eq!(prompt, "[telegram] Ana · project: none selected\nhola");
         assert!(system.is_none());
         let (prompt, system) = build_turn("claude", "Ana", "hola", &styled, None);
-        assert_eq!(prompt, "[telegram] Ana · project: none selected\nhola");
         assert!(system.unwrap().ends_with("en español, breve"));
+        assert!(prompt.starts_with(RULES_HEADER));
+        assert!(
+            prompt.ends_with("en español, breve\n\n[telegram] Ana · project: none selected\nhola")
+        );
         let (prompt, system) = build_turn("codex", "Ana", "hola", &styled, None);
         assert!(system.is_none());
         assert!(
-            prompt.contains("en español, breve\n\n[telegram] Ana · project: none selected\nhola")
+            prompt.ends_with("en español, breve\n\n[telegram] Ana · project: none selected\nhola")
         );
         let focus = Focus {
             id: "p1".into(),

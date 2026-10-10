@@ -173,7 +173,7 @@ pub async fn synthesize(speaker: &Speaker, text: &str) -> Result<Vec<u8>, String
     std::fs::read(&ogg).map_err(|e| format!("read the voice note: {e}"))
 }
 
-/// Sends the answer as a voice note after its text. Failures only cost the
+/// Sends the answer as a voice note, ahead of its text. Failures only cost the
 /// voice note, so they are reported briefly.
 pub async fn speak_answer(ctx: &Ctx, chat_id: i64, config: &TelegramConfig, answer: &str) {
     let Some(text) = spoken_text(answer) else {

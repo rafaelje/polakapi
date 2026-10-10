@@ -120,7 +120,7 @@ fn substitution(chars: &[char], start: usize) -> Option<(String, usize)> {
     Some((chars[start + 2..].iter().collect(), chars.len()))
 }
 
-fn basename(word: &str) -> &str {
+pub fn basename(word: &str) -> &str {
     word.rsplit(['/', '\\']).next().unwrap_or(word)
 }
 
@@ -137,16 +137,42 @@ fn is_assignment(word: &str) -> bool {
 
 /// The elevating program a command line would run, if any.
 pub fn elevation(line: &str) -> Option<String> {
-    scan(line, 0)
+    walk(line, &mut |words| {
+        let program = words
+            .iter()
+            .map(|word| basename(word))
+            .find(|word| !is_prefix(word))?;
+        ELEVATORS.contains(&program).then(|| program.to_string())
+    })
 }
 
-fn scan(line: &str, depth: usize) -> Option<String> {
+/// Words that come before the program: `FOO=1`, a wrapper and its flags
+/// (`nice -n 5`), `timeout 10`.
+fn is_prefix(word: &str) -> bool {
+    is_assignment(word)
+        || word.starts_with('-')
+        || word.parse::<f64>().is_ok()
+        || WRAPPERS.contains(&word)
+}
+
+/// Calls `visit` with the words of every simple command `line` would run:
+/// each part of a list or pipeline, command substitutions, and the scripts
+/// of `sh -c`, `cmd /c` and `powershell -Command`. The first answer wins.
+pub fn walk(line: &str, visit: &mut dyn FnMut(&[&str]) -> Option<String>) -> Option<String> {
+    walk_at(line, 0, visit)
+}
+
+fn walk_at(
+    line: &str,
+    depth: usize,
+    visit: &mut dyn FnMut(&[&str]) -> Option<String>,
+) -> Option<String> {
     if depth > MAX_DEPTH {
         return None;
     }
     let (tokens, nested) = lex(line);
     for inner in nested {
-        if let Some(found) = scan(&inner, depth + 1) {
+        if let Some(found) = walk_at(&inner, depth + 1, visit) {
             return Some(found);
         }
     }
@@ -158,40 +184,81 @@ fn scan(line: &str, depth: usize) -> Option<String> {
                 Token::Separator => None,
             })
             .collect();
-        if let Some(found) = scan_command(&words, depth) {
+        if words.is_empty() {
+            continue;
+        }
+        if let Some(found) = visit(&words) {
             return Some(found);
+        }
+        if let Some(script) = inner_script(&words) {
+            if let Some(found) = walk_at(&script, depth + 1, visit) {
+                return Some(found);
+            }
         }
     }
     None
 }
 
-fn scan_command(words: &[&str], depth: usize) -> Option<String> {
+/// The program of a simple command, past assignments, wrappers and
+/// elevators, with what follows it. Lowercase and without `.exe`, so Windows
+/// names compare too.
+pub fn program(words: &[&str]) -> Option<(String, Vec<String>)> {
     let mut index = 0;
     while index < words.len() {
-        let word = words[index];
-        let name = basename(word);
-        if is_assignment(word) || word.starts_with('-') || word.parse::<f64>().is_ok() {
-            // `FOO=1 cmd`, a wrapper's flags (`nice -n 5`), `timeout 10 cmd`.
+        let name = program_name(words[index]);
+        if is_prefix(&name) {
             index += 1;
             continue;
         }
-        if ELEVATORS.contains(&name) {
-            return Some(name.to_string());
-        }
-        if WRAPPERS.contains(&name) {
+        if ELEVATORS.contains(&name.as_str()) {
             index += 1;
-            continue;
-        }
-        if SHELLS.contains(&name) {
-            let script = words[index + 1..]
-                .iter()
-                .position(|arg| arg.starts_with('-') && !arg.starts_with("--") && arg.contains('c'))
-                .and_then(|flag| words.get(index + 2 + flag));
-            if let Some(script) = script {
-                return scan(script, depth + 1);
+            // `sudo -u root cmd`: flags that take a value.
+            while index < words.len() && words[index].starts_with('-') {
+                let takes_value = matches!(words[index], "-u" | "-g" | "-C" | "-h" | "-p" | "-U");
+                index += if takes_value { 2 } else { 1 };
             }
+            continue;
         }
-        return None;
+        let rest = words[index + 1..]
+            .iter()
+            .map(|word| word.to_string())
+            .collect();
+        return Some((name, rest));
+    }
+    None
+}
+
+fn program_name(word: &str) -> String {
+    let name = basename(word).to_lowercase();
+    name.strip_suffix(".exe")
+        .map(str::to_string)
+        .unwrap_or(name)
+}
+
+fn inner_script(words: &[&str]) -> Option<String> {
+    let (name, rest) = program(words)?;
+    let is_flag = |arg: &&String, flags: &[&str]| flags.contains(&arg.to_lowercase().as_str());
+    let after = |position: usize| -> Option<String> {
+        let tail = &rest[position + 1..];
+        (!tail.is_empty()).then(|| tail.join(" "))
+    };
+    if SHELLS.contains(&name.as_str()) {
+        let flag = rest
+            .iter()
+            .position(|arg| arg.starts_with('-') && !arg.starts_with("--") && arg.contains('c'))?;
+        return rest.get(flag + 1).cloned();
+    }
+    if name == "cmd" {
+        return after(rest.iter().position(|arg| is_flag(&arg, &["/c", "/k"]))?);
+    }
+    if name == "powershell" || name == "pwsh" {
+        let flag = rest
+            .iter()
+            .position(|arg| is_flag(&arg, &["-command", "-c", "/c", "/command"]));
+        return match flag {
+            Some(position) => after(position),
+            None => (!rest.is_empty() && !rest[0].starts_with('-')).then(|| rest.join(" ")),
+        };
     }
     None
 }

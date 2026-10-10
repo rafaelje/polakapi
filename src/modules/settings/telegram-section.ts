@@ -3,7 +3,6 @@ import { settingsNumber, settingsRow, settingsSelect, settingsToggle } from "./c
 // The "Telegram" settings section: the bot that lets allowed Telegram users
 // talk to the operator agent. The Rust side owns the config file and never
 // sends the token back; this form only sees a hint and can replace it.
-// See docs/telegram-bot-plan.md.
 
 export interface TelegramConfigView {
   enabled: boolean;
@@ -326,7 +325,7 @@ export async function mountTelegramSection(opts: TelegramSectionOptions): Promis
   settingsRow(
     group,
     "Ask before acting",
-    "When the agent wants to type into a terminal or run a command, the chat gets Run and Cancel buttons. Off: it acts directly. In the chat: /confirm on or off.",
+    "When the agent wants to type into a terminal or run a command, the chat gets Run and Cancel buttons. Off: it acts directly. Destructive commands (deleting, overwriting, killing, uninstalling, git resets and force pushes, dropping data…) always ask, even when you type them with /run, /sh or $. In the chat: /confirm on or off.",
   ).append(confirm);
 
   const sudo = settingsToggle("Allow sudo", config.allowSudo, (checked) => {
