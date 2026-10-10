@@ -132,13 +132,25 @@ pub fn spoken_text(markdown: &str) -> Option<String> {
     Some(cut[..end].trim().to_string())
 }
 
-pub async fn synthesize(speaker: &Speaker, text: &str) -> Result<Vec<u8>, String> {
+/// ffmpeg's `atempo` for a speed in percent: 90 plays 10% slower without
+/// changing the pitch. Piper's own `--length-scale` leaves the pauses alone,
+/// so its effect on the length varies with the voice and the text.
+pub fn tempo_filter(speed_percent: u32) -> String {
+    format!("atempo={:.2}", f64::from(speed_percent) / 100.0)
+}
+
+pub async fn synthesize(
+    speaker: &Speaker,
+    text: &str,
+    speed_percent: u32,
+) -> Result<Vec<u8>, String> {
     let dir = tempfile::tempdir().map_err(|e| format!("temp dir: {e}"))?;
     let input = dir.path().join("answer.txt");
     let wav = dir.path().join("answer.wav");
     let ogg = dir.path().join("answer.ogg");
     std::fs::write(&input, text).map_err(|e| format!("save the text: {e}"))?;
     let voice = speaker.voice.to_string_lossy();
+    let tempo = tempo_filter(speed_percent);
     let (input, wav, ogg_arg) = (
         input.to_string_lossy(),
         wav.to_string_lossy(),
@@ -159,6 +171,8 @@ pub async fn synthesize(speaker: &Speaker, text: &str) -> Result<Vec<u8>, String
             "-y",
             "-i",
             &wav,
+            "-af",
+            &tempo,
             "-ac",
             "1",
             "-c:a",
@@ -181,7 +195,7 @@ pub async fn speak_answer(ctx: &Ctx, chat_id: i64, config: &TelegramConfig, answ
     };
     let result = async {
         let speaker = locate(config)?;
-        let audio = synthesize(&speaker, &text).await?;
+        let audio = synthesize(&speaker, &text, config.voice_speed).await?;
         ctx.api
             .send_voice(chat_id, audio)
             .await
@@ -213,6 +227,13 @@ mod tests {
         let spoken = spoken_text(&answer).unwrap();
         assert!(spoken.chars().count() <= MAX_SPOKEN_CHARS);
         assert!(spoken.ends_with("corta."));
+    }
+
+    #[test]
+    fn speed_becomes_an_ffmpeg_tempo() {
+        assert_eq!(tempo_filter(90), "atempo=0.90");
+        assert_eq!(tempo_filter(100), "atempo=1.00");
+        assert_eq!(tempo_filter(125), "atempo=1.25");
     }
 
     #[test]

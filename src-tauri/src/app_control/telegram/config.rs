@@ -19,6 +19,8 @@ const MAX_TIMEOUT_SECS: u64 = 3600;
 pub const MAX_STYLE_CHARS: usize = 1000;
 const MAX_NAMES: usize = 10;
 const MAX_NAME_CHARS: usize = 40;
+const MIN_VOICE_SPEED: u32 = 50;
+const MAX_VOICE_SPEED: u32 = 150;
 const VOICE_LANGUAGES: &[&str] = &["auto", "es", "en", "pt", "fr", "de", "it"];
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -58,6 +60,8 @@ pub struct TelegramConfig {
     pub voice_replies: String,
     /// A Piper `.onnx` voice; empty finds one in ~/.local/share/piper.
     pub piper_voice: String,
+    /// Speaking speed in percent of the voice's own pace; 90 is 10% slower.
+    pub voice_speed: u32,
 }
 
 impl Default for TelegramConfig {
@@ -81,6 +85,7 @@ impl Default for TelegramConfig {
             voice_language: "auto".to_string(),
             voice_replies: "off".to_string(),
             piper_voice: String::new(),
+            voice_speed: 100,
         }
     }
 }
@@ -125,6 +130,7 @@ impl TelegramConfig {
             self.voice_replies = defaults.voice_replies;
         }
         self.piper_voice = self.piper_voice.trim().to_string();
+        self.voice_speed = self.voice_speed.clamp(MIN_VOICE_SPEED, MAX_VOICE_SPEED);
         self
     }
 
@@ -162,6 +168,7 @@ impl TelegramConfig {
             voice_language: self.voice_language.clone(),
             voice_replies: self.voice_replies.clone(),
             piper_voice: self.piper_voice.clone(),
+            voice_speed: self.voice_speed,
         }
     }
 
@@ -228,6 +235,9 @@ impl TelegramConfig {
         if let Some(voice) = patch.piper_voice {
             next.piper_voice = voice;
         }
+        if let Some(speed) = patch.voice_speed {
+            next.voice_speed = speed;
+        }
         Ok(next.normalized())
     }
 }
@@ -254,6 +264,7 @@ pub struct ConfigView {
     pub voice_language: String,
     pub voice_replies: String,
     pub piper_voice: String,
+    pub voice_speed: u32,
 }
 
 /// A partial update from the settings window. `token: Some("")` clears it.
@@ -278,6 +289,7 @@ pub struct ConfigPatch {
     pub voice_language: Option<String>,
     pub voice_replies: Option<String>,
     pub piper_voice: Option<String>,
+    pub voice_speed: Option<u32>,
 }
 
 pub fn normalize_style(style: &str) -> String {
@@ -436,12 +448,14 @@ mod tests {
             profile: "root".into(),
             turn_timeout_secs: 1,
             voice_language: "klingon".into(),
+            voice_speed: 5,
             address_as: vec![" Miguel ".into(), "".into(), "jefe".into(), "miguel".into()],
             ..TelegramConfig::default()
         }
         .normalized();
         assert_eq!(config.address_as, vec!["Miguel", "jefe"]);
         assert_eq!(config.voice_language, "auto");
+        assert_eq!(config.voice_speed, 50);
         assert_eq!(config.allowed_user_ids, vec![5, 9]);
         assert_eq!(config.cli, "claude");
         assert_eq!(config.profile, "readonly");

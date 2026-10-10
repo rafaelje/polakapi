@@ -24,6 +24,7 @@ export interface TelegramConfigView {
   voiceLanguage: string;
   voiceReplies: string;
   piperVoice: string;
+  voiceSpeed: number;
 }
 
 export type TelegramConfigPatch = Partial<
@@ -46,6 +47,7 @@ export type TelegramConfigPatch = Partial<
     | "voiceLanguage"
     | "voiceReplies"
     | "piperVoice"
+    | "voiceSpeed"
   >
 > & { token?: string };
 
@@ -435,6 +437,20 @@ export async function mountTelegramSection(opts: TelegramSectionOptions): Promis
     "Path to a Piper .onnx voice. Empty picks one in ~/.local/share/piper, preferring the voice language above.",
   ).append(piper);
 
+  const speed = settingsNumber(
+    "Voice speed",
+    config.voiceSpeed,
+    { min: 50, max: 150 },
+    (voiceSpeed) => {
+      void save({ voiceSpeed });
+    },
+  );
+  settingsRow(
+    group,
+    "Voice speed (%)",
+    "How fast the voice notes play, in percent of the voice's own pace: 90 is 10% slower, 110 is 10% faster. The pitch stays the same.",
+  ).append(speed);
+
   function render(): void {
     enabled.checked = config.enabled;
     confirm.checked = config.confirmActions;
@@ -460,6 +476,9 @@ export async function mountTelegramSection(opts: TelegramSectionOptions): Promis
     replies.value = config.voiceReplies;
     piper.disabled = config.voiceReplies === "off";
     if (document.activeElement !== piper) piper.value = config.piperVoice;
+    speed.value = String(config.voiceSpeed);
+    speed.dataset.current = String(config.voiceSpeed);
+    speed.disabled = config.voiceReplies === "off";
     if (document.activeElement !== botName) botName.value = config.botName;
     if (document.activeElement !== address) address.value = config.addressAs.join(", ");
     timeout.value = String(config.turnTimeoutSecs);

@@ -34,6 +34,7 @@ const baseConfig: TelegramConfigView = {
   voiceLanguage: "auto",
   voiceReplies: "off",
   piperVoice: "",
+  voiceSpeed: 100,
 };
 
 const onError = vi.fn();
@@ -172,6 +173,11 @@ describe("telegram section", () => {
     replies.dispatchEvent(new Event("change"));
     await vi.waitFor(() => expect(piper.disabled).toBe(false));
     expect(setConfig).toHaveBeenCalledWith({ voiceReplies: "reply" });
+    const speed = control<HTMLInputElement>("Voice speed");
+    expect(speed.disabled).toBe(false);
+    speed.value = "90";
+    speed.dispatchEvent(new Event("change"));
+    await vi.waitFor(() => expect(setConfig).toHaveBeenCalledWith({ voiceSpeed: 90 }));
     button("Check").click();
     await vi.waitFor(() =>
       expect(onMessage).toHaveBeenCalledWith(
