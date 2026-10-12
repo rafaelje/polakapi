@@ -11,6 +11,7 @@ const terminalMocks = vi.hoisted(() => {
   class Terminal {
     cols = 80;
     rows = 24;
+    buffer = { onBufferChange: () => ({ dispose: () => {} }) };
 
     constructor(options: { linkHandler: { activate: LinkHandler } }) {
       oscHandler = options.linkHandler.activate;
@@ -23,6 +24,18 @@ const terminalMocks = vi.hoisted(() => {
     write(data: string, callback?: () => void): void {
       this.written.push(data);
       callback?.();
+    }
+    onWriteParsed(): { dispose(): void } {
+      return { dispose: () => {} };
+    }
+    onResize(): { dispose(): void } {
+      return { dispose: () => {} };
+    }
+    onScroll(): { dispose(): void } {
+      return { dispose: () => {} };
+    }
+    onRender(): { dispose(): void } {
+      return { dispose: () => {} };
     }
   }
 
