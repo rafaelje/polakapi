@@ -14,6 +14,7 @@ import {
 } from "./terminal-clipboard";
 import { attachTerminalImagePaste } from "./terminal-image-paste";
 import { attachTerminalKeybindings } from "./terminal-keybindings";
+import { TerminalSearch } from "./terminal-search";
 import {
   classifyLinkText,
   createPathLinkProvider,
@@ -128,6 +129,7 @@ export class TerminalPane {
         },
       },
     });
+    this.disposables.push(new TerminalSearch(this.term, this.el, this.bodyEl));
     this.fitAddon = new FitAddon();
     this.term.loadAddon(this.fitAddon);
     this.term.loadAddon(this.serializer);
