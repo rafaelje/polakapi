@@ -23,6 +23,7 @@ export interface PaneWiringHost {
   dock(sourceId: string, targetId: string, position: TerminalDockPosition): void;
   setFocus(ptyId: string): void;
   close(ptyId: string): void | Promise<void>;
+  tearOff?(this: void, ptyId: string, screenX: number, screenY: number): void;
   orderLength(): number;
 }
 
@@ -67,6 +68,7 @@ export function wireTerminalPane(
     grid: host.grid,
     paneId: ptyId,
     onDock: (sourceId, targetId, position) => host.dock(sourceId, targetId, position),
+    onTearOff: host.tearOff,
   });
   pane.el.addEventListener("mousedown", () => host.setFocus(ptyId));
   pane.bodyEl.addEventListener("focusin", () => host.setFocus(ptyId));

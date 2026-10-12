@@ -31,6 +31,31 @@ pub fn install_hooks_for_cli(cli: &str) -> Result<InstallHooksResult, String> {
     }
 }
 
+/// Rewrites the capture hooks for each CLI that already has them, so an older
+/// install picks up changes such as recording sessions started by `/clear`,
+/// and hooks left by another polakapi binary collapse into one set. CLIs the
+/// user never enabled are left alone.
+pub fn refresh_installed_hooks() -> Result<(), String> {
+    let bin = std::env::current_exe()
+        .map_err(|e| format!("resolve current exe: {e}"))?
+        .to_string_lossy()
+        .to_string();
+    let home = user_home_dir()?;
+    refresh_installed_hooks_at_home(&bin, &home)
+}
+
+fn refresh_installed_hooks_at_home(bin: &str, home: &Path) -> Result<(), String> {
+    for (cli, file) in [
+        ("claude", home.join(".claude").join("settings.json")),
+        ("codex", home.join(".codex").join("hooks.json")),
+    ] {
+        if file.is_file() && has_marker(&read_settings(&file)?) {
+            install_hooks_at_home(cli, bin, home)?;
+        }
+    }
+    Ok(())
+}
+
 fn install_hooks(cli: &str, bin: &str) -> Result<InstallHooksResult, String> {
     let home = user_home_dir()?;
     install_hooks_at_home(cli, bin, &home)
@@ -111,7 +136,7 @@ fn desired_hooks(bin: &str) -> serde_json::Value {
     let command = format!("\"{bin}\" capture");
     serde_json::json!({
         "SessionStart": [{
-            "matcher": "startup|resume",
+            "matcher": "startup|resume|clear",
             "hooks": [{ "type": "command", "command": command, "_polakapi": POLAKAPI_HOOK_MARKER }]
         }],
         "UserPromptSubmit": [{
@@ -175,6 +200,26 @@ fn merge_marker_groups(
 
 fn is_marker(hook: &serde_json::Value) -> bool {
     hook.get("_polakapi").and_then(serde_json::Value::as_str) == Some(POLAKAPI_HOOK_MARKER)
+        || is_legacy_capture(hook)
+}
+
+/// Capture hooks written before the marker existed carry no `_polakapi` key,
+/// so they are recognised by the exact command shape only polakapi writes:
+/// `"<path ending in polakapi>" capture`. Without this they could never be
+/// upgraded or deduplicated.
+fn is_legacy_capture(hook: &serde_json::Value) -> bool {
+    hook.get("_polakapi").is_none()
+        && hook
+            .get("command")
+            .and_then(serde_json::Value::as_str)
+            .and_then(|command| command.strip_suffix("\" capture"))
+            .is_some_and(|quoted| {
+                let binary = quoted.trim_start_matches('"');
+                quoted.starts_with('"')
+                    && std::path::Path::new(binary)
+                        .file_stem()
+                        .is_some_and(|stem| stem == "polakapi")
+            })
 }
 
 #[cfg(test)]
@@ -231,6 +276,98 @@ mod tests {
             root["hooks"]["Stop"][1]["hooks"][0]["command"],
             "\"/new/polakapi\" capture"
         );
+    }
+
+    #[test]
+    fn refreshing_upgrades_existing_installs_and_collapses_duplicates() {
+        let home = tempfile::tempdir().unwrap();
+        let path = home.path().join(".claude/settings.json");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        // What an older install left behind: two binaries, no `clear` matcher.
+        let old_group = |bin: &str| {
+            serde_json::json!({
+                "matcher": "startup|resume",
+                "hooks": [{ "type": "command", "command": format!("\"{bin}\" capture"), "_polakapi": POLAKAPI_HOOK_MARKER }]
+            })
+        };
+        std::fs::write(
+            &path,
+            serde_json::to_string(&serde_json::json!({
+                "hooks": { "SessionStart": [old_group("/debug/polakapi"), old_group("/release/polakapi")] }
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+
+        refresh_installed_hooks_at_home("/new/polakapi", home.path()).unwrap();
+
+        let root = read_settings(&path).unwrap();
+        let start = root["hooks"]["SessionStart"].as_array().unwrap();
+        assert_eq!(start.len(), 1);
+        assert_eq!(start[0]["matcher"], "startup|resume|clear");
+        assert_eq!(start[0]["hooks"][0]["command"], "\"/new/polakapi\" capture");
+    }
+
+    #[test]
+    fn refreshing_adopts_capture_hooks_written_before_the_marker_existed() {
+        let home = tempfile::tempdir().unwrap();
+        let path = home.path().join(".claude/settings.json");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let legacy = |bin: &str| {
+            serde_json::json!({
+                "matcher": "startup|resume",
+                "hooks": [{ "type": "command", "command": format!("\"{bin}\" capture") }]
+            })
+        };
+        std::fs::write(
+            &path,
+            serde_json::to_string(&serde_json::json!({
+                "hooks": {
+                    "SessionStart": [
+                        legacy("/repo/target/debug/polakapi"),
+                        legacy("/repo/target/release/polakapi"),
+                        { "hooks": [{ "type": "command", "command": "\"/usr/bin/other\" capture" }] },
+                        { "hooks": [{ "type": "command", "command": "polakapi capture --mine" }] }
+                    ]
+                }
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+
+        refresh_installed_hooks_at_home("/new/polakapi", home.path()).unwrap();
+
+        let root = read_settings(&path).unwrap();
+        let commands: Vec<String> = root["hooks"]["SessionStart"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|group| group["hooks"][0]["command"].as_str().unwrap().to_string())
+            .collect();
+        // Look-alikes that are not polakapi's exact shape are kept.
+        assert!(commands.contains(&"\"/usr/bin/other\" capture".to_string()));
+        assert!(commands.contains(&"polakapi capture --mine".to_string()));
+        // The two legacy copies collapse into one current, marked hook.
+        let ours: Vec<&String> = commands
+            .iter()
+            .filter(|c| c.contains("/new/polakapi"))
+            .collect();
+        assert_eq!(ours.len(), 1);
+        assert!(!commands.iter().any(|c| c.contains("/repo/target/")));
+        let start = root["hooks"]["SessionStart"].as_array().unwrap();
+        let group = start
+            .iter()
+            .find(|g| g["hooks"][0]["command"] == "\"/new/polakapi\" capture")
+            .unwrap();
+        assert_eq!(group["matcher"], "startup|resume|clear");
+    }
+
+    #[test]
+    fn refreshing_never_installs_hooks_the_user_did_not_enable() {
+        let home = tempfile::tempdir().unwrap();
+        refresh_installed_hooks_at_home("/new/polakapi", home.path()).unwrap();
+        assert!(!home.path().join(".claude/settings.json").exists());
+        assert!(!home.path().join(".codex/hooks.json").exists());
     }
 
     #[test]

@@ -8,6 +8,7 @@ use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::platform_command;
+use crate::pty_activity::{ai_cli_basename, AgentPane};
 use crate::shell_integration;
 
 mod owners;
@@ -26,7 +27,6 @@ const ALLOWED_SHELL_BASENAMES: &[&str] = &[
 const ALLOWED_SHELL_BASENAMES: &[&str] =
     &["sh", "bash", "zsh", "fish", "dash", "ksh", "tcsh", "csh"];
 
-const ALLOWED_AI_CLI_BASENAMES: &[&str] = &["claude", "codex", "opencode", "cursor-agent"];
 const CAPTURE_PTY_ID_ENV: &str = "POLAKAPI_PTY_ID";
 const CAPTURE_DB_PATH_ENV: &str = "POLAKAPI_DB_PATH";
 const CAPTURE_CLI_ENV: &str = "POLAKAPI_CLI";
@@ -40,6 +40,15 @@ pub struct PtySession {
     pub writer: Mutex<Box<dyn Write + Send>>,
     pub master: Mutex<Box<dyn MasterPty + Send>>,
     pub child: Mutex<Box<dyn Child + Send + Sync>>,
+    /// Recent output, so a window that attaches later can catch up.
+    pub replay: Mutex<crate::pty_replay::ReplayBuffer>,
+    /// Lowercased basename, set only for panes running an allowlisted AI CLI.
+    /// `None` for plain shells, which is what lets `agent_panes` filter them out
+    /// without the frontend having to say which pane is which.
+    pub cli: Option<String>,
+    /// Working directory the process was actually spawned in, after falling
+    /// back to the default when the request carried none.
+    pub cwd: Option<String>,
 }
 
 #[derive(Default)]
@@ -67,6 +76,21 @@ impl PtyStore {
         if let Some(session) = self.remove_session(id) {
             kill_and_wait(session);
         }
+    }
+
+    /// Live panes running an AI CLI, shells excluded.
+    pub fn agent_panes(&self) -> Vec<AgentPane> {
+        self.sessions
+            .lock()
+            .iter()
+            .filter_map(|(id, session)| {
+                Some(AgentPane {
+                    pty_id: id.clone(),
+                    cli: session.cli.clone()?,
+                    cwd: session.cwd.clone(),
+                })
+            })
+            .collect()
     }
 
     pub fn session_pids(&self) -> Vec<(String, u32)> {
@@ -115,6 +139,8 @@ impl Drop for PtyStore {
 pub struct PtyDataPayload {
     pub id: String,
     pub data: String,
+    /// Offset right after this chunk in the PTY's output, see `pty_attach`.
+    pub offset: u64,
 }
 
 #[derive(Clone, Serialize)]
@@ -155,9 +181,13 @@ pub fn spawn_session(
 
     let mut cmd =
         platform_command::portable_command(&program, &validated_args, !is_allowed_shell(&shell))?;
-    if let Some(dir) = validated_cwd {
-        cmd.cwd(dir);
-    } else if let Some(dir) = default_working_dir() {
+    match &validated_cwd {
+        Some(dir) => cmd.env(crate::ctx::paths::PROJECT_DIR_ENV, dir),
+        None => cmd.env_remove(crate::ctx::paths::PROJECT_DIR_ENV),
+    }
+    let effective_cwd: Option<String> = validated_cwd
+        .or_else(|| default_working_dir().map(|dir| dir.to_string_lossy().into_owned()));
+    if let Some(dir) = &effective_cwd {
         cmd.cwd(dir);
     }
     configure_terminal_environment(&mut cmd);
@@ -173,6 +203,9 @@ pub fn spawn_session(
         &shell,
         crate::db::Db::resolve_path(&app).ok().as_deref(),
     );
+    if let Some(path) = crate::ctx::config::config_path_for_app(&app) {
+        cmd.env(crate::ctx::config::CONFIG_ENV, path);
+    }
 
     let child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
     drop(pair.slave);
@@ -184,12 +217,16 @@ pub fn spawn_session(
         writer: Mutex::new(writer),
         master: Mutex::new(pair.master),
         child: Mutex::new(child),
+        cli: ai_cli_basename(&shell),
+        cwd: effective_cwd,
+        replay: Mutex::new(Default::default()),
     });
-    store.insert_session(id.clone(), session);
+    store.insert_session(id.clone(), session.clone());
 
     let id_for_thread = id.clone();
     let app_for_thread = app.clone();
     let store_for_thread = store.clone();
+    let session_for_thread = session;
     std::thread::spawn(move || {
         let mut buf = [0u8; 4096];
         let mut pending: Vec<u8> = Vec::with_capacity(64);
@@ -200,11 +237,13 @@ pub fn spawn_session(
                     pending.extend_from_slice(&buf[..n]);
                     let chunk = drain_valid_utf8(&mut pending);
                     if !chunk.is_empty() {
+                        let offset = session_for_thread.replay.lock().push(&chunk);
                         let _ = app_for_thread.emit(
                             "pty:data",
                             PtyDataPayload {
                                 id: id_for_thread.clone(),
                                 data: chunk,
+                                offset,
                             },
                         );
                     }
@@ -214,11 +253,13 @@ pub fn spawn_session(
         }
         if !pending.is_empty() {
             let chunk = String::from_utf8_lossy(&pending).to_string();
+            let offset = session_for_thread.replay.lock().push(&chunk);
             let _ = app_for_thread.emit(
                 "pty:data",
                 PtyDataPayload {
                     id: id_for_thread.clone(),
                     data: chunk,
+                    offset,
                 },
             );
         }
@@ -275,7 +316,7 @@ fn is_allowed_shell(cmd: &str) -> bool {
 }
 
 fn is_allowed_command(cmd: &str) -> bool {
-    is_allowed_shell(cmd) || basename_in(cmd, ALLOWED_AI_CLI_BASENAMES)
+    is_allowed_shell(cmd) || ai_cli_basename(cmd).is_some()
 }
 
 fn validate_args(args: Option<Vec<String>>) -> Result<Vec<String>, String> {
@@ -343,15 +384,9 @@ fn configure_capture_environment(
         Some(path) => cmd.env(CAPTURE_DB_PATH_ENV, path),
         None => cmd.env_remove(CAPTURE_DB_PATH_ENV),
     }
-    if basename_in(command, ALLOWED_AI_CLI_BASENAMES) {
-        let cli = Path::new(command)
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or(command)
-            .to_ascii_lowercase();
-        cmd.env(CAPTURE_CLI_ENV, cli);
-    } else {
-        cmd.env_remove(CAPTURE_CLI_ENV);
+    match ai_cli_basename(command) {
+        Some(cli) => cmd.env(CAPTURE_CLI_ENV, cli),
+        None => cmd.env_remove(CAPTURE_CLI_ENV),
     }
     cmd.env_remove(LEGACY_CAPTURE_HELPER_ENV);
 }

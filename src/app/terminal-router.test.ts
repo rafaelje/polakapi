@@ -18,6 +18,11 @@ const managerFake = vi.hoisted(() => {
   };
 });
 
+const managerCalls = vi.hoisted(() => ({
+  dispose: [] as unknown[],
+  restore: [] as unknown[],
+}));
+
 vi.mock("../modules/terminal/terminal-manager", () => ({
   TerminalManager: class {
     readonly gridEl = document.createElement("div");
@@ -28,8 +33,31 @@ vi.mock("../modules/terminal/terminal-manager", () => ({
       return () => undefined;
     }
     setNotificationContext(): void {}
+    waitForHandoff(): Promise<void> {
+      return Promise.resolve();
+    }
+    freeze(): Promise<boolean> {
+      return Promise.resolve(true);
+    }
     ids(): string[] {
       return [];
+    }
+    specs(): unknown[] {
+      return [{ id: "pty-1" }];
+    }
+    get layoutSnapshot(): unknown {
+      return { type: "pane", paneId: "pty-1" };
+    }
+    getActiveCli(): string {
+      return "claude";
+    }
+    dispose(opts?: unknown): Promise<void> {
+      managerCalls.dispose.push(opts);
+      return Promise.resolve();
+    }
+    restoreSpecs(specs: unknown, opts?: unknown): Promise<void> {
+      managerCalls.restore.push([specs, opts]);
+      return Promise.resolve();
     }
   },
 }));
@@ -58,5 +86,57 @@ describe("TerminalRouter layout persistence", () => {
     managerFake.emit({ type: "layout-changed", projectId: pid("p1"), layout });
 
     expect(onPersistLayout).toHaveBeenCalledExactlyOnceWith(pid("p1"), layout);
+  });
+});
+
+describe("TerminalRouter handing a grid to another window", () => {
+  beforeEach(() => {
+    managerFake.reset();
+    managerCalls.dispose.length = 0;
+    managerCalls.restore.length = 0;
+  });
+
+  it("releases the grid without killing its processes", async () => {
+    const router = new TerminalRouter({ onPersistSpecs: vi.fn(), onPersistLayout: vi.fn() });
+    router.getOrCreate(project());
+
+    const grid = await router.release(pid("p1"));
+
+    expect(grid).toEqual({
+      specs: [{ id: "pty-1" }],
+      layout: { type: "pane", paneId: "pty-1" },
+      activeCliId: "claude",
+      snapshots: {},
+    });
+    expect(managerCalls.dispose).toEqual([{ keepPty: true }]);
+    expect(router.getById(pid("p1"))).toBeNull();
+    expect(await router.release(pid("p1"))).toBeNull();
+  });
+
+  it("keeps counting panes that live in another window", () => {
+    const router = new TerminalRouter({ onPersistSpecs: vi.fn(), onPersistLayout: vi.fn() });
+    router.setExternalCount("w1", pid("p1"), 3);
+    expect(router.getCount(pid("p1"))).toBe(3);
+    expect(router.totalLiveCount()).toBe(3);
+    expect(router.liveCountsByProject().get(pid("p1"))).toBe(3);
+    router.setExternalCount("w1", pid("p1"), null);
+    expect(router.getCount(pid("p1"))).toBe(0);
+  });
+
+  it("adopts running processes instead of spawning when the grid returns", async () => {
+    const router = new TerminalRouter({ onPersistSpecs: vi.fn(), onPersistLayout: vi.fn() });
+    const grid = {
+      specs: [{ id: "pty-1" }],
+      layout: { type: "pane" as const, paneId: "pty-1" },
+      activeCliId: "codex",
+    };
+
+    const manager = await router.adopt(project(), grid);
+
+    expect(router.getById(pid("p1"))).toBe(manager);
+    expect(managerCalls.restore).toEqual([[grid.specs, { adopt: true }]]);
+    expect((manager as unknown as { options: { activeCliId: string } }).options.activeCliId).toBe(
+      "codex",
+    );
   });
 });

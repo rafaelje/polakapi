@@ -80,6 +80,9 @@ export interface LayoutTemplateSpec {
   title?: string;
   startupCmd?: string;
   cliId?: string;
+  /** Only set by "Reload all", which reopens panes where they were. Saved
+   * templates leave it unset so they stay portable across projects. */
+  cwd?: string;
 }
 
 export interface LayoutTemplate {

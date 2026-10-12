@@ -40,6 +40,9 @@ mod tests {
             writer: Mutex::new(pair.master.take_writer().expect("writer")),
             master: Mutex::new(pair.master),
             child: Mutex::new(child),
+            replay: Mutex::new(Default::default()),
+            cli: None,
+            cwd: None,
         })
     }
 

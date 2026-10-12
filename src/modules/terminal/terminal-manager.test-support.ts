@@ -11,10 +11,14 @@ const fake = vi.hoisted(() => {
   let nextId = 1;
   return {
     attachCalls,
+    attachGate: null as Promise<void> | null,
+    disposeCalls: [] as Array<{ id: string; keepPty?: boolean }>,
     placeholderCalls,
     panesByPtyId,
     reset(): void {
       attachCalls.length = 0;
+      fake.attachGate = null;
+      fake.disposeCalls.length = 0;
       placeholderCalls.length = 0;
       panesByPtyId.clear();
       nextId = 1;
@@ -32,6 +36,7 @@ const fake = vi.hoisted(() => {
 vi.mock("./terminal-pane", () => {
   class FakeTerminalPane {
     ptyId = "";
+    isExited = false;
     readonly el: HTMLElement = document.createElement("div");
     readonly headerEl: HTMLElement = document.createElement("div");
     readonly bodyEl: HTMLElement = document.createElement("div");
@@ -39,12 +44,16 @@ vi.mock("./terminal-pane", () => {
     readonly closeBtn: HTMLButtonElement = document.createElement("button");
 
     attach(host: HTMLElement, opts?: PaneCreateOptions): Promise<void> {
-      this.ptyId = fake.mintPtyId();
+      this.ptyId = opts?.existingPtyId ?? fake.mintPtyId();
+      this.isExited = opts?.snapshot?.exited ?? false;
       fake.attachCalls.push({ opts, ptyId: this.ptyId });
       host.append(this.el);
-      return Promise.resolve();
+      return fake.attachGate ?? Promise.resolve();
     }
 
+    snapshot(): Promise<null> {
+      return Promise.resolve(null);
+    }
     hasOutput = false;
     suspended = false;
     fit(): void {}
@@ -72,7 +81,8 @@ vi.mock("./terminal-pane", () => {
     onBell(): { dispose(): void } {
       return { dispose: () => undefined };
     }
-    dispose(): Promise<void> {
+    dispose(opts?: { keepPty?: boolean }): Promise<void> {
+      fake.disposeCalls.push({ id: this.ptyId, ...opts });
       this.el.remove();
       return Promise.resolve();
     }

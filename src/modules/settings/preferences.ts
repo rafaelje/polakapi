@@ -6,6 +6,7 @@ export interface NotificationPreferences {
   finished: "never" | "immediately" | "idle";
   waiting: boolean;
   desktop: boolean;
+  soundEnabled: boolean;
   sound: string;
   command: string;
 }
@@ -15,6 +16,7 @@ export const defaults: NotificationPreferences = {
   finished: "idle",
   waiting: true,
   desktop: true,
+  soundEnabled: true,
   sound: "default",
   command: "",
 };
@@ -26,6 +28,7 @@ export function normalizePreferences(value: unknown): NotificationPreferences {
     finished: p.finished === "never" || p.finished === "immediately" ? p.finished : "idle",
     waiting: typeof p.waiting === "boolean" ? p.waiting : defaults.waiting,
     desktop: typeof p.desktop === "boolean" ? p.desktop : defaults.desktop,
+    soundEnabled: typeof p.soundEnabled === "boolean" ? p.soundEnabled : defaults.soundEnabled,
     sound: typeof p.sound === "string" ? p.sound : defaults.sound,
     command: typeof p.command === "string" ? p.command : defaults.command,
   };

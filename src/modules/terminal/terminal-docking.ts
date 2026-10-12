@@ -8,6 +8,8 @@ export interface TerminalDockingOptions {
   grid: HTMLElement;
   paneId: string;
   onDock(sourceId: string, targetId: string, position: TerminalDockPosition): void;
+  /** Dropped outside the window: open the pane on its own at these screen coordinates. */
+  onTearOff?(this: void, paneId: string, screenX: number, screenY: number): void;
 }
 
 export interface TerminalDockingHandle {
@@ -20,6 +22,7 @@ export function attachTerminalDocking(options: TerminalDockingOptions): Terminal
   let targetId: string | null = null;
   let position: TerminalDockPosition | null = null;
   let overlay: HTMLElement | null = null;
+  let pointerId: number | null = null;
 
   const clearOverlay = (): void => {
     overlay?.remove();
@@ -28,11 +31,20 @@ export function attachTerminalDocking(options: TerminalDockingOptions): Terminal
     position = null;
   };
 
+  const setOutside = (next: boolean): void => {
+    document.body.classList.toggle("terminal-pane-tearing", next);
+  };
+
   const finish = (): void => {
     start = null;
     active = false;
     options.handle.classList.remove("terminal-drag-handle--active");
     document.body.classList.remove("terminal-pane-dragging");
+    setOutside(false);
+    if (pointerId !== null && options.handle.hasPointerCapture?.(pointerId)) {
+      options.handle.releasePointerCapture(pointerId);
+    }
+    pointerId = null;
     clearOverlay();
   };
 
@@ -41,6 +53,7 @@ export function attachTerminalDocking(options: TerminalDockingOptions): Terminal
     const target = event.target instanceof Element ? event.target : null;
     if (target?.closest(INTERACTIVE_SELECTOR)) return;
     start = { x: event.clientX, y: event.clientY };
+    pointerId = event.pointerId;
   };
 
   const onPointerMove = (event: PointerEvent): void => {
@@ -51,8 +64,19 @@ export function attachTerminalDocking(options: TerminalDockingOptions): Terminal
       active = true;
       options.handle.classList.add("terminal-drag-handle--active");
       document.body.classList.add("terminal-pane-dragging");
+      // Keeps the pointer events coming once it leaves the window, so a
+      // release out there can be recognised as a tear-off.
+      if (options.onTearOff && pointerId !== null) {
+        options.handle.setPointerCapture?.(pointerId);
+      }
     }
     event.preventDefault();
+    if (options.onTearOff && isOutsideViewport(event.clientX, event.clientY)) {
+      setOutside(true);
+      clearOverlay();
+      return;
+    }
+    setOutside(false);
     const pane = paneAtPoint(options.grid, event.clientX, event.clientY);
     const nextTargetId = pane?.dataset.ptyId ?? null;
     if (!pane || !nextTargetId || nextTargetId === options.paneId) {
@@ -73,12 +97,16 @@ export function attachTerminalDocking(options: TerminalDockingOptions): Terminal
     overlay = renderDockOverlay(overlay, pane.getBoundingClientRect(), nextPosition);
   };
 
-  const onPointerUp = (): void => {
+  const onPointerUp = (event: PointerEvent): void => {
     const dropTargetId = targetId;
     const dropPosition = position;
     const wasActive = active;
+    const tearOff =
+      wasActive && options.onTearOff && isOutsideViewport(event.clientX, event.clientY);
     finish();
-    if (wasActive && dropTargetId && dropPosition) {
+    if (tearOff) {
+      options.onTearOff?.(options.paneId, event.screenX, event.screenY);
+    } else if (wasActive && dropTargetId && dropPosition) {
       options.onDock(options.paneId, dropTargetId, dropPosition);
     }
   };
@@ -107,6 +135,10 @@ export function attachTerminalDocking(options: TerminalDockingOptions): Terminal
       window.removeEventListener("blur", finish);
     },
   };
+}
+
+export function isOutsideViewport(x: number, y: number): boolean {
+  return x < 0 || y < 0 || x >= window.innerWidth || y >= window.innerHeight;
 }
 
 export function resolveTerminalDockPosition(

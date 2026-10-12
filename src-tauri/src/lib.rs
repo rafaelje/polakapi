@@ -2,12 +2,14 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod adv_review;
+mod agent_context;
 mod agent_sessions;
 mod app_menu;
 mod awake;
 pub mod capture;
 mod code_review;
 mod commands;
+pub mod ctx;
 pub mod db;
 mod fs;
 mod git_clone;
@@ -23,7 +25,10 @@ mod open;
 mod paste_image;
 mod platform_command;
 mod project_watch;
+mod project_windows;
 mod pty;
+mod pty_activity;
+mod pty_replay;
 mod shell_integration;
 mod skills;
 mod update_check;
@@ -32,6 +37,8 @@ mod usage;
 use std::sync::{Arc, Mutex};
 use tauri::Manager;
 
+use crate::ctx::install::ctx_sync_hooks;
+use crate::ctx::project_data::{ctx_clear_project_data, ctx_project_data_summary};
 use crate::db::Db;
 use crate::open::ShellRegistry;
 
@@ -40,6 +47,9 @@ use crate::awake::{keep_awake_set, AwakeState};
 use crate::adv_review::{
     adv_create_run, adv_ensure_run_prompt, adv_read_run_file, adv_read_run_prompt,
     adv_read_state_file, adv_write_run_file, adv_write_run_prompt, adv_write_state_file,
+};
+use crate::agent_context::{
+    agent_context_detail, agent_context_entry, agent_context_list, agent_context_search,
 };
 use crate::agent_sessions::agent_list_sessions;
 use crate::code_review::{
@@ -51,8 +61,8 @@ use crate::code_review::{
 };
 use crate::commands::{
     app_exit, create_project_folder, fs_validate_path, open_file_in_editor, open_in_editor,
-    open_in_explorer, open_in_shell, open_local_path, open_url, pty_kill, pty_resize, pty_spawn,
-    pty_write,
+    open_in_explorer, open_in_shell, open_local_path, open_url, pty_attach, pty_kill, pty_resize,
+    pty_spawn, pty_write,
 };
 use crate::db::{
     prompt_delete_sessions, prompt_get, prompt_install_hooks, prompt_list_by_session,
@@ -75,7 +85,12 @@ use crate::loop_prompts::{
 use crate::memory::pty_memory_stats;
 use crate::memory_review::{memory_delete, memory_list, memory_read, memory_write};
 use crate::paste_image::save_pasted_image;
+use crate::project_windows::{
+    project_window_close, project_window_focus, project_window_open, project_window_ready,
+    project_window_state, ProjectWindows,
+};
 use crate::pty::PtyStore;
+use crate::pty_activity::pty_running_commands;
 use crate::skills::{skill_explain, skill_read, skill_write, skills_list};
 use crate::update_check::update_check;
 use crate::usage::usage_summary;
@@ -138,11 +153,27 @@ pub fn run() {
             move |app| {
                 app_menu::install(app)?;
                 app.manage(store);
+                app.manage(ProjectWindows::default());
                 app.manage(ShellRegistry::default());
                 app.manage(notifications::SoundPlayback::default());
                 app.manage(notification_command::NotificationCommandState::default());
                 app.manage(AwakeState::default());
                 app.manage(CodeReviewWatchers::default());
+                // Ephemeral context stores whose pane died never clean up after
+                // themselves, and temp directories survive reboots.
+                if let Err(error) =
+                    ctx::paths::sweep_temp(&[], std::time::Duration::from_secs(24 * 3600))
+                {
+                    eprintln!("polakapi: could not sweep context stores: {error}");
+                }
+                // Re-sync on every start so the hooks point at this binary even
+                // after polakapi moved or was rebuilt elsewhere.
+                if let Err(error) = ctx::install::ctx_sync_hooks(app.handle().clone()) {
+                    eprintln!("polakapi: could not sync context mode hooks: {error}");
+                }
+                if let Err(error) = db::refresh_installed_hooks() {
+                    eprintln!("polakapi: could not refresh capture hooks: {error}");
+                }
                 // Open the prompts history DB at <app_config_dir>/polakapi.db
                 // and register it as `State<Mutex<Db>>` for the read commands.
                 // If opening fails we still boot the app — the read commands
@@ -173,21 +204,40 @@ pub fn run() {
                 if !matches!(event, tauri::WindowEvent::Destroyed) {
                     return;
                 }
-                if window.label() == "main" {
+                let label = window.label();
+                if label == "main" {
                     store.kill_all();
+                } else if project_windows::is_project_window(label) {
+                    if let Some(windows) = window.try_state::<ProjectWindows>() {
+                        project_windows::on_destroyed(window.app_handle(), &windows, label);
+                    }
                 } else {
-                    store.kill_owned_by(window.label());
+                    store.kill_owned_by(label);
                 }
-                window.state::<CodeReviewWatchers>().stop(window.label());
+                window.state::<CodeReviewWatchers>().stop(label);
             }
         })
         .invoke_handler(tauri::generate_handler![
             agent_list_sessions,
+            agent_context_list,
+            agent_context_detail,
+            agent_context_entry,
+            agent_context_search,
+            ctx_sync_hooks,
+            ctx_project_data_summary,
+            ctx_clear_project_data,
             pty_spawn,
             pty_write,
             pty_resize,
             pty_kill,
+            pty_attach,
+            project_window_open,
+            project_window_state,
+            project_window_focus,
+            project_window_close,
+            project_window_ready,
             pty_memory_stats,
+            pty_running_commands,
             save_pasted_image,
             keep_awake_set,
             app_exit,
