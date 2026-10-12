@@ -73,3 +73,54 @@
   display: flex;
   flex-direction: column;
 }
+
+.agent-panel-bar[hidden],
+.agent-panel-host[hidden],
+.agent-panel-detached[hidden] {
+  display: none;
+}
+
+.agent-panel-bar.tear-off-handle {
+  cursor: grab;
+}
+
+.agent-panel-bar.tear-off-handle--active,
+.bottom-tab.tear-off-handle--active {
+  cursor: grabbing;
+}
+
+/* Dragged past the window edge: releasing opens the agent in its own window. */
+.agent-panel-bar.tear-off-handle--outside,
+.bottom-tab.tear-off-handle--outside {
+  outline: 2px dashed var(--accent);
+  outline-offset: -2px;
+}
+
+.agent-panel-window {
+  margin-left: auto;
+  flex: 0 0 auto;
+}
+
+.agent-panel-detached {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  opacity: 0.85;
+  font:
+    12px ui-sans-serif,
+    system-ui,
+    -apple-system,
+    sans-serif;
+}
+
+.agent-panel-detached p {
+  margin: 0;
+}
+
+.agent-panel-detached-actions {
+  display: flex;
+  gap: 8px;
+}

@@ -9,13 +9,20 @@ const { invoke, ptyKill, panes, FakePane } = vi.hoisted(() => {
     written: string[] = [];
     fitted = 0;
     disposed = false;
+    keptPty = false;
     constructor() {
       panes.push(this);
     }
-    attach(_host: HTMLElement, opts: unknown): Promise<void> {
+    attach(_host: HTMLElement, opts: { existingPtyId?: string }): Promise<void> {
       this.attached = opts;
-      this.ptyId = `pty-${panes.length}`;
+      this.ptyId = opts.existingPtyId ?? `pty-${panes.length}`;
       return Promise.resolve();
+    }
+    get isExited(): boolean {
+      return this.exited;
+    }
+    snapshot(): Promise<unknown> {
+      return Promise.resolve({ screen: "hi", offset: 2, cols: 80, rows: 24 });
     }
     write(data: string): void {
       this.written.push(data);
@@ -27,8 +34,9 @@ const { invoke, ptyKill, panes, FakePane } = vi.hoisted(() => {
       this.fitted += 1;
     }
     focus(): void {}
-    dispose(): Promise<void> {
+    dispose(opts?: { keepPty?: boolean }): Promise<void> {
       this.disposed = true;
+      this.keptPty = opts?.keepPty === true;
       return Promise.resolve();
     }
   }
@@ -190,5 +198,66 @@ describe("agent panel", () => {
     expect(host.querySelector<HTMLButtonElement>(".agent-panel-start")!.hidden).toBe(false);
     expect(panes).toHaveLength(0);
     await panel.dispose();
+  });
+
+  it("offers a new window only when the panel can detach", () => {
+    mountAgentPanel(host, { isVisible: () => true });
+    expect(host.querySelector(".agent-panel-window")).toBeNull();
+    host.replaceChildren();
+    const open = vi.fn();
+    mountAgentPanel(host, {
+      isVisible: () => true,
+      detach: { open, focus: vi.fn(), bringBack: vi.fn() },
+    });
+    const button = host.querySelector<HTMLButtonElement>(".agent-panel-window")!;
+    expect(button.textContent).toBe("Open in new window");
+    button.click();
+    expect(open).toHaveBeenCalledWith();
+  });
+
+  it("releases the running agent without killing it and adopts it back", async () => {
+    const onSessionChange = vi.fn();
+    const panel = mountAgentPanel(host, { isVisible: () => true, onSessionChange });
+    panel.activate();
+    await flush();
+    host.querySelector<HTMLButtonElement>(".agent-panel-start")!.click();
+    await flush();
+    expect(onSessionChange).toHaveBeenLastCalledWith({
+      cli: "claude",
+      session: { ptyId: "pty-1", exited: false, snapshot: null },
+    });
+
+    const handoff = await panel.release();
+    expect(handoff).toEqual({
+      cli: "claude",
+      session: {
+        ptyId: "pty-1",
+        exited: false,
+        snapshot: { screen: "hi", offset: 2, cols: 80, rows: 24 },
+      },
+    });
+    expect(panes[0].keptPty).toBe(true);
+    expect(ptyKill).not.toHaveBeenCalled();
+    expect(panel.handlePtyData("pty-1", "x")).toBe(false);
+
+    await panel.adopt(handoff!);
+    expect(panes[1].attached).toMatchObject({
+      existingPtyId: "pty-1",
+      snapshot: { screen: "hi" },
+    });
+    expect(panel.handlePtyData("pty-1", "y", 3)).toBe(true);
+    expect(host.querySelector<HTMLButtonElement>(".agent-panel-stop")!.hidden).toBe(false);
+  });
+
+  it("swaps the tab for a note while detached", () => {
+    const panel = mountAgentPanel(host, {
+      isVisible: () => true,
+      detach: { open: vi.fn(), focus: vi.fn(), bringBack: vi.fn() },
+    });
+    panel.setDetached(true);
+    expect(host.querySelector<HTMLElement>(".agent-panel-bar")!.hidden).toBe(true);
+    expect(host.querySelector<HTMLElement>(".agent-panel-detached")!.hidden).toBe(false);
+    panel.setDetached(false);
+    expect(host.querySelector<HTMLElement>(".agent-panel-detached")!.hidden).toBe(true);
   });
 });

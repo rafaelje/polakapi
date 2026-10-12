@@ -4,6 +4,7 @@
 mod adv_review;
 mod agent_context;
 mod agent_sessions;
+mod agent_window;
 pub mod app_control;
 mod app_menu;
 mod awake;
@@ -52,6 +53,9 @@ use crate::agent_context::{
     agent_context_detail, agent_context_entry, agent_context_list, agent_context_search,
 };
 use crate::agent_sessions::agent_list_sessions;
+use crate::agent_window::{
+    agent_window_close, agent_window_focus, agent_window_open, agent_window_state, AgentWindow,
+};
 use crate::app_control::run::app_run_command;
 use crate::app_control::telegram::{
     telegram_config_get, telegram_config_set, telegram_notify, telegram_status, telegram_test,
@@ -168,6 +172,7 @@ pub fn run() {
                 app_menu::install(app)?;
                 app.manage(store);
                 app.manage(ProjectWindows::default());
+                app.manage(AgentWindow::default());
                 app.manage(ShellRegistry::default());
                 app.manage(notifications::SoundPlayback::default());
                 app.manage(notification_command::NotificationCommandState::default());
@@ -248,6 +253,10 @@ pub fn run() {
                     {
                         telegram.stop();
                     }
+                } else if window.label() == agent_window::LABEL {
+                    if let Some(agent) = window.try_state::<AgentWindow>() {
+                        agent_window::on_destroyed(window.app_handle(), &agent, window.label());
+                    }
                 } else if let Some(windows) = window.try_state::<ProjectWindows>() {
                     project_windows::on_destroyed(window.app_handle(), &windows, window.label());
                 }
@@ -279,6 +288,10 @@ pub fn run() {
             pty_kill,
             pty_attach,
             project_window_open,
+            agent_window_open,
+            agent_window_state,
+            agent_window_focus,
+            agent_window_close,
             project_window_state,
             project_window_focus,
             project_window_close,

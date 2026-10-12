@@ -1,4 +1,5 @@
 import { mountAgentPanel, type AgentPanelHandle } from "../app-agent/agent-panel";
+import { createAgentWindowLink } from "../app-agent/agent-window-link";
 import { mountShellPanel, type ShellPanelHandle } from "../shell/shell-panel";
 import { mountUsagePanel, type UsagePanelHandle } from "../usage/usage-panel";
 import { BOTTOM_TABS, isBottomTab, type BottomTab } from "./types";
@@ -28,7 +29,7 @@ export interface BottomPanelHandle {
   /** Refit the shell or agent pane when the bottom panel is resized/toggled. */
   refit(): void;
   /** Route a pty:data event. Returns true when consumed by the shell or agent pane. */
-  handlePtyData(id: string, data: string): boolean;
+  handlePtyData(id: string, data: string, offset?: number): boolean;
   /** Route a pty:exit event. Returns true when consumed by the shell or agent pane. */
   handlePtyExit(id: string): boolean;
   dispose(): Promise<void>;
@@ -57,11 +58,16 @@ export function mountBottomPanel(opts: BottomPanelOptions = {}): BottomPanelHand
   const shell: ShellPanelHandle = mountShellPanel(shellHost, {
     isVisible: () => !disposed && activeTab === "shell",
   });
+  const agentWindow = createAgentWindowLink({ onCliChange: opts.onAgentCliChange });
   const agent: AgentPanelHandle = mountAgentPanel(agentHost, {
     isVisible: () => !disposed && activeTab === "agent",
     initialCli: opts.initialAgentCli,
     onCliChange: opts.onAgentCliChange,
+    detach: agentWindow.actions,
   });
+  agentWindow.bind(agent);
+  const agentTabButton = tabButtons.find((btn) => btn.dataset.tab === "agent");
+  if (agentTabButton) agent.addTearOffHandle(agentTabButton);
   const usage: UsagePanelHandle = mountUsagePanel(usageHost, {
     isVisible: () => !disposed && activeTab === "usage",
   });
@@ -117,7 +123,8 @@ export function mountBottomPanel(opts: BottomPanelOptions = {}): BottomPanelHand
       if (activeTab === "shell") shell.refit();
       if (activeTab === "agent") agent.refit();
     },
-    handlePtyData: (id, data) => shell.handlePtyData(id, data) || agent.handlePtyData(id, data),
+    handlePtyData: (id, data, offset) =>
+      shell.handlePtyData(id, data) || agent.handlePtyData(id, data, offset),
     handlePtyExit: (id) => shell.handlePtyExit(id) || agent.handlePtyExit(id),
     dispose: async () => {
       if (disposed) return;
@@ -126,6 +133,7 @@ export function mountBottomPanel(opts: BottomPanelOptions = {}): BottomPanelHand
         btn.removeEventListener("click", onButtonClick);
       }
       usage.dispose();
+      agentWindow.dispose();
       await Promise.all([shell.dispose(), agent.dispose()]);
     },
   };

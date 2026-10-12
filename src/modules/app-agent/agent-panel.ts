@@ -2,24 +2,44 @@ import { invoke } from "../../shared/tauri/invoke";
 import { stringifyError } from "../../shared/errors";
 import { ptyKill } from "../terminal/pty-client";
 import { TerminalPane } from "../terminal/terminal-pane";
-import type { AgentLaunchSpec, DetectedCli } from "./types";
+import { attachTearOffDrag } from "./tear-off-drag";
+import type { AgentHandoff, AgentLaunchSpec, DetectedCli } from "./types";
 
 // The bottom panel's "agent" tab: pick an installed CLI, run it in polakapi's
 // agent home with the polakapi MCP server registered, and talk to it in a
 // terminal pane. One pane at a time; switching CLI means stopping the current
 // one. Same PTY routing contract as the shell tab (see shell-panel.ts).
+// The same panel runs in the agent's own window; `release` and `adopt` hand
+// the running PTY between the two without stopping it.
 
 export interface AgentPanelOptions {
   isVisible: () => boolean;
   initialCli?: string;
   onCliChange?: (cli: string) => void;
+  /** Every start, stop and exit, so whoever holds the agent knows its PTY. */
+  onSessionChange?: (handoff: AgentHandoff) => void;
+  /** Main window only: moving the agent to its own window and back. */
+  detach?: AgentDetachActions;
+}
+
+export interface AgentDetachActions {
+  open(at?: { x: number; y: number }): void;
+  focus(): void;
+  bringBack(): void;
 }
 
 export interface AgentPanelHandle {
   activate(): void;
   refit(): void;
-  handlePtyData(id: string, data: string): boolean;
+  handlePtyData(id: string, data: string, offset?: number): boolean;
   handlePtyExit(id: string): boolean;
+  /** Drag handles that tear the agent off into its own window. */
+  addTearOffHandle(handle: HTMLElement): void;
+  /** Lets go of the running agent, keeping its PTY alive. Null while one is starting. */
+  release(): Promise<AgentHandoff | null>;
+  adopt(handoff: AgentHandoff): Promise<void>;
+  /** Swaps the tab for a note while the agent lives in its own window. */
+  setDetached(detached: boolean): void;
   dispose(): Promise<void>;
 }
 
@@ -47,6 +67,42 @@ export function mountAgentPanel(host: HTMLElement, opts: AgentPanelOptions): Age
   const paneHost = document.createElement("div");
   paneHost.className = "agent-panel-host";
   host.append(bar, paneHost);
+
+  const tearOffs: Array<{ dispose(): void }> = [];
+  const detach = opts.detach;
+  const detachedNote = document.createElement("div");
+  detachedNote.className = "agent-panel-detached";
+  detachedNote.hidden = true;
+  if (detach) {
+    const windowBtn = document.createElement("button");
+    windowBtn.type = "button";
+    windowBtn.className = "agent-panel-btn agent-panel-window";
+    windowBtn.textContent = "Open in new window";
+    windowBtn.title = "Open in new window (or drag this bar out of the window)";
+    windowBtn.addEventListener("click", () => detach.open());
+    windowBtn.dataset.noDrag = "";
+    bar.append(windowBtn);
+    tearOffs.push(attachTearOffDrag(bar, (x, y) => detach.open({ x, y })));
+
+    const text = document.createElement("p");
+    text.textContent = "The agent is open in its own window.";
+    const showBtn = document.createElement("button");
+    showBtn.type = "button";
+    showBtn.className = "agent-panel-btn";
+    showBtn.textContent = "Show window";
+    showBtn.addEventListener("click", () => detach.focus());
+    const backBtn = document.createElement("button");
+    backBtn.type = "button";
+    backBtn.className = "agent-panel-btn";
+    backBtn.textContent = "Bring back";
+    backBtn.addEventListener("click", () => detach.bringBack());
+    const actions = document.createElement("div");
+    actions.className = "agent-panel-detached-actions";
+    actions.append(showBtn, backBtn);
+    detachedNote.append(text, actions);
+    host.append(detachedNote);
+  }
+  for (const button of [startBtn, stopBtn]) button.dataset.noDrag = "";
 
   let clis: DetectedCli[] = [];
   let detected = false;
@@ -108,6 +164,13 @@ export function mountAgentPanel(host: HTMLElement, opts: AgentPanelOptions): Age
     select.disabled = running;
   };
 
+  const report = (): void => {
+    opts.onSessionChange?.({
+      cli: selectedCli,
+      session: pane?.ptyId ? { ptyId: pane.ptyId, exited, snapshot: null } : null,
+    });
+  };
+
   const teardownPane = async (): Promise<void> => {
     const live = pane;
     pane = null;
@@ -138,6 +201,7 @@ export function mountAgentPanel(host: HTMLElement, opts: AgentPanelOptions): Age
         cwd: spec.cwd,
         cliId: spec.cli,
       });
+      report();
       requestAnimationFrame(() => {
         if (pane === next && opts.isVisible()) {
           next.fit();
@@ -157,6 +221,63 @@ export function mountAgentPanel(host: HTMLElement, opts: AgentPanelOptions): Age
     await teardownPane();
     showRunning(false);
     setStatus("");
+    report();
+  };
+
+  const release = async (): Promise<AgentHandoff | null> => {
+    if (disposed || starting) return null;
+    const live = pane;
+    pane = null;
+    const session = live?.ptyId
+      ? { ptyId: live.ptyId, exited, snapshot: await live.snapshot() }
+      : null;
+    exited = false;
+    await live?.dispose({ keepPty: true });
+    showRunning(false);
+    setStatus("");
+    return { cli: selectedCli, session };
+  };
+
+  const adopt = async (handoff: AgentHandoff): Promise<void> => {
+    if (disposed) return;
+    await detect();
+    await teardownPane();
+    if (handoff.cli && clis.some((cli) => cli.id === handoff.cli && cli.path !== null)) {
+      selectedCli = handoff.cli;
+      select.value = selectedCli;
+    }
+    const session = handoff.session;
+    if (!session) {
+      showRunning(false);
+      return;
+    }
+    const next = new TerminalPane();
+    pane = next;
+    exited = false;
+    showRunning(true);
+    try {
+      await next.attach(paneHost, {
+        existingPtyId: session.ptyId,
+        snapshot: session.snapshot ?? undefined,
+        cliId: handoff.cli,
+      });
+    } catch (error) {
+      setStatus(`Could not pick up ${handoff.cli}: ${stringifyError(error)}`, "error");
+    }
+    if (pane !== next) return;
+    if (session.exited || next.isExited) {
+      next.markExited();
+      exited = true;
+      showRunning(false);
+      setStatus(`${selectedCli} exited. Start again to relaunch.`);
+    }
+    report();
+    requestAnimationFrame(() => {
+      if (pane === next && !exited && opts.isVisible()) {
+        next.fit();
+        next.focus();
+      }
+    });
   };
 
   const onStart = (): void => {
@@ -168,6 +289,7 @@ export function mountAgentPanel(host: HTMLElement, opts: AgentPanelOptions): Age
   const onSelect = (): void => {
     selectedCli = select.value;
     opts.onCliChange?.(selectedCli);
+    report();
   };
   startBtn.addEventListener("click", onStart);
   stopBtn.addEventListener("click", onStop);
@@ -186,9 +308,9 @@ export function mountAgentPanel(host: HTMLElement, opts: AgentPanelOptions): Age
       if (disposed || !pane || exited) return;
       pane.fit();
     },
-    handlePtyData: (id, data) => {
+    handlePtyData: (id, data, offset) => {
       if (!pane || pane.ptyId !== id) return false;
-      pane.write(data);
+      pane.write(data, offset);
       return true;
     },
     handlePtyExit: (id) => {
@@ -197,11 +319,24 @@ export function mountAgentPanel(host: HTMLElement, opts: AgentPanelOptions): Age
       exited = true;
       showRunning(false);
       setStatus(`${selectedCli} exited. Start again to relaunch.`);
+      report();
       return true;
+    },
+    addTearOffHandle: (handle) => {
+      if (!detach) return;
+      tearOffs.push(attachTearOffDrag(handle, (x, y) => detach.open({ x, y })));
+    },
+    release,
+    adopt,
+    setDetached: (detached) => {
+      bar.hidden = detached;
+      paneHost.hidden = detached;
+      detachedNote.hidden = !detached;
     },
     dispose: async () => {
       if (disposed) return;
       disposed = true;
+      for (const tearOff of tearOffs.splice(0)) tearOff.dispose();
       startBtn.removeEventListener("click", onStart);
       stopBtn.removeEventListener("click", onStop);
       select.removeEventListener("change", onSelect);

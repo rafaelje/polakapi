@@ -44,6 +44,7 @@ export default defineConfig(async () => ({
         adversarial: resolve(projectRoot, "adversarial.html"),
         context: resolve(projectRoot, "context.html"),
         terminals: resolve(projectRoot, "terminals.html"),
+        agent: resolve(projectRoot, "agent.html"),
       },
     },
   },
