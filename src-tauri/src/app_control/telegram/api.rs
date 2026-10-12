@@ -12,6 +12,7 @@ use serde_json::{json, Value};
 const API_BASE: &str = "https://api.telegram.org";
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(60);
+const UPLOAD_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 pub const POLL_TIMEOUT_SECS: u64 = 50;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -310,19 +311,46 @@ impl Api {
         let form = reqwest::multipart::Form::new()
             .text("chat_id", chat_id.to_string())
             .part("voice", part);
+        self.upload("sendVoice", form, DOWNLOAD_TIMEOUT).await
+    }
+
+    /// Any file, as a document, so Telegram keeps its name and bytes intact.
+    pub async fn send_document(
+        &self,
+        chat_id: i64,
+        name: &str,
+        bytes: Vec<u8>,
+        caption: Option<&str>,
+    ) -> Result<(), ApiError> {
+        let part = reqwest::multipart::Part::bytes(bytes).file_name(name.to_string());
+        let mut form = reqwest::multipart::Form::new()
+            .text("chat_id", chat_id.to_string())
+            .part("document", part);
+        if let Some(caption) = caption.filter(|caption| !caption.is_empty()) {
+            form = form.text("caption", caption.to_string());
+        }
+        self.upload("sendDocument", form, UPLOAD_TIMEOUT).await
+    }
+
+    async fn upload(
+        &self,
+        method: &str,
+        form: reqwest::multipart::Form,
+        timeout: Duration,
+    ) -> Result<(), ApiError> {
         let response = self
             .client
-            .post(format!("{}/sendVoice", self.base))
+            .post(format!("{}/{method}", self.base))
             .multipart(form)
-            .timeout(DOWNLOAD_TIMEOUT)
+            .timeout(timeout)
             .send()
             .await
-            .map_err(|e| ApiError::Other(format!("sendVoice: {}", e.without_url())))?;
+            .map_err(|e| ApiError::Other(format!("{method}: {}", e.without_url())))?;
         let status = response.status().as_u16();
         let text = response
             .text()
             .await
-            .map_err(|e| ApiError::Other(format!("sendVoice: {}", e.without_url())))?;
+            .map_err(|e| ApiError::Other(format!("{method}: {}", e.without_url())))?;
         parse_envelope::<Value>(status, &text).map(|_| ())
     }
 

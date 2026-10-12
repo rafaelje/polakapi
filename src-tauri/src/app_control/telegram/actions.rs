@@ -10,6 +10,7 @@ use super::api::CallbackQuery;
 use super::bot::{lock, Ctx, TelegramService};
 use super::danger;
 use super::delegate;
+use super::files;
 use super::format::{send_rich, terminal_block};
 use super::projects;
 use crate::app_control::server::ControlServer;
@@ -17,7 +18,8 @@ use crate::app_control::server::ControlServer;
 // Tool calls from a Telegram turn pass through here before they reach the
 // main window. Three things happen:
 // - the chat's project is filled in when the model leaves `project` out;
-// - `polakapi_chat_focus`, a tool only Telegram turns see, changes that project;
+// - `polakapi_chat_focus`, a tool only Telegram turns see, changes that project,
+//   and `polakapi_chat_send_file` uploads a file to the chat;
 // - typing into a terminal or running a command is held until the user taps
 //   Run or Cancel in the chat, when "Ask before acting" is on, and always
 //   when the command is destructive.
@@ -122,6 +124,7 @@ pub fn intercept(
         return Some(server.relay(app, method, params.clone()).map(|mut result| {
             if let Some(tools) = result.get_mut("tools").and_then(Value::as_array_mut) {
                 tools.push(focus_tool());
+                tools.push(files::send_file_tool());
                 if full {
                     tools.push(delegate::delegate_tool());
                 }
@@ -149,6 +152,9 @@ pub fn intercept(
             ),
             Err(error) => tool_text(error, true),
         }));
+    }
+    if name == files::SEND_FILE_TOOL {
+        return Some(Ok(files::send(&service, chat_id, &arguments)));
     }
     if name == delegate::DELEGATE_TOOL {
         let service = service.inner().clone();

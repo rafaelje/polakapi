@@ -8,6 +8,7 @@
 //! - `terminals`: `/terminals`, `/terminal`, `/sh`, `$ …` and `/peek`.
 //! - `queue`: per-chat workers that run turns in order.
 //! - `overview`: the `/status` text.
+//! - `files`: files from this computer sent to the chat.
 //! - `format`: Markdown answers as Telegram HTML, terminal blocks.
 //! - `privilege`: spots sudo and friends in a command line.
 //! - `danger`: spots destructive commands.
@@ -26,6 +27,7 @@ mod commands;
 pub mod config;
 mod danger;
 mod delegate;
+mod files;
 mod format;
 mod jobs;
 mod notify;
