@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -8,7 +9,8 @@ use serde::Serialize;
 use serde_json::{json, Value};
 use tauri::async_runtime::JoinHandle;
 use tauri::{AppHandle, Emitter, Manager};
-use tokio::sync::Semaphore;
+use tokio::sync::{mpsc, Semaphore};
+use tokio::task::JoinSet;
 
 use super::actions::Actions;
 use super::api::CallbackQuery;
@@ -31,8 +33,10 @@ use super::voice;
 use crate::app_control::server::ControlServer;
 
 // The bot lives inside the app and dies with the main window. One task long-
-// polls Telegram; each chat gets a worker that runs its queued messages one at
-// a time, and at most `MAX_PARALLEL_TURNS` turns run across all chats.
+// polls Telegram and never waits on an update: button presses run on their
+// own, and each chat's messages go through a lane that keeps their order.
+// Each chat gets a worker that runs its queued turns one at a time, and at
+// most `MAX_PARALLEL_TURNS` turns run across all chats.
 
 pub const STATUS_EVENT: &str = "telegram-status";
 const MAX_PARALLEL_TURNS: usize = 2;
@@ -305,7 +309,11 @@ async fn poll(ctx: Arc<Ctx>) {
     let mut offset = lock(&service.state).offset;
     let mut backoff = 1;
     let mut healthy = true;
+    // Dropped with this future when the bot stops, which aborts every task.
+    let mut tasks = JoinSet::new();
+    let mut lanes: HashMap<i64, mpsc::UnboundedSender<(Message, i64)>> = HashMap::new();
     loop {
+        while tasks.try_join_next().is_some() {}
         match ctx.api.get_updates(offset).await {
             Ok(updates) => {
                 if !healthy {
@@ -314,12 +322,22 @@ async fn poll(ctx: Arc<Ctx>) {
                 }
                 backoff = 1;
                 let before = offset;
+                let received = now_secs();
                 for update in updates {
                     offset = offset.max(update.update_id + 1);
                     if let Some(message) = update.message {
-                        handle(&ctx, message).await;
+                        let chat_id = message.chat.id;
+                        let lane = lanes
+                            .entry(chat_id)
+                            .or_insert_with(|| open_lane(&ctx, &mut tasks));
+                        if let Err(mpsc::error::SendError(item)) = lane.send((message, received)) {
+                            let lane = open_lane(&ctx, &mut tasks);
+                            let _ = lane.send(item);
+                            lanes.insert(chat_id, lane);
+                        }
                     } else if let Some(press) = update.callback_query {
-                        route_callback(&ctx, press).await;
+                        let ctx = ctx.clone();
+                        tasks.spawn(async move { route_callback(&ctx, press).await });
                     }
                 }
                 if offset != before {
@@ -348,6 +366,18 @@ async fn poll(ctx: Arc<Ctx>) {
     }
 }
 
+/// Runs one chat's messages in the order they arrived.
+fn open_lane(ctx: &Arc<Ctx>, tasks: &mut JoinSet<()>) -> mpsc::UnboundedSender<(Message, i64)> {
+    let (sender, mut receiver) = mpsc::unbounded_channel();
+    let ctx = ctx.clone();
+    tasks.spawn(async move {
+        while let Some((message, received)) = receiver.recv().await {
+            handle(&ctx, message, received).await;
+        }
+    });
+    sender
+}
+
 async fn route_callback(ctx: &Arc<Ctx>, press: CallbackQuery) {
     match press.data.as_deref().unwrap_or("") {
         data if data.starts_with("act:") => super::actions::handle_callback(ctx, press).await,
@@ -370,7 +400,9 @@ fn is_allowed(config: &TelegramConfig, message: &Message) -> Option<i64> {
         .then_some(user.id)
 }
 
-async fn handle(ctx: &Arc<Ctx>, message: Message) {
+/// `received` is when polakapi got the message, so time spent waiting behind
+/// earlier messages of the chat does not make it stale.
+async fn handle(ctx: &Arc<Ctx>, message: Message, received: i64) {
     let config = ctx.config();
     let Some(user_id) = is_allowed(&config, &message) else {
         ctx.service.ignored.fetch_add(1, Ordering::Relaxed);
@@ -379,7 +411,7 @@ async fn handle(ctx: &Arc<Ctx>, message: Message) {
         return;
     };
     let chat_id = message.chat.id;
-    if now_secs() - message.date > STALE_AFTER_SECS {
+    if received - message.date > STALE_AFTER_SECS {
         let what = match message.text.as_deref() {
             Some(text) => format!("\"{}\"", preview(text.trim())),
             None => "a message".to_string(),
