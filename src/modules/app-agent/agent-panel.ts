@@ -229,6 +229,7 @@ export function mountAgentPanel(host: HTMLElement, opts: AgentPanelOptions): Age
   };
 
   const release = async (): Promise<AgentHandoff | null> => {
+    // react-doctor-disable-next-line react-doctor/async-await-in-loop
     while (starting) await starting;
     if (disposed) return null;
     const live = pane;
