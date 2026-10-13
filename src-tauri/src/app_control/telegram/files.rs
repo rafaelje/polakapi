@@ -123,9 +123,14 @@ mod tests {
             resolve("~/notes.txt", Some(base), Some(home)).unwrap(),
             PathBuf::from("/home/ana/notes.txt")
         );
+        let absolute = if cfg!(windows) {
+            r"C:\tmp\log.txt"
+        } else {
+            "/tmp/log.txt"
+        };
         assert_eq!(
-            resolve("/tmp/log.txt", None, None).unwrap(),
-            PathBuf::from("/tmp/log.txt")
+            resolve(absolute, None, None).unwrap(),
+            PathBuf::from(absolute)
         );
         assert!(resolve("log.txt", None, Some(home)).is_err());
         assert!(resolve("  ", Some(base), Some(home)).is_err());
