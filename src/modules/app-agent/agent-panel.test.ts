@@ -249,6 +249,31 @@ describe("agent panel", () => {
     expect(host.querySelector<HTMLButtonElement>(".agent-panel-stop")!.hidden).toBe(false);
   });
 
+  it("waits for an agent that is still starting before releasing it", async () => {
+    let prepared!: (value: unknown) => void;
+    invoke.mockImplementation((command: string) => {
+      if (command === "agent_cli_detect") return Promise.resolve(detected);
+      if (command === "agent_home_prepare") {
+        return new Promise((resolve) => {
+          prepared = resolve;
+        });
+      }
+      return Promise.reject(new Error(`unexpected ${command}`));
+    });
+    const panel = mountAgentPanel(host, { isVisible: () => true });
+    panel.activate();
+    await flush();
+    host.querySelector<HTMLButtonElement>(".agent-panel-start")!.click();
+    await flush();
+
+    const released = panel.release();
+    prepared(spec);
+    const handoff = await released;
+    expect(handoff?.session?.ptyId).toBe("pty-1");
+    expect(panes[0].keptPty).toBe(true);
+    expect(ptyKill).not.toHaveBeenCalled();
+  });
+
   it("swaps the tab for a note while detached", () => {
     const panel = mountAgentPanel(host, {
       isVisible: () => true,

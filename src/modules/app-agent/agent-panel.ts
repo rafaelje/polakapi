@@ -35,7 +35,7 @@ export interface AgentPanelHandle {
   handlePtyExit(id: string): boolean;
   /** Drag handles that tear the agent off into its own window. */
   addTearOffHandle(handle: HTMLElement): void;
-  /** Lets go of the running agent, keeping its PTY alive. Null while one is starting. */
+  /** Lets go of the running agent, keeping its PTY alive; waits for one that is starting. */
   release(): Promise<AgentHandoff | null>;
   adopt(handoff: AgentHandoff): Promise<void>;
   /** Swaps the tab for a note while the agent lives in its own window. */
@@ -109,7 +109,7 @@ export function mountAgentPanel(host: HTMLElement, opts: AgentPanelOptions): Age
   let detecting: Promise<void> | null = null;
   let pane: TerminalPane | null = null;
   let exited = false;
-  let starting = false;
+  let starting: Promise<void> | null = null;
   let disposed = false;
   let selectedCli = opts.initialCli ?? "";
 
@@ -180,9 +180,15 @@ export function mountAgentPanel(host: HTMLElement, opts: AgentPanelOptions): Age
     await live.dispose();
   };
 
-  const start = async (): Promise<void> => {
-    if (disposed || starting || !selectedCli) return;
-    starting = true;
+  const start = (): Promise<void> => {
+    if (disposed || starting || !selectedCli) return starting ?? Promise.resolve();
+    starting = launch().finally(() => {
+      starting = null;
+    });
+    return starting;
+  };
+
+  const launch = async (): Promise<void> => {
     setStatus("");
     try {
       await teardownPane();
@@ -212,8 +218,6 @@ export function mountAgentPanel(host: HTMLElement, opts: AgentPanelOptions): Age
       setStatus(`Could not start ${selectedCli}: ${stringifyError(error)}`, "error");
       await teardownPane();
       showRunning(false);
-    } finally {
-      starting = false;
     }
   };
 
@@ -225,7 +229,8 @@ export function mountAgentPanel(host: HTMLElement, opts: AgentPanelOptions): Age
   };
 
   const release = async (): Promise<AgentHandoff | null> => {
-    if (disposed || starting) return null;
+    while (starting) await starting;
+    if (disposed) return null;
     const live = pane;
     pane = null;
     const session = live?.ptyId

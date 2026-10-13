@@ -1,6 +1,5 @@
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { invoke } from "../../shared/tauri/invoke";
-import { showToast } from "../../shared/ui/toast";
 import type { AgentDetachActions, AgentPanelHandle } from "./agent-panel";
 import {
   AGENT_WINDOW_CLOSED_EVENT,
@@ -49,10 +48,7 @@ export function createAgentWindowLink(opts: {
     opening = true;
     try {
       const handoff = await panel.release();
-      if (!handoff) {
-        showToast("The agent is still starting; try again in a moment.", "error");
-        return;
-      }
+      if (!handoff) return;
       last = handoff;
       detached = true;
       panel.setDetached(true);
