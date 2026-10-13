@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -254,19 +254,38 @@ fn serve_connection(stream: TcpStream, server: &ControlServer, app: &AppHandle) 
     let mut reader = BufReader::new(stream);
     let mut line = String::new();
     loop {
-        line.clear();
-        match reader.read_line(&mut line) {
-            Ok(0) | Err(_) => return,
-            Ok(n) if n > MAX_LINE_BYTES => {
+        match read_request(&mut reader, &mut line) {
+            Request::Closed => return,
+            Request::TooLarge => {
                 let _ = writeln!(writer, "{}", error_line("request too large"));
                 return;
             }
-            Ok(_) => {}
+            Request::Ready => {}
         }
         let response = handle_line(&line, server, app);
         if writeln!(writer, "{response}").is_err() || writer.flush().is_err() {
             return;
         }
+    }
+}
+
+enum Request {
+    Ready,
+    TooLarge,
+    Closed,
+}
+
+/// Reads one request line, never buffering more than `MAX_LINE_BYTES + 1`.
+fn read_request(reader: &mut impl BufRead, line: &mut String) -> Request {
+    line.clear();
+    match reader
+        .by_ref()
+        .take(MAX_LINE_BYTES as u64 + 1)
+        .read_line(line)
+    {
+        Ok(0) | Err(_) => Request::Closed,
+        Ok(n) if n > MAX_LINE_BYTES => Request::TooLarge,
+        Ok(_) => Request::Ready,
     }
 }
 
@@ -308,6 +327,29 @@ fn constant_time_eq(a: &str, b: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn request_lines_are_read_up_to_the_cap() {
+        let mut line = String::new();
+        let mut small = BufReader::new("{\"a\":1}\n".as_bytes());
+        assert!(matches!(
+            read_request(&mut small, &mut line),
+            Request::Ready
+        ));
+        assert_eq!(line, "{\"a\":1}\n");
+        assert!(matches!(
+            read_request(&mut small, &mut line),
+            Request::Closed
+        ));
+
+        let endless = std::io::repeat(b'x');
+        let mut huge = BufReader::new(endless);
+        assert!(matches!(
+            read_request(&mut huge, &mut line),
+            Request::TooLarge
+        ));
+        assert_eq!(line.len(), MAX_LINE_BYTES + 1);
+    }
 
     #[test]
     fn token_comparison_rejects_mismatches() {
