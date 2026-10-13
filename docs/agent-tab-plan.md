@@ -72,7 +72,8 @@ and reported the live state. cursor-agent reached the model with `--trust`
 ## 3. Tool catalog (28)
 
 - Workspaces: `polakapi_overview`, `polakapi_select_project`,
-  `polakapi_create_workspace`, `polakapi_add_project`,
+  `polakapi_create_workspace`, `polakapi_rename_workspace`,
+  `polakapi_add_project`,
   `polakapi_create_worktree`, `polakapi_move_project`,
   `polakapi_reorder_projects`, `polakapi_rename_project`.
 - Terminals: `polakapi_project_status`, `polakapi_agents_status`,

@@ -8,6 +8,7 @@ import type { Project, Workspace, WorkspacesState } from "../../workspaces/state
 import { optionalInteger, optionalString, requiredString, requiredStringArray } from "./args";
 import {
   asProjectId,
+  asWorkspaceId,
   findFolderByRef,
   findProjectByRef,
   findWorkspaceByRef,
@@ -100,6 +101,28 @@ export const workspaceTools: ToolDef[] = [
       const created = requireController(ctx).createWorkspace(requiredString(args, "name"));
       if (!created) throw new ToolError("could not create the workspace");
       return { id: created.id, name: created.name };
+    },
+  },
+  {
+    name: "polakapi_rename_workspace",
+    description: "Rename a workspace (display name only; its projects are untouched).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        workspace: WORKSPACE_ARG,
+        name: { type: "string", description: "New display name." },
+      },
+      required: ["workspace", "name"],
+    },
+    run: (args, ctx) => {
+      const controller = requireController(ctx);
+      const workspace = findWorkspaceByRef(
+        controller.getState(),
+        requiredString(args, "workspace"),
+      );
+      const name = requiredString(args, "name");
+      controller.renameWorkspace(asWorkspaceId(workspace.id), name);
+      return { id: workspace.id, name };
     },
   },
   {

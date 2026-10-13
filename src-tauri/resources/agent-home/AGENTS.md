@@ -28,7 +28,7 @@ tool is prefixed `polakapi_`. They act on the live app the user is looking at.
 ## What the tools cover
 
 - Workspaces and projects: list, select the active project, add an existing
-  folder as a project, create workspaces, move projects between workspaces and
+  folder as a project, create and rename workspaces, move projects between workspaces and
   folders, reorder them, rename them, create a git worktree as a new project.
 - Terminals: see every terminal pane per project, what command is running in
   it, how recently it produced output, and which AI CLI it runs; open a new
