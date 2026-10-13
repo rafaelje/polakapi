@@ -259,13 +259,6 @@ export class TerminalPane {
     if (!this.exited) void ptyResize(this.ptyId, this.term.cols, this.term.rows);
   }
 
-  /** What this pane shows, for another window to take it over. */
-  /**
-   * Plain-text view of the last `maxLines` rows the terminal currently holds,
-   * scrollback included, with trailing blank rows dropped. Used by the
-   * operator agent to read what a pane shows without the escape sequences
-   * `snapshot()` keeps for faithful re-rendering.
-   */
   /** How many prompts the shell integration has reported; 0 without it. */
   get finishedCommands(): number {
     return this.commandsDone;
@@ -298,6 +291,12 @@ export class TerminalPane {
     return lines.join("\n");
   }
 
+  /**
+   * Plain-text view of the last `maxLines` rows the terminal currently holds,
+   * scrollback included, with trailing blank rows dropped. Used by the
+   * operator agent to read what a pane shows without the escape sequences
+   * `snapshot()` keeps for faithful re-rendering.
+   */
   readScreen(maxLines = 80): string {
     const buffer = this.term.buffer.active;
     const lines: string[] = [];
@@ -308,6 +307,7 @@ export class TerminalPane {
     return lines.slice(Math.max(0, lines.length - maxLines)).join("\n");
   }
 
+  /** What this pane shows, for another window to take it over. */
   snapshot(): Promise<PaneSnapshot | null> {
     if (!this.ptyId || this.spawnFailed || this.suspended) return Promise.resolve(null);
     const offset = this.outputOffset;
