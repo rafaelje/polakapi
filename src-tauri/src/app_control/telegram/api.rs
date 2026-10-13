@@ -1,9 +1,12 @@
+use std::borrow::Cow;
 use std::fmt;
 use std::time::Duration;
 
 use serde::de::DeserializeOwned;
 use serde::Deserialize;
 use serde_json::{json, Value};
+
+use super::turn::TELEGRAM_MESSAGE_LIMIT;
 
 // Minimal Telegram Bot API client: only the methods the operator bot uses.
 // The token is part of every URL, so transport errors are stripped of their
@@ -266,7 +269,7 @@ impl Api {
             "sendMessage",
             json!({
                 "chat_id": chat_id,
-                "text": text,
+                "text": fit(text),
                 "link_preview_options": { "is_disabled": true },
                 "reply_markup": { "inline_keyboard": keyboard },
             }),
@@ -285,7 +288,7 @@ impl Api {
     ) -> Result<(), ApiError> {
         self.call::<Value>(
             "editMessageText",
-            json!({ "chat_id": chat_id, "message_id": message_id, "text": text }),
+            json!({ "chat_id": chat_id, "message_id": message_id, "text": fit(text) }),
             REQUEST_TIMEOUT,
         )
         .await
@@ -410,9 +413,36 @@ pub fn parse_envelope<T: DeserializeOwned>(status: u16, body: &str) -> Result<T,
     }
 }
 
+/// Cuts `text` to one Telegram message, ending it with an ellipsis.
+fn fit(text: &str) -> Cow<'_, str> {
+    if text.encode_utf16().count() <= TELEGRAM_MESSAGE_LIMIT {
+        return Cow::Borrowed(text);
+    }
+    let budget = TELEGRAM_MESSAGE_LIMIT - 1;
+    let mut used = 0;
+    let mut end = 0;
+    for (index, ch) in text.char_indices() {
+        used += ch.len_utf16();
+        if used > budget {
+            break;
+        }
+        end = index + ch.len_utf8();
+    }
+    Cow::Owned(format!("{}…", &text[..end]))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn fits_long_texts_into_one_message() {
+        assert_eq!(fit("short"), "short");
+        let long = "😀".repeat(TELEGRAM_MESSAGE_LIMIT);
+        let fitted = fit(&long);
+        assert!(fitted.encode_utf16().count() <= TELEGRAM_MESSAGE_LIMIT);
+        assert!(fitted.ends_with("😀…"));
+    }
 
     #[test]
     fn parses_updates() {
