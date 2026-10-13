@@ -111,11 +111,14 @@ export const MANY_JOBS = 5;
 export function parseUserIds(raw: string): number[] | null {
   const parts = raw.split(/[\s,]+/).filter(Boolean);
   const ids: number[] = [];
+  const seen = new Set<number>();
   for (const part of parts) {
     if (!/^\d{1,15}$/.test(part)) return null;
     const id = Number(part);
     if (id <= 0) return null;
-    if (!ids.includes(id)) ids.push(id);
+    if (seen.has(id)) continue;
+    seen.add(id);
+    ids.push(id);
   }
   return ids;
 }
