@@ -277,6 +277,10 @@ export class TerminalPane {
     return () => this.doneListeners.delete(listener);
   }
 
+  settle(): Promise<void> {
+    return new Promise((resolve) => this.term.write("", resolve));
+  }
+
   /** Absolute buffer row the cursor is on, scrollback included. */
   cursorRow(): number {
     const buffer = this.term.buffer.active;

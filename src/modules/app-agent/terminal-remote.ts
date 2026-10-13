@@ -13,6 +13,8 @@ import { ptyWrite } from "../terminal/pty-client";
 export interface RemotePane {
   readonly finishedCommands: number;
   onCommandDone(listener: (exitCode: number) => void): () => void;
+  /** Resolves once everything the terminal already received is on screen. */
+  settle?(): Promise<void>;
   cursorRow(): number;
   readFrom(row: number): string;
 }
@@ -98,6 +100,7 @@ export function transcriptOf(
 }
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+const SETTLE_MS = 500;
 
 export async function runInTerminal(
   pane: RemotePane,
@@ -108,6 +111,8 @@ export async function runInTerminal(
   const line = command.trim();
   if (!line) throw new Error("the command is empty");
   if (/[\r\n]/.test(line)) throw new Error("send one command line at a time");
+  // A prompt still being parsed would otherwise end this run before it starts.
+  if (pane.settle) await Promise.race([pane.settle(), sleep(SETTLE_MS)]);
   const integrated = pane.finishedCommands > 0;
   const start = pane.cursorRow();
   let exitCode: number | null = null;

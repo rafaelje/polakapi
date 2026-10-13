@@ -19,6 +19,7 @@ import { runInTerminal, type RemotePane } from "./terminal-remote";
 class FakePane implements RemotePane {
   rows = ["user@host:~/p$ "];
   finishedCommands: number;
+  settle?: () => Promise<void>;
   private listeners = new Set<(code: number) => void>();
 
   constructor(integrated: boolean) {
@@ -63,6 +64,39 @@ describe("runInTerminal", () => {
       needsPassword: false,
       transcript: "$ git status\nOn branch main\nnothing to commit",
     });
+  });
+
+  it("lets a prompt still being parsed finish before the command starts", async () => {
+    const pane = new FakePane(true);
+    // A prompt from the previous command, queued but not yet parsed.
+    let queued = true;
+    const listen = pane.onCommandDone.bind(pane);
+    pane.onCommandDone = (listener) => {
+      const stop = listen(listener);
+      queueMicrotask(() => {
+        if (queued) {
+          queued = false;
+          pane.finish(0);
+        }
+      });
+      return stop;
+    };
+    pane.settle = () => {
+      if (queued) {
+        queued = false;
+        pane.finish(0);
+      }
+      return Promise.resolve();
+    };
+    mocked.onWrite = () => {
+      setTimeout(() => {
+        pane.rows.push("done", "user@host:~/p$ ");
+        pane.finish(0);
+      }, 300);
+    };
+    const run = runInTerminal(pane, "pty-1", "make");
+    await vi.advanceTimersByTimeAsync(600);
+    expect((await run).transcript).toBe("$ make\ndone");
   });
 
   it("reports a failing exit code", async () => {
