@@ -235,6 +235,11 @@ pub fn prepare_headless(
                     "mcp_servers.{SERVER_NAME}.args={}",
                     toml_array(&server_args)
                 ),
+                // Under approval_policy "never" codex rejects any MCP call that
+                // would ask first, so polakapi's tools are pre-approved the way
+                // `--allowedTools` does it for claude.
+                "-c".to_string(),
+                format!("mcp_servers.{SERVER_NAME}.default_tools_approval_mode=\"approve\""),
             ];
             if let Some(id) = resume {
                 args.extend(["resume".to_string(), id.to_string()]);
@@ -437,6 +442,9 @@ mod tests {
         .unwrap();
         assert_eq!(fresh.args[0], "exec");
         assert_eq!(fresh.args.last().unwrap(), "-");
+        assert!(fresh.args.contains(
+            &r#"mcp_servers.polakapi.default_tools_approval_mode="approve""#.to_string()
+        ));
         assert!(fresh.args.contains(
             &r#"mcp_servers.polakapi.args=["app-mcp","--control","/c.json","--profile","full"]"#
                 .to_string()
