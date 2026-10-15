@@ -4,6 +4,8 @@
 mod adv_review;
 mod agent_context;
 mod agent_sessions;
+mod agent_window;
+pub mod app_control;
 mod app_menu;
 mod awake;
 pub mod capture;
@@ -16,6 +18,7 @@ mod git_review;
 mod git_worktree;
 mod loop_cli;
 mod loop_prompts;
+mod mcp_stdio;
 mod memory;
 mod memory_review;
 mod notification_command;
@@ -50,6 +53,17 @@ use crate::agent_context::{
     agent_context_detail, agent_context_entry, agent_context_list, agent_context_search,
 };
 use crate::agent_sessions::agent_list_sessions;
+use crate::agent_window::{
+    agent_window_close, agent_window_focus, agent_window_open, agent_window_state, AgentWindow,
+};
+use crate::app_control::run::app_run_command;
+use crate::app_control::telegram::{
+    telegram_config_get, telegram_config_set, telegram_notify, telegram_status, telegram_test,
+    telegram_voice_check,
+};
+use crate::app_control::{
+    agent_cli_detect, agent_home_prepare, app_control_respond, app_control_set_ready,
+};
 use crate::commands::{
     app_exit, create_project_folder, fs_validate_path, open_file_in_editor, open_in_editor,
     open_in_explorer, open_in_shell, open_local_path, open_url, pty_attach, pty_kill, pty_resize,
@@ -81,7 +95,7 @@ use crate::project_windows::{
     project_window_state, ProjectWindows,
 };
 use crate::pty::PtyStore;
-use crate::pty_activity::pty_running_commands;
+use crate::pty_activity::{pty_cwds, pty_running_commands};
 use crate::skills::{skill_explain, skill_read, skill_write, skills_list};
 use crate::update_check::update_check;
 use crate::usage::usage_summary;
@@ -134,7 +148,20 @@ pub fn run() {
     import_user_path();
     let store: Arc<PtyStore> = Arc::new(PtyStore::default());
 
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    // A second launch of the installed app focuses the running window instead
+    // of starting another instance: two instances would restore the same
+    // terminals twice and fight over the agent control channel. Debug builds
+    // keep allowing it so a dev build can run next to the installed one.
+    #[cfg(not(debug_assertions))]
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+        if let Some(window) = app.get_webview_window("main") {
+            let _ = window.unminimize();
+            let _ = window.show();
+            let _ = window.set_focus();
+        }
+    }));
+    builder
         .plugin(tauri_plugin_store::Builder::default().build())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
@@ -145,10 +172,30 @@ pub fn run() {
                 app_menu::install(app)?;
                 app.manage(store);
                 app.manage(ProjectWindows::default());
+                app.manage(AgentWindow::default());
                 app.manage(ShellRegistry::default());
                 app.manage(notifications::SoundPlayback::default());
                 app.manage(notification_command::NotificationCommandState::default());
                 app.manage(AwakeState::default());
+                // The operator agent's MCP server reaches the app through this
+                // loopback channel; without it the agent tab still opens but
+                // every tool call reports the app as unreachable.
+                match app_control::server::start(app.handle()) {
+                    Ok(server) => app.manage(server),
+                    Err(error) => {
+                        eprintln!("polakapi: could not start agent control server: {error}");
+                        false
+                    }
+                };
+                match app_control::telegram::bot::TelegramService::new(app.handle()) {
+                    Ok(telegram) => {
+                        telegram.restart();
+                        app.manage(telegram);
+                    }
+                    Err(error) => {
+                        eprintln!("polakapi: could not start the telegram bot: {error}");
+                    }
+                }
                 // Ephemeral context stores whose pane died never clean up after
                 // themselves, and temp directories survive reboots.
                 if let Err(error) =
@@ -196,6 +243,20 @@ pub fn run() {
                 }
                 if window.label() == "main" {
                     store.kill_all();
+                    if let Some(server) =
+                        window.try_state::<Arc<app_control::server::ControlServer>>()
+                    {
+                        server.remove_control_file();
+                    }
+                    if let Some(telegram) =
+                        window.try_state::<Arc<app_control::telegram::bot::TelegramService>>()
+                    {
+                        telegram.stop();
+                    }
+                } else if window.label() == agent_window::LABEL {
+                    if let Some(agent) = window.try_state::<AgentWindow>() {
+                        agent_window::on_destroyed(window.app_handle(), &agent, window.label());
+                    }
                 } else if let Some(windows) = window.try_state::<ProjectWindows>() {
                     project_windows::on_destroyed(window.app_handle(), &windows, window.label());
                 }
@@ -203,6 +264,17 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             agent_list_sessions,
+            agent_cli_detect,
+            agent_home_prepare,
+            app_control_respond,
+            app_control_set_ready,
+            app_run_command,
+            telegram_config_get,
+            telegram_config_set,
+            telegram_notify,
+            telegram_status,
+            telegram_test,
+            telegram_voice_check,
             agent_context_list,
             agent_context_detail,
             agent_context_entry,
@@ -216,12 +288,17 @@ pub fn run() {
             pty_kill,
             pty_attach,
             project_window_open,
+            agent_window_open,
+            agent_window_state,
+            agent_window_focus,
+            agent_window_close,
             project_window_state,
             project_window_focus,
             project_window_close,
             project_window_ready,
             pty_memory_stats,
             pty_running_commands,
+            pty_cwds,
             save_pasted_image,
             keep_awake_set,
             app_exit,

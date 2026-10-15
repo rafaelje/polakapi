@@ -12,6 +12,8 @@ export interface PersistedLayout {
   hideNotes?: boolean;
   notesHeight?: number;
   activeBottomTab?: BottomTab;
+  /** CLI last chosen in the bottom panel's agent tab. */
+  agentCli?: string;
   memoryLimitMb?: number;
   idleSuspendMinutes?: number;
   keepAwakeEnabled?: boolean;

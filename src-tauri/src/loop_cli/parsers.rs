@@ -1,6 +1,6 @@
 use super::AgentResult;
 
-pub(super) fn parse_claude_json(raw: &str) -> Result<AgentResult, String> {
+pub(crate) fn parse_claude_json(raw: &str) -> Result<AgentResult, String> {
     let value: serde_json::Value = match serde_json::from_str(raw.trim()) {
         Ok(v) => v,
         Err(e) => {
@@ -65,7 +65,7 @@ pub(super) fn parse_claude_json(raw: &str) -> Result<AgentResult, String> {
     })
 }
 
-pub(super) fn extract_codex_error(stdout: &str) -> Option<String> {
+pub(crate) fn extract_codex_error(stdout: &str) -> Option<String> {
     for line in stdout.lines() {
         let trimmed = line.trim();
         if trimmed.is_empty() {
