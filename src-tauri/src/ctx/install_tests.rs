@@ -88,7 +88,7 @@ fn concurrent_hook_syncs_publish_whole_json_without_temporary_files() {
             let root = read(&path);
             assert_eq!(root["custom"], true);
             let (pre, start) = match format {
-                Format::Claude => (
+                Format::Claude | Format::Codex => (
                     &root["hooks"]["PreToolUse"][0]["hooks"][0],
                     &root["hooks"]["SessionStart"][0]["hooks"][0],
                 ),
@@ -514,7 +514,7 @@ fn only_polakapis_own_command_shape_counts_as_ours() {
     assert!(is_own_command("\"/a/polakapi.exe\" ctx-hook --for cursor"));
     assert!(is_own_command("/a/polakapi ctx-hook"));
     assert!(!is_own_command("/a/other ctx-hook --for claude"));
-    assert!(!is_own_command("polakapi ctx-hook --for codex"));
+    assert!(is_own_command("polakapi ctx-hook --for codex"));
     assert!(!is_own_command("echo polakapi ctx-hook --for claude | tee"));
 }
 
@@ -536,4 +536,32 @@ fn keeps_a_user_group_that_shares_the_event_with_ours() {
     let start = read(&path)["hooks"]["SessionStart"].clone();
     assert_eq!(start.as_array().unwrap().len(), 1);
     assert_eq!(start[0]["hooks"][0]["command"], "mine");
+}
+
+#[test]
+fn codex_hooks_install_remove_and_sync_idempotently() {
+    let home = tempfile::tempdir().unwrap();
+    let config = CtxConfig {
+        enabled: true,
+        clis: vec!["codex".into()],
+        ..CtxConfig::default()
+    };
+    let path = home.path().join(".codex/hooks.json");
+    let result = sync_home(home.path(), "/opt/polakapi", &config).unwrap();
+    assert!(result.codex_hooks);
+    assert!(result.changed);
+    assert!(
+        !sync_home(home.path(), "/opt/polakapi", &config)
+            .unwrap()
+            .changed
+    );
+    let root = read(&path);
+    assert_eq!(root["hooks"]["PreToolUse"][0]["matcher"], "Bash");
+    assert_eq!(
+        root["hooks"]["PreToolUse"][0]["hooks"][0]["command"],
+        "'/opt/polakapi' ctx-hook --for codex"
+    );
+    assert!(!home.path().join(".codex/config.toml").exists());
+    sync_home(home.path(), "/opt/polakapi", &CtxConfig::default()).unwrap();
+    assert!(read(&path).get("hooks").is_none());
 }

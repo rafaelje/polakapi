@@ -50,7 +50,7 @@ export const CONTEXT_MODE_CLIS: readonly ContextModeCliInfo[] = [
     id: "codex",
     label: "Codex",
     enforcement:
-      "Not connected yet: Codex's hook output format has not been verified, so no hook is installed and this toggle has no effect.",
+      "Installs hooks in ~/.codex/hooks.json: denies large-output shell commands with a reason asking Codex to retry through polakapi ctx exec. Restart Codex and review and trust the new hooks in its startup prompt. polakapi does not write trust hashes.",
   },
   {
     id: "opencode",

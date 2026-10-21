@@ -38,6 +38,8 @@ export async function mountContextModeSection(opts: ContextModeSectionOptions): 
   const { group, onError, onSaved, syncHooks } = opts;
   let preferences = await loadContextMode();
   let saving = Promise.resolve();
+  const codexStatus = document.createElement("span");
+  codexStatus.setAttribute("role", "status");
 
   function save(patch: Partial<ContextModePreferences>): void {
     // Normalized before saving so the hooks, the controls and the info dialog
@@ -49,8 +51,17 @@ export async function mountContextModeSection(opts: ContextModeSectionOptions): 
     saving = saving.catch(() => {}).then(() => saveContextMode(snapshot));
     void saving.then(
       () =>
-        syncHooks().then(onSaved, (error: unknown) =>
-          onError(`Settings saved, but the agent hooks could not be updated: ${String(error)}`),
+        syncHooks().then(
+          (result: unknown) => {
+            if (result && typeof result === "object" && "codexHooks" in result) {
+              codexStatus.textContent = result.codexHooks
+                ? "Hooks installed. Restart Codex to review and trust them."
+                : "Context mode hooks removed.";
+            }
+            onSaved();
+          },
+          (error: unknown) =>
+            onError(`Settings saved, but the agent hooks could not be updated: ${String(error)}`),
         ),
       () => onError("Could not save context mode settings. Try changing the setting again."),
     );
@@ -78,7 +89,9 @@ export async function mountContextModeSection(opts: ContextModeSectionOptions): 
       save({ clis: { ...preferences.clis, [cli.id]: checked } }),
     );
     cliToggles.push(toggle);
-    settingsRow(group, cli.label, cli.enforcement).append(toggle);
+    const row = settingsRow(group, cli.label, cli.enforcement);
+    row.append(toggle);
+    if (cli.id === "codex") row.append(codexStatus);
   }
 
   const storage = settingsSelect("Persistence", STORAGE_OPTIONS, preferences.storage, (value) =>

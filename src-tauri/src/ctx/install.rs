@@ -7,7 +7,8 @@ use crate::ctx::config::{self, CtxConfig};
 
 // Installs and removes the context mode hooks so they follow the Settings
 // toggles: Claude Code in ~/.claude/settings.json, the Cursor CLI in
-// ~/.cursor/hooks.json. Both formats were verified against real sessions,
+// ~/.cursor/hooks.json, and Codex in ~/.codex/hooks.json. Both formats were
+// verified against real sessions,
 // including that a rewrite without a permission decision is honoured.
 //
 // The two files differ in shape. Claude nests handlers inside matcher groups;
@@ -28,6 +29,7 @@ pub struct SyncResult {
     pub claude_hooks: bool,
     /// True when the hooks are now present for the Cursor CLI.
     pub cursor_hooks: bool,
+    pub codex_hooks: bool,
     /// False when every file already matched and nothing was written.
     pub changed: bool,
 }
@@ -36,6 +38,7 @@ pub struct SyncResult {
 enum Format {
     /// `{"hooks": {"Event": [{"matcher", "hooks": [handler]}]}}`
     Claude,
+    Codex,
     /// `{"version": 1, "hooks": {"event": [handler]}}`
     Cursor,
 }
@@ -61,12 +64,15 @@ pub fn sync_for_current_binary(config: &CtxConfig) -> Result<SyncResult, String>
 pub fn sync_home(home: &Path, bin: &str, config: &CtxConfig) -> Result<SyncResult, String> {
     let claude = config.enabled_for("claude");
     let cursor = config.enabled_for("cursor");
+    let codex = config.enabled_for("codex");
+    let codex_changed = sync_file(&home.join(".codex/hooks.json"), bin, codex, Format::Codex)?;
     let claude_changed = sync(&claude_settings_path(home), bin, claude)?;
     let cursor_changed = sync_cursor(&cursor_hooks_path(home), bin, cursor)?;
     Ok(SyncResult {
         claude_hooks: claude,
         cursor_hooks: cursor,
-        changed: claude_changed || cursor_changed,
+        codex_hooks: codex,
+        changed: claude_changed || cursor_changed || codex_changed,
     })
 }
 
@@ -90,7 +96,7 @@ pub fn sync_cursor(path: &Path, bin: &str, enabled: bool) -> Result<bool, String
 
 // Serialize the entire read/modify/replace transaction, including aliases of a
 // symlinked file. This is process-local; it does not lock out CLI readers.
-static SETTINGS_SYNC: parking_lot::Mutex<()> = parking_lot::Mutex::new(());
+pub(crate) static SETTINGS_SYNC: parking_lot::Mutex<()> = parking_lot::Mutex::new(());
 
 fn sync_file(path: &Path, bin: &str, enabled: bool, format: Format) -> Result<bool, String> {
     let _guard = SETTINGS_SYNC.lock();
@@ -112,7 +118,7 @@ fn sync_file(path: &Path, bin: &str, enabled: bool, format: Format) -> Result<bo
     };
     let before = root.clone();
     match format {
-        Format::Claude => apply(&mut root, bin, enabled)?,
+        Format::Claude | Format::Codex => apply(&mut root, bin, enabled, format)?,
         Format::Cursor => apply_cursor(&mut root, bin, enabled)?,
     }
     if root == before && (original.is_some() || !enabled) {
@@ -190,7 +196,7 @@ fn apply_cursor(root: &mut Value, bin: &str, enabled: bool) -> Result<(), String
 /// Removes every context mode hook group, then adds the current ones back when
 /// enabled. Rebuilding rather than patching keeps a moved binary from leaving a
 /// stale command behind.
-fn apply(root: &mut Value, bin: &str, enabled: bool) -> Result<(), String> {
+fn apply(root: &mut Value, bin: &str, enabled: bool, format: Format) -> Result<(), String> {
     let object = root
         .as_object_mut()
         .ok_or_else(|| "settings root is not a JSON object".to_string())?;
@@ -202,7 +208,14 @@ fn apply(root: &mut Value, bin: &str, enabled: bool) -> Result<(), String> {
 
     remove_managed(hooks);
     if enabled {
-        let command = hook_command(bin, "claude");
+        let command = hook_command(
+            bin,
+            if format == Format::Codex {
+                "codex"
+            } else {
+                "claude"
+            },
+        );
         add_group(hooks, "PreToolUse", Some("Bash"), &command);
         add_group(
             hooks,
@@ -235,7 +248,10 @@ fn is_own_command(command: &str) -> bool {
     let Some((binary, rest)) = command.trim().rsplit_once(" ctx-hook") else {
         return false;
     };
-    let target_ok = matches!(rest.trim(), "" | "--for claude" | "--for cursor");
+    let target_ok = matches!(
+        rest.trim(),
+        "" | "--for claude" | "--for cursor" | "--for codex"
+    );
     let binary = binary.trim().trim_matches(['\'', '"']);
     target_ok
         && !binary.contains(char::is_whitespace)

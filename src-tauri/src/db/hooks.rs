@@ -62,6 +62,7 @@ fn install_hooks(cli: &str, bin: &str) -> Result<InstallHooksResult, String> {
 }
 
 fn install_hooks_at_home(cli: &str, bin: &str, home: &Path) -> Result<InstallHooksResult, String> {
+    let _guard = crate::ctx::install::SETTINGS_SYNC.lock();
     let (directory, file) = match cli {
         "claude" => (".claude", "settings.json"),
         "codex" => (".codex", "hooks.json"),
@@ -368,6 +369,45 @@ mod tests {
         refresh_installed_hooks_at_home("/new/polakapi", home.path()).unwrap();
         assert!(!home.path().join(".claude/settings.json").exists());
         assert!(!home.path().join(".codex/hooks.json").exists());
+    }
+
+    #[test]
+    fn codex_lifecycle_and_context_sync_preserve_each_other() {
+        let home = tempfile::tempdir().unwrap();
+        let config = crate::ctx::config::CtxConfig {
+            enabled: true,
+            clis: vec!["codex".into()],
+            ..Default::default()
+        };
+        let path = home.path().join(".codex/hooks.json");
+        for lifecycle_first in [true, false] {
+            if path.exists() {
+                std::fs::remove_file(&path).unwrap();
+            }
+            if lifecycle_first {
+                install_hooks_at_home("codex", "/old/polakapi", home.path()).unwrap();
+            }
+            crate::ctx::install::sync_home(home.path(), "/opt/polakapi", &config).unwrap();
+            install_hooks_at_home("codex", "/new/polakapi", home.path()).unwrap();
+            refresh_installed_hooks_at_home("/new/polakapi", home.path()).unwrap();
+            let root = read_settings(&path).unwrap();
+            assert_eq!(root["hooks"]["SessionStart"].as_array().unwrap().len(), 2);
+            assert_eq!(
+                root["hooks"]["PreToolUse"][0]["hooks"][0]["_polakapi"],
+                "polakapi-context-mode"
+            );
+            crate::ctx::install::sync_home(home.path(), "/opt/polakapi", &config).unwrap();
+            crate::ctx::install::sync_home(home.path(), "/opt/polakapi", &Default::default())
+                .unwrap();
+            let root = read_settings(&path).unwrap();
+            assert_eq!(root["hooks"]["SessionStart"].as_array().unwrap().len(), 1);
+            assert!(has_marker(&root));
+            assert!(root["hooks"].get("PreToolUse").is_none());
+            assert_eq!(
+                root["hooks"]["SessionStart"][0]["hooks"][0]["command"],
+                "\"/new/polakapi\" capture"
+            );
+        }
     }
 
     #[test]

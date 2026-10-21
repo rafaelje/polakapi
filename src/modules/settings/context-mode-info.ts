@@ -24,7 +24,7 @@ function sections(preferences: ContextModePreferences): Section[] {
     {
       heading: "What happens when you switch a CLI on",
       paragraphs: [
-        "polakapi installs two hooks for that CLI and removes them when you switch it off. Claude Code's go in ~/.claude/settings.json and Cursor's in ~/.cursor/hooks.json. Your own hooks in those files are left untouched.",
+        "polakapi installs two hooks for that CLI and removes them when you switch it off. Claude Code's go in ~/.claude/settings.json Cursor's in ~/.cursor/hooks.json, and Codex's in ~/.codex/hooks.json. Your own hooks in those files are left untouched.",
       ],
       items: [
         "Before a shell command runs, one hook hands it to polakapi, which runs it and stores the output. It leaves alone what routing could break or cannot help: cd, export and source, interactive or never-ending commands, heredocs, output written to a file, aliases, and commands that always print a line or two such as git status or mkdir.",
@@ -50,7 +50,8 @@ function sections(preferences: ContextModePreferences): Section[] {
       heading: "Which CLIs it works with",
       items: [
         "Claude Code and Cursor (the cursor-agent CLI): working, verified against real sessions.",
-        "Codex and OpenCode: not connected yet. Their toggles are saved but change nothing.",
+        "Codex: denies large-output shell commands with a reason asking it to retry through polakapi ctx exec. Restart Codex and review and trust the new hooks at startup; polakapi does not write trust hashes.",
+        "OpenCode: not connected yet. Its toggle is saved but changes nothing.",
         "Agent sessions that were already open need a restart to pick up the change.",
       ],
     },

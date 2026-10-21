@@ -45,6 +45,22 @@ describe("context mode section", () => {
     }
   });
 
+  it("explains Codex enforcement and trust", async () => {
+    const group = await mount();
+    expect(group.textContent).toContain("denies large-output shell commands");
+    expect(group.textContent).toContain("review and trust the new hooks");
+    expect(group.textContent).toContain("polakapi does not write trust hashes");
+  });
+
+  it("shows the installed Codex hooks returned by sync", async () => {
+    syncHooks.mockResolvedValueOnce({ codexHooks: true });
+    const group = await mount({ enabled: true });
+    const toggle = control<HTMLInputElement>("Codex");
+    toggle.checked = true;
+    toggle.dispatchEvent(new Event("change"));
+    await vi.waitFor(() => expect(group.textContent).toContain("Hooks installed. Restart Codex"));
+  });
+
   it("reflects the stored per-CLI flags", async () => {
     await mount({ clis: { claude: false, codex: true, opencode: true, cursor: false } });
     expect(control<HTMLInputElement>("Claude Code").checked).toBe(false);

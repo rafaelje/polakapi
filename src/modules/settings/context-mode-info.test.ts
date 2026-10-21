@@ -49,7 +49,10 @@ describe("how context mode works", () => {
     expect(text).toContain("~/.claude/settings.json");
     expect(text).toContain("~/.cursor/hooks.json");
     expect(text).not.toContain("What it never does");
-    expect(text).toContain("Codex and OpenCode: not connected yet");
+    expect(text).toContain("~/.codex/hooks.json");
+    expect(text).toContain("Codex: denies large-output shell commands");
+    expect(text).toContain("review and trust the new hooks");
+    expect(text).toContain("OpenCode: not connected yet");
   });
 
   it("quotes the thresholds actually in effect", () => {

@@ -8,7 +8,7 @@ use crate::ctx::paths;
 use crate::ctx::session;
 
 // `polakapi ctx-hook --for <cli>` — the hook that puts context mode in the
-// agent's path, for Claude Code and for the Cursor CLI.
+// agent's path, for Claude Code, Codex and the Cursor CLI.
 //
 //   pre-tool-use   rewrites a shell command known to produce large output so it
 //                  runs through `polakapi ctx exec`, which stores the output and
@@ -16,8 +16,9 @@ use crate::ctx::session;
 //   session-start  tells the model the offloaded output exists and how to query
 //                  it, because a pointer it cannot resolve is worse than none.
 //
-// Both CLIs were verified against real sessions: each honours the rewrite without
-// a permission decision, and each surfaces session-start context to the model.
+// Claude and Cursor honour rewrites without a permission decision. Codex uses
+// deny + reason because its approval-neutral rewrite is ignored (see the plan).
+// All three surface session-start context to the model.
 // They differ in spelling — Claude sends `PreToolUse`/`Bash` and expects
 // `hookSpecificOutput`; Cursor sends `preToolUse`/`Shell` and expects
 // `updated_input` / `additional_context` at the top level.
@@ -37,6 +38,7 @@ use crate::ctx::session;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Target {
     Claude,
+    Codex,
     Cursor,
 }
 
@@ -44,6 +46,7 @@ impl Target {
     pub fn from_arg(value: &str) -> Option<Self> {
         match value {
             "claude" => Some(Target::Claude),
+            "codex" => Some(Target::Codex),
             "cursor" => Some(Target::Cursor),
             _ => None,
         }
@@ -53,6 +56,7 @@ impl Target {
     pub fn config_id(self) -> &'static str {
         match self {
             Target::Claude => "claude",
+            Target::Codex => "codex",
             Target::Cursor => "cursor",
         }
     }
@@ -61,13 +65,14 @@ impl Target {
     fn binary(self) -> &'static str {
         match self {
             Target::Claude => "claude",
+            Target::Codex => "codex",
             Target::Cursor => "cursor-agent",
         }
     }
 
     fn shell_tool(self) -> &'static str {
         match self {
-            Target::Claude => "Bash",
+            Target::Claude | Target::Codex => "Bash",
             Target::Cursor => "Shell",
         }
     }
@@ -183,6 +188,9 @@ fn log_decision(event: &Value, env: &HookEnv, decision: &Result<Value, String>) 
         .unwrap_or_default();
     let outcome = match decision {
         Ok(_) if name.eq_ignore_ascii_case("sessionstart") => "instructions sent".to_string(),
+        Ok(_) if env.target == Target::Codex => {
+            "denied with context wrapper instructions".to_string()
+        }
         Ok(_) => "rewritten through polakapi ctx exec".to_string(),
         Err(reason) => format!("left alone: {reason}"),
     };
@@ -296,9 +304,13 @@ pub fn decide(event: &Value, env: &HookEnv) -> Result<Value, String> {
     match name.as_str() {
         "pretooluse" => pre_tool_use(event, env),
         "sessionstart" => {
-            let text = instructions(&env.bin);
+            let text = if target == Target::Codex {
+                format!("{}\nLarge-output shell commands are denied with a reason containing the polakapi ctx exec command to retry. Run that command to store the output.", instructions(&env.bin))
+            } else {
+                instructions(&env.bin)
+            };
             Ok(match target {
-                Target::Claude => json!({
+                Target::Claude | Target::Codex => json!({
                     "hookSpecificOutput": {
                         "hookEventName": "SessionStart",
                         "additionalContext": text,
@@ -343,9 +355,21 @@ fn pre_tool_use(event: &Value, env: &HookEnv) -> Result<Value, String> {
     } else {
         command.to_string()
     };
-    updated["command"] = Value::String(intercept::rewrite(bin, &command, kind));
+    let rewritten = intercept::rewrite(bin, &command, kind);
+    if target == Target::Codex {
+        return Ok(json!({
+            "hookSpecificOutput": {
+                "hookEventName": "PreToolUse",
+                "permissionDecision": "deny",
+                "permissionDecisionReason": format!(
+                    "polakapi context mode: run this command through the output store instead: {rewritten}"
+                ),
+            }
+        }));
+    }
+    updated["command"] = Value::String(rewritten);
     Ok(match target {
-        Target::Claude => json!({
+        Target::Claude | Target::Codex => json!({
             "hookSpecificOutput": {
                 "hookEventName": "PreToolUse",
                 "updatedInput": updated,
@@ -405,6 +429,36 @@ mod tests {
             "tool_input": { "command": command, "cwd": "", "timeout": 30000 },
             "cursor_version": "2026.09.15-d2fe57e"
         })
+    }
+
+    #[test]
+    fn codex_denies_with_a_wrapper_and_never_grants_permission() {
+        assert_eq!(Target::from_arg("codex"), Some(Target::Codex));
+        let mut codex = env(true, "codex");
+        codex.target = Target::Codex;
+        codex.config.clis.push("codex".into());
+        let event = bash("git log --oneline");
+        let reply = respond(&event, &codex).unwrap();
+        let output = &reply["hookSpecificOutput"];
+        assert_eq!(output["permissionDecision"], "deny");
+        let reason = output["permissionDecisionReason"].as_str().unwrap();
+        assert!(reason.contains("'/opt/polakapi' ctx exec"));
+        assert!(reason.contains("git log --oneline"));
+        assert!(output.get("updatedInput").is_none());
+        let start = respond(&json!({"hook_event_name":"SessionStart"}), &codex).unwrap();
+        assert!(start["hookSpecificOutput"]["additionalContext"]
+            .as_str()
+            .unwrap()
+            .contains("ctx search"));
+        codex.cli = "claude".into();
+        assert!(respond(&event, &codex).is_none());
+        assert!(respond(&event, &env(true, "codex")).is_none());
+        codex.cli = "codex".into();
+        codex.in_polakapi_terminal = false;
+        assert!(respond(&event, &codex).is_none());
+        codex.in_polakapi_terminal = true;
+        codex.config.clis.clear();
+        assert!(respond(&event, &codex).is_none());
     }
 
     #[test]
