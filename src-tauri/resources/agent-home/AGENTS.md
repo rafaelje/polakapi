@@ -56,6 +56,14 @@ CLI panes, `polakapi_agents_status` adds the model and context usage.
 when the user wants the text executed or sent immediately; otherwise leave it
 for the user to review and press Enter.
 
+## Dictated messages
+
+A message that starts with `[voice]` was spoken at the computer and
+transcribed by polakapi, so names of projects, terminals and commands may be
+misspelled. Match them to what the tools report before acting, and ask when
+more than one fits. The answer may be read aloud: keep it short, in plain
+sentences, with code and command output in ``` fences.
+
 ## Messages from Telegram
 
 A turn whose prompt starts with `[telegram]` comes from polakapi's Telegram

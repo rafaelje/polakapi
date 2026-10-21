@@ -34,33 +34,40 @@ mod notify;
 mod overview;
 pub mod privilege;
 mod projects;
-mod queue;
-mod speech;
+pub(crate) mod queue;
+pub(crate) mod speech;
 mod terminals;
 pub mod turn;
-mod voice;
+pub(crate) mod voice;
 
 use std::sync::Arc;
 
-use tauri::State;
+use tauri::{AppHandle, Emitter, State};
 
 use self::api::Api;
 use self::bot::{StatusView, TelegramService};
 use self::config::{ConfigPatch, ConfigView};
+
+const CONFIG_EVENT: &str = "telegram-config";
 
 #[tauri::command]
 pub fn telegram_config_get(service: State<'_, Arc<TelegramService>>) -> ConfigView {
     service.config().view()
 }
 
+/// Every window hears about the change, so the agent tab's microphone
+/// follows the voice control switch.
 #[tauri::command]
 pub fn telegram_config_set(
+    app: AppHandle,
     service: State<'_, Arc<TelegramService>>,
     patch: ConfigPatch,
 ) -> Result<ConfigView, String> {
     let next = service.config().apply(patch)?;
     service.save_config(next.clone())?;
-    Ok(next.view())
+    let view = next.view();
+    let _ = app.emit(CONFIG_EVENT, &view);
+    Ok(view)
 }
 
 /// Mirrors an agent notification the main window just delivered.

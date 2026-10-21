@@ -8,6 +8,7 @@ import {
   type TelegramConfigPatch,
   type TelegramConfigView,
 } from "./telegram-section";
+import { mountVoiceControlSection } from "./voice-control-section";
 
 const control = <T extends HTMLElement>(label: string): T =>
   document.querySelector<T>(`[aria-label="${label}"]`)!;
@@ -36,6 +37,10 @@ const baseConfig: TelegramConfigView = {
   piperVoice: "",
   voiceSpeed: 100,
   maxJobs: 3,
+  voiceControl: false,
+  voiceControlTarget: "headless",
+  voiceControlReplies: "off",
+  voiceInput: "",
 };
 
 const onError = vi.fn();
@@ -44,8 +49,11 @@ const setConfig = vi.fn<(patch: TelegramConfigPatch) => Promise<TelegramConfigVi
 const test = vi.fn(() => Promise.resolve("@polabot"));
 const checkVoice = vi.fn(() => Promise.resolve("/usr/bin/whisper-cli with ggml-small.bin"));
 
+const configListeners: Array<(config: TelegramConfigView) => void> = [];
+
 async function mount(patch: Partial<TelegramConfigView> = {}): Promise<void> {
   document.body.innerHTML = '<div class="settings-group"></div>';
+  configListeners.length = 0;
   let config = { ...baseConfig, ...patch };
   setConfig.mockImplementation((next) => {
     const { token, ...rest } = next;
@@ -56,6 +64,7 @@ async function mount(patch: Partial<TelegramConfigView> = {}): Promise<void> {
         ? {}
         : { hasToken: token !== "", tokenHint: token ? `••••${token.slice(-4)}` : "" }),
     };
+    for (const listener of configListeners) listener(config);
     return Promise.resolve(config);
   });
   const api = {
@@ -71,6 +80,10 @@ async function mount(patch: Partial<TelegramConfigView> = {}): Promise<void> {
     test,
     checkVoice,
     watchStatus: () => Promise.resolve(() => {}),
+    watchConfig: (onChange: (config: TelegramConfigView) => void) => {
+      configListeners.push(onChange);
+      return Promise.resolve(() => {});
+    },
   };
   await mountTelegramSection({
     group: document.querySelector<HTMLElement>(".settings-group")!,
@@ -262,5 +275,66 @@ describe("telegram helpers", () => {
     expect(
       describeStatus({ state: "stopped", detail: "no bot token", botUsername: null, ignored: 0 }),
     ).toBe("Stopped: no bot token");
+  });
+});
+
+describe("voice control section", () => {
+  async function mountBoth(patch: Partial<TelegramConfigView> = {}): Promise<void> {
+    await mount(patch);
+    const voiceGroup = document.createElement("div");
+    document.body.append(voiceGroup);
+    const config = await setConfig({});
+    await mountVoiceControlSection({
+      group: voiceGroup,
+      api: {
+        getConfig: () => Promise.resolve(config),
+        setConfig,
+        getStatus: () => Promise.reject(new Error("unused")),
+        test,
+        checkVoice,
+        watchStatus: () => Promise.resolve(() => {}),
+        watchConfig: (onChange) => {
+          configListeners.push(onChange);
+          return Promise.resolve(() => {});
+        },
+      },
+      check: () => Promise.resolve("ok"),
+      onError,
+      onMessage,
+    });
+  }
+
+  it("saves the switch, target and spoken answers", async () => {
+    await mountBoth();
+    const target = control<HTMLSelectElement>("Send dictation to");
+    expect(target.disabled).toBe(true);
+    const toggle = control<HTMLInputElement>("Voice control");
+    toggle.checked = true;
+    toggle.dispatchEvent(new Event("change"));
+    await Promise.resolve();
+    expect(setConfig).toHaveBeenLastCalledWith({ voiceControl: true });
+    await vi.waitFor(() => expect(target.disabled).toBe(false));
+    target.value = "agent";
+    target.dispatchEvent(new Event("change"));
+    expect(setConfig).toHaveBeenLastCalledWith({ voiceControlTarget: "agent" });
+    const replies = control<HTMLSelectElement>("Spoken answers");
+    replies.value = "reply";
+    replies.dispatchEvent(new Event("change"));
+    expect(setConfig).toHaveBeenLastCalledWith({ voiceControlReplies: "reply" });
+  });
+
+  it("unlocks the shared whisper and Piper settings in the Telegram section", async () => {
+    await mountBoth();
+    expect(control<HTMLInputElement>("Whisper model").disabled).toBe(true);
+    expect(control<HTMLInputElement>("Piper voice").disabled).toBe(true);
+    const toggle = control<HTMLInputElement>("Voice control");
+    toggle.checked = true;
+    toggle.dispatchEvent(new Event("change"));
+    await vi.waitFor(() => expect(control<HTMLInputElement>("Whisper model").disabled).toBe(false));
+    expect(control<HTMLInputElement>("Piper voice").disabled).toBe(true);
+    const replies = control<HTMLSelectElement>("Spoken answers");
+    replies.value = "reply";
+    replies.dispatchEvent(new Event("change"));
+    await vi.waitFor(() => expect(control<HTMLInputElement>("Piper voice").disabled).toBe(false));
   });
 });

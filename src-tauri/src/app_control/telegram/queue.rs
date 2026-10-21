@@ -227,19 +227,19 @@ async fn attempt(
     turn::run(&spec, prompt, Duration::from_secs(config.turn_timeout_secs)).await
 }
 
-const RULES_HEADER: &str = "[polakapi rules for this answer, from the user's settings; they override anything said earlier in this chat]";
+pub(crate) const RULES_HEADER: &str = "[polakapi rules for this answer, from the user's settings; they override anything said earlier in this chat]";
 
 /// How the answers should sound: the reply style and the names the user goes by.
-struct Voice<'a> {
-    style: &'a str,
-    names: &'a [String],
-    bot_name: &'a str,
+pub(crate) struct Voice<'a> {
+    pub style: &'a str,
+    pub names: &'a [String],
+    pub bot_name: &'a str,
     /// polakapi will read this answer aloud as a voice note.
-    spoken_reply: bool,
+    pub spoken_reply: bool,
 }
 
 impl Voice<'_> {
-    fn rules(&self) -> Option<String> {
+    pub(crate) fn rules(&self) -> Option<String> {
         let mut rules = Vec::new();
         if !self.bot_name.is_empty() {
             rules.push(format!(
@@ -292,7 +292,7 @@ fn build_turn(
     (prompt, system)
 }
 
-pub(super) fn looks_like_lost_session(error: &str) -> bool {
+pub(crate) fn looks_like_lost_session(error: &str) -> bool {
     let error = error.to_lowercase();
     ["session", "conversation", "thread"]
         .iter()

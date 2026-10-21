@@ -55,14 +55,16 @@
   cursor: default;
 }
 
-.agent-panel-status {
+.agent-panel-status,
+.agent-voice-status {
   opacity: 0.7;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.agent-panel-status.is-error {
+.agent-panel-status.is-error,
+.agent-voice-status.is-error {
   opacity: 1;
   color: var(--danger, #ff7b72);
 }
@@ -123,4 +125,47 @@
 .agent-panel-detached-actions {
   display: flex;
   gap: 8px;
+}
+
+.agent-panel-mic.is-recording {
+  border-color: var(--danger, #ff7b72);
+  color: var(--danger, #ff7b72);
+}
+
+.agent-voice-log {
+  flex: 0 0 auto;
+  max-height: 40%;
+  overflow: auto;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+  font:
+    12px ui-sans-serif,
+    system-ui,
+    -apple-system,
+    sans-serif;
+}
+
+.agent-voice-log[hidden],
+.agent-voice-log.is-detached,
+.agent-voice-answer[hidden],
+.agent-voice-actions [hidden] {
+  display: none;
+}
+
+.agent-voice-heard {
+  margin: 0 0 4px;
+  opacity: 0.75;
+}
+
+.agent-voice-answer {
+  white-space: pre-wrap;
+  user-select: text;
+}
+
+.agent-voice-actions {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+  margin-top: 6px;
 }

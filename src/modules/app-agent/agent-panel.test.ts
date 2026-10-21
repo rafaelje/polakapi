@@ -52,6 +52,7 @@ vi.mock("../../shared/tauri/invoke", () => ({
   invoke: (command: string, ...rest: unknown[]) => invoke(command, ...rest),
 }));
 vi.mock("../terminal/pty-client", () => ({ ptyKill: (id: string) => ptyKill(id) }));
+vi.mock("./voice-control", () => ({ mountVoiceControl: () => ({ dispose: () => {} }) }));
 vi.mock("../terminal/terminal-pane", () => ({
   TerminalPane: class {
     constructor() {

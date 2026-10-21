@@ -83,6 +83,10 @@ impl Running {
         self.child.stdin.take()
     }
 
+    pub fn has_exited(&mut self) -> bool {
+        !matches!(self.child.try_wait(), Ok(None))
+    }
+
     /// Waits for the process while reading its output. Dropping the future,
     /// or the timeout, stops the whole process group.
     pub async fn wait(self, timeout: Duration, stdout: Limit, stderr: Limit) -> io::Result<Output> {

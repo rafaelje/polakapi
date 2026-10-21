@@ -61,6 +61,10 @@ use crate::app_control::telegram::{
     telegram_config_get, telegram_config_set, telegram_notify, telegram_status, telegram_test,
     telegram_voice_check,
 };
+use crate::app_control::voice_control::{
+    voice_agent_mark, voice_agent_reply, voice_ask, voice_cancel, voice_control_check,
+    voice_forget, voice_record_start, voice_record_stop, voice_speak, VoiceControl,
+};
 use crate::app_control::{
     agent_cli_detect, agent_home_prepare, app_control_respond, app_control_set_ready,
 };
@@ -196,6 +200,7 @@ pub fn run() {
                         eprintln!("polakapi: could not start the telegram bot: {error}");
                     }
                 }
+                app.manage(VoiceControl::new());
                 // Ephemeral context stores whose pane died never clean up after
                 // themselves, and temp directories survive reboots.
                 if let Err(error) =
@@ -276,6 +281,15 @@ pub fn run() {
             telegram_status,
             telegram_test,
             telegram_voice_check,
+            voice_record_start,
+            voice_record_stop,
+            voice_cancel,
+            voice_ask,
+            voice_forget,
+            voice_agent_mark,
+            voice_agent_reply,
+            voice_speak,
+            voice_control_check,
             agent_context_list,
             agent_context_detail,
             agent_context_entry,

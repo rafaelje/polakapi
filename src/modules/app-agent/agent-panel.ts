@@ -3,6 +3,7 @@ import { stringifyError } from "../../shared/errors";
 import { ptyKill } from "../terminal/pty-client";
 import { TerminalPane } from "../terminal/terminal-pane";
 import { attachTearOffDrag } from "./tear-off-drag";
+import { mountVoiceControl } from "./voice-control";
 import type { AgentHandoff, AgentLaunchSpec, DetectedCli } from "./types";
 
 // The bottom panel's "agent" tab: pick an installed CLI, run it in polakapi's
@@ -64,9 +65,10 @@ export function mountAgentPanel(host: HTMLElement, opts: AgentPanelOptions): Age
   const status = document.createElement("span");
   status.className = "agent-panel-status";
   bar.append(label, startBtn, stopBtn, status);
+  const voiceLog = document.createElement("div");
   const paneHost = document.createElement("div");
   paneHost.className = "agent-panel-host";
-  host.append(bar, paneHost);
+  host.append(bar, voiceLog, paneHost);
 
   const tearOffs: Array<{ dispose(): void }> = [];
   const detach = opts.detach;
@@ -300,6 +302,11 @@ export function mountAgentPanel(host: HTMLElement, opts: AgentPanelOptions): Age
   startBtn.addEventListener("click", onStart);
   stopBtn.addEventListener("click", onStop);
   select.addEventListener("change", onSelect);
+  const voice = mountVoiceControl({
+    after: stopBtn,
+    log: voiceLog,
+    agent: () => ({ cli: selectedCli, ptyId: (!exited && pane?.ptyId) || null }),
+  });
 
   return {
     activate: () => {
@@ -336,6 +343,7 @@ export function mountAgentPanel(host: HTMLElement, opts: AgentPanelOptions): Age
     adopt,
     setDetached: (detached) => {
       bar.hidden = detached;
+      voiceLog.classList.toggle("is-detached", detached);
       paneHost.hidden = detached;
       detachedNote.hidden = !detached;
     },
@@ -346,6 +354,7 @@ export function mountAgentPanel(host: HTMLElement, opts: AgentPanelOptions): Age
       startBtn.removeEventListener("click", onStart);
       stopBtn.removeEventListener("click", onStop);
       select.removeEventListener("change", onSelect);
+      voice.dispose();
       await teardownPane();
     },
   };

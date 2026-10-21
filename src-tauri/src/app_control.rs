@@ -9,6 +9,7 @@
 //! - `child`: headless child processes, stopped as a group and capped.
 //! - `run`: one shell command in a project, output as a terminal shows it.
 //! - `telegram`: a Telegram bot that runs headless operator turns.
+//! - `voice_control`: dictation to the operator agent from the agent tab.
 
 pub mod child;
 pub mod client;
@@ -18,6 +19,7 @@ pub mod mcp;
 pub mod run;
 pub mod server;
 pub mod telegram;
+pub mod voice_control;
 
 use std::sync::Arc;
 

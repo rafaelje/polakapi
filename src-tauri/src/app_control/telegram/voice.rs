@@ -50,7 +50,7 @@ pub(super) fn expand_home(path: &str, home: Option<&Path>) -> PathBuf {
     }
 }
 
-pub(super) fn find_program(name: &str, home: Option<&Path>) -> Option<PathBuf> {
+pub(crate) fn find_program(name: &str, home: Option<&Path>) -> Option<PathBuf> {
     let file = if cfg!(windows) {
         format!("{name}.exe")
     } else {
@@ -226,7 +226,7 @@ pub fn names_hint(config: &TelegramConfig) -> String {
 /// The text of a message, typed or transcribed from a voice note, and
 /// whether it was spoken. `None` when there is nothing to act on; the chat
 /// has been told why.
-pub async fn message_text(
+pub(super) async fn message_text(
     ctx: &Ctx,
     config: &TelegramConfig,
     message: &Message,

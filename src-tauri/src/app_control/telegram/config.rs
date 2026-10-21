@@ -23,6 +23,9 @@ const MIN_VOICE_SPEED: u32 = 50;
 const MAX_VOICE_SPEED: u32 = 150;
 const MAX_JOBS_LIMIT: u32 = 20;
 const VOICE_LANGUAGES: &[&str] = &["auto", "es", "en", "pt", "fr", "de", "it"];
+pub const VOICE_CONTROL_TARGETS: &[&str] = &["headless", "agent"];
+pub const VOICE_CONTROL_REPLIES: &[&str] = &["off", "reply"];
+const MAX_DEVICE_CHARS: usize = 200;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
@@ -65,6 +68,16 @@ pub struct TelegramConfig {
     pub voice_speed: u32,
     /// Delegated jobs running at once across projects; one per project.
     pub max_jobs: u32,
+    /// Dictate to the operator agent from the agent tab. Shares the whisper
+    /// model, language, Piper voice and speed with the bot's voice notes.
+    pub voice_control: bool,
+    /// Where dictation goes: `headless` (a turn without a terminal) or
+    /// `agent` (typed into the agent tab's running CLI).
+    pub voice_control_target: String,
+    /// Read answers to dictation aloud: `off` or `reply`.
+    pub voice_control_replies: String,
+    /// ffmpeg capture device; empty uses the system's default microphone.
+    pub voice_input: String,
 }
 
 impl Default for TelegramConfig {
@@ -90,6 +103,10 @@ impl Default for TelegramConfig {
             piper_voice: String::new(),
             voice_speed: 100,
             max_jobs: 3,
+            voice_control: false,
+            voice_control_target: "headless".to_string(),
+            voice_control_replies: "off".to_string(),
+            voice_input: String::new(),
         }
     }
 }
@@ -136,6 +153,18 @@ impl TelegramConfig {
         self.piper_voice = self.piper_voice.trim().to_string();
         self.voice_speed = self.voice_speed.clamp(MIN_VOICE_SPEED, MAX_VOICE_SPEED);
         self.max_jobs = self.max_jobs.clamp(1, MAX_JOBS_LIMIT);
+        if !VOICE_CONTROL_TARGETS.contains(&self.voice_control_target.as_str()) {
+            self.voice_control_target = defaults.voice_control_target;
+        }
+        if !VOICE_CONTROL_REPLIES.contains(&self.voice_control_replies.as_str()) {
+            self.voice_control_replies = defaults.voice_control_replies;
+        }
+        self.voice_input = self
+            .voice_input
+            .trim()
+            .chars()
+            .take(MAX_DEVICE_CHARS)
+            .collect();
         self
     }
 
@@ -175,6 +204,10 @@ impl TelegramConfig {
             piper_voice: self.piper_voice.clone(),
             voice_speed: self.voice_speed,
             max_jobs: self.max_jobs,
+            voice_control: self.voice_control,
+            voice_control_target: self.voice_control_target.clone(),
+            voice_control_replies: self.voice_control_replies.clone(),
+            voice_input: self.voice_input.clone(),
         }
     }
 
@@ -247,6 +280,18 @@ impl TelegramConfig {
         if let Some(jobs) = patch.max_jobs {
             next.max_jobs = jobs;
         }
+        if let Some(enabled) = patch.voice_control {
+            next.voice_control = enabled;
+        }
+        if let Some(target) = patch.voice_control_target {
+            next.voice_control_target = target;
+        }
+        if let Some(mode) = patch.voice_control_replies {
+            next.voice_control_replies = mode;
+        }
+        if let Some(device) = patch.voice_input {
+            next.voice_input = device;
+        }
         Ok(next.normalized())
     }
 }
@@ -275,6 +320,10 @@ pub struct ConfigView {
     pub piper_voice: String,
     pub voice_speed: u32,
     pub max_jobs: u32,
+    pub voice_control: bool,
+    pub voice_control_target: String,
+    pub voice_control_replies: String,
+    pub voice_input: String,
 }
 
 /// A partial update from the settings window. `token: Some("")` clears it.
@@ -301,6 +350,10 @@ pub struct ConfigPatch {
     pub piper_voice: Option<String>,
     pub voice_speed: Option<u32>,
     pub max_jobs: Option<u32>,
+    pub voice_control: Option<bool>,
+    pub voice_control_target: Option<String>,
+    pub voice_control_replies: Option<String>,
+    pub voice_input: Option<String>,
 }
 
 pub fn normalize_style(style: &str) -> String {
@@ -465,9 +518,15 @@ mod tests {
             voice_speed: 5,
             max_jobs: 0,
             address_as: vec![" Miguel ".into(), "".into(), "jefe".into(), "miguel".into()],
+            voice_control_target: "tts".into(),
+            voice_control_replies: "always".into(),
+            voice_input: "  hw:1  ".into(),
             ..TelegramConfig::default()
         }
         .normalized();
+        assert_eq!(config.voice_control_target, "headless");
+        assert_eq!(config.voice_control_replies, "off");
+        assert_eq!(config.voice_input, "hw:1");
         assert_eq!(config.address_as, vec!["Miguel", "jefe"]);
         assert_eq!(config.voice_language, "auto");
         assert_eq!(config.voice_speed, 50);

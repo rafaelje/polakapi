@@ -26,6 +26,10 @@ export interface TelegramConfigView {
   piperVoice: string;
   voiceSpeed: number;
   maxJobs: number;
+  voiceControl: boolean;
+  voiceControlTarget: string;
+  voiceControlReplies: string;
+  voiceInput: string;
 }
 
 export type TelegramConfigPatch = Partial<
@@ -50,6 +54,10 @@ export type TelegramConfigPatch = Partial<
     | "piperVoice"
     | "voiceSpeed"
     | "maxJobs"
+    | "voiceControl"
+    | "voiceControlTarget"
+    | "voiceControlReplies"
+    | "voiceInput"
   >
 > & { token?: string };
 
@@ -69,6 +77,8 @@ export interface TelegramApi {
   /** Resolves to the whisper-cli and model voice notes would use. */
   checkVoice(): Promise<string>;
   watchStatus(onChange: (status: TelegramStatusView) => void): Promise<() => void>;
+  /** Saves from any window, including the Voice control section. */
+  watchConfig?(onChange: (config: TelegramConfigView) => void): Promise<() => void>;
 }
 
 export interface TelegramSectionOptions {
@@ -497,16 +507,20 @@ export async function mountTelegramSection(opts: TelegramSectionOptions): Promis
     profile.value = config.profile;
     if (document.activeElement !== style) style.value = config.replyStyle;
     voice.checked = config.voiceNotes;
+    const transcribes = config.voiceNotes || config.voiceControl;
+    const speaks =
+      config.voiceReplies !== "off" ||
+      (config.voiceControl && config.voiceControlReplies !== "off");
     language.value = config.voiceLanguage;
-    language.disabled = !config.voiceNotes;
-    model.disabled = !config.voiceNotes;
+    language.disabled = !transcribes;
+    model.disabled = !transcribes;
     if (document.activeElement !== model) model.value = config.whisperModel;
     replies.value = config.voiceReplies;
-    piper.disabled = config.voiceReplies === "off";
+    piper.disabled = !speaks;
     if (document.activeElement !== piper) piper.value = config.piperVoice;
     speed.value = String(config.voiceSpeed);
     speed.dataset.current = String(config.voiceSpeed);
-    speed.disabled = config.voiceReplies === "off";
+    speed.disabled = !speaks;
     if (document.activeElement !== botName) botName.value = config.botName;
     if (document.activeElement !== address) address.value = config.addressAs.join(", ");
     timeout.value = String(config.turnTimeoutSecs);
@@ -519,5 +533,14 @@ export async function mountTelegramSection(opts: TelegramSectionOptions): Promis
   };
   render();
   showStatus(await api.getStatus());
-  return api.watchStatus(showStatus);
+  const stops = await Promise.all([
+    api.watchStatus(showStatus),
+    api.watchConfig?.((next) => {
+      config = next;
+      render();
+    }),
+  ]);
+  return () => {
+    for (const stop of stops) stop?.();
+  };
 }
