@@ -27,6 +27,15 @@ import {
   mountCommandPalette,
   type CommandPaletteHandle,
 } from "../modules/workspaces/command-palette/command-palette";
+import { AdversarialRunner } from "../modules/app-agent/adversarial-runner";
+import { mountControlBridge, type ControlBridgeHandle } from "../modules/app-agent/control-bridge";
+import { createToolRegistry } from "../modules/app-agent/tools/registry";
+import {
+  forwardToTelegram,
+  isPermissionChoice,
+  respondToPermission,
+  type PaneLookup,
+} from "../modules/app-agent/telegram-relay";
 import { mountBottomPanel, type BottomPanelHandle } from "../modules/bottom-panel/bottom-panel";
 import { isBottomTab } from "../modules/bottom-panel/types";
 import { mountUsageToolbar, type UsageToolbarHandle } from "../modules/usage/usage-toolbar";
@@ -87,6 +96,7 @@ export class AppController {
   private workspaces: WorkspacesBootstrapHandle | null = null;
   private palette: CommandPaletteHandle | null = null;
   private bottomPanel: BottomPanelHandle | null = null;
+  private controlBridge: ControlBridgeHandle | null = null;
   private usageToolbar: UsageToolbarHandle | null = null;
   private updateIndicator: UpdateIndicatorHandle | null = null;
   private loopButton: LoopButtonHandle | null = null;
@@ -115,6 +125,12 @@ export class AppController {
    */
   private windowFocused = false;
   private disposed = false;
+  private readonly paneLookup: PaneLookup = {
+    findPane: (ptyId) => {
+      const found = this.router.findPaneById(ptyId);
+      return found && found.manager.isLive(ptyId) ? found.pane : null;
+    },
+  };
 
   constructor(private readonly elements: AppElements) {
     this.router = new TerminalRouter({
@@ -131,16 +147,23 @@ export class AppController {
     this.unlistenUpdateMenu = await listen("check-updates", () => {
       void checkForUpdatesManually();
     });
-    this.stopAgentNotifier = await startAgentNotifier((ptyId) => {
-      const projectId = this.router.findPaneById(ptyId)?.manager.projectId;
-      if (!projectId || !this.workspaces) return null;
-      return findProject(this.workspaces.controller.getState(), projectId)?.project.name ?? null;
-    });
+    this.stopAgentNotifier = await startAgentNotifier(
+      (ptyId) => {
+        const projectId = this.router.findPaneById(ptyId)?.manager.projectId;
+        if (!projectId || !this.workspaces) return null;
+        return findProject(this.workspaces.controller.getState(), projectId)?.project.name ?? null;
+      },
+      (event, title, message) => {
+        void forwardToTelegram(this.paneLookup, event, title, message);
+      },
+    );
     const layout = await this.loadSavedLayout();
     this.applyLayout(layout);
     this.bottomPanel = mountBottomPanel({
       initialTab: isBottomTab(layout.activeBottomTab) ? layout.activeBottomTab : "notes",
       onTabChange: (tab) => queueSave({ activeBottomTab: tab }),
+      initialAgentCli: layout.agentCli,
+      onAgentCliChange: (cli) => queueSave({ agentCli: cli }),
     });
     const usageHost = document.getElementById("usage-indicators");
     if (usageHost) {
@@ -194,6 +217,7 @@ export class AppController {
       elements: this.elements,
       router: this.router,
       isWindowFocused: () => this.windowFocused,
+      lastRunningProjectIds: layout.lastRunningProjectIds,
     });
 
     // Mount the command palette once the controller is ready. The shortcut
@@ -202,6 +226,26 @@ export class AppController {
     this.palette = mountCommandPalette({ controller: this.workspaces.controller });
 
     this.wireMemoryGuard(layout);
+
+    // The operator agent's tools act on the controller and router, so the
+    // bridge only opens once both exist. Until then the Rust side answers
+    // every tool call with "not ready".
+    this.controlBridge = await mountControlBridge(
+      createToolRegistry({
+        getController: () => this.workspaces?.controller ?? null,
+        router: this.router,
+        adversarial: new AdversarialRunner(),
+      }),
+      {
+        "permission.respond": (params) => {
+          const { ptyId, choice } = params;
+          if (typeof ptyId !== "string" || !isPermissionChoice(choice)) {
+            return Promise.reject(new Error("permission.respond needs a ptyId and a choice"));
+          }
+          return respondToPermission(this.paneLookup, ptyId, choice);
+        },
+      },
+    );
 
     // Wire the quit hook *after* workspaces is ready so the modal can resolve
     // project names by looking the controller's state up at confirm time.
@@ -216,6 +260,7 @@ export class AppController {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
+    this.workspaces?.lastSession.freeze();
     this.stopAgentNotifier?.();
     this.unlistenUpdateMenu?.();
 
@@ -243,6 +288,13 @@ export class AppController {
     this.usageToolbar = null;
     this.updateIndicator?.dispose();
     this.updateIndicator = null;
+    const controlBridge = this.controlBridge;
+    this.controlBridge = null;
+    if (controlBridge) {
+      void controlBridge.dispose().catch((error) => {
+        console.error("Failed to dispose control bridge", error);
+      });
+    }
     const bottomPanel = this.bottomPanel;
     this.bottomPanel = null;
     if (bottomPanel) {
@@ -310,6 +362,7 @@ export class AppController {
   private async flushBeforeQuit(): Promise<void> {
     const workspaces = this.workspaces;
     if (workspaces) {
+      workspaces.lastSession.freeze();
       workspaces.notesPanel.dispose();
       await workspaces.controller.dispose();
     }
@@ -319,7 +372,7 @@ export class AppController {
 
   private async wirePtyEvents(): Promise<void> {
     this.unlistenData = await onPtyData(({ id, data, offset }) => {
-      if (this.bottomPanel?.handlePtyData(id, data)) return;
+      if (this.bottomPanel?.handlePtyData(id, data, offset)) return;
       const found = this.router.findPaneById(id);
       if (!found) return;
       this.router.recordActivity(id);

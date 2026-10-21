@@ -4,6 +4,7 @@
 // The Tauri app binary also exposes a `capture` subcommand that hooks can
 // invoke to record an event into `polakapi.db`. Dispatch is by first arg:
 //   - `capture`        -> polakapi-capture helper
+//   - `app-mcp`        -> MCP server for the operator agent tab
 //   - anything else    -> normal Tauri app startup
 // This keeps a single binary (matches Tauri's build model) and lets the
 // helper reuse the `db` module compiled into the same crate.
@@ -27,6 +28,9 @@ fn main() {
     }
     if args.len() >= 2 && args[1] == "ctx-mcp" {
         std::process::exit(polakapi_lib::ctx::mcp::run());
+    }
+    if args.len() >= 2 && args[1] == "app-mcp" {
+        std::process::exit(polakapi_lib::app_control::mcp::run(&args[2..]));
     }
     if args.len() >= 2 && args[1] == "ctx-hook" {
         std::process::exit(polakapi_lib::ctx::hook::run(&args[2..]));

@@ -85,7 +85,12 @@ p {
 }
 button,
 select,
-.notification-command {
+.notification-command,
+.telegram-token,
+.telegram-users,
+.telegram-address,
+.telegram-model,
+.telegram-style {
   font: inherit;
   font-size: 11px;
   color: inherit;
@@ -154,7 +159,12 @@ button:disabled {
 select {
   max-width: 200px;
 }
-.notification-command {
+.notification-command,
+.telegram-token,
+.telegram-users,
+.telegram-address,
+.telegram-model,
+.telegram-style {
   min-width: 0;
   width: 200px;
   flex: 1;
@@ -196,6 +206,16 @@ select {
 }
 .permission-status.allowed {
   color: #51dc75;
+}
+.telegram-status {
+  font-size: 11px;
+}
+.telegram-style {
+  width: 100%;
+  resize: vertical;
+}
+.telegram-status.is-error {
+  color: #f4b75f;
 }
 .sound-filename {
   width: 100%;
@@ -242,7 +262,12 @@ select {
   }
   button,
   select,
-  .notification-command {
+  .notification-command,
+  .telegram-token,
+  .telegram-users,
+  .telegram-address,
+  .telegram-model,
+  .telegram-style {
     background: #f1f2f3;
     border-color: #c9cdd0;
   }
@@ -251,6 +276,9 @@ select {
   }
   .permission-status.allowed {
     color: #16843a;
+  }
+  .telegram-status.is-error {
+    color: #92550b;
   }
   .settings-status {
     color: #92550b;

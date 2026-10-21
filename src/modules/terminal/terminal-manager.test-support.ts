@@ -59,7 +59,9 @@ vi.mock("./terminal-pane", () => {
     fit(): void {}
     focus(): void {}
     write(): void {}
-    markExited(): void {}
+    markExited(): void {
+      if (!this.suspended) this.isExited = true;
+    }
     markSpawnFailed(): void {}
     markSuspended(): void {
       this.suspended = true;

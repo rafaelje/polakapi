@@ -1,4 +1,3 @@
-use std::io::{BufRead, Write};
 use std::path::PathBuf;
 
 use serde_json::{json, Value};
@@ -302,24 +301,7 @@ pub fn run() -> i32 {
     let mut server = Server::new(session_id, project, config::load_from_env())
         .with_key_resolver(crate::ctx::paths::session_key_from_env);
 
-    let stdin = std::io::stdin();
-    let mut stdout = std::io::stdout();
-    for line in stdin.lock().lines().map_while(Result::ok) {
-        if line.trim().is_empty() {
-            continue;
-        }
-        let Ok(request) = serde_json::from_str::<Value>(&line) else {
-            eprintln!("polakapi ctx-mcp: ignoring malformed request");
-            continue;
-        };
-        let Some(response) = server.handle(&request) else {
-            continue;
-        };
-        if writeln!(stdout, "{response}").is_err() || stdout.flush().is_err() {
-            return 1;
-        }
-    }
-    0
+    crate::mcp_stdio::serve("polakapi ctx-mcp", |request| server.handle(request))
 }
 
 #[cfg(test)]

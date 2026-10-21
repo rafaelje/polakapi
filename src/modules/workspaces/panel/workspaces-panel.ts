@@ -46,6 +46,12 @@ export interface BellPendingSource {
   ): () => void;
 }
 
+/** Kept structural, like LiveCountSource, so the panel does not depend on app/. */
+export interface LastSessionSource {
+  isMarked(projectId: ProjectId): boolean;
+  on(listener: (projectId: ProjectId, marked: boolean) => void): () => void;
+}
+
 export interface WorkspacesPanelOptions {
   root: HTMLElement;
   controller: WorkspacesController;
@@ -53,6 +59,8 @@ export interface WorkspacesPanelOptions {
   liveCounts?: LiveCountSource;
   /** Optional. When provided, the panel toggles `.has-bell` on rows. */
   bellSource?: BellPendingSource;
+  /** Optional. Marks projects that were running when polakapi last closed. */
+  lastSession?: LastSessionSource;
   activeOnlyToggle: HTMLInputElement;
   onSuspendProject?: (projectId: ProjectId) => void;
   onResumeProject?: (projectId: ProjectId) => void;
@@ -71,7 +79,7 @@ export interface WorkspacesPanelHandle {
  * re-rendering the panel.
  */
 export function mountWorkspacesPanel(opts: WorkspacesPanelOptions): WorkspacesPanelHandle {
-  const { root, controller, liveCounts, bellSource, activeOnlyToggle } = opts;
+  const { root, controller, liveCounts, bellSource, lastSession, activeOnlyToggle } = opts;
 
   const previousContent = Array.from(root.childNodes);
   root.replaceChildren();
@@ -204,7 +212,7 @@ export function mountWorkspacesPanel(opts: WorkspacesPanelOptions): WorkspacesPa
 
     const activeQuery = query.trim();
     const matchesActiveFilter = (project: Project): boolean =>
-      !activeOnly || liveCountFor(project.id) > 0;
+      !activeOnly || liveCountFor(project.id) > 0 || lastSession?.isMarked(project.id) === true;
     for (const workspace of sortedWorkspaces(state)) {
       // When a search is active, skip workspaces that have no matching
       // projects entirely — the row helper would render an empty header
@@ -223,6 +231,7 @@ export function mountWorkspacesPanel(opts: WorkspacesPanelOptions): WorkspacesPa
         liveCountFor: liveCounts ? liveCountFor : undefined,
         activityFor: liveCounts ? activityFor : undefined,
         bellPendingFor: (projectId) => (pendingByProject.get(projectId)?.size ?? 0) > 0,
+        lastSessionFor: lastSession ? (projectId) => lastSession.isMarked(projectId) : undefined,
         getSuspendedCount: liveCounts ? suspendedCountFor : undefined,
         filterQuery: activeQuery,
         projectFilter: activeOnly ? matchesActiveFilter : undefined,
@@ -302,11 +311,21 @@ export function mountWorkspacesPanel(opts: WorkspacesPanelOptions): WorkspacesPa
       for (const handle of handles) handle.setBellPending(event.projectId, isPending);
     }) ?? null;
 
+  const unsubscribeLastSession =
+    lastSession?.on((projectId, marked) => {
+      if (activeOnly) {
+        render();
+        return;
+      }
+      for (const handle of handles) handle.setLastSession(projectId, marked);
+    }) ?? null;
+
   return {
     unmount(): void {
       unsubscribeController();
       unsubscribeTerminalEvents?.();
       unsubscribeBells?.();
+      unsubscribeLastSession?.();
       finderDrop.detach();
       dnd.detach();
       addBtn.removeEventListener("click", onAddClick);

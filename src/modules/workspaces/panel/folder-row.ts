@@ -16,6 +16,7 @@ export interface FolderRowOptions {
   liveCountFor?: (projectId: ProjectId) => number;
   activityFor?: (projectId: ProjectId) => ProjectActivityState;
   bellPendingFor?: (projectId: ProjectId) => boolean;
+  lastSessionFor?: (projectId: ProjectId) => boolean;
   getSuspendedCount?: (projectId: ProjectId) => number;
   filterQuery?: string;
   projectFilter?: (project: Project) => boolean;
@@ -102,6 +103,7 @@ export function createFolderRow(opts: FolderRowOptions): FolderRowHandle {
       liveTerminalsCount: initialCount,
       activityState: opts.activityFor?.(project.id) ?? "idle",
       bellPending: opts.bellPendingFor?.(project.id) ?? false,
+      lastSession: opts.lastSessionFor?.(project.id) ?? false,
       controller,
       getLiveCount: liveCountFor ? () => liveCountFor(project.id) : undefined,
       getSuspendedCount: suspendedCountFor ? () => suspendedCountFor(project.id) : undefined,

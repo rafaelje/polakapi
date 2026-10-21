@@ -3,12 +3,13 @@ use std::path::Path;
 use std::sync::Arc;
 
 use serde::Serialize;
-use sysinfo::{ProcessesToUpdate, System};
+use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System, UpdateKind};
 use tauri::State;
 
 use crate::pty::PtyStore;
 
-const ALLOWED_AI_CLI_BASENAMES: &[&str] = &["claude", "codex", "opencode", "cursor-agent"];
+const ALLOWED_AI_CLI_BASENAMES: &[&str] =
+    &["claude", "codex", "opencode", "cursor-agent", "gemini"];
 
 /// Keep capture attribution and the live agent-pane inventory on the same allowlist.
 pub(crate) fn ai_cli_basename(command: &str) -> Option<String> {
@@ -80,6 +81,46 @@ pub fn pty_running_commands(store: State<'_, Arc<PtyStore>>) -> Result<Vec<Runni
     Ok(out)
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PaneCwd {
+    pub pty_id: String,
+    /// The working directory of the pane's root process (its shell), which
+    /// follows every `cd`, unlike the directory the pane was opened in.
+    pub cwd: String,
+}
+
+#[tauri::command(async)]
+pub fn pty_cwds(store: State<'_, Arc<PtyStore>>) -> Vec<PaneCwd> {
+    let roots = store.session_pids();
+    let cwds = process_cwds(&roots.iter().map(|(_, pid)| *pid).collect::<Vec<_>>());
+    roots
+        .into_iter()
+        .filter_map(|(pty_id, pid)| {
+            Some(PaneCwd {
+                pty_id,
+                cwd: cwds.get(&pid)?.clone(),
+            })
+        })
+        .collect()
+}
+
+fn process_cwds(pids: &[u32]) -> HashMap<u32, String> {
+    let wanted: Vec<Pid> = pids.iter().copied().map(Pid::from_u32).collect();
+    let mut sys = System::new();
+    sys.refresh_processes_specifics(
+        ProcessesToUpdate::Some(&wanted),
+        true,
+        ProcessRefreshKind::nothing().with_cwd(UpdateKind::Always),
+    );
+    pids.iter()
+        .filter_map(|pid| {
+            let cwd = sys.process(Pid::from_u32(*pid))?.cwd()?;
+            Some((*pid, cwd.to_string_lossy().into_owned()))
+        })
+        .collect()
+}
+
 /// Breadth-first so the name reported is the closest thing to what the user
 /// started, not a deeply nested helper. Tolerates the parent cycles that pid
 /// reuse can produce.
@@ -124,6 +165,27 @@ mod tests {
             .map(|(pid, name)| (*pid, (*name).to_string()))
             .collect();
         (children, names)
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[test]
+    fn reads_the_working_directory_of_a_live_process() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut child = std::process::Command::new("sleep")
+            .arg("5")
+            .current_dir(dir.path())
+            .spawn()
+            .unwrap();
+        let cwds = process_cwds(&[child.id()]);
+        let _ = child.kill();
+        let _ = child.wait();
+        let expected = dir.path().canonicalize().unwrap();
+        assert_eq!(
+            std::path::Path::new(&cwds[&child.id()])
+                .canonicalize()
+                .unwrap(),
+            expected
+        );
     }
 
     #[test]

@@ -171,28 +171,26 @@ it("adoption waits for an in-progress tear-off instead of silently losing the re
   expect(manager.specs()).toEqual([expect.objectContaining({ id: "returned", title: "return" })]);
 });
 
-it("keeps exited and suspended configurations in the released and restored grid", async () => {
+it("closes an exited pane and keeps a suspended configuration in the released and restored grid", async () => {
   const router = new TerminalRouter({ onPersistSpecs: vi.fn(), onPersistLayout: vi.fn() });
   const manager = router.getOrCreate(project);
   await manager.addPane({ title: "exited" });
+  manager.get("pty-1")!.markExited();
   manager.markExited("pty-1");
   await manager.restoreSpecs([
     { id: "suspended", suspended: true, cwd: "/custom", launchArgs: ["--resume"] },
   ]);
   const grid = await router.release(project.id);
-  expect(grid?.specs).toHaveLength(2);
+  expect(grid?.specs).toHaveLength(1);
   const returned = await router.adopt(project, grid!);
-  expect(returned.specs()).toEqual(
-    expect.arrayContaining([
-      expect.objectContaining({ id: "pty-1", title: "exited" }),
-      expect.objectContaining({
-        id: "suspended",
-        suspended: true,
-        cwd: "/custom",
-        launchArgs: ["--resume"],
-      }),
-    ]),
-  );
+  expect(returned.specs()).toEqual([
+    expect.objectContaining({
+      id: "suspended",
+      suspended: true,
+      cwd: "/custom",
+      launchArgs: ["--resume"],
+    }),
+  ]);
   await router.dispose(project.id);
 });
 
