@@ -21,7 +21,7 @@ The GO or NO-GO a reviewer agent gives a single Process for integration into the
 _Avoid_: Approval, score
 
 **Review run**:
-The button-triggered two-step review of a branch: first split the changes into Processes as pseudo-code, then give each Process a Verdict with its complexity and architecture.
+The button-triggered two-step review of a branch: first split the changes into Processes as pseudo-code, then give each Process a Verdict with its complexity, architecture, database changes and diffs.
 _Avoid_: Audit, workflow
 
 **Changes**:

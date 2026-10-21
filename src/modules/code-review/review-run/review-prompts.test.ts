@@ -18,6 +18,9 @@ describe("buildReviewPrompt step 1", () => {
           "and write, in pseudo-code, each process that has changes, one independent file per process " +
           "inside docs/code-review/feat-login/, named 1.1-<process-a>.md, 1.2-<process-b>.md, etc., " +
           "where <process-x> is a short kebab-case name for the process.",
+        "End each process file with a `Files` list of the hunks the process touches, as <path>:<start>-<end> " +
+          "on this branch's side, and a `Database` line naming the tables, columns, indexes or relations it adds, " +
+          "changes or removes (migrations, schema files, models or queries), or `none`.",
         "Only write those files; do not modify anything else in the repository.",
       ].join("\n"),
     );
@@ -58,10 +61,19 @@ const CLAUDE_STEP2 = [
   "- the findings on good practices, security and maintainability",
   "- the Big O time and space complexity",
   "- the pseudo-code of the process",
-  "- an architecture diagram made with the /diagram-design skill and embedded in the HTML; " +
-    "if that skill is unavailable or fails, draw it with Mermaid inside the HTML",
+  "- the diffs of the process: every hunk listed in its `Files`, complete, from `git diff main...HEAD`",
+  "- an architecture diagram of what the process adds or changes, made with the /diagram-design skill " +
+    "and embedded in the HTML; if that skill is unavailable or fails, draw it with Mermaid inside the HTML",
+  "- a database diagram drawn as a Mermaid erDiagram inside the HTML with the tables, columns and relations " +
+    'the process adds, changes or removes, or the text "No database changes" when its `Database` line is `none`',
+  "Show the diffs as clearly as VS Code or lazygit: a header naming this branch (feat/login) and the base branch " +
+    "(main) it is compared against; one block per file headed by its path and status (modified, added, " +
+    "deleted or renamed from); every hunk complete with its @@ header; old and new line numbers on every line; " +
+    "added lines marked + on a green background, removed lines marked - on a red background, context lines neutral; " +
+    "HTML-escaped monospace text that scrolls horizontally instead of wrapping. Never show hunks of another process.",
+  "Load Mermaid in every HTML that uses it so the diagrams render when the file is opened in a browser.",
   'In the <head> of each process HTML declare its Verdict exactly as <meta name="verdict" content="GO"> ' +
-    'or <meta name="verdict" content="NO-GO">.',
+    'or <meta name="verdict" content="NO-GO">, and the base branch as <meta name="base" content="main">.',
   "When every process is reviewed, write docs/code-review/feat-login/index.html summarizing every process " +
     "with its Verdict and a link to its HTML file.",
   "Only write those files; do not modify anything else in the repository.",
@@ -84,7 +96,9 @@ describe("buildReviewPrompt step 2", () => {
       "and the model gpt-5.5 for the reviewer agents, launch multiple agents " +
         "with one reviewer agent per process, running in parallel, to do a code review",
     );
-    expect(prompt).toContain("- an architecture diagram drawn with Mermaid inside the HTML\n");
+    expect(prompt).toContain(
+      "- an architecture diagram of what the process adds or changes, drawn with Mermaid inside the HTML\n",
+    );
     expect(prompt).not.toContain("diagram-design");
   });
 
@@ -102,6 +116,28 @@ describe("buildReviewPrompt step 2", () => {
     }
   });
 
+  it("asks every CLI for the database diagram, the full hunks and the chosen base branch", () => {
+    for (const cli of ["claude", "codex", "opencode", "cursor"] as const) {
+      const prompt = buildReviewPrompt({
+        ...input,
+        step: "step2",
+        cli,
+        branch: "fix/a",
+        base: "origin/develop",
+      });
+
+      expect(prompt).toContain("drawn as a Mermaid erDiagram inside the HTML");
+      expect(prompt).toContain('the text "No database changes" when its `Database` line is `none`');
+      expect(prompt).toContain(
+        "every hunk listed in its `Files`, complete, from `git diff origin/develop...HEAD`",
+      );
+      expect(prompt).toContain(
+        "a header naming this branch (fix/a) and the base branch (origin/develop)",
+      );
+      expect(prompt).toContain('<meta name="base" content="origin/develop">');
+    }
+  });
+
   it("falls back to the session model when no reviewers' model is given", () => {
     const prompt = buildReviewPrompt({ ...input, step: "step2", reviewersModel: "  " });
 
@@ -111,7 +147,7 @@ describe("buildReviewPrompt step 2", () => {
 
 describe("buildReviewPrompt both", () => {
   it("runs Step 1 and then Step 2 in one prompt", () => {
-    const step1 = buildReviewPrompt(input).split("\n")[0];
+    const step1 = buildReviewPrompt(input).split("\n").slice(0, -1).join("\n");
     const step2 = CLAUDE_STEP2.split("\n").slice(0, -1).join("\n");
 
     expect(buildReviewPrompt({ ...input, step: "both" })).toBe(
