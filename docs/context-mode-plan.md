@@ -43,8 +43,59 @@ Cursor sends `preToolUse` / `Shell` and an empty `cwd`, and expects
 `updated_input` and `additional_context` at the top level; Claude sends
 `PreToolUse` / `Bash` and expects `hookSpecificOutput`.
 
-Not wired: Codex (hook format unverified — the CLI is not installed here to test
-against), OpenCode (no hook verified), and the "Add .polakapi/ to .gitignore"
+### What Codex does, verified against `codex-cli 0.163.0`
+
+Probed on 2026-10-21 in a scratch git repository under `/tmp`, using a temporary
+`CODEX_HOME` containing copies of only the user's `config.toml` and `auth.json`.
+The copied config was then replaced with minimal probe settings to exclude MCP
+servers. The credential-bearing temporary home was deleted after probing.
+
+| Question | Result |
+| --- | --- |
+| Shell tool and payload? | `Bash`, `tool_input.command` (string), absolute top-level `cwd`; `PreToolUse` and `SessionStart` event names |
+| Does `hookSpecificOutput.updatedInput.command` rewrite without a permission decision? | No: `printf ORIGINAL_PROBE` still printed `ORIGINAL_PROBE`, despite the hook returning `printf POLAKAPI_REWRITTEN_925` |
+| Can the rewrite preserve approval flow without sending a permission decision? | Not in this version. Its parser requires `permissionDecision: allow` to consume `updatedInput`; polakapi does not grant permission on the user's behalf |
+| Does deny + reason work? | Yes: `permissionDecision: deny` blocked execution and the model reported `POLAKAPI_DENIED_613` from `permissionDecisionReason` without retrying |
+| Does SessionStart `additionalContext` reach the model? | Yes: it reported the public test word `POLAKAPI_SESSION_742` supplied only by the hook |
+| How are new hooks trusted? | The TUI (`--no-daemon` used for this environment) displays “Hooks need review”, with Review hooks, Trust all and continue, and Continue without trusting. Trusting the throwaway hooks made Codex write `trusted_hash` entries in the temporary config |
+| How is the hash computed? | Version-matched source normalizes event, matcher group and one handler into TOML, converts it to recursively key-sorted JSON, and SHA-256 hashes its compact serialization with a `sha256:` prefix. State keys use `<file>:<snake_case_event>:<group_index>:<handler_index>` |
+| What happens without trust? | `codex exec` skipped the hooks without a hook-specific warning in stdout/stderr. The TUI explicitly offers review before running them |
+| Is `_polakapi` accepted? | Yes: both hooks ran with the extra marker present |
+
+**Implemented enforcement: deny + reason.** The reason gives the exact
+`polakapi ctx exec` command to retry. Session instructions teach `ctx search`,
+`ctx read` and `ctx list`. Hooks act only with `POLAKAPI_CLI=codex` inside a
+polakapi terminal. Settings installs them into `~/.codex/hooks.json`, preserving
+the separate `polakapi-managed` lifecycle handlers. Restart Codex and review and
+trust the new hooks in its startup prompt. polakapi never writes trust hashes;
+changes to a hook may require renewed review. Automatic trust remains an open
+question, and registering `ctx-mcp` is outside this ticket.
+
+The default sandbox failed here with an app-server socket directory error, so
+the harmless command probes were repeated with `-s danger-full-access` and
+`--dangerously-bypass-hook-trust` only in the isolated home. This does not verify
+an interactive approval round trip. The rewrite was still ignored after the
+sandbox failure was removed.
+
+Source cross-checks for this exact version:
+[pre-tool-use parser](https://github.com/openai/codex/blob/rust-v0.163.0/codex-rs/hooks/src/engine/output_parser.rs),
+[hook identity](https://github.com/openai/codex/blob/rust-v0.163.0/codex-rs/hooks/src/engine/discovery.rs),
+[hash serialization](https://github.com/openai/codex/blob/rust-v0.163.0/codex-rs/config/src/fingerprint.rs).
+
+End-to-end with the built 0.15.2 helper and Codex in a second isolated home:
+`git log --oneline` on a 400-commit scratch repository was denied, Codex retried
+the supplied wrapper, received an “Indexed 31 sections” pointer, then used
+`ctx search NEEDLE_237` and `ctx read` to recover commit `aab91eb`. This used the
+PTY environment variables polakapi supplies; a desktop pane was not exercised.
+The second credential-bearing home was also deleted on exit.
+
+The probe rollouts include the model in `turn_context`, token totals and
+`model_context_window` in `token_count` (475000 for the default model). These
+match the existing context summary parser. A real desktop Codex pane, its token
+split and readable entries still need manual verification; the current panel
+only exposes summary totals for Codex, not readable transcript entries.
+
+Not wired: OpenCode (no hook verified), and the "Add .polakapi/ to .gitignore"
 toggle.
 
 ## 1. What the concept actually is
@@ -150,7 +201,7 @@ than promise one behaviour for four targets.
 | CLI | Hooks in polakapi today | `PreToolUse` | Can rewrite tool input | Enforcement available |
 | --- | --- | --- | --- | --- |
 | **claude** | 8 events + context mode's pre-tool-use / session-start, `~/.claude/settings.json` | installed by context mode | yes (`updatedInput`) — verified | **hard**: rewrite |
-| **codex** | 4 events, `~/.codex/hooks.json` | not installed yet | no — deny-only (openai/codex#18491) | **medium**: deny + reason |
+| **codex** | lifecycle + context hooks, `~/.codex/hooks.json` | installed by context mode | requires `allow`; no approval-neutral rewrite in 0.163.0 (§0) | **medium**: deny + reason, after user trusts hooks |
 | **opencode** | none | n/a | n/a | **soft**: MCP + instructions |
 | **cursor-agent** | context mode's `preToolUse` / `sessionStart`, `~/.cursor/hooks.json` | installed by context mode | yes (`updated_input`) — verified on 2026.09.15 (§0) | **hard**: rewrite |
 
@@ -236,7 +287,7 @@ Extend `desired_hooks` in `db/hooks.rs` with `PreToolUse`:
   allow small/cheap calls untouched; for calls predicted to be large, either
   rewrite into `ctx_exec` via `updatedInput`, or deny with a reason naming the
   replacement call.
-- **codex** — same matcher, deny-only. A deny carrying a clear reason is still
+- **codex** — same matcher, deny + reason because an approval-neutral rewrite is ignored (§0). A deny carrying a clear reason is still
   effective: the model retries with the suggested `ctx_*` tool.
 
 Prediction is necessarily heuristic before execution (`PreToolUse` sees the
