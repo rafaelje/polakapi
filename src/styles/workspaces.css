@@ -565,3 +565,15 @@
   border: 1px solid var(--border);
   border-radius: 4px;
 }
+
+.ws-last-session {
+  flex: 0 0 auto;
+  font-size: 11px;
+  line-height: 1;
+  color: var(--accent, #8aa1ff);
+  opacity: 0.85;
+}
+
+.ws-last-session.hidden {
+  display: none;
+}

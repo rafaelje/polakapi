@@ -29,6 +29,7 @@ import { createProjectWindows } from "./project-windows";
 import { mountBreadcrumb, type BreadcrumbHandle } from "./breadcrumb";
 import { type AppElements } from "./elements";
 import type { TerminalRouter, TerminalRouterEvent } from "./terminal-router";
+import { trackLastSession, type LastSessionHandle } from "./last-session";
 
 export interface WorkspacesBootstrapOptions {
   elements: AppElements;
@@ -39,6 +40,8 @@ export interface WorkspacesBootstrapOptions {
    * the user is actively looking at the active project.
    */
   isWindowFocused: () => boolean;
+  /** Projects that were running when polakapi last closed. */
+  lastRunningProjectIds?: readonly string[];
 }
 
 export interface WorkspacesBootstrapHandle {
@@ -49,6 +52,7 @@ export interface WorkspacesBootstrapHandle {
   /** F3: disposed by AppController BEFORE controller.dispose() so the panel's
    * synchronous final flush lands in state before flushSaveWorkspaces runs. */
   notesPanel: NotesPanelHandle;
+  lastSession: LastSessionHandle;
   unsubscribe: () => void;
 }
 
@@ -121,11 +125,19 @@ export async function bootstrapWorkspaces(
     },
   });
 
+  const lastSession = trackLastSession({
+    previous: opts.lastRunningProjectIds,
+    counts: router,
+    knownProjects: () =>
+      new Set(controller.getState().workspaces.flatMap((ws) => ws.projects.map((p) => p.id))),
+  });
+
   const panel = mountWorkspacesPanel({
     root: elements.sidebarLeft,
     controller,
     liveCounts: router,
     bellSource,
+    lastSession,
     activeOnlyToggle: elements.activeProjectsOnlyToggle,
     onSuspendProject: (projectId) => router.getById(projectId)?.suspendAll(),
     onResumeProject: (projectId) => void router.getById(projectId)?.resumeAll(),
@@ -366,6 +378,7 @@ export async function bootstrapWorkspaces(
       // project" (see workspaces-panel.ts coalesce logic).
       if (pid) {
         emitBell({ type: "bell-pending", projectId: pid, paneId: "", pending: false });
+        lastSession.clear(pid);
       }
       for (const listener of notesListeners) {
         try {
@@ -399,9 +412,10 @@ export async function bootstrapWorkspaces(
     bellListeners.clear();
     router.setNotificationContext(null);
     notesListeners.clear();
+    lastSession.dispose();
   };
 
-  return { controller, panel, projectPane, breadcrumb, notesPanel, unsubscribe };
+  return { controller, panel, projectPane, breadcrumb, notesPanel, lastSession, unsubscribe };
 }
 
 async function runCommandInActivePanes(router: TerminalRouter): Promise<void> {

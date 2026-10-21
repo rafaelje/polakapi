@@ -21,6 +21,8 @@ export interface PersistedLayout {
   claudePlanTier?: ClaudePlanTier;
   /** Release version the user hid from the toolbar update chip. */
   dismissedUpdateVersion?: string;
+  /** Projects with live terminals, kept current so the next start can mark them. */
+  lastRunningProjectIds?: string[];
   /**
    * @deprecated F3: notes content is now stored per-project in workspaces.json.
    * Kept in the type so older layout.json files still load without runtime

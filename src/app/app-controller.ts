@@ -217,6 +217,7 @@ export class AppController {
       elements: this.elements,
       router: this.router,
       isWindowFocused: () => this.windowFocused,
+      lastRunningProjectIds: layout.lastRunningProjectIds,
     });
 
     // Mount the command palette once the controller is ready. The shortcut
@@ -259,6 +260,7 @@ export class AppController {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
+    this.workspaces?.lastSession.freeze();
     this.stopAgentNotifier?.();
     this.unlistenUpdateMenu?.();
 
@@ -360,6 +362,7 @@ export class AppController {
   private async flushBeforeQuit(): Promise<void> {
     const workspaces = this.workspaces;
     if (workspaces) {
+      workspaces.lastSession.freeze();
       workspaces.notesPanel.dispose();
       await workspaces.controller.dispose();
     }

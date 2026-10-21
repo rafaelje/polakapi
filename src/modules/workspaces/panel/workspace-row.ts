@@ -28,6 +28,7 @@ export interface WorkspaceRowOptions {
   liveCountFor?: (projectId: ProjectId) => number;
   activityFor?: (projectId: ProjectId) => ProjectActivityState;
   bellPendingFor?: (projectId: ProjectId) => boolean;
+  lastSessionFor?: (projectId: ProjectId) => boolean;
   /** Resolves the suspended-terminal count; feeds "Resume terminals (N)". */
   getSuspendedCount?: (projectId: ProjectId) => number;
   /**
@@ -53,6 +54,7 @@ export interface WorkspaceRowHandle {
   setActivity(projectId: ProjectId, state: ProjectActivityState): void;
   /** Forward a bell-pending toggle to the matching project row. */
   setBellPending(projectId: ProjectId, pending: boolean): void;
+  setLastSession(projectId: ProjectId, marked: boolean): void;
   dispose(): void;
 }
 
@@ -196,6 +198,7 @@ export function createWorkspaceRow(opts: WorkspaceRowOptions): WorkspaceRowHandl
         liveTerminalsCount: initialCount,
         activityState: projectActivities.get(project.id) ?? "idle",
         bellPending: bellPendingProjects.has(project.id),
+        lastSession: opts.lastSessionFor?.(project.id) ?? false,
         controller,
         getLiveCount: liveCountFor ? () => liveCountFor(project.id) : undefined,
         getSuspendedCount: suspendedCountFor ? () => suspendedCountFor(project.id) : undefined,
@@ -228,6 +231,7 @@ export function createWorkspaceRow(opts: WorkspaceRowOptions): WorkspaceRowHandl
       liveCountFor: opts.liveCountFor,
       activityFor: opts.activityFor,
       bellPendingFor: opts.bellPendingFor,
+      lastSessionFor: opts.lastSessionFor,
       getSuspendedCount: opts.getSuspendedCount,
       filterQuery: opts.filterQuery,
       projectFilter: opts.projectFilter,
@@ -424,6 +428,9 @@ export function createWorkspaceRow(opts: WorkspaceRowOptions): WorkspaceRowHandl
       else bellPendingProjects.delete(projectId);
       projectHandles.get(projectId)?.setBellPending(pending);
       syncActivitySummary();
+    },
+    setLastSession(projectId: ProjectId, marked: boolean): void {
+      projectHandles.get(projectId)?.setLastSession(marked);
     },
     dispose(): void {
       clearCollapseTimer();
