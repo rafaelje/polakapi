@@ -6,6 +6,7 @@ use super::api::Message;
 use super::bot::{reply, Ctx};
 use super::config::TelegramConfig;
 use super::queue::with_typing;
+use crate::app_control::child::{self, Limit};
 use crate::platform_command;
 
 // Voice notes become text with whisper.cpp on this computer: ffmpeg turns
@@ -18,6 +19,7 @@ const MAX_VOICE_BYTES: u64 = 20 * 1024 * 1024;
 const CONVERT_TIMEOUT: Duration = Duration::from_secs(60);
 const TRANSCRIBE_TIMEOUT: Duration = Duration::from_secs(300);
 const MODEL_DIR: &str = ".local/share/whisper";
+const OUTPUT_KEPT: Limit = Limit::tail(1024 * 1024);
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Whisper {
@@ -126,25 +128,24 @@ pub(super) async fn run(
         .args(args)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .kill_on_drop(true);
-    let child = command
-        .spawn()
-        .map_err(|e| format!("could not start {name}: {e}"))?;
-    let output = tokio::time::timeout(timeout, child.wait_with_output())
+        .stderr(Stdio::piped());
+    let output = child::spawn(&mut command)
+        .map_err(|e| format!("could not start {name}: {e}"))?
+        .wait(timeout, OUTPUT_KEPT, OUTPUT_KEPT)
         .await
-        .map_err(|_| format!("{name} timed out after {}s", timeout.as_secs()))?
         .map_err(|e| format!("{name} failed: {e}"))?;
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
+    let Some(status) = output.status else {
+        return Err(format!("{name} timed out after {}s", timeout.as_secs()));
+    };
+    if !status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr.bytes);
         let last = stderr.lines().rev().find(|line| !line.trim().is_empty());
         return Err(format!(
-            "{name} exited with {}: {}",
-            output.status,
+            "{name} exited with {status}: {}",
             last.unwrap_or("").trim()
         ));
     }
-    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+    Ok(String::from_utf8_lossy(&output.stdout.bytes).into_owned())
 }
 
 /// whisper-cli prints one segment per line and marks silence and noises in

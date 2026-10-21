@@ -3,6 +3,7 @@ use std::time::Duration;
 
 use serde::Serialize;
 
+use super::child::{self, Limit};
 use crate::platform_command;
 
 // One shell command in a project directory, with stdout and stderr merged in
@@ -11,6 +12,7 @@ use crate::platform_command;
 
 pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(60);
 const MAX_OUTPUT_CHARS: usize = 20_000;
+const KEPT_OUTPUT: Limit = Limit::tail(256 * 1024);
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -82,40 +84,28 @@ pub async fn run_shell(
         .env("GIT_PAGER", "cat")
         .env("PAGER", "cat")
         .env("NO_COLOR", "1")
-        .env("TERM", "dumb")
-        .kill_on_drop(true);
-    let child = cmd
-        .spawn()
-        .map_err(|e| format!("could not start the shell: {e}"))?;
-    let (output, timed_out) = match tokio::time::timeout(timeout, child.wait_with_output()).await {
-        Ok(result) => (
-            Some(result.map_err(|e| format!("command failed: {e}"))?),
-            false,
-        ),
-        Err(_) => (None, true),
-    };
-    let (raw, exit_code) = match output {
-        Some(output) => {
-            let mut raw = String::from_utf8_lossy(&output.stdout).into_owned();
-            raw.push_str(&String::from_utf8_lossy(&output.stderr));
-            (raw, output.status.code())
-        }
-        None => (String::new(), None),
-    };
-    let truncated = raw.chars().count() > MAX_OUTPUT_CHARS;
-    let output: String = if truncated {
-        let skip = raw.chars().count() - MAX_OUTPUT_CHARS;
-        raw.chars().skip(skip).collect()
+        .env("TERM", "dumb");
+    let output = child::spawn(&mut cmd)
+        .map_err(|e| format!("could not start the shell: {e}"))?
+        .wait(timeout, KEPT_OUTPUT, KEPT_OUTPUT)
+        .await
+        .map_err(|e| format!("command failed: {e}"))?;
+    let mut raw = String::from_utf8_lossy(&output.stdout.bytes).into_owned();
+    raw.push_str(&String::from_utf8_lossy(&output.stderr.bytes));
+    let chars = raw.chars().count();
+    let truncated = output.stdout.truncated || output.stderr.truncated || chars > MAX_OUTPUT_CHARS;
+    let output_text: String = if chars > MAX_OUTPUT_CHARS {
+        raw.chars().skip(chars - MAX_OUTPUT_CHARS).collect()
     } else {
         raw
     };
     Ok(CommandOutput {
         command: command.to_string(),
         cwd: cwd.to_string(),
-        exit_code,
-        output,
+        exit_code: output.status.and_then(|status| status.code()),
+        output: output_text,
         truncated,
-        timed_out,
+        timed_out: output.status.is_none(),
     })
 }
 

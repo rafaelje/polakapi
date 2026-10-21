@@ -4,6 +4,7 @@ use std::time::Duration;
 use serde_json::Value;
 use tokio::io::AsyncWriteExt;
 
+use crate::app_control::child::{self, Limit};
 use crate::app_control::home::LaunchSpec;
 use crate::loop_cli::parsers::{extract_codex_error, parse_claude_json};
 use crate::platform_command;
@@ -14,6 +15,13 @@ use crate::platform_command;
 // `/stop` and the timeout cancel a turn.
 
 pub const TELEGRAM_MESSAGE_LIMIT: usize = 4096;
+/// codex's thread id is on the first line and its answer near the end; the
+/// events in between can be whole command outputs.
+const STDOUT_KEPT: Limit = Limit {
+    head: 64 * 1024,
+    tail: 8 * 1024 * 1024,
+};
+const STDERR_KEPT: Limit = Limit::tail(64 * 1024);
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct TurnOutput {
@@ -38,23 +46,25 @@ pub async fn run_with_env(
         .current_dir(&spec.cwd)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .kill_on_drop(true);
-    let mut child = command.spawn().map_err(|e| match e.kind() {
+        .stderr(Stdio::piped());
+    let mut child = child::spawn(&mut command).map_err(|e| match e.kind() {
         std::io::ErrorKind::NotFound => format!("{} is not installed or not on PATH", spec.command),
         _ => format!("could not start {}: {e}", spec.command),
     })?;
-    if let Some(mut stdin) = child.stdin.take() {
+    if let Some(mut stdin) = child.stdin() {
         stdin
             .write_all(prompt.as_bytes())
             .await
             .map_err(|e| format!("could not send the prompt to {}: {e}", spec.command))?;
     }
-    let output = tokio::time::timeout(timeout, child.wait_with_output())
+    let output = child
+        .wait(timeout, STDOUT_KEPT, STDERR_KEPT)
         .await
-        .map_err(|_| format!("timed out after {}s", timeout.as_secs()))?
         .map_err(|e| format!("{} failed: {e}", spec.command))?;
-    let stdout = String::from_utf8_lossy(&output.stdout);
+    let Some(status) = output.status else {
+        return Err(format!("timed out after {}s", timeout.as_secs()));
+    };
+    let stdout = String::from_utf8_lossy(&output.stdout.bytes);
     let parsed = match spec.cli.as_str() {
         "claude" => parse_claude(&stdout),
         "codex" => parse_codex(&stdout),
@@ -63,11 +73,11 @@ pub async fn run_with_env(
     match parsed {
         Ok(out) if !out.text.trim().is_empty() => Ok(out),
         Err(message) if !stdout.trim().is_empty() => Err(message),
-        _ if !output.status.success() => Err(format!(
+        _ if !status.success() => Err(format!(
             "{} exited with {}: {}",
             spec.command,
-            output.status,
-            last_line(&String::from_utf8_lossy(&output.stderr))
+            status,
+            last_line(&String::from_utf8_lossy(&output.stderr.bytes))
         )),
         Ok(out) => Ok(TurnOutput {
             text: "(the agent finished without a reply)".to_string(),

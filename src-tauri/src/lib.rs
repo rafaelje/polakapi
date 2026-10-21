@@ -253,6 +253,7 @@ pub fn run() {
                     {
                         telegram.stop();
                     }
+                    app_control::child::stop_all();
                 } else if window.label() == agent_window::LABEL {
                     if let Some(agent) = window.try_state::<AgentWindow>() {
                         agent_window::on_destroyed(window.app_handle(), &agent, window.label());

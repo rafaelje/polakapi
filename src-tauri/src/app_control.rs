@@ -6,9 +6,11 @@
 //!   which turns MCP tool calls into control requests.
 //! - `home`: the private working directory with per-CLI MCP registration.
 //! - `detect`: which agent CLIs are installed.
+//! - `child`: headless child processes, stopped as a group and capped.
 //! - `run`: one shell command in a project, output as a terminal shows it.
 //! - `telegram`: a Telegram bot that runs headless operator turns.
 
+pub mod child;
 pub mod client;
 pub mod detect;
 pub mod home;

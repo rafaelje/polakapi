@@ -265,7 +265,8 @@ pub const APPROVE_TOOL: &str = "polakapi_approve";
 /// Telegram bot's delegated jobs). Unlike the operator's turns, this Claude
 /// keeps its own tools: file edits are accepted, and anything else that
 /// needs permission goes through `APPROVE_TOOL`, which asks the user in
-/// Telegram. The user's own Claude settings and MCP servers still apply.
+/// Telegram. The user's own Claude settings still apply, but not their MCP
+/// servers: each job would start its own copy of every one of them.
 pub fn prepare_delegate(
     home: &Path,
     bin: &str,
@@ -289,6 +290,7 @@ pub fn prepare_delegate(
         "json".to_string(),
         "--mcp-config".to_string(),
         config.to_string_lossy().into_owned(),
+        "--strict-mcp-config".to_string(),
         "--permission-mode".to_string(),
         "acceptEdits".to_string(),
         "--permission-prompt-tool".to_string(),
@@ -389,6 +391,22 @@ mod tests {
         );
         assert!(dir.path().join("CLAUDE.md").is_file());
         assert!(dir.path().join("AGENTS.md").is_file());
+    }
+
+    #[test]
+    fn delegated_claude_skips_the_users_mcp_servers() {
+        let dir = tempfile::tempdir().unwrap();
+        let spec = prepare_delegate(
+            dir.path(),
+            "/opt/polakapi",
+            "/data/control.json",
+            "/code/project",
+            "telegram-1",
+            None,
+        )
+        .unwrap();
+        assert_eq!(spec.cwd, "/code/project");
+        assert!(spec.args.contains(&"--strict-mcp-config".to_string()));
     }
 
     #[test]
