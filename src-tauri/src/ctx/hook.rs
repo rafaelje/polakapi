@@ -239,7 +239,8 @@ fn record_session_start(event: &Value) {
 
 /// The CLI behind this call. A CLI started by hand in a shell pane has no
 /// `POLAKAPI_CLI`, so the event tells: Cursor tags its payloads with
-/// `cursor_version` and spells event names in camelCase, Claude Code does not.
+/// `cursor_version` and spells event names in camelCase; Codex uses Claude
+/// Code's shape, but its transcripts are `rollout-*.jsonl` files.
 fn caller_cli(event: &Value) -> String {
     match std::env::var("POLAKAPI_CLI") {
         Ok(cli) if !cli.is_empty() => cli,
@@ -253,8 +254,15 @@ pub fn infer_cli(event: &Value) -> &'static str {
         .and_then(Value::as_str)
         .and_then(|name| name.chars().next())
         .is_some_and(char::is_lowercase);
+    let codex_transcript = event
+        .get("transcript_path")
+        .and_then(Value::as_str)
+        .and_then(|path| std::path::Path::new(path).file_name()?.to_str())
+        .is_some_and(|name| name.starts_with("rollout-"));
     if camel_case || event.get("cursor_version").is_some() {
         Target::Cursor.binary()
+    } else if codex_transcript {
+        Target::Codex.binary()
     } else {
         Target::Claude.binary()
     }

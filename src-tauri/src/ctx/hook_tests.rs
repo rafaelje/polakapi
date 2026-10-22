@@ -75,6 +75,26 @@ fn a_cli_started_from_a_shell_pane_is_told_apart_by_its_events() {
 }
 
 #[test]
+fn codex_started_from_a_shell_pane_is_told_apart_by_its_transcript() {
+    let mut event = bash("git log --oneline");
+    event["transcript_path"] =
+        json!("/home/u/.codex/sessions/2026/10/21/rollout-2026-10-21T11-28-45-01a15f14.jsonl");
+    event["turn_id"] = json!("01a15f14-45ab");
+    assert_eq!(infer_cli(&event), "codex");
+    let mut codex = env(true, infer_cli(&event));
+    codex.target = Target::Codex;
+    codex.config.clis.push("codex".into());
+    assert!(decide(&event, &codex).is_ok());
+
+    let mut claude = bash("git log --oneline");
+    claude["transcript_path"] =
+        json!("/home/u/.claude/projects/-home-u-repo/0b1c2d3e-4f5a-6b7c-8d9e-0f1a2b3c4d5e.jsonl");
+    assert_eq!(infer_cli(&claude), "claude");
+    codex.cli = infer_cli(&claude).to_string();
+    assert!(decide(&claude, &codex).is_err());
+}
+
+#[test]
 fn every_way_of_doing_nothing_names_its_reason() {
     let mut outside = env(true, "claude");
     outside.in_polakapi_terminal = false;
