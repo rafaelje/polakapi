@@ -75,7 +75,8 @@ function step2(input: ReviewPromptInput): string[] {
       "deleted or renamed from); every hunk complete with its @@ header; old and new line numbers on every line; " +
       "added lines marked + on a green background, removed lines marked - on a red background, context lines neutral; " +
       "HTML-escaped monospace text that scrolls horizontally instead of wrapping. Never show hunks of another process.",
-    "Load Mermaid in every HTML that uses it so the diagrams render when the file is opened in a browser.",
+    'Write every Mermaid diagram as <pre class="mermaid">…</pre> and load Mermaid in the HTML, ' +
+      "so the diagrams render in polakapi and when the file is opened in a browser.",
     'In the <head> of each process HTML declare its Verdict exactly as <meta name="verdict" content="GO"> ' +
       `or <meta name="verdict" content="NO-GO">, and the base branch as <meta name="base" content="${base}">.`,
     `When every process is reviewed, write ${folder}/index.html summarizing every process ` +

@@ -10,7 +10,7 @@ import { mountDiffView } from "../diff/diff-view";
 import { el } from "../dom";
 import { renderProcesses } from "../review-run/processes-view";
 import { mountReviewRun, type ReviewAgent } from "../review-run/review-run";
-import { mountReportPathView } from "../review-run/report-path-view";
+import { mountReportView } from "../review-run/report-view";
 import {
   reconcileProcess,
   selectedReport,
@@ -66,7 +66,7 @@ export function mountBranchPanel(options: BranchPanelOptions): BranchPanel {
   let requestId = 0;
   let reloadDiff = false;
   const diffView = mountDiffView(diff, project.path, () => options.isVisible() && view === "files");
-  const reportView = mountReportPathView(diff);
+  const reportView = mountReportView(diff, project.path);
 
   const base = (): string | null => resolveBase(chosenBase, defaultBase);
 
@@ -176,7 +176,7 @@ export function mountBranchPanel(options: BranchPanelOptions): BranchPanel {
     const showDiff = view === "files" && file !== null && current !== null;
     const report =
       view === "processes" ? selectedReport(selectedProcess, processes, project.path) : null;
-    if (report) reportView.show(report);
+    if (report) reportView.show(report, reloadDiff);
     else diffView.show(showDiff ? branchFileTarget(file, current) : null, reloadDiff);
     reloadDiff = false;
   };

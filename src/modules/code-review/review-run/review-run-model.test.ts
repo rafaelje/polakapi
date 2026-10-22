@@ -49,7 +49,13 @@ describe("processRows", () => {
     const rows = processRows([
       process({ number: "1.1", slug: "login-form", markdown: "1.1-login-form.md" }),
       process({ number: "1.2", slug: "sync", html: "1.2-sync.html", verdict: "go" }),
-      process({ number: "2.1", slug: "cache", html: "2.1-cache.html", verdict: "no-go" }),
+      process({
+        number: "2.1",
+        slug: "cache",
+        markdown: "2.1-cache.md",
+        html: "2.1-cache.html",
+        verdict: "no-go",
+      }),
     ]);
 
     expect(rows).toEqual([
@@ -58,9 +64,16 @@ describe("processRows", () => {
         label: "1.1 login-form",
         badge: "pending",
         file: "1.1-login-form.md",
+        pseudoCode: null,
       },
-      { key: "1.2-sync", label: "1.2 sync", badge: "GO", file: "1.2-sync.html" },
-      { key: "2.1-cache", label: "2.1 cache", badge: "NO-GO", file: "2.1-cache.html" },
+      { key: "1.2-sync", label: "1.2 sync", badge: "GO", file: "1.2-sync.html", pseudoCode: null },
+      {
+        key: "2.1-cache",
+        label: "2.1 cache",
+        badge: "NO-GO",
+        file: "2.1-cache.html",
+        pseudoCode: "2.1-cache.md",
+      },
     ]);
   });
 });
@@ -115,21 +128,27 @@ describe("selectedReport", () => {
   it("points to the HTML report of a process", () => {
     expect(selectedReport("1.1-a", state, "/p")).toEqual({
       label: "1.1 a",
+      file: "1.1-a.html",
       path: "/p/docs/x/1.1-a.html",
+      pseudoCode: { file: "1.1-a.md", path: "/p/docs/x/1.1-a.md" },
     });
   });
 
   it("falls back to the markdown file while the HTML does not exist", () => {
     expect(selectedReport("1.2-b", state, "/p")).toEqual({
       label: "1.2 b",
+      file: "1.2-b.md",
       path: "/p/docs/x/1.2-b.md",
+      pseudoCode: null,
     });
   });
 
   it("points to the index", () => {
     expect(selectedReport("index", state, "/p")).toEqual({
       label: "index",
+      file: "index.html",
       path: "/p/docs/x/index.html",
+      pseudoCode: null,
     });
   });
 

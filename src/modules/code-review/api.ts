@@ -78,3 +78,7 @@ export function prepareReviewFolder(projectPath: string, clear: boolean): Promis
 export function fetchReviewProcesses(projectPath: string): Promise<ReviewProcesses> {
   return invoke<ReviewProcesses>("code_review_processes", { projectPath });
 }
+
+export function fetchReport(projectPath: string, file: string): Promise<string> {
+  return invoke<string>("code_review_read_report", { projectPath, file });
+}

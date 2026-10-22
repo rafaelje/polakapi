@@ -13,11 +13,17 @@ export interface ProcessRow {
   label: string;
   badge: VerdictBadge;
   file: string | null;
+  pseudoCode: string | null;
 }
 
-export interface ReportTarget {
-  label: string;
+export interface ReportFile {
+  file: string;
   path: string;
+}
+
+export interface ReportTarget extends ReportFile {
+  label: string;
+  pseudoCode: ReportFile | null;
 }
 
 export const INDEX_KEY = "index";
@@ -44,6 +50,7 @@ export function processRows(processes: readonly ReviewProcess[]): ProcessRow[] {
     label: `${process.number} ${process.slug}`,
     badge: BADGES[process.verdict],
     file: process.html ?? process.markdown,
+    pseudoCode: process.html ? process.markdown : null,
   }));
 }
 
@@ -62,11 +69,15 @@ export function selectedReport(
   projectPath: string,
 ): ReportTarget | null {
   if (key === null || state.kind !== "loaded") return null;
-  const target = (label: string, file: string | null): ReportTarget | null =>
-    file ? { label, path: reportPath(projectPath, state.folder, file) } : null;
-  if (key === INDEX_KEY) return target(INDEX_KEY, state.index);
+  const located = (file: string): ReportFile => ({
+    file,
+    path: reportPath(projectPath, state.folder, file),
+  });
+  const target = (label: string, file: string | null, pseudoCode: string | null) =>
+    file ? { label, ...located(file), pseudoCode: pseudoCode ? located(pseudoCode) : null } : null;
+  if (key === INDEX_KEY) return target(INDEX_KEY, state.index, null);
   const row = processRows(state.processes).find((entry) => entry.key === key);
-  return row ? target(row.label, row.file) : null;
+  return row ? target(row.label, row.file, row.pseudoCode) : null;
 }
 
 export function reconcileProcess(key: string | null, state: ProcessesState): string | null {

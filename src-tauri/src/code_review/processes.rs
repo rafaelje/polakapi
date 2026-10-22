@@ -30,7 +30,7 @@ pub struct ReviewProcesses {
     pub index: Option<String>,
 }
 
-const INDEX_FILE: &str = "index.html";
+pub(super) const INDEX_FILE: &str = "index.html";
 
 enum ProcessFile {
     Markdown,
@@ -104,6 +104,10 @@ fn list_processes(dir: &Path) -> Result<Vec<ReviewProcess>, String> {
             process
         })
         .collect())
+}
+
+pub(super) fn is_process_file(file_name: &str) -> bool {
+    parse_process_name(file_name).is_some()
 }
 
 fn parse_process_name(file_name: &str) -> Option<ProcessName> {
