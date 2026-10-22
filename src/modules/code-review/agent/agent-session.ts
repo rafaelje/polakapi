@@ -1,4 +1,4 @@
-import { defaultModelFor, isAgentCli, type AgentCli } from "../../../shared/agent-cli";
+import { isAgentCli, type AgentCli } from "../../../shared/agent-cli";
 import { resolveProfile } from "../../terminal/cli-registry";
 
 export interface AgentSelection {
@@ -19,7 +19,7 @@ export interface AgentSelectionChange {
 }
 
 export function initialAgentSelection(): AgentSelection {
-  return { cli: "claude", model: defaultModelFor("claude") };
+  return { cli: "claude", model: "" };
 }
 
 export function changeAgentSelection(
@@ -28,7 +28,7 @@ export function changeAgentSelection(
 ): AgentSelection {
   if (change.cli !== undefined) {
     if (!isAgentCli(change.cli) || change.cli === current.cli) return current;
-    return { cli: change.cli, model: defaultModelFor(change.cli) };
+    return { cli: change.cli, model: "" };
   }
   if (change.model !== undefined) {
     const model = change.model.trim();

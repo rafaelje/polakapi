@@ -3,6 +3,7 @@
 
 mod adv_review;
 mod agent_context;
+mod agent_models;
 mod agent_sessions;
 mod app_menu;
 mod awake;
@@ -51,13 +52,14 @@ use crate::adv_review::{
 use crate::agent_context::{
     agent_context_detail, agent_context_entry, agent_context_list, agent_context_search,
 };
+use crate::agent_models::agent_cli_models;
 use crate::agent_sessions::agent_list_sessions;
 use crate::code_review::{
     code_review_branch, code_review_changes, code_review_commit, code_review_default_base,
     code_review_discard, code_review_file_contents, code_review_prepare_review,
-    code_review_processes, code_review_pull, code_review_refs, code_review_stage,
-    code_review_stage_all, code_review_switch_branch, code_review_unstage, code_review_watch_start,
-    CodeReviewWatchers,
+    code_review_processes, code_review_pull, code_review_read_report, code_review_refs,
+    code_review_stage, code_review_stage_all, code_review_switch_branch, code_review_unstage,
+    code_review_watch_start, CodeReviewWatchers,
 };
 use crate::commands::{
     app_exit, create_project_folder, fs_validate_path, open_file_in_editor, open_in_editor,
@@ -219,6 +221,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             agent_list_sessions,
+            agent_cli_models,
             agent_context_list,
             agent_context_detail,
             agent_context_entry,
@@ -303,6 +306,7 @@ pub fn run() {
             code_review_branch,
             code_review_prepare_review,
             code_review_processes,
+            code_review_read_report,
             adv_create_run,
             adv_read_run_file,
             adv_write_run_file,

@@ -1,6 +1,7 @@
 import type { AgentPanel } from "../agent/agent-panel";
 import { prepareReviewFolder } from "../api";
 import { el } from "../dom";
+import { mountModelSelect } from "../model-select";
 import { buildReviewPrompt, type ReviewStep } from "./review-prompts";
 import {
   clearsReviewFolder,
@@ -32,21 +33,15 @@ export function mountReviewRun(options: ReviewRunOptions): ReviewRun {
   const { agent } = options;
   const element = el("div", "code-review-run");
   const buttons = el("div", "code-review-run-buttons");
-  const modelInput = el("input", "code-review-run-model");
-  modelInput.type = "text";
-  modelInput.spellcheck = false;
-  modelInput.title = "Reviewers' model (defaults to the agent terminal's model)";
-  modelInput.setAttribute("aria-label", "Reviewers' model");
+  const modelSelect = mountModelSelect(
+    "code-review-run-model",
+    "Reviewers' model",
+    "Reviewers: same as the agent",
+  );
   const status = el("p", "code-review-run-status code-review-muted");
   status.setAttribute("role", "status");
   let override: string | null = null;
   let busy = false;
-
-  const syncModel = (): void => {
-    const terminalModel = agent.selection().model;
-    modelInput.placeholder = terminalModel || "reviewers' model";
-    modelInput.value = reviewersModelValue(override, terminalModel);
-  };
 
   const setStatus = (text: string, isError = false): void => {
     status.textContent = text;
@@ -89,18 +84,19 @@ export function mountReviewRun(options: ReviewRunOptions): ReviewRun {
     });
     buttons.append(button);
   }
-  modelInput.addEventListener("change", () => {
-    override = reviewersModelOverride(modelInput.value, agent.selection().model);
-    syncModel();
+  modelSelect.element.addEventListener("change", () => {
+    override = reviewersModelOverride(modelSelect.element.value, agent.selection().model);
+    if (override === null) modelSelect.element.value = "";
   });
   let cli = agent.selection().cli;
   agent.onSelectionChange((selection) => {
-    if (selection.cli !== cli) override = null;
+    if (selection.cli === cli) return;
+    override = null;
     cli = selection.cli;
-    syncModel();
+    modelSelect.load(cli, "");
   });
-  syncModel();
-  buttons.append(modelInput);
+  modelSelect.load(cli, "");
+  buttons.append(modelSelect.element);
   element.append(buttons, status);
   return { element };
 }

@@ -8,16 +8,13 @@ import {
 } from "./agent-session";
 
 describe("agent selection", () => {
-  it("starts on claude with its default model", () => {
-    expect(initialAgentSelection()).toEqual({ cli: "claude", model: "claude-opus-4-7" });
+  it("starts on claude with the CLI's own default model", () => {
+    expect(initialAgentSelection()).toEqual({ cli: "claude", model: "" });
   });
 
-  it("resets the model to the new CLI's default when the CLI changes", () => {
+  it("resets the model to the new CLI's own default when the CLI changes", () => {
     const current = { cli: "claude", model: "claude-sonnet-4-6" } as const;
-    expect(changeAgentSelection(current, { cli: "codex" })).toEqual({
-      cli: "codex",
-      model: "gpt-5.5",
-    });
+    expect(changeAgentSelection(current, { cli: "codex" })).toEqual({ cli: "codex", model: "" });
   });
 
   it("keeps the model when the same CLI is picked again", () => {

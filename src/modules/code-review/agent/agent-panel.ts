@@ -4,6 +4,7 @@ import { bracketedPaste } from "../../agents-library/compose";
 import { onPtyData, onPtyExit, ptyWrite } from "../../terminal/pty-client";
 import { TerminalPane } from "../../terminal/terminal-pane";
 import { el } from "../dom";
+import { mountModelSelect, type ModelSelect } from "../model-select";
 import {
   agentSpawnSpec,
   changeAgentSelection,
@@ -26,7 +27,7 @@ const SUBMIT_DELAY_MS = 150;
 interface AgentPanelDom {
   toggle: HTMLButtonElement;
   cliSelect: HTMLSelectElement;
-  modelInput: HTMLInputElement;
+  modelSelect: ModelSelect;
   restartButton: HTMLButtonElement;
   terminalHost: HTMLElement;
 }
@@ -43,22 +44,18 @@ function renderPanel(host: HTMLElement, selection: AgentSelection): AgentPanelDo
   cliSelect.setAttribute("aria-label", "Agent CLI");
   for (const cli of AGENT_CLIS) cliSelect.append(new Option(cli, cli));
   cliSelect.value = selection.cli;
-  const modelInput = el("input", "code-review-agent-model");
-  modelInput.type = "text";
-  modelInput.spellcheck = false;
-  modelInput.placeholder = "model";
-  modelInput.setAttribute("aria-label", "Agent model");
-  modelInput.value = selection.model;
+  const modelSelect = mountModelSelect("code-review-agent-model", "Agent model", "CLI default");
+  modelSelect.load(selection.cli, selection.model);
   const restartButton = el("button", "code-review-agent-restart");
   restartButton.type = "button";
   restartButton.textContent = "↻";
   restartButton.title = "Restart the agent terminal";
 
   header.append(title, toggle);
-  controls.append(cliSelect, modelInput, restartButton);
+  controls.append(cliSelect, modelSelect.element, restartButton);
   const terminalHost = el("div", "code-review-agent-terminal");
   host.replaceChildren(header, controls, terminalHost);
-  return { toggle, cliSelect, modelInput, restartButton, terminalHost };
+  return { toggle, cliSelect, modelSelect, restartButton, terminalHost };
 }
 
 export function mountAgentPanel(host: HTMLElement, projectPath: string): AgentPanel {
@@ -103,8 +100,8 @@ export function mountAgentPanel(host: HTMLElement, projectPath: string): AgentPa
     const previous = selection;
     selection = changeAgentSelection(selection, change);
     if (selection !== previous) selectionListeners.forEach((listener) => listener(selection));
+    if (selection.cli !== previous.cli) dom.modelSelect.load(selection.cli, selection.model);
     dom.cliSelect.value = selection.cli;
-    dom.modelInput.value = selection.model;
     restart(false);
   };
 
@@ -120,7 +117,9 @@ export function mountAgentPanel(host: HTMLElement, projectPath: string): AgentPa
 
   dom.toggle.addEventListener("click", () => setCollapsed(!collapsed));
   dom.cliSelect.addEventListener("change", () => apply({ cli: dom.cliSelect.value }));
-  dom.modelInput.addEventListener("change", () => apply({ model: dom.modelInput.value }));
+  dom.modelSelect.element.addEventListener("change", () =>
+    apply({ model: dom.modelSelect.element.value }),
+  );
   dom.restartButton.addEventListener("click", () => restart(true));
   const resizeObserver = new ResizeObserver(() => requestAnimationFrame(fitLive));
   resizeObserver.observe(dom.terminalHost);
