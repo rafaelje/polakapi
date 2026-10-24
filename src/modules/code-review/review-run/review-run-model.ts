@@ -80,9 +80,15 @@ export function selectedReport(
   return row ? target(row.label, row.file, row.pseudoCode) : null;
 }
 
+export function defaultProcess(state: ProcessesState): string | null {
+  if (state.kind !== "loaded") return null;
+  if (state.index) return INDEX_KEY;
+  return processRows(state.processes).find((row) => row.file !== null)?.key ?? null;
+}
+
 export function reconcileProcess(key: string | null, state: ProcessesState): string | null {
-  if (key === null || state.kind !== "loaded") return key;
-  return selectedReport(key, state, "") ? key : null;
+  if (state.kind !== "loaded") return key;
+  return key !== null && selectedReport(key, state, "") ? key : defaultProcess(state);
 }
 
 export function reportPath(projectPath: string, folder: string, file: string): string {

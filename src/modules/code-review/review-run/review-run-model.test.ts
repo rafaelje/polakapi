@@ -171,10 +171,18 @@ describe("reconcileProcess", () => {
     expect(reconcileProcess("index", state)).toBe("index");
   });
 
-  it("clears a process that disappeared", () => {
-    expect(reconcileProcess("1.2-b", state)).toBeNull();
+  it("opens the index when nothing is selected or the selection disappeared", () => {
+    expect(reconcileProcess(null, state)).toBe("index");
+    expect(reconcileProcess("1.2-b", state)).toBe("index");
+  });
+
+  it("opens the first process with a report while the index does not exist", () => {
+    const withoutIndex = loaded([
+      process({ number: "1.1", slug: "a" }),
+      process({ number: "1.2", slug: "b", markdown: "1.2-b.md" }),
+    ]);
+    expect(reconcileProcess(null, withoutIndex)).toBe("1.2-b");
     expect(reconcileProcess("index", loaded([]))).toBeNull();
-    expect(reconcileProcess(null, state)).toBeNull();
   });
 
   it("keeps the selection while the list is loading or failing", () => {
