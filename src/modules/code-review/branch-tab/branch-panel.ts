@@ -166,6 +166,7 @@ export function mountBranchPanel(options: BranchPanelOptions): BranchPanel {
 
   const render = (): void => {
     renderPicker();
+    reviewRun.update();
     renderToggle();
     placeBody(renderBody());
     list

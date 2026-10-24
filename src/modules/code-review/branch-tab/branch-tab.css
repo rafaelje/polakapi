@@ -40,6 +40,11 @@ select.code-review-base[hidden] {
   pointer-events: none;
 }
 
+.code-review-run .code-review-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 .code-review-run-status {
   margin: 0;
   font-size: 11px;

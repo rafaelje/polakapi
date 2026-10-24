@@ -21,7 +21,10 @@ export interface ReviewRunOptions {
 
 export interface ReviewRun {
   element: HTMLElement;
+  update(): void;
 }
+
+const NO_BASE = "Select the base branch first.";
 
 const STEPS: ReadonlyArray<[ReviewStep, string, string]> = [
   ["step1", "Step 1", "Split the branch into Processes as pseudo-code"],
@@ -40,8 +43,17 @@ export function mountReviewRun(options: ReviewRunOptions): ReviewRun {
   );
   const status = el("p", "code-review-run-status code-review-muted");
   status.setAttribute("role", "status");
+  const stepButtons: Array<[HTMLButtonElement, string]> = [];
   let override: string | null = null;
   let busy = false;
+
+  const update = (): void => {
+    const hasBase = options.baseBranch() !== null;
+    for (const [button, title] of stepButtons) {
+      button.disabled = busy || !hasBase;
+      button.title = hasBase ? title : NO_BASE;
+    }
+  };
 
   const setStatus = (text: string, isError = false): void => {
     status.textContent = text;
@@ -51,11 +63,12 @@ export function mountReviewRun(options: ReviewRunOptions): ReviewRun {
   const run = async (step: ReviewStep): Promise<void> => {
     const base = options.baseBranch();
     if (!base) {
-      setStatus("Select the base branch first.", true);
+      setStatus(NO_BASE, true);
       return;
     }
     busy = true;
     element.classList.add("is-busy");
+    update();
     try {
       const folder = await prepareReviewFolder(options.projectPath, clearsReviewFolder(step));
       const { cli, model } = agent.selection();
@@ -72,6 +85,7 @@ export function mountReviewRun(options: ReviewRunOptions): ReviewRun {
     } finally {
       busy = false;
       element.classList.remove("is-busy");
+      update();
     }
   };
 
@@ -82,6 +96,7 @@ export function mountReviewRun(options: ReviewRunOptions): ReviewRun {
     button.addEventListener("click", () => {
       if (!busy) void run(step);
     });
+    stepButtons.push([button, title]);
     buttons.append(button);
   }
   modelSelect.element.addEventListener("change", () => {
@@ -98,5 +113,6 @@ export function mountReviewRun(options: ReviewRunOptions): ReviewRun {
   modelSelect.load(cli, "");
   buttons.append(modelSelect.element);
   element.append(buttons, status);
-  return { element };
+  update();
+  return { element, update };
 }
