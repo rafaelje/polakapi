@@ -20,6 +20,9 @@ pub struct ProcessStats {
     pub cpu_percent: f32,
     pub uptime_secs: u64,
     pub pid: Option<u32>,
+    /// Whether the pane's root process has children, i.e. a shell is running something.
+    #[serde(skip)]
+    pub busy: bool,
 }
 
 /// Kept across calls so sysinfo can compute CPU as a delta between two samples.
@@ -65,6 +68,7 @@ pub fn sample(session_pids: &[(String, u32)]) -> HashMap<String, ProcessStats> {
                     .map(|start| now.saturating_sub(*start))
                     .unwrap_or(0),
                 pid: Some(*pid),
+                busy: children.get(pid).is_some_and(|kids| !kids.is_empty()),
             };
             (id.clone(), stats)
         })

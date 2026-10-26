@@ -13,6 +13,7 @@ use tauri::State;
 use crate::db::Db;
 use crate::platform_command;
 use crate::pty::PtyStore;
+use crate::pty_activity::AgentPane;
 
 pub use identity::ContextIdentity;
 pub use process::ProcessStats;
@@ -27,8 +28,9 @@ pub use transcript::{ContextBreakdown, ContextEntry, SearchHit};
 // entries; for Codex only the token totals are read, because its rollout layout
 // has not been verified against a real file.
 //
-// Only panes running an allowlisted AI CLI appear here — `PtyStore::agent_panes`
-// filters shells out at the source, so the window never has to guess.
+// Only panes running an allowlisted AI CLI appear here: the ones polakapi
+// launched as that CLI, and shell panes where a hook recorded a CLI session and
+// something is still running.
 
 const DEFAULT_CONTEXT_LIMIT: u64 = 200_000;
 /// Codex records the cwd inside the rollout, so attaching a pane to one means
@@ -71,8 +73,8 @@ pub fn agent_context_list(
     db: State<'_, StdMutex<Db>>,
 ) -> Result<Vec<AgentSummary>, String> {
     let stats = process::sample(&store.session_pids());
-    let mut out: Vec<AgentSummary> = store
-        .agent_panes()
+    let busy = |pty_id: &str| stats.get(pty_id).is_some_and(|stats| stats.busy);
+    let mut out: Vec<AgentSummary> = running_agents(&store, &db, busy)
         .into_iter()
         .map(|pane| {
             let pane_stats = stats.get(&pane.pty_id).copied().unwrap_or_default();
@@ -95,11 +97,7 @@ pub fn agent_context_detail(
     db: State<'_, StdMutex<Db>>,
     pty_id: String,
 ) -> Result<ContextDetail, String> {
-    let pane = store
-        .agent_panes()
-        .into_iter()
-        .find(|pane| pane.pty_id == pty_id)
-        .ok_or_else(|| format!("no running agent for pane {pty_id}"))?;
+    let pane = find_agent(&store, &db, &pty_id)?;
     let stats = process::sample(&store.session_pids())
         .get(&pane.pty_id)
         .copied()
@@ -178,11 +176,7 @@ pub fn agent_context_search(
     pattern: String,
     identity: ContextIdentity,
 ) -> Result<Vec<SearchHit>, String> {
-    let pane = store
-        .agent_panes()
-        .into_iter()
-        .find(|pane| pane.pty_id == pty_id)
-        .ok_or_else(|| format!("no running agent for pane {pty_id}"))?;
+    let pane = find_agent(&store, &db, &pty_id)?;
     identity::read_bound(
         &identity,
         || context_identity(&pane.pty_id, pane.cwd.as_deref(), &db),
@@ -202,16 +196,49 @@ pub fn agent_context_entry(
     entry_id: usize,
     identity: ContextIdentity,
 ) -> Result<Option<String>, String> {
-    let pane = store
-        .agent_panes()
-        .into_iter()
-        .find(|pane| pane.pty_id == pty_id)
-        .ok_or_else(|| format!("no running agent for pane {pty_id}"))?;
+    let pane = find_agent(&store, &db, &pty_id)?;
     identity::read_bound(
         &identity,
         || context_identity(&pane.pty_id, pane.cwd.as_deref(), &db),
         |path| Ok(path.and_then(|path| transcript::entry_body(path, entry_id))),
     )
+}
+
+/// Panes running an AI CLI. A shell pane counts while `busy` says something
+/// runs in it and a hook recorded which CLI started there last.
+fn running_agents(
+    store: &PtyStore,
+    db: &State<'_, StdMutex<Db>>,
+    busy: impl Fn(&str) -> bool,
+) -> Vec<AgentPane> {
+    let mut panes = store.agent_panes();
+    let Ok(db) = db.lock() else {
+        return panes;
+    };
+    for (pty_id, cwd) in store.shell_panes() {
+        if !busy(&pty_id) {
+            continue;
+        }
+        if let Ok(Some((cli, session_cwd))) = db.agent_for_pty(&pty_id) {
+            panes.push(AgentPane {
+                pty_id,
+                cli,
+                cwd: session_cwd.or(cwd),
+            });
+        }
+    }
+    panes
+}
+
+fn find_agent(
+    store: &PtyStore,
+    db: &State<'_, StdMutex<Db>>,
+    pty_id: &str,
+) -> Result<AgentPane, String> {
+    running_agents(store, db, |_| true)
+        .into_iter()
+        .find(|pane| pane.pty_id == pty_id)
+        .ok_or_else(|| format!("no running agent for pane {pty_id}"))
 }
 
 fn summarize(

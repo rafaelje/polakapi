@@ -69,6 +69,36 @@ mod tests {
     }
 
     #[test]
+    fn a_hook_names_the_cli_of_a_shell_pane() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("polakapi.db");
+        record_start(&path, "pty-1", "", "first", Some("/shell")).unwrap();
+        assert_eq!(
+            Db::open(&path).unwrap().agent_for_pty("pty-1").unwrap(),
+            None
+        );
+
+        record_start(&path, "pty-1", "codex", "first", Some("/repo")).unwrap();
+        assert_eq!(
+            Db::open(&path).unwrap().agent_for_pty("pty-1").unwrap(),
+            Some(("codex".to_string(), Some("/repo".to_string())))
+        );
+    }
+
+    #[test]
+    fn another_cli_in_the_same_shell_is_its_own_session() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("polakapi.db");
+        record_start(&path, "pty-1", "claude", "one", Some("/a")).unwrap();
+        record_start(&path, "pty-1", "codex", "two", Some("/b")).unwrap();
+        assert_eq!(
+            Db::open(&path).unwrap().agent_for_pty("pty-1").unwrap(),
+            Some(("codex".to_string(), Some("/b".to_string())))
+        );
+        assert_eq!(current(&path, "pty-1").as_deref(), Some("two"));
+    }
+
+    #[test]
     fn looking_up_never_creates_the_database() {
         let dir = tempfile::tempdir().unwrap();
         let db = dir.path().join("polakapi.db");

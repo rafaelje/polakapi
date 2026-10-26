@@ -301,7 +301,10 @@ fn chrono_like(secs: u64) -> (u64, u64, u64, u64, u64, u64) {
 fn translate_cli_hook(v: &serde_json::Value) -> Result<CaptureEvent, String> {
     let pty_id =
         std::env::var("POLAKAPI_PTY_ID").map_err(|_| "POLAKAPI_PTY_ID not set".to_string())?;
-    let cli = std::env::var("POLAKAPI_CLI").unwrap_or_default();
+    let cli = match std::env::var("POLAKAPI_CLI") {
+        Ok(cli) if !cli.is_empty() => cli,
+        _ => crate::ctx::hook::infer_cli(v).to_string(),
+    };
     let event = v
         .get("hook_event_name")
         .and_then(|s| s.as_str())

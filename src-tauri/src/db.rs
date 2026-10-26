@@ -114,24 +114,28 @@ impl Db {
         cwd: Option<&str>,
     ) -> Result<i64, String> {
         let now = crate::loop_prompts::epoch_ms_now();
-        let existing: Option<i64> = self
+        let existing: Option<(i64, String)> = self
             .conn
             .query_row(
-                "SELECT id FROM sessions WHERE pty_id = ?1 ORDER BY id DESC LIMIT 1",
+                "SELECT id, cli FROM sessions WHERE pty_id = ?1 ORDER BY id DESC LIMIT 1",
                 params![pty_id],
-                |r| r.get(0),
+                |r| Ok((r.get(0)?, r.get(1)?)),
             )
             .optional()
             .map_err(|e| format!("lookup session: {e}"))?;
-        if let Some(id) = existing {
-            if cli_session_id.is_some() || cwd.is_some() {
+        // A shell pane can run one CLI after another; each is its own session.
+        let existing = existing
+            .filter(|(_, known)| known.is_empty() || cli.is_empty() || known.as_str() == cli);
+        if let Some((id, _)) = existing {
+            if !cli.is_empty() || cli_session_id.is_some() || cwd.is_some() {
                 self.conn
                     .execute(
-                        "UPDATE sessions SET cli_session_id = COALESCE(?1, cli_session_id),
-                                               cwd = COALESCE(?2, cwd),
+                        "UPDATE sessions SET cli = COALESCE(NULLIF(cli, ''), ?1),
+                                               cli_session_id = COALESCE(?2, cli_session_id),
+                                               cwd = COALESCE(?3, cwd),
                                                status = 'active'
-                         WHERE id = ?3",
-                        params![cli_session_id, cwd, id],
+                         WHERE id = ?4",
+                        params![cli, cli_session_id, cwd, id],
                     )
                     .map_err(|e| format!("update session: {e}"))?;
             }
@@ -238,6 +242,20 @@ impl Db {
     /// Newest `cli_session_id` the capture hooks recorded for a PTY, used to
     /// locate that pane's transcript on disk. `None` when the hooks are not
     /// installed, which is why callers keep a filesystem fallback.
+    /// The CLI and cwd of the latest session a hook recorded in terminal
+    /// `pty_id`, when it named the CLI.
+    pub fn agent_for_pty(&self, pty_id: &str) -> Result<Option<(String, Option<String>)>, String> {
+        self.conn
+            .query_row(
+                "SELECT cli, cwd FROM sessions WHERE pty_id = ?1 ORDER BY id DESC LIMIT 1",
+                params![pty_id],
+                |r| Ok((r.get::<_, String>(0)?, r.get::<_, Option<String>>(1)?)),
+            )
+            .optional()
+            .map(|row| row.filter(|(cli, _)| !cli.is_empty()))
+            .map_err(|e| format!("agent for pty {pty_id}: {e}"))
+    }
+
     pub fn cli_session_id_for_pty(&self, pty_id: &str) -> Result<Option<String>, String> {
         let row = self.conn.query_row(
             "SELECT cli_session_id FROM sessions
