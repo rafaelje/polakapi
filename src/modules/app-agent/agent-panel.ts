@@ -3,7 +3,7 @@ import { stringifyError } from "../../shared/errors";
 import { ptyKill } from "../terminal/pty-client";
 import { TerminalPane } from "../terminal/terminal-pane";
 import { attachTearOffDrag } from "./tear-off-drag";
-import { mountVoiceControl } from "./voice-control";
+import { mountVoiceControl, type VoiceAgent } from "./voice-control";
 import type { AgentHandoff, AgentLaunchSpec, DetectedCli } from "./types";
 
 // The bottom panel's "agent" tab: pick an installed CLI, run it in polakapi's
@@ -21,6 +21,8 @@ export interface AgentPanelOptions {
   onSessionChange?: (handoff: AgentHandoff) => void;
   /** Main window only: moving the agent to its own window and back. */
   detach?: AgentDetachActions;
+  /** Shows the agent tab, for the voice shortcut. */
+  reveal?: () => void;
 }
 
 export interface AgentDetachActions {
@@ -43,6 +45,12 @@ export interface AgentPanelHandle {
   setDetached(detached: boolean): void;
   dispose(): Promise<void>;
 }
+
+const READY_QUIET_MS = 1500;
+const READY_TIMEOUT_MS = 30_000;
+const READY_POLL_MS = 250;
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export function mountAgentPanel(host: HTMLElement, opts: AgentPanelOptions): AgentPanelHandle {
   const bar = document.createElement("div");
@@ -114,6 +122,7 @@ export function mountAgentPanel(host: HTMLElement, opts: AgentPanelOptions): Age
   let starting: Promise<void> | null = null;
   let disposed = false;
   let selectedCli = opts.initialCli ?? "";
+  let outputAt = 0;
 
   const setStatus = (text: string, kind: "" | "error" = ""): void => {
     status.textContent = text;
@@ -302,11 +311,44 @@ export function mountAgentPanel(host: HTMLElement, opts: AgentPanelOptions): Age
   startBtn.addEventListener("click", onStart);
   stopBtn.addEventListener("click", onStop);
   select.addEventListener("change", onSelect);
+  const voiceAgent = (): VoiceAgent => ({
+    cli: selectedCli,
+    ptyId: (!exited && pane?.ptyId) || null,
+  });
+
+  // A CLI that just started ignores what is typed before its prompt is up, and
+  // the prompt being up shows as its startup output going quiet.
+  const startForVoice = async (): Promise<VoiceAgent> => {
+    await detect();
+    const since = Date.now();
+    await start();
+    while (voiceAgent().ptyId && Date.now() - since < READY_TIMEOUT_MS) {
+      if (outputAt > since && Date.now() - outputAt >= READY_QUIET_MS) break;
+      await sleep(READY_POLL_MS);
+    }
+    return voiceAgent();
+  };
+
   const voice = mountVoiceControl({
     after: stopBtn,
     log: voiceLog,
-    agent: () => ({ cli: selectedCli, ptyId: (!exited && pane?.ptyId) || null }),
+    agent: voiceAgent,
+    startAgent: startForVoice,
+    available: () => !bar.hidden,
+    reveal: opts.reveal,
   });
+
+  const refit = (): void => {
+    if (disposed || !pane || exited) return;
+    pane.fit();
+  };
+  const resizeObserver =
+    typeof ResizeObserver === "undefined"
+      ? null
+      : new ResizeObserver(() => {
+          if (opts.isVisible()) refit();
+        });
+  resizeObserver?.observe(paneHost);
 
   return {
     activate: () => {
@@ -317,12 +359,10 @@ export function mountAgentPanel(host: HTMLElement, opts: AgentPanelOptions): Age
         pane.focus();
       });
     },
-    refit: () => {
-      if (disposed || !pane || exited) return;
-      pane.fit();
-    },
+    refit,
     handlePtyData: (id, data, offset) => {
       if (!pane || pane.ptyId !== id) return false;
+      outputAt = Date.now();
       pane.write(data, offset);
       return true;
     },
@@ -355,6 +395,7 @@ export function mountAgentPanel(host: HTMLElement, opts: AgentPanelOptions): Age
       stopBtn.removeEventListener("click", onStop);
       select.removeEventListener("change", onSelect);
       voice.dispose();
+      resizeObserver?.disconnect();
       await teardownPane();
     },
   };

@@ -55,7 +55,6 @@ async function start(): Promise<void> {
   ]);
   await panel.adopt(handoff);
   panel.activate();
-  new ResizeObserver(() => panel.refit()).observe(host);
 }
 
 void start().catch((error: unknown) => {

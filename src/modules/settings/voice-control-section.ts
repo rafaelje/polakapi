@@ -62,7 +62,7 @@ export async function mountVoiceControlSection(
   settingsRow(
     group,
     "Voice control",
-    "Adds a Talk button to the agent tab. What you say is recorded with ffmpeg and transcribed on this computer with whisper.cpp; the audio never leaves this machine.",
+    "Adds a Talk button to the agent tab, also on Ctrl+Shift+K (⌘⇧K on macOS) while polakapi has focus. What you say is recorded with ffmpeg and transcribed on this computer with whisper.cpp; the audio never leaves this machine.",
   ).append(check, enabled);
 
   const target = settingsSelect(
@@ -76,7 +76,7 @@ export async function mountVoiceControlSection(
   settingsRow(
     group,
     "Send dictation to",
-    "A headless turn runs the agent CLI without a terminal, with polakapi's tools, and keeps the conversation until you start a new one. The running agent gets the text as if you typed it; start it first.",
+    "A headless turn runs the agent CLI without a terminal, with polakapi's tools, and keeps the conversation until you start a new one. The selected agent gets the text as if you typed it, and is started first when it is not running.",
   ).append(target);
 
   const replies = settingsSelect(

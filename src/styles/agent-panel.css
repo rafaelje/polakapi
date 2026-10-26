@@ -134,9 +134,10 @@
 
 .agent-voice-log {
   flex: 0 0 auto;
-  max-height: 40%;
-  overflow: auto;
-  padding: 6px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 2px 10px 4px;
   border-bottom: 1px solid var(--border);
   background: var(--panel);
   font:
@@ -149,23 +150,36 @@
 .agent-voice-log[hidden],
 .agent-voice-log.is-detached,
 .agent-voice-answer[hidden],
-.agent-voice-actions [hidden] {
+.agent-voice-row [hidden] {
   display: none;
 }
 
-.agent-voice-heard {
-  margin: 0 0 4px;
-  opacity: 0.75;
+.agent-voice-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
 }
 
-.agent-voice-answer {
-  white-space: pre-wrap;
+.agent-voice-heard {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  opacity: 0.75;
   user-select: text;
 }
 
-.agent-voice-actions {
-  display: flex;
-  gap: 6px;
-  justify-content: flex-end;
-  margin-top: 6px;
+.agent-voice-close {
+  flex: 0 0 auto;
+  padding: 0 6px;
+}
+
+.agent-voice-answer {
+  max-height: min(30vh, 10rem);
+  overflow: auto;
+  white-space: pre-wrap;
+  user-select: text;
 }

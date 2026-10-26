@@ -64,6 +64,7 @@ export function mountBottomPanel(opts: BottomPanelOptions = {}): BottomPanelHand
     initialCli: opts.initialAgentCli,
     onCliChange: opts.onAgentCliChange,
     detach: agentWindow.actions,
+    reveal: () => setActiveTab("agent"),
   });
   agentWindow.bind(agent);
   const agentTabButton = tabButtons.find((btn) => btn.dataset.tab === "agent");

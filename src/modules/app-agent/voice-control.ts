@@ -1,13 +1,15 @@
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { invoke } from "../../shared/tauri/invoke";
 import { stringifyError } from "../../shared/errors";
+import { isMacPlatform, type ShortcutKeyEvent } from "../../shared/keyboard/shortcuts";
 import { bracketedPaste } from "../agents-library/compose";
 import { ptyWrite } from "../terminal/pty-client";
 
 // The agent tab's microphone: records a dictation, transcribes it on this
 // computer and either asks a headless operator turn or types it into the
-// running agent, depending on Settings → Voice control. Answers can be read
-// aloud. The Rust side (voice_control.rs) owns every process.
+// selected agent, starting it first when it is not running, depending on
+// Settings → Voice control. Answers can be read aloud. The Rust side
+// (voice_control.rs) owns every process.
 
 export const VOICE_CONFIG_EVENT = "telegram-config";
 const CANCELLED = "cancelled";
@@ -30,6 +32,12 @@ export interface VoiceControlOptions {
   /** Placed between the bar and the terminal. */
   log: HTMLElement;
   agent: () => VoiceAgent;
+  /** Starts the selected agent and resolves once its CLI waits for input. */
+  startAgent: () => Promise<VoiceAgent>;
+  /** False while the shortcut belongs to another window, e.g. a detached agent. */
+  available: () => boolean;
+  /** Brings the agent tab into view when the shortcut is pressed. */
+  reveal?: () => void;
 }
 
 export interface VoiceControlHandle {
@@ -37,6 +45,11 @@ export interface VoiceControlHandle {
 }
 
 type Phase = "idle" | "recording" | "busy";
+
+export function isVoiceShortcut(event: ShortcutKeyEvent, isMac: boolean): boolean {
+  const primary = isMac ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey;
+  return primary && event.shiftKey && !event.altKey && event.key.toLowerCase() === "k";
+}
 
 export function dictationPrompt(text: string): string {
   return `[voice] ${text.trim()}`;
@@ -48,18 +61,18 @@ export function mountVoiceControl(opts: VoiceControlOptions): VoiceControlHandle
   micBtn.className = "agent-panel-btn agent-panel-mic";
   micBtn.dataset.noDrag = "";
   micBtn.hidden = true;
+  const isMac = isMacPlatform();
+  const shortcut = isMac ? "⌘⇧K" : "Ctrl+Shift+K";
   const voiceStatus = document.createElement("span");
   voiceStatus.className = "agent-voice-status";
   opts.after.after(micBtn, voiceStatus);
 
   opts.log.className = "agent-voice-log";
   opts.log.hidden = true;
+  const row = document.createElement("div");
+  row.className = "agent-voice-row";
   const heard = document.createElement("p");
   heard.className = "agent-voice-heard";
-  const answer = document.createElement("div");
-  answer.className = "agent-voice-answer";
-  const actions = document.createElement("div");
-  actions.className = "agent-voice-actions";
   const forgetBtn = document.createElement("button");
   forgetBtn.type = "button";
   forgetBtn.className = "agent-panel-btn";
@@ -67,10 +80,14 @@ export function mountVoiceControl(opts: VoiceControlOptions): VoiceControlHandle
   forgetBtn.title = "The next dictation starts a fresh headless conversation";
   const closeBtn = document.createElement("button");
   closeBtn.type = "button";
-  closeBtn.className = "agent-panel-btn";
-  closeBtn.textContent = "Close";
-  actions.append(forgetBtn, closeBtn);
-  opts.log.append(heard, answer, actions);
+  closeBtn.className = "agent-panel-btn agent-voice-close";
+  closeBtn.textContent = "×";
+  closeBtn.title = "Hide";
+  closeBtn.setAttribute("aria-label", "Hide the dictation");
+  row.append(heard, forgetBtn, closeBtn);
+  const answer = document.createElement("div");
+  answer.className = "agent-voice-answer";
+  opts.log.append(row, answer);
 
   let settings: VoiceSettings | null = null;
   let phase: Phase = "idle";
@@ -87,13 +104,13 @@ export function mountVoiceControl(opts: VoiceControlOptions): VoiceControlHandle
     micBtn.classList.toggle("is-recording", phase === "recording");
     if (phase === "recording") {
       micBtn.textContent = "■ Send";
-      micBtn.title = "Stop recording and send what you said";
+      micBtn.title = `Stop recording and send what you said (${shortcut})`;
     } else if (phase === "busy") {
       micBtn.textContent = "Stop";
-      micBtn.title = "Stop transcribing, thinking or speaking";
+      micBtn.title = `Stop transcribing, thinking or speaking (${shortcut})`;
     } else {
       micBtn.textContent = "🎤 Talk";
-      micBtn.title = "Dictate to the agent";
+      micBtn.title = `Dictate to the agent (${shortcut})`;
     }
   };
 
@@ -127,6 +144,7 @@ export function mountVoiceControl(opts: VoiceControlOptions): VoiceControlHandle
 
   const showExchange = (said: string, reply: string | null, headless: boolean): void => {
     heard.textContent = `🎤 ${said}`;
+    heard.title = said;
     answer.textContent = reply ?? "";
     answer.hidden = reply === null;
     forgetBtn.hidden = !headless;
@@ -138,12 +156,20 @@ export function mountVoiceControl(opts: VoiceControlOptions): VoiceControlHandle
     await call("voice_speak", { text });
   };
 
-  const toAgent = async (text: string, current: VoiceSettings): Promise<void> => {
+  const runningAgent = async (): Promise<VoiceAgent | null> => {
     const agent = opts.agent();
-    if (!agent.ptyId)
-      throw new Error(
-        "Start the agent first, or send dictation to a headless turn in Settings → Voice control.",
-      );
+    if (agent.ptyId) return agent;
+    if (!agent.cli) throw new Error("Pick an agent CLI first.");
+    setStatus(`Starting ${agent.cli}…`);
+    const started = await opts.startAgent();
+    if (phase !== "busy" || disposed) return null;
+    if (!started.ptyId) throw new Error(`Could not start ${agent.cli}.`);
+    return started;
+  };
+
+  const toAgent = async (text: string, current: VoiceSettings): Promise<void> => {
+    const agent = await runningAgent();
+    if (!agent?.ptyId) return;
     const prompt = dictationPrompt(text);
     const wantsReply = current.voiceControlReplies === "reply";
     let watching = false;
@@ -232,7 +258,16 @@ export function mountVoiceControl(opts: VoiceControlOptions): VoiceControlHandle
   const onClose = (): void => {
     opts.log.hidden = true;
   };
+  const onKey = (event: KeyboardEvent): void => {
+    if (!isVoiceShortcut(event, isMac) || micBtn.hidden || !opts.available()) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (event.repeat) return;
+    opts.reveal?.();
+    onMic();
+  };
   micBtn.addEventListener("click", onMic);
+  window.addEventListener("keydown", onKey, true);
   forgetBtn.addEventListener("click", onForget);
   closeBtn.addEventListener("click", onClose);
 
@@ -252,6 +287,7 @@ export function mountVoiceControl(opts: VoiceControlOptions): VoiceControlHandle
       if (disposed) return;
       disposed = true;
       micBtn.removeEventListener("click", onMic);
+      window.removeEventListener("keydown", onKey, true);
       forgetBtn.removeEventListener("click", onForget);
       closeBtn.removeEventListener("click", onClose);
       unlisten?.();
