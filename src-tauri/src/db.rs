@@ -239,23 +239,32 @@ impl Db {
         Ok(())
     }
 
-    /// Newest `cli_session_id` the capture hooks recorded for a PTY, used to
-    /// locate that pane's transcript on disk. `None` when the hooks are not
-    /// installed, which is why callers keep a filesystem fallback.
     /// The CLI and cwd of the latest session a hook recorded in terminal
-    /// `pty_id`, when it named the CLI.
+    /// `pty_id`, while that session is active and named the CLI.
     pub fn agent_for_pty(&self, pty_id: &str) -> Result<Option<(String, Option<String>)>, String> {
         self.conn
             .query_row(
-                "SELECT cli, cwd FROM sessions WHERE pty_id = ?1 ORDER BY id DESC LIMIT 1",
+                "SELECT cli, cwd, status FROM sessions WHERE pty_id = ?1 ORDER BY id DESC LIMIT 1",
                 params![pty_id],
-                |r| Ok((r.get::<_, String>(0)?, r.get::<_, Option<String>>(1)?)),
+                |r| {
+                    Ok((
+                        r.get::<_, String>(0)?,
+                        r.get::<_, Option<String>>(1)?,
+                        r.get::<_, String>(2)?,
+                    ))
+                },
             )
             .optional()
-            .map(|row| row.filter(|(cli, _)| !cli.is_empty()))
+            .map(|row| {
+                row.filter(|(cli, _, status)| !cli.is_empty() && status == "active")
+                    .map(|(cli, cwd, _)| (cli, cwd))
+            })
             .map_err(|e| format!("agent for pty {pty_id}: {e}"))
     }
 
+    /// Newest `cli_session_id` the capture hooks recorded for a PTY, used to
+    /// locate that pane's transcript on disk. `None` when the hooks are not
+    /// installed, which is why callers keep a filesystem fallback.
     pub fn cli_session_id_for_pty(&self, pty_id: &str) -> Result<Option<String>, String> {
         let row = self.conn.query_row(
             "SELECT cli_session_id FROM sessions

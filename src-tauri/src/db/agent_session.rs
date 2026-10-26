@@ -99,6 +99,22 @@ mod tests {
     }
 
     #[test]
+    fn an_ended_session_no_longer_names_the_cli_of_a_shell_pane() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("polakapi.db");
+        record_start(&path, "pty-1", "codex", "one", Some("/repo")).unwrap();
+        let db = Db::open(&path).unwrap();
+        db.close_session("pty-1").unwrap();
+        assert_eq!(db.agent_for_pty("pty-1").unwrap(), None);
+
+        record_start(&path, "pty-1", "codex", "two", Some("/repo")).unwrap();
+        assert_eq!(
+            db.agent_for_pty("pty-1").unwrap(),
+            Some(("codex".to_string(), Some("/repo".to_string())))
+        );
+    }
+
+    #[test]
     fn looking_up_never_creates_the_database() {
         let dir = tempfile::tempdir().unwrap();
         let db = dir.path().join("polakapi.db");
