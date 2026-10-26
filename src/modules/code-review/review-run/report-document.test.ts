@@ -50,6 +50,24 @@ describe("buildReportDocument", () => {
     expect(doc.querySelector("img")?.getAttribute("src")).toBe("data:image/png;base64,AAAA");
   });
 
+  it("sanitizes the drawn diagrams too", async () => {
+    const hostile = (): Promise<string> =>
+      Promise.resolve(
+        '<svg onload="steal()"><script>steal()</script><a href="javascript:x"><text>A</text></a></svg>',
+      );
+
+    const out = await buildReportDocument(
+      '<pre class="mermaid">graph TD; A</pre>',
+      "1.1-a.html",
+      hostile,
+    );
+    const doc = parse(out);
+
+    expect(doc.querySelector(".polakapi-mermaid svg text")?.textContent).toBe("A");
+    expect(doc.querySelector("script")).toBeNull();
+    expect(out).not.toMatch(/onload|javascript:/i);
+  });
+
   it("shows pseudo-code files as escaped plain text", async () => {
     const out = await buildReportDocument("# 1.1 login\nif <x> then", "1.1-login.md", svg);
     const doc = parse(out);

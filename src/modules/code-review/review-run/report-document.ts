@@ -22,9 +22,11 @@ export async function buildReportDocument(
 ): Promise<string> {
   if (isMarkdownReport(file)) return plainDocument(source);
   const doc = new DOMParser().parseFromString(source, "text/html");
+  // Mermaid keeps one render in flight at a time.
+  // react-doctor-disable-next-line react-doctor/async-await-in-loop
+  for (const block of mermaidBlocks(doc)) await drawDiagram(doc, block, renderMermaid);
   for (const node of doc.querySelectorAll(INERT_ELEMENTS)) node.remove();
   for (const node of doc.querySelectorAll("*")) stripActiveAttributes(node);
-  for (const block of mermaidBlocks(doc)) await drawDiagram(doc, block, renderMermaid);
   return `<!doctype html>\n${doc.documentElement.outerHTML}`;
 }
 
@@ -69,7 +71,8 @@ async function drawDiagram(
   const figure = doc.createElement("div");
   figure.className = "polakapi-mermaid";
   try {
-    figure.innerHTML = await renderMermaid(source);
+    const drawn = new DOMParser().parseFromString(await renderMermaid(source), "text/html");
+    figure.append(...Array.from(drawn.body.childNodes));
   } catch (error) {
     const note = doc.createElement("p");
     note.textContent = `Mermaid could not draw this diagram: ${error instanceof Error ? error.message : String(error)}`;
