@@ -90,12 +90,9 @@ impl PtyStore {
 
     /// Live panes polakapi started as a shell, with their starting directory.
     pub fn shell_panes(&self) -> Vec<(String, Option<String>)> {
-        self.sessions
-            .lock()
-            .iter()
-            .filter(|(_, session)| session.cli.is_none())
-            .map(|(id, session)| (id.clone(), session.cwd.clone()))
-            .collect()
+        let sessions = self.sessions.lock();
+        let shells = sessions.iter().filter(|(_, session)| session.cli.is_none());
+        shells.map(|(id, s)| (id.clone(), s.cwd.clone())).collect()
     }
 
     pub fn session_pids(&self) -> Vec<(String, u32)> {
