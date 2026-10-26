@@ -11,10 +11,10 @@ use windows_sys::Win32::Foundation::{
     WAIT_OBJECT_0, WAIT_TIMEOUT,
 };
 use windows_sys::Win32::Storage::FileSystem::{
-    CreateFileW, ReadDirectoryChangesW, FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OVERLAPPED,
-    FILE_LIST_DIRECTORY, FILE_NOTIFY_CHANGE_CREATION, FILE_NOTIFY_CHANGE_DIR_NAME,
-    FILE_NOTIFY_CHANGE_FILE_NAME, FILE_NOTIFY_CHANGE_LAST_WRITE, FILE_NOTIFY_CHANGE_SIZE,
-    FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING,
+    CreateFileW, ReadDirectoryChangesW, FILE_ACTION_MODIFIED, FILE_FLAG_BACKUP_SEMANTICS,
+    FILE_FLAG_OVERLAPPED, FILE_LIST_DIRECTORY, FILE_NOTIFY_CHANGE_CREATION,
+    FILE_NOTIFY_CHANGE_DIR_NAME, FILE_NOTIFY_CHANGE_FILE_NAME, FILE_NOTIFY_CHANGE_LAST_WRITE,
+    FILE_NOTIFY_CHANGE_SIZE, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING,
 };
 use windows_sys::Win32::System::Threading::{CreateEventW, ResetEvent, WaitForSingleObject};
 use windows_sys::Win32::System::IO::{CancelIoEx, GetOverlappedResult, OVERLAPPED};
@@ -24,6 +24,7 @@ use super::{Activity, Backend, Scope};
 const BUFFER_WORDS: usize = 16 * 1024;
 
 pub(crate) struct PlatformBackend {
+    root: PathBuf,
     dir: OwnedHandle,
     event: OwnedHandle,
     overlapped: Box<OVERLAPPED>,
@@ -89,7 +90,15 @@ impl PlatformBackend {
             .flat_map(|word| word.to_ne_bytes())
             .take(len)
             .collect();
+        // A directory is reported as modified whenever an entry inside it
+        // changes, and that entry already has its own record.
         parse(&bytes)
+            .into_iter()
+            .filter(|(action, path)| {
+                *action != FILE_ACTION_MODIFIED as usize || !self.root.join(path).is_dir()
+            })
+            .map(|(_, path)| path)
+            .collect()
     }
 }
 
@@ -98,12 +107,15 @@ fn read_u32(bytes: &[u8], at: usize) -> Option<usize> {
     Some(u32::from_ne_bytes(raw.try_into().ok()?) as usize)
 }
 
-fn parse(bytes: &[u8]) -> Vec<PathBuf> {
+fn parse(bytes: &[u8]) -> Vec<(usize, PathBuf)> {
     let mut paths = Vec::new();
     let mut offset = 0;
     loop {
-        let (Some(next), Some(name_len)) = (read_u32(bytes, offset), read_u32(bytes, offset + 8))
-        else {
+        let (Some(next), Some(action), Some(name_len)) = (
+            read_u32(bytes, offset),
+            read_u32(bytes, offset + 4),
+            read_u32(bytes, offset + 8),
+        ) else {
             break;
         };
         let start = offset + 12;
@@ -114,7 +126,7 @@ fn parse(bytes: &[u8]) -> Vec<PathBuf> {
             .chunks_exact(2)
             .map(|pair| u16::from_ne_bytes([pair[0], pair[1]]))
             .collect();
-        paths.push(PathBuf::from(OsString::from_wide(&wide)));
+        paths.push((action, PathBuf::from(OsString::from_wide(&wide))));
         if next == 0 {
             break;
         }
@@ -141,6 +153,7 @@ impl Backend for PlatformBackend {
         // SAFETY: a manual-reset, unnamed event with default security.
         let event = owned(unsafe { CreateEventW(ptr::null(), TRUE, FALSE, ptr::null()) })?;
         let mut backend = Self {
+            root: root.to_path_buf(),
             dir,
             event,
             overlapped: Box::new(overlapped(ptr::null_mut())),
