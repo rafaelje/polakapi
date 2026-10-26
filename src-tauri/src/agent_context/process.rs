@@ -1,4 +1,6 @@
 use std::collections::HashMap;
+use std::ffi::{OsStr, OsString};
+use std::path::Path;
 use std::sync::OnceLock;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -13,6 +15,9 @@ use crate::memory::tree_maps;
 
 const MB: u64 = 1024 * 1024;
 
+/// The AI CLIs a shell pane can be running, as hooks record them.
+const AGENT_CLIS: [&str; 3] = ["claude", "codex", "cursor-agent"];
+
 #[derive(Debug, Clone, Copy, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProcessStats {
@@ -20,9 +25,19 @@ pub struct ProcessStats {
     pub cpu_percent: f32,
     pub uptime_secs: u64,
     pub pid: Option<u32>,
-    /// Whether the pane's root process has children, i.e. a shell is running something.
+    /// Which `AGENT_CLIS` run below the pane's root process, one bit each.
     #[serde(skip)]
-    pub busy: bool,
+    agent_clis: u8,
+}
+
+impl ProcessStats {
+    /// Whether `cli` runs somewhere below the pane's root process.
+    pub fn runs_cli(&self, cli: &str) -> bool {
+        AGENT_CLIS
+            .iter()
+            .position(|known| *known == cli)
+            .is_some_and(|bit| self.agent_clis & (1 << bit) != 0)
+    }
 }
 
 /// Kept across calls so sysinfo can compute CPU as a delta between two samples.
@@ -43,12 +58,17 @@ pub fn sample(session_pids: &[(String, u32)]) -> HashMap<String, ProcessStats> {
 
     let mut cpu_by_pid: HashMap<u32, f32> = HashMap::new();
     let mut start_by_pid: HashMap<u32, u64> = HashMap::new();
+    let mut clis_by_pid: HashMap<u32, u8> = HashMap::new();
     for (pid, process) in sys.processes() {
         if process.thread_kind().is_some() {
             continue;
         }
         cpu_by_pid.insert(pid.as_u32(), process.cpu_usage());
         start_by_pid.insert(pid.as_u32(), process.start_time());
+        let clis = cli_bits(process.name(), process.cmd());
+        if clis != 0 {
+            clis_by_pid.insert(pid.as_u32(), clis);
+        }
     }
     drop(sys);
 
@@ -56,6 +76,12 @@ pub fn sample(session_pids: &[(String, u32)]) -> HashMap<String, ProcessStats> {
     session_pids
         .iter()
         .map(|(id, pid)| {
+            let mut agent_clis = 0;
+            walk(*pid, &children, &mut |p| {
+                if p != *pid {
+                    agent_clis |= clis_by_pid.get(&p).copied().unwrap_or(0);
+                }
+            });
             let stats = ProcessStats {
                 rss_mb: tree_total(*pid, &children, |p| {
                     mem_by_pid.get(&p).copied().unwrap_or(0)
@@ -68,11 +94,43 @@ pub fn sample(session_pids: &[(String, u32)]) -> HashMap<String, ProcessStats> {
                     .map(|start| now.saturating_sub(*start))
                     .unwrap_or(0),
                 pid: Some(*pid),
-                busy: children.get(pid).is_some_and(|kids| !kids.is_empty()),
+                agent_clis,
             };
             (id.clone(), stats)
         })
         .collect()
+}
+
+fn cli_bits(name: &OsStr, cmd: &[OsString]) -> u8 {
+    AGENT_CLIS
+        .iter()
+        .enumerate()
+        .filter(|(_, cli)| names_cli(name, cmd, cli))
+        .fold(0, |bits, (bit, _)| bits | (1 << bit))
+}
+
+/// Whether a process is `cli`: by its name, by its program path, or by the
+/// script a runtime was started with, such as `node …/codex/bin/codex.js` or
+/// `node …/cursor-agent/versions/…/index.js`.
+fn names_cli(name: &OsStr, cmd: &[OsString], cli: &str) -> bool {
+    let is_program = |path: &Path| {
+        path.file_stem() == Some(OsStr::new(cli))
+            && matches!(
+                path.extension().and_then(OsStr::to_str),
+                None | Some("exe" | "cmd" | "js" | "mjs" | "cjs")
+            )
+    };
+    let is_script_of = |path: &Path| {
+        matches!(
+            path.extension().and_then(OsStr::to_str),
+            Some("js" | "mjs" | "cjs")
+        ) && path.components().any(|part| part.as_os_str() == cli)
+    };
+    is_program(Path::new(name))
+        || cmd.iter().take(3).any(|arg| {
+            let path = Path::new(arg);
+            is_program(path) || is_script_of(path)
+        })
 }
 
 fn tree_total(root: u32, children: &HashMap<u32, Vec<u32>>, value: impl Fn(u32) -> u64) -> u64 {
@@ -134,6 +192,51 @@ mod tests {
             tree_total(1, &children, |p| mem.get(&p).copied().unwrap_or(0)),
             30
         );
+    }
+
+    fn is_cli(name: &str, cmd: &[&str], cli: &str) -> bool {
+        let cmd: Vec<OsString> = cmd.iter().map(OsString::from).collect();
+        names_cli(OsStr::new(name), &cmd, cli)
+    }
+
+    #[test]
+    fn recognizes_each_cli_however_it_was_installed() {
+        assert!(is_cli("codex", &["/usr/local/bin/codex"], "codex"));
+        assert!(is_cli("codex.exe", &[r"C:\tools\codex.exe"], "codex"));
+        assert!(is_cli(
+            "node",
+            &["node", "/usr/lib/node_modules/@openai/codex/bin/codex.js"],
+            "codex"
+        ));
+        assert!(is_cli("claude", &["claude", "--resume"], "claude"));
+        assert!(is_cli(
+            "node",
+            &[
+                "node",
+                "/home/u/.local/share/cursor-agent/versions/1/index.js"
+            ],
+            "cursor-agent"
+        ));
+    }
+
+    #[test]
+    fn an_unrelated_command_is_not_taken_for_a_cli() {
+        assert!(!is_cli("npm", &["npm", "run", "dev"], "codex"));
+        assert!(!is_cli("vim", &["vim", "codex.md"], "codex"));
+        assert!(!is_cli("node", &["node", "/repo/codex/notes.txt"], "codex"));
+        assert!(!is_cli("codex", &["codex"], "claude"));
+    }
+
+    #[test]
+    fn a_pane_runs_only_the_clis_found_below_it() {
+        let stats = ProcessStats {
+            agent_clis: cli_bits(OsStr::new("codex"), &[]),
+            ..Default::default()
+        };
+        assert!(stats.runs_cli("codex"));
+        assert!(!stats.runs_cli("claude"));
+        assert!(!stats.runs_cli("unknown"));
+        assert!(!ProcessStats::default().runs_cli("codex"));
     }
 
     #[test]

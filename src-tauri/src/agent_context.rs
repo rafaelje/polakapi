@@ -73,8 +73,8 @@ pub fn agent_context_list(
     db: State<'_, StdMutex<Db>>,
 ) -> Result<Vec<AgentSummary>, String> {
     let stats = process::sample(&store.session_pids());
-    let busy = |pty_id: &str| stats.get(pty_id).is_some_and(|stats| stats.busy);
-    let mut out: Vec<AgentSummary> = running_agents(&store, &db, busy)
+    let runs = |pty_id: &str, cli: &str| stats.get(pty_id).is_some_and(|s| s.runs_cli(cli));
+    let mut out: Vec<AgentSummary> = running_agents(&store, &db, runs)
         .into_iter()
         .map(|pane| {
             let pane_stats = stats.get(&pane.pty_id).copied().unwrap_or_default();
@@ -204,22 +204,22 @@ pub fn agent_context_entry(
     )
 }
 
-/// Panes running an AI CLI. A shell pane counts while `busy` says something
-/// runs in it and a hook recorded which CLI started there last.
+/// Panes running an AI CLI. A shell pane counts while the CLI its active hook
+/// session recorded still `runs` in it.
 fn running_agents(
     store: &PtyStore,
     db: &State<'_, StdMutex<Db>>,
-    busy: impl Fn(&str) -> bool,
+    runs: impl Fn(&str, &str) -> bool,
 ) -> Vec<AgentPane> {
     let mut panes = store.agent_panes();
     let Ok(db) = db.lock() else {
         return panes;
     };
     for (pty_id, cwd) in store.shell_panes() {
-        if !busy(&pty_id) {
-            continue;
-        }
         if let Ok(Some((cli, session_cwd))) = db.agent_for_pty(&pty_id) {
+            if !runs(&pty_id, &cli) {
+                continue;
+            }
             panes.push(AgentPane {
                 pty_id,
                 cli,
@@ -235,7 +235,7 @@ fn find_agent(
     db: &State<'_, StdMutex<Db>>,
     pty_id: &str,
 ) -> Result<AgentPane, String> {
-    running_agents(store, db, |_| true)
+    running_agents(store, db, |_, _| true)
         .into_iter()
         .find(|pane| pane.pty_id == pty_id)
         .ok_or_else(|| format!("no running agent for pane {pty_id}"))
