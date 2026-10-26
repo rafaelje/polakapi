@@ -16,6 +16,7 @@ impl TestRepo {
         repo.git(&["config", "user.email", "test@example.com"]);
         repo.git(&["config", "user.name", "Test"]);
         repo.git(&["config", "commit.gpgsign", "false"]);
+        repo.git(&["config", "core.autocrlf", "false"]);
         repo
     }
 
