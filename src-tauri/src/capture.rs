@@ -101,6 +101,10 @@ fn try_run() -> Result<Option<CaptureEvent>, String> {
             eprintln!("polakapi-capture: record session: {error}");
         }
     }
+    if matches!(event, CaptureEvent::SessionEnd { .. }) {
+        let db = crate::db::Db::open(std::path::Path::new(&db_path))?;
+        crate::db::apply_event(&db, &event)?;
+    }
     Ok(Some(event))
 }
 
