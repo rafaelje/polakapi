@@ -61,6 +61,7 @@ export function agentNotificationTitle(event: AgentEvent, project: string | null
 
 export async function startAgentNotifier(
   resolveProjectName: (ptyId: string) => string | null = () => null,
+  onNotify: (event: AgentEvent, title: string, message: string) => void = () => {},
 ): Promise<() => void> {
   let preferences = { ...defaults };
   let disposed = false;
@@ -94,6 +95,7 @@ export async function startAgentNotifier(
     void deliverNotification(title, message, preferences, event.kind).catch((error: unknown) =>
       console.warn("Agent notification failed", error),
     );
+    onNotify(event, title, message);
   }
   let timer: ReturnType<typeof setTimeout>;
   const poll = async (): Promise<void> => {

@@ -23,6 +23,8 @@ export interface ProjectRowOptions {
   liveTerminalsCount: number;
   activityState?: ProjectActivityState;
   bellPending?: boolean;
+  /** Had live terminals when polakapi last closed and has not run since. */
+  lastSession?: boolean;
   controller: WorkspacesController;
   /**
    * Resolves the current live count when the row triggers the delete flow —
@@ -49,6 +51,7 @@ export interface ProjectRowHandle {
   setActivity(state: ProjectActivityState): void;
   /** Show or clear the project's attention state. */
   setBellPending(pending: boolean): void;
+  setLastSession(marked: boolean): void;
   dispose(): void;
 }
 
@@ -134,6 +137,17 @@ export function createProjectRow(opts: ProjectRowOptions): ProjectRowHandle {
   };
   applyBadge(opts.liveTerminalsCount);
 
+  const lastSession = document.createElement("span");
+  lastSession.className = "ws-last-session";
+  lastSession.textContent = "↺";
+  lastSession.title = "Was running when polakapi last closed";
+  lastSession.setAttribute("aria-label", lastSession.title);
+  const applyLastSession = (marked: boolean): void => {
+    lastSession.classList.toggle("hidden", !marked);
+    row.classList.toggle("was-running", marked);
+  };
+  applyLastSession(opts.lastSession ?? false);
+
   const warn = document.createElement("button");
   warn.type = "button";
   warn.className = "ws-warn";
@@ -147,7 +161,7 @@ export function createProjectRow(opts: ProjectRowOptions): ProjectRowHandle {
   menuBtn.textContent = "⋮";
   menuBtn.title = "Project actions";
 
-  row.append(dot, labelCol, activityLabel, badge, warn, menuBtn);
+  row.append(dot, labelCol, activityLabel, lastSession, badge, warn, menuBtn);
 
   const listeners: Array<() => void> = [];
   const on = <K extends keyof HTMLElementEventMap>(
@@ -391,6 +405,9 @@ export function createProjectRow(opts: ProjectRowOptions): ProjectRowHandle {
     setBellPending(pending: boolean): void {
       bellPending = pending;
       applyActivity();
+    },
+    setLastSession(marked: boolean): void {
+      applyLastSession(marked);
     },
     dispose(): void {
       appearancePicker?.dispose();

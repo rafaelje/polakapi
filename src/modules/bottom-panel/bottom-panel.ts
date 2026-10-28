@@ -1,29 +1,36 @@
+import { mountAgentPanel, type AgentPanelHandle } from "../app-agent/agent-panel";
+import { createAgentWindowLink } from "../app-agent/agent-window-link";
 import { mountShellPanel, type ShellPanelHandle } from "../shell/shell-panel";
 import { mountUsagePanel, type UsagePanelHandle } from "../usage/usage-panel";
 import { BOTTOM_TABS, isBottomTab, type BottomTab } from "./types";
 
 // Orchestrates the tab strip + per-tab containers in the bottom panel. The
 // notes textarea lives inside `[data-tab-panel="notes"]` and is driven by
-// the existing notes-panel module untouched. The shell tab is delegated to
-// the shell-panel module, which owns the TerminalPane lifecycle. The usage
-// tab is delegated to the usage-panel module, which lazy-loads the Rust
-// `usage_summary` command on first activation.
+// the existing notes-panel module untouched. The shell and agent tabs are
+// delegated to the shell-panel and agent-panel modules, which own their
+// TerminalPane lifecycle. The usage tab is delegated to the usage-panel
+// module, which lazy-loads the Rust `usage_summary` command on first
+// activation.
 
 export interface BottomPanelOptions {
   /** Persist active tab on switch. */
   onTabChange?: (tab: BottomTab) => void;
   /** Initial tab (defaults to "notes"). */
   initialTab?: BottomTab;
+  /** CLI preselected in the agent tab. */
+  initialAgentCli?: string;
+  /** Persist the agent tab's CLI choice. */
+  onAgentCliChange?: (cli: string) => void;
 }
 
 export interface BottomPanelHandle {
   setActiveTab(tab: BottomTab): void;
   getActiveTab(): BottomTab;
-  /** Refit the shell pane when the bottom panel is resized/toggled. */
+  /** Refit the shell or agent pane when the bottom panel is resized/toggled. */
   refit(): void;
-  /** Route a pty:data event. Returns true when consumed by the shell. */
-  handlePtyData(id: string, data: string): boolean;
-  /** Route a pty:exit event. Returns true when consumed by the shell. */
+  /** Route a pty:data event. Returns true when consumed by the shell or agent pane. */
+  handlePtyData(id: string, data: string, offset?: number): boolean;
+  /** Route a pty:exit event. Returns true when consumed by the shell or agent pane. */
   handlePtyExit(id: string): boolean;
   dispose(): Promise<void>;
 }
@@ -41,8 +48,9 @@ export function mountBottomPanel(opts: BottomPanelOptions = {}): BottomPanelHand
     return null;
   }
   const shellHost = tabPanels.get("shell");
+  const agentHost = tabPanels.get("agent");
   const usageHost = tabPanels.get("usage");
-  if (!shellHost || !usageHost) return null;
+  if (!shellHost || !agentHost || !usageHost) return null;
 
   let activeTab: BottomTab = opts.initialTab ?? "notes";
   let disposed = false;
@@ -50,6 +58,17 @@ export function mountBottomPanel(opts: BottomPanelOptions = {}): BottomPanelHand
   const shell: ShellPanelHandle = mountShellPanel(shellHost, {
     isVisible: () => !disposed && activeTab === "shell",
   });
+  const agentWindow = createAgentWindowLink({ onCliChange: opts.onAgentCliChange });
+  const agent: AgentPanelHandle = mountAgentPanel(agentHost, {
+    isVisible: () => !disposed && activeTab === "agent",
+    initialCli: opts.initialAgentCli,
+    onCliChange: opts.onAgentCliChange,
+    detach: agentWindow.actions,
+    reveal: () => setActiveTab("agent"),
+  });
+  agentWindow.bind(agent);
+  const agentTabButton = tabButtons.find((btn) => btn.dataset.tab === "agent");
+  if (agentTabButton) agent.addTearOffHandle(agentTabButton);
   const usage: UsagePanelHandle = mountUsagePanel(usageHost, {
     isVisible: () => !disposed && activeTab === "usage",
   });
@@ -76,6 +95,7 @@ export function mountBottomPanel(opts: BottomPanelOptions = {}): BottomPanelHand
     setButtonState(tab);
     setPanelVisibility(tab);
     if (tab === "shell") shell.activate();
+    if (tab === "agent") agent.activate();
     if (tab === "usage") usage.activate();
     if (changed) opts.onTabChange?.(tab);
   };
@@ -94,6 +114,7 @@ export function mountBottomPanel(opts: BottomPanelOptions = {}): BottomPanelHand
   setButtonState(activeTab);
   setPanelVisibility(activeTab);
   if (activeTab === "shell") shell.activate();
+  if (activeTab === "agent") agent.activate();
   if (activeTab === "usage") usage.activate();
 
   return {
@@ -101,9 +122,11 @@ export function mountBottomPanel(opts: BottomPanelOptions = {}): BottomPanelHand
     getActiveTab: () => activeTab,
     refit: () => {
       if (activeTab === "shell") shell.refit();
+      if (activeTab === "agent") agent.refit();
     },
-    handlePtyData: (id, data) => shell.handlePtyData(id, data),
-    handlePtyExit: (id) => shell.handlePtyExit(id),
+    handlePtyData: (id, data, offset) =>
+      shell.handlePtyData(id, data) || agent.handlePtyData(id, data, offset),
+    handlePtyExit: (id) => shell.handlePtyExit(id) || agent.handlePtyExit(id),
     dispose: async () => {
       if (disposed) return;
       disposed = true;
@@ -111,7 +134,8 @@ export function mountBottomPanel(opts: BottomPanelOptions = {}): BottomPanelHand
         btn.removeEventListener("click", onButtonClick);
       }
       usage.dispose();
-      await shell.dispose();
+      agentWindow.dispose();
+      await Promise.all([shell.dispose(), agent.dispose()]);
     },
   };
 }

@@ -37,6 +37,13 @@ export const AI_CLI_PROFILES: CliProfile[] = [
     kind: "ai-cli",
     resumeArgs: ["resume"],
   },
+  {
+    id: "gemini",
+    label: "Gemini",
+    command: "gemini",
+    kind: "ai-cli",
+    resumeArgs: ["--resume"],
+  },
 ];
 
 export const ALL_PROFILES: CliProfile[] = [SHELL_PROFILE, ...AI_CLI_PROFILES];

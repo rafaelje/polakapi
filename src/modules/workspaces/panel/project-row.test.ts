@@ -61,3 +61,27 @@ describe("project row activity", () => {
     handle.dispose();
   });
 });
+
+describe("project row last session", () => {
+  afterEach(() => document.body.replaceChildren());
+
+  it("marks a project that was running last time until told otherwise", () => {
+    const handle = createProjectRow({
+      project: project(),
+      workspaceId: "w1" as WorkspaceId,
+      isActive: false,
+      liveTerminalsCount: 0,
+      lastSession: true,
+      controller: {} as WorkspacesController,
+      selection: createSelectionStore(),
+    });
+    const mark = handle.element.querySelector(".ws-last-session")!;
+    expect(mark.classList.contains("hidden")).toBe(false);
+    expect(handle.element.classList.contains("was-running")).toBe(true);
+
+    handle.setLastSession(false);
+    expect(mark.classList.contains("hidden")).toBe(true);
+    expect(handle.element.classList.contains("was-running")).toBe(false);
+    handle.dispose();
+  });
+});

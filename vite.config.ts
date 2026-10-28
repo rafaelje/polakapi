@@ -45,6 +45,7 @@ export default defineConfig(async () => ({
         "code-review": resolve(projectRoot, "code-review.html"),
         context: resolve(projectRoot, "context.html"),
         terminals: resolve(projectRoot, "terminals.html"),
+        agent: resolve(projectRoot, "agent.html"),
       },
     },
   },

@@ -423,6 +423,7 @@ describe("TerminalManager suspend/resume", () => {
     expect(manager.size).toBe(1);
     manager.markExited(id);
     expect(manager.size).toBe(0);
+    expect(manager.ids()).toEqual([id]);
   });
 
   it("resumePane respawns with the profile's resumeArgs in the same slot", async () => {

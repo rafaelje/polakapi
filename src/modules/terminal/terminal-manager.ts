@@ -445,8 +445,8 @@ export class TerminalManager {
   }
 
   markExited(ptyId: string): void {
-    if (!this.liveIds.delete(ptyId)) return;
-    this.emitCount();
+    if (this.liveIds.delete(ptyId)) this.emitCount();
+    if (this.panes.get(ptyId)?.isExited) void this.close(ptyId);
   }
 
   private addSuspendedPane(spec: TerminalSpec): void {

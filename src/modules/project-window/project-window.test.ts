@@ -172,7 +172,6 @@ async function detachedProject(exited = true) {
   local.get("b")!.write("saved b", 7);
   if (exited) {
     local.get("b")!.markExited();
-    local.markExited("b");
   }
   const windows = await createProjectWindows({
     router,
