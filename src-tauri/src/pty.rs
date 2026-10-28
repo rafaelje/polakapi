@@ -11,6 +11,10 @@ use crate::platform_command;
 use crate::pty_activity::{ai_cli_basename, AgentPane};
 use crate::shell_integration;
 
+mod environment;
+
+use environment::configure_terminal_environment;
+
 #[cfg(target_os = "windows")]
 const ALLOWED_SHELL_BASENAMES: &[&str] = &[
     "cmd",
@@ -269,12 +273,6 @@ pub fn spawn_session(
     });
 
     Ok(id)
-}
-
-fn configure_terminal_environment(cmd: &mut CommandBuilder) {
-    cmd.env("TERM", "xterm-256color");
-    cmd.env("COLORTERM", "truecolor");
-    cmd.env_remove("NO_COLOR");
 }
 
 fn resolve_command(command: Option<String>) -> Result<String, String> {
@@ -545,24 +543,6 @@ mod tests {
     fn resolve_command_accepts_ai_cli() {
         let resolved = resolve_command(Some("claude".to_string())).unwrap();
         assert_eq!(resolved, "claude");
-    }
-
-    #[test]
-    fn terminal_environment_enables_color_output() {
-        let mut cmd = CommandBuilder::new("zsh");
-        cmd.env("NO_COLOR", "1");
-
-        configure_terminal_environment(&mut cmd);
-
-        assert_eq!(
-            cmd.get_env("TERM"),
-            Some(std::ffi::OsStr::new("xterm-256color"))
-        );
-        assert_eq!(
-            cmd.get_env("COLORTERM"),
-            Some(std::ffi::OsStr::new("truecolor"))
-        );
-        assert_eq!(cmd.get_env("NO_COLOR"), None);
     }
 
     #[test]
