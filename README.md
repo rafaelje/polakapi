@@ -68,6 +68,20 @@ pnpm tauri dev
 
 AI coding CLIs are optional and must be installed separately and available on your `PATH`.
 
+### Terminal Locale
+
+New terminal sessions default to a UTF-8 locale when `LANG` is unset or empty:
+`en_US.UTF-8` on macOS and `C.UTF-8` on Linux. Existing `LANG` and `LC_*`
+settings are preserved, and shell startup files can override the default.
+Windows locale settings are unchanged.
+
+If CocoaPods reports a UTF-8 encoding error, open a new terminal after updating
+polakapi and run `locale charmap` to confirm it reports `UTF-8`. Existing
+terminal sessions keep their original environment. If a new terminal still
+reports another encoding, check your explicit `LANG`, `LC_ALL`, and `LC_CTYPE`
+settings and shell startup files. Once the locale is corrected, rerun
+`pod install` in the project's `ios` directory before retrying the build.
+
 ### Search Terminal Output
 
 Press **Cmd + F** on macOS or **Ctrl + F** on Linux and Windows while a terminal
