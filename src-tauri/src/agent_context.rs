@@ -428,7 +428,7 @@ fn as_u64(value: Option<&Value>) -> u64 {
 /// Claude Code stores each project's transcripts in a directory named after the
 /// cwd with every non-alphanumeric character replaced by `-`
 /// (`/home/u/repos/app` -> `-home-u-repos-app`).
-fn cwd_slug(cwd: &str) -> String {
+pub(crate) fn cwd_slug(cwd: &str) -> String {
     cwd.chars()
         .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
         .collect()

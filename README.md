@@ -10,6 +10,7 @@ polakapi is a cross-platform desktop workspace for running AI coding agents and 
 - Organize repositories and sessions into persistent workspaces.
 - Manage active processes, notes, prompts, and agent workflows from one interface.
 - Use Claude Code, Codex, OpenCode, or any other terminal-based tool.
+- Operate polakapi from an agent tab, or from Telegram through an optional bot limited to allowed users.
 
 ## Getting Started
 

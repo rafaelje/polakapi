@@ -32,14 +32,15 @@ tauri-plugin-store = "2.4.3"
 tauri-plugin-dialog = "2"
 tauri-plugin-notification = "2.3.3"
 tauri-plugin-clipboard-manager = "2"
-tokio = { version = "1", features = ["time", "rt", "macros", "process", "io-util"] }
+tokio = { version = "1", features = ["time", "rt", "macros", "process", "io-util", "sync"] }
 tempfile = "3"
 rusqlite = { version = "0.32", features = ["bundled"] }
 sysinfo = "0.33"
 keepawake = "0.5"
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls-native-roots"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "multipart", "rustls-tls-native-roots"] }
 sha2 = "0.10"
 regex = "1"
+tauri-plugin-single-instance = "2"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

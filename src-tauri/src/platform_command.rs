@@ -28,6 +28,39 @@ impl ResolvedProgram {
     }
 }
 
+/// Locates an executable on PATH without running it. Unlike `resolve_program`
+/// this is a presence check on every platform.
+pub(crate) fn find_in_path(program: impl AsRef<OsStr>) -> Option<PathBuf> {
+    let program = program.as_ref();
+    if program.is_empty() || program.to_string_lossy().contains('\0') {
+        return None;
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        windows::resolve_program(program).map(|resolved| resolved.path)
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let candidate = Path::new(program);
+        if candidate.components().count() > 1 {
+            return candidate.is_file().then(|| candidate.to_path_buf());
+        }
+        std::env::var_os("PATH")?
+            .to_string_lossy()
+            .split(':')
+            .filter(|dir| !dir.is_empty())
+            .map(|dir| Path::new(dir).join(program))
+            .find(|path| {
+                std::fs::metadata(path)
+                    .map(|meta| meta.is_file() && meta.permissions().mode() & 0o111 != 0)
+                    .unwrap_or(false)
+            })
+    }
+}
+
 pub(crate) fn resolve_program(program: impl AsRef<OsStr>) -> Result<ResolvedProgram, String> {
     let program = program.as_ref();
     if program.is_empty() || program.to_string_lossy().contains('\0') {

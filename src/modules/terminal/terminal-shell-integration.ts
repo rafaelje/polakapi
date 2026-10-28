@@ -3,6 +3,8 @@ import type { Terminal } from "@xterm/xterm";
 // Custom OSC number the shell-integration scripts use to report each
 // submitted command: \x1b]9931;<a|c>;<base64>\x07. App-private, not portable.
 const SHELL_COMMAND_OSC = 9931;
+// Sent at every prompt: the previous command finished. \x1b]9932;<token>;<exit>\x07.
+const COMMAND_DONE_OSC = 9932;
 
 export interface CapturedShellCommand {
   command: string;
@@ -41,6 +43,25 @@ export function attachShellCommandCapture(
   return term.parser.registerOscHandler(SHELL_COMMAND_OSC, (data) => {
     const captured = parseShellCommandPayload(data, expectedToken());
     if (captured !== null) onCommand(captured);
+    return true;
+  });
+}
+
+export function parseCommandDonePayload(data: string, expectedToken: string): number | null {
+  const match = /^([^;]+);(-?\d+)$/.exec(data);
+  if (!match || match[1] !== expectedToken) return null;
+  return Number(match[2]);
+}
+
+// Registers the OSC handler reporting each finished command and its exit code.
+export function attachCommandDoneCapture(
+  term: Terminal,
+  expectedToken: () => string,
+  onDone: (exitCode: number) => void,
+): { dispose(): void } {
+  return term.parser.registerOscHandler(COMMAND_DONE_OSC, (data) => {
+    const exitCode = parseCommandDonePayload(data, expectedToken());
+    if (exitCode !== null) onDone(exitCode);
     return true;
   });
 }

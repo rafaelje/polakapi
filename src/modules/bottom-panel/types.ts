@@ -1,7 +1,7 @@
-export type BottomTab = "notes" | "shell" | "usage";
+export type BottomTab = "notes" | "shell" | "agent" | "usage";
 
-export const BOTTOM_TABS: readonly BottomTab[] = ["notes", "shell", "usage"] as const;
+export const BOTTOM_TABS: readonly BottomTab[] = ["notes", "shell", "agent", "usage"] as const;
 
 export function isBottomTab(value: unknown): value is BottomTab {
-  return value === "notes" || value === "shell" || value === "usage";
+  return (BOTTOM_TABS as readonly unknown[]).includes(value);
 }
