@@ -2,7 +2,7 @@ use std::io::Write;
 use std::path::Path;
 use std::process::{Command, Stdio};
 
-use polakapi_lib::db::Db;
+use polakapi_lib::db::{apply_event, CaptureEvent, Db};
 use serde_json::{json, Value};
 
 fn capture(db_path: &Path, event: Value) {
@@ -45,8 +45,16 @@ fn session_end_capture_closes_only_its_terminal_session() {
         }),
     );
     let db = Db::open(&path).unwrap();
-    db.upsert_session("pty-2", "claude", Some("other-session"), None)
-        .unwrap();
+    apply_event(
+        &db,
+        &CaptureEvent::SessionStart {
+            pty_id: "pty-2".to_string(),
+            cli: "claude".to_string(),
+            cli_session_id: Some("other-session".to_string()),
+            cwd: None,
+        },
+    )
+    .unwrap();
     assert!(db.agent_for_pty("pty-1").unwrap().is_some());
 
     capture(&path, json!({ "hook_event_name": "SessionEnd" }));
