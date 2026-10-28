@@ -1,5 +1,6 @@
+import { defaultModelFor } from "../../shared/agent-cli";
 import { modalCloseButton } from "../../shared/ui/modal";
-import { defaultExplainModelFor, type ExplainCli, type SkillEntry } from "./types";
+import type { ExplainCli, SkillEntry } from "./types";
 
 // The /skills explain view: run status, agent output, and the cli + model
 // controls for re-running it. Split out of skills-modal.ts to keep that file
@@ -119,7 +120,7 @@ export function renderExplainMode(
     current.cli = cli;
     // A model name is CLI-specific, so carrying the old one over would just
     // produce a rejected-model error on the next run.
-    current.model = defaultExplainModelFor(cli);
+    current.model = defaultModelFor(cli);
     modelInput.value = current.model;
   });
   cliSelect.disabled = current.running;

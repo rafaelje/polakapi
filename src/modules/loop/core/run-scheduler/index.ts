@@ -2,7 +2,7 @@ import { stringifyError } from "../../../../shared/errors";
 
 import { topologicalBatches, type Phase } from "../../step2-phases";
 import { buildPersistedRunState, type PersistedRunState } from "../state-schema";
-import { ALL_AGENT_ROLES } from "../../types";
+import { ALL_AGENT_ROLES, DEFAULT_AGENT_SLOT } from "../../types";
 import type { AgentSlot, LoopAgentRole } from "../../types";
 
 import {
@@ -72,7 +72,6 @@ export type {
 };
 
 const HEARTBEAT_INTERVAL_MS = 5000;
-const DEFAULT_CLI_SLOT: AgentSlot = { cli: "claude", model: "claude-opus-4-7" };
 
 export class RunScheduler {
   private readonly store = new StateStore();
@@ -395,7 +394,7 @@ export class RunScheduler {
 
   private slotForAgent(agent: LoopAgentRole): AgentSlot {
     const matrix = this.store.getState().settings?.matrix;
-    if (!matrix) return DEFAULT_CLI_SLOT;
+    if (!matrix) return DEFAULT_AGENT_SLOT;
     return matrix[agent];
   }
 

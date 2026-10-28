@@ -22,9 +22,9 @@ use serde::{Deserialize, Serialize};
 
 mod repository;
 
-pub(crate) use repository::validate_repo_path;
-use repository::{
-    current_branch, is_safe_git_ref, merge_base, origin_head, ref_exists, rev_parse_verify,
+use repository::origin_head;
+pub(crate) use repository::{
+    current_branch, is_safe_git_ref, merge_base, ref_exists, rev_parse_verify, validate_repo_path,
 };
 
 // Per-file cap: keeps one huge file (lockfile, generated dump) from eating the

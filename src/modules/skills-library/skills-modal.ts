@@ -1,3 +1,4 @@
+import { defaultModelFor } from "../../shared/agent-cli";
 import { modalCloseButton } from "../../shared/ui/modal";
 import { showToast } from "../../shared/ui/toast";
 import {
@@ -10,13 +11,7 @@ import {
 import { explainSkill, listSkills, readSkill, writeSkill } from "./skills-service";
 import { renderSkillList, renderSkillPreview, updateSkillSelection } from "./skills-modal-list";
 import { renderExplainMode, type ExplainState } from "./skills-modal-explain";
-import {
-  defaultExplainModelFor,
-  isExplainCli,
-  EXPLAIN_CLIS,
-  type ExplainCli,
-  type SkillEntry,
-} from "./types";
+import { isExplainCli, EXPLAIN_CLIS, type ExplainCli, type SkillEntry } from "./types";
 
 export interface SkillsModalDeps {
   getActiveProjectPath: () => string | null;
@@ -180,7 +175,7 @@ export function mountSkillsModal(deps: SkillsModalDeps): SkillsModalHandle {
       skill,
       cli: explainCli,
       running: false,
-      model: defaultExplainModelFor(explainCli),
+      model: defaultModelFor(explainCli),
       text: null,
       error: null,
       startedAt: Date.now(),

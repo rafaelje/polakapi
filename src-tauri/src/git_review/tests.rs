@@ -7,6 +7,11 @@ fn safe_ref_accepts_common_shapes() {
     assert!(is_safe_git_ref("feature/x-y-z"));
     assert!(is_safe_git_ref("HEAD~2"));
     assert!(is_safe_git_ref("v1.2.3"));
+    assert!(is_safe_git_ref("main@{1}"));
+    assert!(is_safe_git_ref("fix/#123-login"));
+    assert!(is_safe_git_ref("deps/foo+bar"));
+    assert!(is_safe_git_ref("feat/ñandú"));
+    assert!(is_safe_git_ref("release/2024,q1"));
 }
 
 #[test]
@@ -17,6 +22,28 @@ fn safe_ref_rejects_dangerous_shapes() {
     assert!(!is_safe_git_ref("with space"));
     assert!(!is_safe_git_ref("a:b"));
     assert!(!is_safe_git_ref(&"x".repeat(300)));
+    for bad in [
+        "--upload-pack=x",
+        "tab\tname",
+        "line\nbreak",
+        "nul\0byte",
+        "bell\u{7}",
+        "wide\u{3000}space",
+        "a\\b",
+        "glob*",
+        "what?",
+        "a[b",
+        "/main",
+        "main/",
+        "a//b",
+        "main.",
+        ".hidden",
+        "feat/.x",
+        "main.lock",
+        "feat/x.lock/y",
+    ] {
+        assert!(!is_safe_git_ref(bad), "{bad:?}");
+    }
 }
 
 #[test]

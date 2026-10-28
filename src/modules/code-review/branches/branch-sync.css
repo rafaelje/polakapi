@@ -1,0 +1,111 @@
+.code-review-heading {
+  position: relative;
+}
+
+button.code-review-branch {
+  max-width: 320px;
+  background: transparent;
+  cursor: pointer;
+}
+
+button.code-review-branch:hover,
+button.code-review-branch[aria-expanded="true"] {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+.code-review-sync-status {
+  flex: 0 1 auto;
+  max-width: 38%;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.code-review-switcher {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 340px;
+  max-height: 60vh;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel-elev);
+  box-shadow: 0 10px 28px rgb(0 0 0 / 45%);
+  white-space: normal;
+}
+
+.code-review-switcher[hidden] {
+  display: none;
+}
+
+.code-review-switcher-filter {
+  width: 100%;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+}
+
+.code-review-switcher-list {
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.code-review-switcher-group {
+  padding: 6px 6px 2px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.code-review-switcher-option {
+  display: block;
+  width: 100%;
+  padding: 4px 8px;
+  overflow: hidden;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 12px;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.code-review-switcher-option:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+.code-review-switcher-option:disabled {
+  color: var(--muted);
+  cursor: default;
+}
+
+.code-review-switcher-option.is-current {
+  color: var(--accent);
+}
+
+.code-review-switcher-note {
+  margin: 4px 6px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.code-review-switcher-note.code-review-error,
+.code-review-sync-status.code-review-error {
+  color: var(--danger);
+}

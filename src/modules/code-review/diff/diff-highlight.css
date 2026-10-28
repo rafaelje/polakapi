@@ -1,0 +1,84 @@
+.code-review-diff-code {
+  --syntax-keyword: #c792ea;
+  --syntax-string: #c3e88d;
+  --syntax-number: #f78c6c;
+  --syntax-comment: #6b7080;
+  --syntax-title: #82aaff;
+  --syntax-type: #ffcb6b;
+  --syntax-attr: #89ddff;
+  --syntax-tag: #f07178;
+  --syntax-meta: #b8bcc8;
+}
+
+.code-review-diff-code .hljs-keyword,
+.code-review-diff-code .hljs-selector-tag,
+.code-review-diff-code .hljs-literal,
+.code-review-diff-code .hljs-doctag {
+  color: var(--syntax-keyword);
+}
+
+.code-review-diff-code .hljs-string,
+.code-review-diff-code .hljs-regexp,
+.code-review-diff-code .hljs-addition,
+.code-review-diff-code .hljs-template-tag,
+.code-review-diff-code .hljs-template-variable {
+  color: var(--syntax-string);
+}
+
+.code-review-diff-code .hljs-number,
+.code-review-diff-code .hljs-symbol,
+.code-review-diff-code .hljs-bullet,
+.code-review-diff-code .hljs-link {
+  color: var(--syntax-number);
+}
+
+.code-review-diff-code .hljs-comment,
+.code-review-diff-code .hljs-quote {
+  color: var(--syntax-comment);
+  font-style: italic;
+}
+
+.code-review-diff-code .hljs-title,
+.code-review-diff-code .hljs-section,
+.code-review-diff-code .hljs-selector-id {
+  color: var(--syntax-title);
+}
+
+.code-review-diff-code .hljs-type,
+.code-review-diff-code .hljs-built_in,
+.code-review-diff-code .hljs-class .hljs-title,
+.code-review-diff-code .hljs-title.class_ {
+  color: var(--syntax-type);
+}
+
+.code-review-diff-code .hljs-attr,
+.code-review-diff-code .hljs-attribute,
+.code-review-diff-code .hljs-property,
+.code-review-diff-code .hljs-variable,
+.code-review-diff-code .hljs-params,
+.code-review-diff-code .hljs-selector-class,
+.code-review-diff-code .hljs-selector-attr,
+.code-review-diff-code .hljs-selector-pseudo {
+  color: var(--syntax-attr);
+}
+
+.code-review-diff-code .hljs-name,
+.code-review-diff-code .hljs-tag,
+.code-review-diff-code .hljs-deletion {
+  color: var(--syntax-tag);
+}
+
+.code-review-diff-code .hljs-meta,
+.code-review-diff-code .hljs-subst,
+.code-review-diff-code .hljs-punctuation,
+.code-review-diff-code .hljs-operator {
+  color: var(--syntax-meta);
+}
+
+.code-review-diff-code .hljs-emphasis {
+  font-style: italic;
+}
+
+.code-review-diff-code .hljs-strong {
+  font-weight: 700;
+}

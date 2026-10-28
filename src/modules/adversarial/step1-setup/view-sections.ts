@@ -1,4 +1,4 @@
-import type { LoopCli } from "../../loop/types";
+import { LOOP_CLIS, type LoopCli } from "../../loop/types";
 import { normalizePath, pathStartsWith, pathsEqual } from "../../path-comparison";
 import type { CliValidation } from "../scheduler/invokers";
 import {
@@ -14,7 +14,6 @@ import {
 } from "../types";
 import type { SetupState, Step1Config } from "./view";
 
-const CLIS: LoopCli[] = ["claude", "codex", "opencode"];
 const EFFORTS: Effort[] = ["default", "low", "medium", "high", "xhigh"];
 const SEVERITIES: Severity[] = ["critical", "major", "minor", "nit"];
 
@@ -314,7 +313,7 @@ function renderSlot(
   cliLabel.textContent = "CLI";
   const cliSelect = document.createElement("select");
   cliSelect.className = "adv-select";
-  for (const cli of CLIS) {
+  for (const cli of LOOP_CLIS) {
     const opt = document.createElement("option");
     opt.value = cli;
     opt.textContent = cli;

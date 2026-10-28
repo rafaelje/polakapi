@@ -1,3 +1,4 @@
+import { defaultModelFor } from "../../shared/agent-cli";
 import { stringifyError } from "../../shared/errors";
 import { DebateScheduler } from "../adversarial/scheduler/debate-scheduler";
 import { invokers } from "../adversarial/scheduler/invokers";
@@ -7,7 +8,6 @@ import {
   DEFAULT_TIMEOUT_SECS,
   MAX_ROUNDS,
   MIN_ROUNDS,
-  defaultModelForCli,
   type DebateSettings,
   type DebateSlot,
   type DebateState,
@@ -59,7 +59,7 @@ function resolveSlot(partial: Partial<DebateSlot> | undefined, fallback: DebateS
   }
   return {
     cli,
-    model: partial?.model ?? (partial?.cli ? defaultModelForCli(cli) : fallback.model),
+    model: partial?.model ?? (partial?.cli ? defaultModelFor(cli) : fallback.model),
     effort: partial?.effort ?? fallback.effort,
   };
 }
@@ -74,12 +74,12 @@ export class AdversarialRunner {
     }
     const critic = resolveSlot(input.critic, {
       cli: "claude",
-      model: defaultModelForCli("claude"),
+      model: defaultModelFor("claude"),
       effort: "default",
     });
     const defender = resolveSlot(input.defender, {
       cli: "codex",
-      model: defaultModelForCli("codex"),
+      model: defaultModelFor("codex"),
       effort: "high",
     });
     await this.validate("critic", critic);

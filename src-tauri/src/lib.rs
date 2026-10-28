@@ -3,12 +3,14 @@
 
 mod adv_review;
 mod agent_context;
+mod agent_models;
 mod agent_sessions;
 mod agent_window;
 pub mod app_control;
 mod app_menu;
 mod awake;
 pub mod capture;
+mod code_review;
 mod commands;
 pub mod ctx;
 pub mod db;
@@ -26,6 +28,7 @@ mod notifications;
 mod open;
 mod paste_image;
 mod platform_command;
+mod project_watch;
 mod project_windows;
 mod pty;
 mod pty_activity;
@@ -52,6 +55,7 @@ use crate::adv_review::{
 use crate::agent_context::{
     agent_context_detail, agent_context_entry, agent_context_list, agent_context_search,
 };
+use crate::agent_models::agent_cli_models;
 use crate::agent_sessions::agent_list_sessions;
 use crate::agent_window::{
     agent_window_close, agent_window_focus, agent_window_open, agent_window_state, AgentWindow,
@@ -67,6 +71,13 @@ use crate::app_control::voice_control::{
 };
 use crate::app_control::{
     agent_cli_detect, agent_home_prepare, app_control_respond, app_control_set_ready,
+};
+use crate::code_review::{
+    code_review_branch, code_review_changes, code_review_commit, code_review_default_base,
+    code_review_discard, code_review_file_contents, code_review_prepare_review,
+    code_review_processes, code_review_pull, code_review_read_report, code_review_refs,
+    code_review_stage, code_review_stage_all, code_review_switch_branch, code_review_unstage,
+    code_review_watch_start, CodeReviewWatchers,
 };
 use crate::commands::{
     app_exit, create_project_folder, fs_validate_path, open_file_in_editor, open_in_editor,
@@ -181,6 +192,7 @@ pub fn run() {
                 app.manage(notifications::SoundPlayback::default());
                 app.manage(notification_command::NotificationCommandState::default());
                 app.manage(AwakeState::default());
+                app.manage(CodeReviewWatchers::default());
                 // The operator agent's MCP server reaches the app through this
                 // loopback channel; without it the agent tab still opens but
                 // every tool call reports the app as unreachable.
@@ -246,7 +258,8 @@ pub fn run() {
                 if !matches!(event, tauri::WindowEvent::Destroyed) {
                     return;
                 }
-                if window.label() == "main" {
+                let label = window.label();
+                if label == "main" {
                     store.kill_all();
                     if let Some(server) =
                         window.try_state::<Arc<app_control::server::ControlServer>>()
@@ -259,17 +272,23 @@ pub fn run() {
                         telegram.stop();
                     }
                     app_control::child::stop_all();
-                } else if window.label() == agent_window::LABEL {
+                } else if label == agent_window::LABEL {
                     if let Some(agent) = window.try_state::<AgentWindow>() {
-                        agent_window::on_destroyed(window.app_handle(), &agent, window.label());
+                        agent_window::on_destroyed(window.app_handle(), &agent, label);
                     }
-                } else if let Some(windows) = window.try_state::<ProjectWindows>() {
-                    project_windows::on_destroyed(window.app_handle(), &windows, window.label());
+                } else if project_windows::is_project_window(label) {
+                    if let Some(windows) = window.try_state::<ProjectWindows>() {
+                        project_windows::on_destroyed(window.app_handle(), &windows, label);
+                    }
+                } else {
+                    store.kill_owned_by(label);
                 }
+                window.state::<CodeReviewWatchers>().stop(label);
             }
         })
         .invoke_handler(tauri::generate_handler![
             agent_list_sessions,
+            agent_cli_models,
             agent_cli_detect,
             agent_home_prepare,
             app_control_respond,
@@ -364,6 +383,22 @@ pub fn run() {
             git_branch_diff,
             git_create_worktree,
             git_clone_repo,
+            code_review_changes,
+            code_review_stage,
+            code_review_unstage,
+            code_review_stage_all,
+            code_review_file_contents,
+            code_review_refs,
+            code_review_pull,
+            code_review_switch_branch,
+            code_review_commit,
+            code_review_discard,
+            code_review_watch_start,
+            code_review_default_base,
+            code_review_branch,
+            code_review_prepare_review,
+            code_review_processes,
+            code_review_read_report,
             adv_create_run,
             adv_read_run_file,
             adv_write_run_file,

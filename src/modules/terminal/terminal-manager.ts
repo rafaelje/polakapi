@@ -5,7 +5,6 @@ import {
   restorePaneSpecs,
   createdPaneSpec,
   patchedPaneSpec,
-  errorMessage,
 } from "./terminal-manager-lifecycle";
 import { resolveProfile } from "./cli-registry";
 import { executeTemplatePlan, planTemplateApplication } from "./layout-templates";
@@ -40,6 +39,7 @@ import {
 } from "./terminal-notifications";
 import { layoutTerminalSplits } from "./terminal-split-layout";
 import { type PaneAddOptions, type PaneSnapshots, type TerminalSpec } from "./types";
+import { stringifyError } from "../../shared/errors";
 
 export type { NotificationContext };
 
@@ -216,7 +216,7 @@ export class TerminalManager {
         snapshot: opts?.snapshot,
       });
     } catch (error) {
-      spawnError = errorMessage(error);
+      spawnError = stringifyError(error);
     }
     if (opts?.adoptPtyId) this.adopting.delete(opts.adoptPtyId);
     if (this.lifecycle.disposed) {

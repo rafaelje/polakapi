@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 pub(crate) fn validate_repo_path(project_path: &str) -> Result<PathBuf, String> {
@@ -12,7 +12,7 @@ pub(crate) fn validate_repo_path(project_path: &str) -> Result<PathBuf, String> 
     Ok(project)
 }
 
-pub(super) fn current_branch(project: &PathBuf) -> Result<String, String> {
+pub(crate) fn current_branch(project: &Path) -> Result<String, String> {
     let output = git_output(project, ["rev-parse", "--abbrev-ref", "HEAD"])?;
     if !output.status.success() {
         return Err(format!(
@@ -23,7 +23,7 @@ pub(super) fn current_branch(project: &PathBuf) -> Result<String, String> {
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
 
-pub(super) fn origin_head(project: &PathBuf) -> Result<Option<String>, String> {
+pub(super) fn origin_head(project: &Path) -> Result<Option<String>, String> {
     let output = git_output(project, ["symbolic-ref", "refs/remotes/origin/HEAD"])?;
     if !output.status.success() {
         return Ok(None);
@@ -36,7 +36,7 @@ pub(super) fn origin_head(project: &PathBuf) -> Result<Option<String>, String> {
     Ok((!name.is_empty()).then_some(name))
 }
 
-pub(super) fn ref_exists(project: &PathBuf, name: &str) -> Result<bool, String> {
+pub(crate) fn ref_exists(project: &Path, name: &str) -> Result<bool, String> {
     Ok(
         git_output(project, ["rev-parse", "--verify", "--quiet", name])?
             .status
@@ -44,7 +44,7 @@ pub(super) fn ref_exists(project: &PathBuf, name: &str) -> Result<bool, String> 
     )
 }
 
-pub(super) fn rev_parse_verify(project: &PathBuf, name: &str) -> Result<String, String> {
+pub(crate) fn rev_parse_verify(project: &Path, name: &str) -> Result<String, String> {
     let output = git_output(project, ["rev-parse", "--verify", name])?;
     if !output.status.success() {
         return Err(format!(
@@ -55,7 +55,7 @@ pub(super) fn rev_parse_verify(project: &PathBuf, name: &str) -> Result<String, 
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
 
-pub(super) fn merge_base(project: &PathBuf, a: &str, b: &str) -> Result<String, String> {
+pub(crate) fn merge_base(project: &Path, a: &str, b: &str) -> Result<String, String> {
     let output = git_output(project, ["merge-base", a, b])?;
     if !output.status.success() {
         return Err(format!(
@@ -66,24 +66,31 @@ pub(super) fn merge_base(project: &PathBuf, a: &str, b: &str) -> Result<String, 
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
 
-pub(super) fn is_safe_git_ref(name: &str) -> bool {
-    if name.is_empty() || name.len() > 200 {
+pub(crate) fn is_safe_git_ref(name: &str) -> bool {
+    if name.is_empty() || name.len() > 200 || name.starts_with('-') {
         return false;
     }
-    if name.starts_with('-') || name.contains("..") || name.contains(':') || name.contains(' ') {
+    if name.starts_with('/') || name.ends_with('/') || name.ends_with('.') {
         return false;
     }
-    name.chars().all(|character| {
-        character.is_ascii_alphanumeric()
-            || matches!(
-                character,
-                '/' | '_' | '-' | '.' | '~' | '^' | '@' | '{' | '}'
-            )
-    })
+    if [":", "..", "//", "\\", "?", "*", "["]
+        .iter()
+        .any(|forbidden| name.contains(forbidden))
+    {
+        return false;
+    }
+    if name
+        .chars()
+        .any(|character| character.is_control() || character.is_whitespace())
+    {
+        return false;
+    }
+    name.split('/')
+        .all(|part| !part.starts_with('.') && !part.ends_with(".lock"))
 }
 
 fn git_output<const N: usize>(
-    project: &PathBuf,
+    project: &Path,
     args: [&str; N],
 ) -> Result<std::process::Output, String> {
     Command::new("git")

@@ -1,0 +1,122 @@
+select.code-review-base {
+  height: 28px;
+  max-width: 260px;
+  padding: 3px 26px 3px 10px;
+  font-size: 12px;
+}
+
+select.code-review-base[hidden] {
+  display: none;
+}
+
+.code-review-list-toggle {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.code-review-list-toggle .code-review-tab {
+  flex: 1;
+  height: 24px;
+  padding: 2px 8px;
+  font-size: 11px;
+}
+
+.code-review-run {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.code-review-run-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.code-review-run.is-busy .code-review-btn {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.code-review-run .code-review-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.code-review-run-status {
+  margin: 0;
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.code-review-run-status:empty {
+  display: none;
+}
+
+.code-review-verdict {
+  flex: 0 0 auto;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.code-review-verdict[data-verdict="GO"] {
+  border-color: var(--ok);
+  color: var(--ok);
+}
+
+.code-review-verdict[data-verdict="NO-GO"] {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.code-review-run-model {
+  flex: 1 1 120px;
+  min-width: 0;
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel-elev);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.code-review-run-model:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.code-review-report {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  height: 100%;
+  min-height: 0;
+}
+
+.code-review-report-status {
+  margin: 0;
+}
+
+.code-review-report-frame {
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: #fff;
+}
+
+.code-review-report-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}

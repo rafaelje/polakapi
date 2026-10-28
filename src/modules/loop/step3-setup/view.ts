@@ -1,12 +1,13 @@
 import { promptModal } from "../../../shared/ui/modal";
 
+import { defaultModelFor } from "../../../shared/agent-cli";
+
 import { createListenerBag } from "../shared/listener-bag";
 import { topologicalBatches } from "../step2-phases";
 import {
   DEFAULT_AGENT_SLOT,
   LOOP_CLIS,
   LOOP_PROMPT_NAMES,
-  defaultModelFor,
   promptBlurb,
   promptToRole,
 } from "../types";

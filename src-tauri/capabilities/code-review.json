@@ -1,0 +1,12 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "code-review",
+  "description": "Capability for the /code-review windows, one per project (label code-review-<hash>). Custom commands such as code_review_changes reach these windows via the global invoke_handler registration in lib.rs. The clipboard permissions back copy and paste in the agent terminal and copying references from the diff.",
+  "windows": ["code-review-*"],
+  "permissions": [
+    "core:default",
+    "core:window:allow-close",
+    "clipboard-manager:allow-read-text",
+    "clipboard-manager:allow-write-text"
+  ]
+}

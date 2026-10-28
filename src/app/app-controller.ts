@@ -53,6 +53,10 @@ import {
   type AdversarialButtonHandle,
 } from "../modules/agents-flow/adversarial-window";
 import {
+  mountCodeReviewButton,
+  type CodeReviewButtonHandle,
+} from "../modules/agents-flow/code-review-window";
+import {
   mountAgentsButton,
   type AgentsButtonHandle,
 } from "../modules/agents-library/agents-button";
@@ -106,6 +110,7 @@ export class AppController {
   private agentsController: AgentsController | null = null;
   private skillsButton: SkillsButtonHandle | null = null;
   private memoryButton: MemoryButtonHandle | null = null;
+  private codeReviewButton: CodeReviewButtonHandle | null = null;
   private contextButton: ContextButtonHandle | null = null;
   private unwireShortcuts: (() => void) | null = null;
   private unwireWindowLifecycle: (() => void) | null = null;
@@ -198,6 +203,12 @@ export class AppController {
     };
     this.skillsButton = mountSkillsButton(projectScope);
     this.memoryButton = mountMemoryButton(projectScope);
+    this.codeReviewButton = mountCodeReviewButton({
+      getActiveProject: () => {
+        const project = this.workspaces?.controller.getActiveProject();
+        return project ? { path: project.path, name: project.name } : null;
+      },
+    });
     this.contextButton = mountContextButton();
     await this.wirePtyEvents();
     this.wireGutters();
@@ -319,6 +330,8 @@ export class AppController {
     this.skillsButton = null;
     this.memoryButton?.dispose();
     this.memoryButton = null;
+    this.codeReviewButton?.dispose();
+    this.codeReviewButton = null;
 
     this.contextButton?.dispose();
     this.contextButton = null;
