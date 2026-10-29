@@ -5,6 +5,7 @@ import type { Terminal } from "@xterm/xterm";
 const SHELL_COMMAND_OSC = 9931;
 // Sent at every prompt: the previous command finished. \x1b]9932;<token>;<exit>\x07.
 const COMMAND_DONE_OSC = 9932;
+const COMMAND_OUTPUT_END_OSC = 9933;
 
 export interface CapturedShellCommand {
   command: string;
@@ -62,6 +63,17 @@ export function attachCommandDoneCapture(
   return term.parser.registerOscHandler(COMMAND_DONE_OSC, (data) => {
     const exitCode = parseCommandDonePayload(data, expectedToken());
     if (exitCode !== null) onDone(exitCode);
+    return true;
+  });
+}
+
+export function attachCommandOutputEndCapture(
+  term: Terminal,
+  expectedToken: () => string,
+  onEnd: () => void,
+): { dispose(): void } {
+  return term.parser.registerOscHandler(COMMAND_OUTPUT_END_OSC, (data) => {
+    if (data && data === expectedToken()) onEnd();
     return true;
   });
 }

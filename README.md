@@ -83,6 +83,38 @@ reports another encoding, check your explicit `LANG`, `LC_ALL`, and `LC_CTYPE`
 settings and shell startup files. Once the locale is corrected, rerun
 `pod install` in the project's `ios` directory before retrying the build.
 
+### Copy Terminal Text
+
+Each submitted shell command and its output form a copyable block. Hover over
+that block to reveal its **⋮** button on the right, or right-click the block:
+
+- **Copy** copies the command and output together, without the shell prompt.
+- **Copy command** copies only that block's submitted command.
+- **Copy output** copies only that block's rendered output.
+- **Copy selection** is also available when text is selected.
+- **Paste** pastes the clipboard into the terminal.
+
+Older blocks remain independently copyable while their start is retained in
+scrollback (up to 200 blocks). If a width change reflows a shared output/prompt
+line, its affected block menus are withheld rather than targeting the wrong
+command; selection Copy remains available. An empty prompt has no block button. Right-clicking
+outside a block keeps the standard selection Copy/Paste menu. This also works
+in the bottom **Shell** tab; no permanent header copy button is shown.
+
+On macOS, **Shift + Cmd + C** copies the hovered block's command and
+**Option + Shift + Cmd + C** copies its output; without a hovered block they use
+the latest block. On Linux and Windows, use **Ctrl + Alt + C** and
+**Ctrl + Alt + Shift + C**. **Shift + F10** opens the block menu for the selected
+text's block, or the latest block when nothing is selected. Selection copying
+stays **Cmd + C** / **Ctrl + Shift + C**; **Ctrl + C** still interrupts the process.
+
+Blocks require the built-in Bash or Zsh shell integration and are captured in
+new shell sessions. Running commands copy output received so far. Full-screen
+applications, evicted output, or resizing during a command make that command's
+output unavailable; use selection Copy instead. Completed output is retained
+with its block. Copied output is rendered plain text, not ANSI formatting or a
+byte-for-byte process log.
+
 ### Search Terminal Output
 
 Press **Cmd + F** on macOS or **Ctrl + F** on Linux and Windows while a terminal

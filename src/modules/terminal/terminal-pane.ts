@@ -5,13 +5,7 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import { resolveProfile } from "./cli-registry";
 import { ptyAttach, ptySpawn, ptyWrite, ptyResize, ptyKill } from "./pty-client";
 import { terminalTheme } from "./terminal-theme";
-import {
-  attachTerminalClipboard,
-  attachTerminalContextMenuGuard,
-  attachTerminalCopyPasteKeys,
-  copyTerminalSelection,
-  pasteIntoTerminal,
-} from "./terminal-clipboard";
+import { attachTerminalClipboard, attachTerminalCopyPasteKeys } from "./terminal-clipboard";
 import { attachTerminalImagePaste } from "./terminal-image-paste";
 import { attachTerminalKeybindings } from "./terminal-keybindings";
 import { TerminalSearch } from "./terminal-search";
@@ -21,8 +15,14 @@ import {
   isPrimaryClick,
   openLinkFromText,
 } from "./terminal-links";
-import { openPaneMenu, openCliRespawnMenu, openTerminalContextMenu } from "./terminal-pane-menu";
-import { attachCommandDoneCapture, attachShellCommandCapture } from "./terminal-shell-integration";
+import { openPaneMenu, openCliRespawnMenu } from "./terminal-pane-menu";
+import {
+  attachCommandDoneCapture,
+  attachShellCommandCapture,
+  attachCommandOutputEndCapture,
+} from "./terminal-shell-integration";
+import { TerminalCommandOutput } from "./terminal-command-output";
+import { TerminalBlockActions } from "./terminal-block-actions";
 import type {
   CliRespawnCallbacks,
   DockMenuCallbacks,
@@ -51,6 +51,8 @@ export class TerminalPane {
   readonly closeBtn: HTMLButtonElement;
   readonly menuBtn: HTMLButtonElement;
   private term: Terminal;
+  private commandOutput: TerminalCommandOutput | null = null;
+  private blockActions: TerminalBlockActions | null = null;
   private commandsDone = 0;
   private readonly doneListeners = new Set<(exitCode: number) => void>();
   private fitAddon: FitAddon;
@@ -146,6 +148,17 @@ export class TerminalPane {
   async attach(host: HTMLElement, opts?: PaneCreateOptions): Promise<void> {
     host.append(this.el);
     this.term.open(this.bodyEl);
+    this.commandOutput = new TerminalCommandOutput(this.term);
+    this.disposables.push(this.commandOutput);
+    this.blockActions = new TerminalBlockActions(this.term, this.bodyEl, this.commandOutput);
+    this.disposables.push(this.blockActions);
+    this.disposables.push(
+      attachCommandOutputEndCapture(
+        this.term,
+        () => this.ptyId,
+        () => this.commandOutput?.finish(),
+      ),
+    );
     // Absolute paths in output become clickable (file → editor, dir → file
     // manager). classifyLinkText re-validates before invoking Rust.
     this.disposables.push(
@@ -160,6 +173,7 @@ export class TerminalPane {
         this.term,
         () => this.ptyId,
         ({ command, isAlias }) => {
+          this.commandOutput?.start(command);
           this.shellCommandCallbacks?.onCommand(command, isAlias);
         },
       ),
@@ -169,6 +183,7 @@ export class TerminalPane {
         this.term,
         () => this.ptyId,
         (exitCode) => {
+          this.commandOutput?.prompt();
           this.commandsDone += 1;
           for (const listener of [...this.doneListeners]) listener(exitCode);
         },
@@ -176,10 +191,10 @@ export class TerminalPane {
     );
     this.disposables.push(attachTerminalClipboard(this.term));
     this.disposables.push(attachTerminalImagePaste(this.term));
-    this.disposables.push(
-      attachTerminalContextMenuGuard(this.bodyEl, (at) => this.openContextMenu(at)),
-    );
-    attachTerminalCopyPasteKeys(this.term);
+    attachTerminalCopyPasteKeys(this.term, {
+      onCopyCommand: () => this.blockActions?.copyCommand(),
+      onCopyOutput: () => this.blockActions?.copyOutput(),
+    });
     this.disposables.push(
       attachTerminalKeybindings(this.term, (data) => {
         if (this.spawnFailed || this.exited || !this.ptyId) return;
@@ -414,9 +429,10 @@ export class TerminalPane {
   attachPlaceholder(host: HTMLElement, opts?: Pick<PaneCreateOptions, "cliId" | "command">): void {
     host.append(this.el);
     this.term.open(this.bodyEl);
-    this.disposables.push(
-      attachTerminalContextMenuGuard(this.bodyEl, (at) => this.openContextMenu(at)),
-    );
+    this.commandOutput = new TerminalCommandOutput(this.term);
+    this.disposables.push(this.commandOutput);
+    this.blockActions = new TerminalBlockActions(this.term, this.bodyEl, this.commandOutput);
+    this.disposables.push(this.blockActions);
     this.safeFit();
     this.updateCliBadge(opts?.cliId);
     this.titleEl.textContent = opts?.command ? `${opts.command} · suspended` : "shell · suspended";
@@ -505,15 +521,6 @@ export class TerminalPane {
       canDock: () => this.dockMenuCallbacks?.canDock() ?? false,
       onDockAtEdge: (position) => this.dockMenuCallbacks?.onDockAtEdge(position),
       suspend: this.suspendCallbacks,
-    });
-  }
-
-  private openContextMenu(at: { x: number; y: number }): void {
-    openTerminalContextMenu({
-      at,
-      hasSelection: () => this.term.getSelection().length > 0,
-      onCopy: () => copyTerminalSelection(this.term),
-      onPaste: () => pasteIntoTerminal(this.term),
     });
   }
 

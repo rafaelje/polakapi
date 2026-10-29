@@ -13,6 +13,7 @@ import {
   attachTerminalCopyPasteKeys,
   normalizeTerminalSelection,
   resolveCopyPasteKey,
+  resolveCommandCopyKey,
 } from "./terminal-clipboard";
 
 describe("normalizeTerminalSelection", () => {
@@ -81,6 +82,57 @@ describe("resolveCopyPasteKey", () => {
     expect(
       resolveCopyPasteKey(new KeyboardEvent("keyup", { key: "C", ctrlKey: true, shiftKey: true })),
     ).toBeNull();
+  });
+});
+
+describe("command copy shortcuts", () => {
+  it("matches the macOS command/output shortcuts, including the Option-modified key", () => {
+    expect(
+      resolveCommandCopyKey(
+        new KeyboardEvent("keydown", {
+          key: "C",
+          metaKey: true,
+          shiftKey: true,
+        }),
+        true,
+      ),
+    ).toBe("command");
+    expect(
+      resolveCommandCopyKey(
+        new KeyboardEvent("keydown", {
+          key: "Ç",
+          code: "KeyC",
+          metaKey: true,
+          shiftKey: true,
+          altKey: true,
+        }),
+        true,
+      ),
+    ).toBe("output");
+  });
+
+  it("keeps Ctrl+C and Ctrl+Shift+C free and uses Ctrl+Alt for command/output on other platforms", () => {
+    expect(
+      resolveCommandCopyKey(new KeyboardEvent("keydown", { key: "c", ctrlKey: true }), false),
+    ).toBeNull();
+    expect(
+      resolveCommandCopyKey(
+        new KeyboardEvent("keydown", { key: "C", ctrlKey: true, shiftKey: true }),
+        false,
+      ),
+    ).toBeNull();
+    expect(
+      resolveCommandCopyKey(
+        new KeyboardEvent("keydown", { key: "c", ctrlKey: true, altKey: true }),
+        false,
+      ),
+    ).toBe("command");
+    expect(
+      resolveCommandCopyKey(
+        new KeyboardEvent("keydown", { key: "C", ctrlKey: true, altKey: true, shiftKey: true }),
+        false,
+      ),
+    ).toBe("output");
   });
 });
 

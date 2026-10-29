@@ -80,6 +80,12 @@ vi.mock("./terminal-links", () => ({
 
 import { TerminalPane } from "./terminal-pane";
 
+it("does not show a permanent copy button in an empty terminal header", () => {
+  const pane = new TerminalPane();
+  expect(pane.headerEl.querySelector('[aria-label="Terminal copy options"]')).toBeNull();
+  expect(pane.headerEl.querySelector(".terminal-block-menu-btn")).toBeNull();
+});
+
 describe("TerminalPane hyperlink activation", () => {
   beforeEach(() => {
     linkMocks.openLinkFromText.mockClear();

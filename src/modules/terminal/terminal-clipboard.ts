@@ -1,4 +1,5 @@
 import { readText, writeText } from "@tauri-apps/plugin-clipboard-manager";
+import { isMacPlatform } from "../../shared/keyboard/shortcuts";
 
 export interface TerminalSelectionSource {
   element?: HTMLElement;
@@ -47,7 +48,10 @@ export function attachTerminalContextMenuGuard(
 }
 
 export function copyTerminalSelection(term: { getSelection(): string }): void {
-  const text = normalizeTerminalSelection(term.getSelection());
+  copyTerminalText(normalizeTerminalSelection(term.getSelection()));
+}
+
+export function copyTerminalText(text: string | null): void {
   if (text) {
     void writeText(text).catch((error) => console.error("Clipboard copy failed", error));
   }
@@ -83,8 +87,38 @@ interface CopyPasteTerminal {
 // event for Ctrl+Shift+C — these must be handled explicitly. Clipboard IO
 // goes through the Tauri plugin (Rust side) because WebKitGTK's async
 // navigator.clipboard is unreliable (silent write failures, denied reads).
-export function attachTerminalCopyPasteKeys(term: CopyPasteTerminal): void {
+export interface CommandCopyActions {
+  onCopyCommand(): void;
+  onCopyOutput(): void;
+}
+
+export function resolveCommandCopyKey(
+  event: KeyboardEvent,
+  isMac: boolean,
+): "command" | "output" | null {
+  if (event.type !== "keydown" || (event.code !== "KeyC" && event.key.toLowerCase() !== "c"))
+    return null;
+  if (isMac) {
+    if (!event.metaKey || event.ctrlKey || !event.shiftKey) return null;
+    return event.altKey ? "output" : "command";
+  }
+  if (!event.ctrlKey || event.metaKey || !event.altKey) return null;
+  return event.shiftKey ? "output" : "command";
+}
+
+export function attachTerminalCopyPasteKeys(
+  term: CopyPasteTerminal,
+  commands?: CommandCopyActions,
+): void {
+  const isMac = isMacPlatform();
   term.attachCustomKeyEventHandler((event) => {
+    const commandAction = commands && resolveCommandCopyKey(event, isMac);
+    if (commandAction) {
+      event.preventDefault();
+      if (commandAction === "command") commands.onCopyCommand();
+      else commands.onCopyOutput();
+      return false;
+    }
     const action = resolveCopyPasteKey(event);
     if (action === null) return true;
     event.preventDefault();

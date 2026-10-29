@@ -362,9 +362,6 @@ body {
   display: none;
 }
 
-/* Shell tab hosts a TerminalPane directly. Hide its per-pane header (badge,
-   title, menu, close) — the tab strip above already labels it, and the
-   per-pane controls don't apply to the persistent bottom shell. */
 .bottom-tab-panel[data-tab-panel="shell"] .pane-header {
   display: none;
 }
@@ -484,6 +481,43 @@ body {
 .pane-header button:hover {
   background: var(--border);
   color: var(--text);
+}
+
+.terminal-block-menu-btn {
+  position: absolute;
+  right: 14px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--panel);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.terminal-block-menu-btn[hidden] {
+  display: none;
+}
+
+.terminal-block-menu-btn:hover {
+  border-color: var(--accent);
+}
+
+.terminal-block-menu-btn:focus-visible,
+.pane-menu-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.pane-menu-item kbd {
+  float: right;
+  margin-left: 24px;
+  font: inherit;
 }
 
 /* F4: pane kebab menu popover. Lives in <body> so it escapes the pane's

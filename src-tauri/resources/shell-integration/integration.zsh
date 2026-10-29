@@ -16,6 +16,9 @@ _polakapi_report_cmd() {
 autoload -Uz add-zsh-hook
 add-zsh-hook preexec _polakapi_report_cmd
 
+# End output before zsh adds its partial-line marker and padding, not at precmd.
+PROMPT_EOL_MARK="%{"$'\033]9933;'"${_polakapi_shell_token}"$'\007'"%}${PROMPT_EOL_MARK-%B%S%#%s%b}"
+
 # Reports that the previous command finished, with its exit status, so the
 # app can tell when a command it typed is done.
 _polakapi_report_done() {
