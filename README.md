@@ -117,6 +117,10 @@ output unavailable; use selection Copy instead. Completed output is retained
 with its block. Copied output is rendered plain text, not ANSI formatting or a
 byte-for-byte process log.
 
+Commands in a pane restored from another window's saved screen have no tracked
+block. Their block menu is unavailable; use selection Copy instead. Commands
+run after the handoff are tracked normally.
+
 ### Search Terminal Output
 
 Press **Cmd + F** on macOS or **Ctrl + F** on Linux and Windows while a terminal
