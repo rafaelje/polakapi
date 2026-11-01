@@ -89,6 +89,8 @@ Each submitted shell command and its output form a copyable block. Hover over
 that block to reveal its **⋮** button on the right, or right-click the block:
 
 - **Copy** copies the command and output together, without the shell prompt.
+  If output is unavailable, it copies the current selection instead, or is
+  disabled when nothing is selected.
 - **Copy command** copies only that block's submitted command.
 - **Copy output** copies only that block's rendered output.
 - **Copy selection** is also available when text is selected.

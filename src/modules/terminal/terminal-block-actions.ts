@@ -129,13 +129,16 @@ export class TerminalBlockActions {
     const selection = this.term.getSelection();
     const snapshot =
       block && this.history.blocks.includes(block) ? this.history.snapshot(block) : null;
-    const both = snapshot ? snapshot.command + (snapshot.output ? `\n${snapshot.output}` : "") : "";
+    const both =
+      snapshot && snapshot.output !== null
+        ? snapshot.command + (snapshot.output ? `\n${snapshot.output}` : "")
+        : null;
     this.button.setAttribute("aria-expanded", "true");
     this.menu = openTerminalContextMenu({
       at,
-      hasSelection: () => Boolean(snapshot || selection),
+      hasSelection: () => Boolean(both || selection),
       onCopy: () =>
-        snapshot
+        both !== null
           ? copyTerminalText(both)
           : copyTerminalSelection({ getSelection: () => selection }),
       onPaste: () => pasteIntoTerminal(this.term),

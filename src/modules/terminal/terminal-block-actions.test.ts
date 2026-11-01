@@ -7,6 +7,9 @@ const clipboard = vi.hoisted(() => ({
   writeText: vi.fn().mockResolvedValue(undefined),
   readText: vi.fn(),
 }));
+vi.hoisted(() => {
+  vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
+});
 vi.mock("@tauri-apps/plugin-clipboard-manager", () => clipboard);
 
 describe("terminal block actions", () => {
@@ -75,17 +78,73 @@ describe("terminal block actions", () => {
   });
 
   it("targets right-clicked blocks and keeps selection copy and paste outside blocks", async () => {
-    const { host } = await setup();
+    const { host, term } = await setup();
     host.dispatchEvent(
       new MouseEvent("contextmenu", { clientX: 20, clientY: 35, cancelable: true }),
     );
     document.querySelector<HTMLButtonElement>('[aria-label="Copy command"]')!.click();
     expect(clipboard.writeText).toHaveBeenLastCalledWith("second");
+    vi.spyOn(term, "getSelection").mockReturnValue("selected text");
     host.dispatchEvent(
       new MouseEvent("contextmenu", { clientX: 20, clientY: 45, cancelable: true }),
     );
     expect(document.querySelector('[aria-label="Copy command"]')).toBeNull();
     expect(document.querySelector('[aria-label="Paste"]')).not.toBeNull();
+    document.querySelector<HTMLButtonElement>('[aria-label="Copy"]')!.click();
+    expect(clipboard.writeText).toHaveBeenLastCalledWith("selected text");
+    clipboard.readText.mockResolvedValue("pasted text");
+    const paste = vi.spyOn(term, "paste").mockImplementation(() => {});
+    host.dispatchEvent(new MouseEvent("contextmenu", { clientX: 20, clientY: 45 }));
+    document.querySelector<HTMLButtonElement>('[aria-label="Paste"]')!.click();
+    await vi.waitFor(() => expect(paste).toHaveBeenCalledExactlyOnceWith("pasted text"));
+  });
+
+  it.each(["", "selected text"])(
+    "falls back to selection copy when running output is unavailable (selection: %s)",
+    async (selection) => {
+      const { host, term, history } = await setup();
+      await new Promise<void>((resolve) => term.write("running\r\n", resolve));
+      history.start("running");
+      await new Promise<void>((resolve) => term.write("partial", resolve));
+      term.resize(40, 11);
+      vi.spyOn(term, "getSelection").mockReturnValue(selection);
+      host.dispatchEvent(new KeyboardEvent("keydown", { key: "F10", shiftKey: true }));
+      const copy = document.querySelector<HTMLButtonElement>('[aria-label="Copy"]')!;
+      expect(copy.disabled).toBe(!selection);
+      expect(
+        document.querySelector<HTMLButtonElement>('[aria-label="Copy output"]')!.disabled,
+      ).toBe(true);
+      expect(
+        document.querySelector<HTMLButtonElement>('[aria-label="Copy command"]')!.disabled,
+      ).toBe(false);
+      copy.click();
+      if (selection) expect(clipboard.writeText).toHaveBeenCalledExactlyOnceWith(selection);
+      else expect(clipboard.writeText).not.toHaveBeenCalled();
+    },
+  );
+
+  it("copies a silent command when its output is empty but available", async () => {
+    const { host, history, term } = await setup();
+    await new Promise<void>((resolve) => term.write("true\r\n", resolve));
+    history.start("true");
+    history.finish();
+    host.dispatchEvent(new KeyboardEvent("keydown", { key: "F10", shiftKey: true }));
+    const copy = document.querySelector<HTMLButtonElement>('[aria-label="Copy"]')!;
+    expect(copy.disabled).toBe(false);
+    copy.click();
+    expect(clipboard.writeText).toHaveBeenCalledExactlyOnceWith("true");
+  });
+
+  it("returns focus to the terminal when the block menu is dismissed", async () => {
+    const { host, term } = await setup();
+    vi.stubGlobal("matchMedia", () => ({ addListener() {}, removeListener() {} }));
+    term.open(host);
+    host.dispatchEvent(new KeyboardEvent("keydown", { key: "F10", shiftKey: true }));
+    expect(document.activeElement?.getAttribute("role")).toBe("menuitem");
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    expect(document.querySelector('[role="menu"]')).toBeNull();
+    expect(document.activeElement).toBe(term.textarea);
+    vi.unstubAllGlobals();
   });
 
   it("cleans up menus and the hover control on disposal", async () => {
