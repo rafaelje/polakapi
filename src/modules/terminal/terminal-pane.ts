@@ -400,6 +400,8 @@ export class TerminalPane {
   }
 
   private writeExitMarker(): void {
+    // Capture after queued PTY output, before the synthetic marker is parsed.
+    this.term.write("", () => this.commandOutput?.finish());
     this.writeToTerminal("\r\n\x1b[90m[process exited]\x1b[0m\r\n");
   }
 
