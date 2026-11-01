@@ -103,6 +103,7 @@ export function resolveCommandCopyKey(
     return event.altKey ? "output" : "command";
   }
   if (!event.ctrlKey || event.metaKey || !event.altKey) return null;
+  if (event.getModifierState("AltGraph") && event.key.toLowerCase() !== "c") return null;
   return event.shiftKey ? "output" : "command";
 }
 
@@ -111,8 +112,15 @@ export function attachTerminalCopyPasteKeys(
   commands?: CommandCopyActions,
 ): void {
   const isMac = isMacPlatform();
+  let altGraphPressed = false;
   term.attachCustomKeyEventHandler((event) => {
-    const commandAction = commands && resolveCommandCopyKey(event, isMac);
+    if (event.key === "AltGraph") {
+      altGraphPressed = event.type !== "keyup";
+    } else if (!event.altKey || event.code === "AltLeft") {
+      altGraphPressed = false;
+    }
+    const commandAction =
+      commands && (isMac || !altGraphPressed) && resolveCommandCopyKey(event, isMac);
     if (commandAction) {
       event.preventDefault();
       if (commandAction === "command") commands.onCopyCommand();
