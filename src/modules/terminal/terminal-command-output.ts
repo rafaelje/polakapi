@@ -106,6 +106,7 @@ export class TerminalCommandOutput {
     block.outputStart?.dispose();
     block.outputStart = undefined;
     this.setEnd(block);
+    this.awaitingPrompt = false;
   }
 
   prompt(): void {

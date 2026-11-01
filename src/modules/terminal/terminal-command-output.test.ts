@@ -84,6 +84,8 @@ describe("terminal command output", () => {
       `${start("printf partial")}par\x1b]9933;other-token\x07tial\x1b]9933;test-token\x07%    \r\n${done}$ `,
     );
     expect(capture.output).toBe("partial");
+    expect(capture.blockAt(0, 6)?.command).toBe("printf partial");
+    expect(capture.blockAt(0, 8)).toBeUndefined();
   });
 
   it("does not guess output after scrollback eviction, resize or an alternate screen", async () => {
