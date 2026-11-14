@@ -58,6 +58,7 @@ vi.mock("../terminal/pty-client", () => ({
   onPtyExit: () => Promise.resolve(() => {}),
 }));
 vi.mock("../../shared/keyboard/shortcuts", () => ({
+  isMacPlatform: () => false,
   wireShortcuts: (callbacks: typeof bridge.shortcuts) => {
     bridge.shortcuts = callbacks;
   },

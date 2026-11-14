@@ -12,6 +12,8 @@ const pty = vi.hoisted(() => {
     kill: vi.fn().mockResolvedValue(undefined),
   };
 });
+const clipboard = vi.hoisted(() => ({ writeText: vi.fn().mockResolvedValue(undefined) }));
+vi.mock("@tauri-apps/plugin-clipboard-manager", () => clipboard);
 vi.mock("./pty-client", () => ({
   ptyAttach: pty.attach,
   ptyResize: pty.resize,
@@ -61,9 +63,84 @@ afterEach(async () => {
   await Promise.all(panes.splice(0).map((pane) => pane.dispose({ keepPty: true })));
   vi.resetAllMocks();
   pty.resize.mockResolvedValue(undefined);
+  clipboard.writeText.mockResolvedValue(undefined);
 });
 
 describe("TerminalPane streaming handoff with real xterm", () => {
+  it("finishes all queued chunks before copying output and restoring an immediate exit snapshot", async () => {
+    const source = pane();
+    vi.spyOn(term(source), "open").mockImplementation(() => {});
+    pty.attach.mockResolvedValueOnce({ data: "", offset: 0 });
+    await source.attach(document.createElement("div"), { existingPtyId: "handoff" });
+    source.write(`$ printf\r\n\x1b]9931;handoff;c;${btoa("printf")}\x07`);
+    for (const part of ["alpha", "\r\n", "beta", "\x1b[31m", " gamma", "\x1b[0m"])
+      source.write(part);
+    source.markExited();
+    const snapshot = await source.snapshot();
+    expect(snapshot?.exited).toBe(true);
+    expect(text(source)).toBe("$ printf\nalpha\nbeta gamma\n[process exited]");
+    source.bodyEl.dispatchEvent(new KeyboardEvent("keydown", { key: "F10", shiftKey: true }));
+    document.querySelector<HTMLButtonElement>('[aria-label="Copy output"]')!.click();
+    expect(clipboard.writeText).toHaveBeenLastCalledWith("alpha\nbeta gamma");
+    const restored = pane();
+    vi.spyOn(term(restored), "open").mockImplementation(() => {});
+    await restored.attach(document.createElement("div"), {
+      existingPtyId: "handoff",
+      snapshot: snapshot!,
+    });
+    await flush(restored);
+    expect(text(restored)).toBe(text(source));
+  });
+
+  it("keeps ordinary output and exit rendering unchanged without a tracked command", async () => {
+    const source = pane();
+    source.write("normal\r\n\x1b[31mred\x1b[0m");
+    source.markExited();
+    expect((await source.snapshot())?.exited).toBe(true);
+    expect(text(source)).toBe("normal\nred\n[process exited]");
+    source.markExited();
+    await flush(source);
+    expect(text(source)).toBe("normal\nred\n[process exited]");
+  });
+
+  it.each([false, true])(
+    "copies queued command output without the exit marker (catch-up: %s)",
+    async (duringCatchUp) => {
+      const adopted = pane();
+      vi.spyOn(term(adopted), "open").mockImplementation(() => {});
+      let resolve!: (value: { data: string; offset: number }) => void;
+      pty.attach.mockImplementationOnce(
+        () =>
+          new Promise((done) => {
+            resolve = done;
+          }),
+      );
+      const attached = adopted.attach(document.createElement("div"), { existingPtyId: "handoff" });
+      const start = `$ command\r\n\x1b]9931;handoff;c;${btoa("command")}\x07hello`;
+      if (!duringCatchUp) {
+        resolve({ data: "", offset: 0 });
+        await attached;
+        adopted.write(start);
+      }
+      adopted.write(" world");
+      adopted.markExited();
+      if (duringCatchUp) {
+        resolve({ data: start, offset: new TextEncoder().encode(start).length });
+        await attached;
+      }
+      const snapshot = await adopted.snapshot();
+      expect(snapshot?.exited).toBe(true);
+      expect((snapshot?.screen ?? "") + (snapshot?.replay ?? "")).toContain("[process exited]");
+      adopted.bodyEl.dispatchEvent(new KeyboardEvent("keydown", { key: "F10", shiftKey: true }));
+      document.querySelector<HTMLButtonElement>('[aria-label="Copy output"]')!.click();
+      expect(clipboard.writeText).toHaveBeenLastCalledWith("hello world");
+      expect(text(adopted)).toBe("$ command\nhello world\n[process exited]");
+      adopted.markExited();
+      await flush(adopted);
+      expect(text(adopted).match(/\[process exited\]/g)).toHaveLength(1);
+    },
+  );
+
   it("does not forward resize events from an adopted exited pane", async () => {
     const adopted = pane();
     vi.spyOn(term(adopted), "open").mockImplementation(() => {});

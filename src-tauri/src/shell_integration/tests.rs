@@ -98,3 +98,32 @@ fn bash_integration_preserves_debug_trap_and_prompt_command_array() {
     assert!(stdout.contains("second_hook"));
     assert!(stdout.contains("_polakapi_preexec; _user_debug"));
 }
+
+#[cfg(target_os = "macos")]
+#[test]
+fn zsh_output_boundary_preserves_partial_line_mark_and_exit_status() {
+    let tmp = tempfile::tempdir().unwrap();
+    let integration = tmp.path().join("integration.zsh");
+    std::fs::write(&integration, INTEGRATION_ZSH).unwrap();
+    for (setup, expected_mark) in [
+        ("unset PROMPT_EOL_MARK", "%"),
+        ("PROMPT_EOL_MARK='custom'", "custom"),
+        ("PROMPT_EOL_MARK=''", ""),
+    ] {
+        let script = format!(
+            "_polakapi_shell_token=test-token; {setup}; source \"$1\"; print -Pn -- \"$PROMPT_EOL_MARK\"; false; _polakapi_report_done"
+        );
+        let output = Command::new("/bin/zsh")
+            .args(["-f", "-c", &script, "test", integration.to_str().unwrap()])
+            .env("HOME", tmp.path())
+            .env("TERM", "dumb")
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+        let stdout = String::from_utf8(output.stdout).unwrap();
+        assert_eq!(
+            stdout,
+            format!("\u{1b}]9933;test-token\u{7}{expected_mark}\u{1b}]9932;test-token;1\u{7}")
+        );
+    }
+}

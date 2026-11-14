@@ -1,5 +1,6 @@
 import { confirmModal, promptModal } from "../../shared/ui/modal";
 import { clampPopoverToViewport } from "../../shared/ui/popover-position";
+import { isMacPlatform } from "../../shared/keyboard/shortcuts";
 import { ALL_PROFILES, resolveProfile, type CliProfile } from "./cli-registry";
 import type { TerminalDockPosition } from "./terminal-layout";
 import type { StartupCmdEditCallbacks, SuspendCallbacks } from "./terminal-pane-types";
@@ -211,6 +212,14 @@ export interface TerminalContextMenuOptions {
   hasSelection(): boolean;
   onCopy(): void;
   onPaste(): void;
+  onClose?(): void;
+  onCopySelection?(): void;
+  commandActions?: {
+    command: string;
+    output: string | null;
+    onCopyCommand(): void;
+    onCopyOutput(): void;
+  };
 }
 
 let activeTerminalMenuDispose: (() => void) | null = null;
@@ -223,6 +232,8 @@ export function openTerminalContextMenu(opts: TerminalContextMenuOptions): PaneM
 
   const popover = document.createElement("div");
   popover.className = "pane-menu-popover";
+  popover.setAttribute("role", "menu");
+  popover.setAttribute("aria-label", "Terminal clipboard");
   popover.style.position = "fixed";
   popover.style.top = `${opts.at.y + 2}px`;
   popover.style.left = `${opts.at.x + 2}px`;
@@ -237,12 +248,30 @@ export function openTerminalContextMenu(opts: TerminalContextMenuOptions): PaneM
     window.removeEventListener("resize", dispose);
     window.removeEventListener("scroll", dispose, true);
     if (activeTerminalMenuDispose === dispose) activeTerminalMenuDispose = null;
+    opts.onClose?.();
   };
   const onOutside = (e: MouseEvent): void => {
     if (!popover.contains(e.target as Node)) dispose();
   };
   const onKey = (e: KeyboardEvent): void => {
-    if (e.key === "Escape") dispose();
+    if (e.key === "Escape") {
+      e.preventDefault();
+      e.stopPropagation();
+      dispose();
+    }
+    if (e.key === "Tab") dispose();
+    if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(e.key)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const items = [...popover.querySelectorAll<HTMLButtonElement>("button:not(:disabled)")];
+    const current = items.indexOf(document.activeElement as HTMLButtonElement);
+    const next =
+      e.key === "Home"
+        ? 0
+        : e.key === "End"
+          ? items.length - 1
+          : (current + (e.key === "ArrowDown" ? 1 : -1) + items.length) % items.length;
+    items[next]?.focus();
   };
 
   const copyItem = document.createElement("button");
@@ -264,7 +293,56 @@ export function openTerminalContextMenu(opts: TerminalContextMenuOptions): PaneM
     opts.onPaste();
   });
 
-  popover.append(copyItem, pasteItem);
+  popover.append(copyItem);
+  const actions = opts.commandActions;
+  const isMac = isMacPlatform();
+  if (actions) {
+    for (const [label, text, shortcut, action] of [
+      [
+        "Copy command",
+        actions.command,
+        isMac ? "⇧⌘C" : "Ctrl+Alt+C",
+        () => actions.onCopyCommand(),
+      ],
+      [
+        "Copy output",
+        actions.output,
+        isMac ? "⌥⇧⌘C" : "Ctrl+Alt+Shift+C",
+        () => actions.onCopyOutput(),
+      ],
+    ] as const) {
+      const item = document.createElement("button");
+      item.type = "button";
+      item.className = "pane-menu-item";
+      item.textContent = label;
+      item.disabled = !text;
+      item.title = text ? label : "Requires captured shell command/output";
+      item.addEventListener("click", () => {
+        dispose();
+        action();
+      });
+      const hint = document.createElement("kbd");
+      hint.textContent = shortcut;
+      item.append(hint);
+      item.setAttribute("aria-label", label);
+      popover.append(item);
+    }
+  }
+  if (opts.onCopySelection) {
+    const selectionItem = document.createElement("button");
+    selectionItem.type = "button";
+    selectionItem.className = "pane-menu-item";
+    selectionItem.textContent = "Copy selection";
+    selectionItem.setAttribute("aria-label", "Copy selection");
+    selectionItem.addEventListener("click", () => {
+      dispose();
+      opts.onCopySelection?.();
+    });
+    popover.append(selectionItem);
+  }
+  popover.append(pasteItem);
+  for (const item of [copyItem, pasteItem]) item.setAttribute("aria-label", item.textContent!);
+  for (const item of popover.querySelectorAll("button")) item.setAttribute("role", "menuitem");
   document.body.append(popover);
   clampPopoverToViewport(popover);
   window.addEventListener("mousedown", onOutside, true);
@@ -272,6 +350,7 @@ export function openTerminalContextMenu(opts: TerminalContextMenuOptions): PaneM
   window.addEventListener("resize", dispose);
   window.addEventListener("scroll", dispose, true);
   activeTerminalMenuDispose = dispose;
+  popover.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus();
 
   return { dispose };
 }
