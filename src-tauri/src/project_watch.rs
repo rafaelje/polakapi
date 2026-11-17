@@ -115,8 +115,19 @@ fn run<B: Backend>(mut watches: Vec<(B, Scope)>, stop: &AtomicBool, on_change: i
             let wait = if index == 0 { timeout } else { Duration::ZERO };
             match backend.wait(wait) {
                 Ok(Activity::Quiet) => {}
-                Ok(Activity::Overflow) => changed = true,
+                Ok(Activity::Overflow) => {
+                    #[cfg(test)]
+                    eprintln!("[DEBUG-watch] overflow scope={scope:?}");
+                    changed = true;
+                }
                 Ok(Activity::Paths(paths)) => {
+                    #[cfg(test)]
+                    for path in &paths {
+                        eprintln!(
+                            "[DEBUG-watch] path={path:?} scope={scope:?} relevant={}",
+                            scope.is_relevant(path)
+                        );
+                    }
                     changed |= paths.iter().any(|path| scope.is_relevant(path));
                 }
                 Err(error) => {

@@ -225,6 +225,18 @@ extern "C" fn on_events(
     let dropped = kFSEventStreamEventFlagMustScanSubDirs
         | kFSEventStreamEventFlagUserDropped
         | kFSEventStreamEventFlagKernelDropped;
+    #[cfg(test)]
+    for (&path, flag) in paths.iter().zip(flags) {
+        if !path.is_null() {
+            // SAFETY: callback paths remain valid NUL-terminated strings here.
+            let bytes = unsafe { CStr::from_ptr(path) }.to_bytes();
+            let absolute = Path::new(std::ffi::OsStr::from_bytes(bytes));
+            eprintln!(
+                "[DEBUG-watch] fsevents relative={:?} flags={flag:#x}",
+                absolute.strip_prefix(&shared.root).ok()
+            );
+        }
+    }
     if flags.iter().any(|flag| flag & dropped != 0) {
         let _ = shared.sender.send(Batch::Overflow);
         return;
