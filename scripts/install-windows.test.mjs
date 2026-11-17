@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { createServer } from "node:http";
-import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { lstat, mkdtemp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
@@ -123,7 +123,7 @@ test(
 
     assert.notEqual(result.status, 0);
     assert.match(`${result.stderr}\n${result.stdout}`, /UnknownOption/i);
-    await assert.rejects(readFile(installDir));
+    await assert.rejects(lstat(installDir), { code: "ENOENT" });
   },
 );
 
@@ -183,7 +183,7 @@ test(
 
     assert.notEqual(result.status, 0);
     assert.match(`${result.stderr}\n${result.stdout}`, /Requested version does not match/i);
-    await assert.rejects(readFile(installDir));
+    await assert.rejects(lstat(installDir), { code: "ENOENT" });
   },
 );
 
@@ -199,6 +199,6 @@ test(
 
     assert.notEqual(result.status, 0);
     assert.match(`${result.stderr}\n${result.stdout}`, /redirects must use HTTPS/i);
-    await assert.rejects(readFile(installDir));
+    await assert.rejects(lstat(installDir), { code: "ENOENT" });
   },
 );

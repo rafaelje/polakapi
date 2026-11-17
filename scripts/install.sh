@@ -29,7 +29,7 @@ USAGE
 valid_version() { printf '%s\n' "$1" | grep -Eq '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'; }
 valid_source() {
   case "$1" in *'@'*|*'?'*|*'#'*|*'\\'*) return 1;; esac
-  printf '%s' "$1" | grep -q '[[:space:]]' && return 1
+  [ "$(printf '%s' "$1" | LC_ALL=C tr -d '[:cntrl:][:space:]')" = "$1" ] || return 1
   case "$1" in
     https://*) remainder=${1#https://}; authority=${remainder%%/*}
       printf '%s\n' "$authority" | grep -Eq '^[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?([.][A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?)*(:[0-9]{1,5})?$' || return 1

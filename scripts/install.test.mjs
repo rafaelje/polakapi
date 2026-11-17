@@ -9,6 +9,7 @@ import {
   symlink,
   writeFile,
   chmod,
+  lstat,
 } from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
@@ -293,6 +294,22 @@ testOnPosix("macOS running-process guard matches only the selected install path"
     PATH: `${bin}:${path.join(scratch, "test-bin")}:${process.env.PATH}`,
   });
   assert.equal(repeated.code, 0, repeated.stderr);
+});
+
+testOnPosix("rejects source control characters before downloads or installation", async () => {
+  const target = path.join(scratch, "must-not-exist");
+  for (const source of [
+    "https://example.com/release\nhttps://evil.example",
+    "https://example.com/release\n",
+    "https://example.com/release\r\nX-Injected: yes",
+    "https://example.com/release\t",
+    "https://example.com/release\x01",
+  ]) {
+    const result = await run(["--source", source, "--install-dir", target]);
+    assert.equal(result.code, 1);
+    assert.match(result.stderr, /source must be HTTPS or explicit loopback HTTP/);
+    await assert.rejects(lstat(target), { code: "ENOENT" });
+  }
 });
 
 testOnPosix(
