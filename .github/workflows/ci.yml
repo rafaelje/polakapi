@@ -9,6 +9,24 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  installers:
+    name: Installer contracts (${{ matrix.os }})
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - name: Test installer public commands and release preparation
+        run: node --test scripts/install.test.mjs scripts/install-windows.test.mjs scripts/prepare-installer-release.test.mjs
+
   version:
     name: Package version bump
     if: github.event_name == 'pull_request'

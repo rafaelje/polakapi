@@ -1,7 +1,7 @@
 {
   "name": "polakapi",
   "private": true,
-  "version": "0.20.0",
+  "version": "0.20.1",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -11,6 +11,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run && node --test scripts/tauri-dev.test.mjs scripts/check-version-bump.test.mjs",
     "test:watch": "vitest",
+    "test:installers": "node --test scripts/install.test.mjs scripts/install-windows.test.mjs scripts/prepare-installer-release.test.mjs",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
