@@ -147,6 +147,9 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v5
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
       - uses: actions/download-artifact@v8
         with:
           pattern: polakapi-*
@@ -158,6 +161,11 @@ jobs:
           version=$(jq -r .version src-tauri/tauri.conf.json)
           echo "tag=v${version}" >> "$GITHUB_OUTPUT"
           echo "title=polakapi v${version}" >> "$GITHUB_OUTPUT"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+      - name: Prepare versioned installer metadata
+        env:
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+        run: node scripts/prepare-installer-release.mjs --assets release-assets --output installer-release --version "$RELEASE_VERSION"
       - name: Publish desktop installers to GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -167,7 +175,7 @@ jobs:
           assets=()
           while IFS= read -r -d '' asset; do
             assets+=("$asset")
-          done < <(find release-assets -type f -print0)
+          done < <(find installer-release -type f -print0)
 
           if (( ${#assets[@]} == 0 )); then
             echo "No release assets found" >&2
@@ -175,13 +183,16 @@ jobs:
           fi
 
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            gh release upload "$RELEASE_TAG" "${assets[@]}" --clobber
-          else
-            gh release create "$RELEASE_TAG" "${assets[@]}" \
-              --target "$GITHUB_SHA" \
-              --title "$RELEASE_TITLE" \
-              --generate-notes
+            echo "Release $RELEASE_TAG already exists; refusing to replace immutable installer assets." >&2
+            exit 1
           fi
+
+          gh release create "$RELEASE_TAG" "${assets[@]}" \
+            --target "$GITHUB_SHA" \
+            --title "$RELEASE_TITLE" \
+            --generate-notes \
+            --draft
+          gh release edit "$RELEASE_TAG" --draft=false --latest
 
           release_url=$(gh release view "$RELEASE_TAG" --json url --jq .url)
           echo "[Download the desktop installers from $RELEASE_TITLE]($release_url)" >> "$GITHUB_STEP_SUMMARY"

@@ -12,7 +12,59 @@ polakapi is a cross-platform desktop workspace for running AI coding agents and 
 - Use Claude Code, Codex, OpenCode, or any other terminal-based tool.
 - Operate polakapi from an agent tab, or from Telegram through an optional bot limited to allowed users.
 
-## Getting Started
+## Install
+
+Download the desktop package from [GitHub Releases](https://github.com/rafaelje/polakapi/releases). Building from source is not required.
+
+### Script installers
+
+The commands below require a release containing `install.sh`, `install.ps1`, and `manifest.tsv`. They will not work against older releases that lack these assets. This feature must be published before the public commands are available.
+
+**macOS and Linux:**
+
+```sh
+curl -fsSL https://github.com/rafaelje/polakapi/releases/latest/download/install.sh | sh
+```
+
+**Windows PowerShell:**
+
+```powershell
+Invoke-WebRequest https://github.com/rafaelje/polakapi/releases/latest/download/install.ps1 -OutFile install.ps1
+Get-Content .\install.ps1
+.\install.ps1
+```
+
+For shell users who prefer to inspect the installer first:
+
+```sh
+curl -fsSL https://github.com/rafaelje/polakapi/releases/latest/download/install.sh -o install.sh
+less install.sh
+sh install.sh
+```
+
+Installers verify package checksums, install for the current user, and leave settings and workspaces intact. A checksum detects mismatched release bytes; it does not replace trust in the release publisher or Apple's notarization. macOS builds are ad-hoc signed, so macOS may require approval in Privacy & Security. Do not disable OS security protections. If Windows policy blocks the script, use the release's `.exe` installer instead.
+
+Rerun the installer to update, or select a release with `--version X.Y.Z` (`-Version X.Y.Z` in PowerShell). Close polakapi first. See [macOS/Linux installation](docs/install-posix.md) and [Windows installation](docs/install-windows.md) for destinations, uninstall instructions, platform limits, and Git Bash usage. AI coding CLIs are installed separately.
+
+Git Bash verifies the PowerShell script before launching it with `RemoteSigned` for that process and its child sessions only. This can override local script restrictions, but does not change saved policies or override organization-enforced Group Policy. Direct PowerShell invocation retains the existing policy.
+
+### Installer development
+
+Run `pnpm test:installers` for public-command fixture tests. Native platform checks are required in addition to fixtures; a macOS test does not establish Windows/Linux compatibility.
+
+Prepare a release directory from existing bundles:
+
+```sh
+node scripts/prepare-installer-release.mjs --assets /path/to/bundles --output /path/to/new-release --version X.Y.Z
+```
+
+The output includes the installers, manifest, version marker, and `SHA256SUMS`. Existing output directories are never overwritten. For a local single-platform test only, add `--allow-partial`. Serve that directory on loopback and run `sh scripts/install.sh --source http://127.0.0.1:PORT --install-dir /path/to/isolated-install`. Never serve private files or expose the server on a public interface.
+
+For a packaged macOS development test, use a separate bundle identifier (`com.rafaelje.polakapi.installtest`) and isolated `HOME`, `TMPDIR`, and working directory when launching the installed executable. Do not run the normal application against real user data as a smoke test. A locally produced DMG does not verify fresh-download Gatekeeper behavior.
+
+The release workflow prepares all assets before publishing a draft, and refuses to replace an existing version. Failed draft publication needs maintainer inspection; rerunning does not overwrite release bytes.
+
+## Develop
 
 ### Requirements
 
