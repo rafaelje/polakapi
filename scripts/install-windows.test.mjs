@@ -16,8 +16,14 @@ const powershell = process.env.POWERSHELL ?? "powershell.exe";
 
 function runInstaller(args, cwd) {
   return new Promise((resolve, reject) => {
+    const env = { ...process.env };
+    // Let the child rebuild its module paths instead of inheriting PowerShell 7 modules.
+    for (const key of Object.keys(env)) {
+      if (key.toLowerCase() === "psmodulepath") delete env[key];
+    }
     const child = spawn(powershell, ["-NoProfile", "-File", scriptPath, ...args], {
       cwd,
+      env,
       windowsHide: true,
     });
     let stdout = "";
