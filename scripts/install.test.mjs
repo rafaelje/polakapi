@@ -384,9 +384,11 @@ testOnPosix("Git Bash verifies the downloaded PowerShell script before delegatio
   );
   assert.equal(result.code, 0, result.stderr);
   const args = await readFile(log, "utf8");
-  assert.match(args, /-File/);
-  assert.match(args, /-Source/);
-  assert.doesNotMatch(args, /ExecutionPolicy|Bypass/i);
+  const argv = args.trimEnd().split("\n");
+  assert.deepEqual(argv.slice(0, 4), ["-NoProfile", "-ExecutionPolicy", "RemoteSigned", "-File"]);
+  assert.match(argv[4], /install\.ps1$/);
+  assert.deepEqual(argv.slice(5), ["-Source", source, "-Version", "1.2.3"]);
+  assert.doesNotMatch(args, /Bypass|Unrestricted|Set-ExecutionPolicy/i);
 });
 
 testOnPosix("Git Bash never invokes a checksum-corrupted PowerShell script", async () => {
@@ -452,4 +454,19 @@ testOnPosix("Redirect rejection leaves persisted bytes unchanged", async () => {
   assert.notEqual(result.code, 0);
   assert.equal(hits, 0);
   assert.equal(await readFile(path.join(target, "polakapi.AppImage"), "utf8"), "old executable");
+});
+
+testOnPosix("Git Bash forwards installation paths with spaces under RemoteSigned", async () => {
+  const { bin, log, script } = await createGitBashStubs();
+  await startSource();
+  const target = path.join(scratch, "Installed Apps");
+  const result = await run(
+    ["--source", source, "--version", "1.2.3", "--install-dir", target],
+    { PATH: `${bin}:${process.env.PATH}` },
+    script,
+  );
+  assert.equal(result.code, 0, result.stderr);
+  const argv = (await readFile(log, "utf8")).trimEnd().split("\n");
+  assert.deepEqual(argv.slice(0, 4), ["-NoProfile", "-ExecutionPolicy", "RemoteSigned", "-File"]);
+  assert.deepEqual(argv.slice(5), ["-Source", source, "-Version", "1.2.3", "-InstallDir", target]);
 });

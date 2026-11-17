@@ -46,6 +46,8 @@ Installers verify package checksums, install for the current user, and leave set
 
 Rerun the installer to update, or select a release with `--version X.Y.Z` (`-Version X.Y.Z` in PowerShell). Close polakapi first. See [macOS/Linux installation](docs/install-posix.md) and [Windows installation](docs/install-windows.md) for destinations, uninstall instructions, platform limits, and Git Bash usage. AI coding CLIs are installed separately.
 
+Git Bash verifies the PowerShell script before launching it with `RemoteSigned` for that process and its child sessions only. This can override local script restrictions, but does not change saved policies or override organization-enforced Group Policy. Direct PowerShell invocation retains the existing policy.
+
 ### Installer development
 
 Run `pnpm test:installers` for public-command fixture tests. Native platform checks are required in addition to fixtures; a macOS test does not establish Windows/Linux compatibility.

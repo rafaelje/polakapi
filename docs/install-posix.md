@@ -36,4 +36,4 @@ The installer does not remove user data.
 
 ## Platform notes
 
-The initial packages support universal macOS and x64 Linux. Git Bash delegates to the verified PowerShell installer; WSL is refused so users can choose the native Windows installer explicitly. Unsupported operating systems and architectures are rejected. macOS packages use ad-hoc signing and may still be subject to macOS security prompts.
+The initial packages support universal macOS and x64 Linux. Git Bash delegates to the verified PowerShell installer with process-scoped `RemoteSigned`; saved execution policies are unchanged and Group Policy still takes precedence. See the [Windows policy details](install-windows.md#git-bash). WSL is refused so users can choose the native Windows installer explicitly. Unsupported operating systems and architectures are rejected. macOS packages use ad-hoc signing and may still be subject to macOS security prompts.

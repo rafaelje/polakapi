@@ -17,6 +17,8 @@ Usage: install.sh [--source URL] [--version VERSION] [--install-dir DIR] [--help
 Install polakapi for the current user from the latest stable release, or from a
 versioned release directory. A source directory must contain manifest.tsv,
 release-version.txt, and the package assets.
+Git Bash uses RemoteSigned only for the PowerShell installer process; it does not
+change saved execution policies or override Group Policy.
 
 Options:
   --source URL       Use a complete HTTPS release directory (loopback HTTP is allowed for tests)
@@ -171,7 +173,7 @@ else fail "shasum or sha256sum is required"; fi
 
 if [ "$PLATFORM" = windows ]; then
   ps_script=$($cygpath -w "$work/$selected_file") || fail "could not translate the verified PowerShell installer path"
-  set -- -NoProfile -File "$ps_script" -Source "$RELEASE" -Version "$VERSION"
+  set -- -NoProfile -ExecutionPolicy RemoteSigned -File "$ps_script" -Source "$RELEASE" -Version "$VERSION"
   if [ -n "$INSTALL_DIR" ]; then
     win_install_dir=$($cygpath -w "$INSTALL_DIR") || fail "could not translate install directory"
     set -- "$@" -InstallDir "$win_install_dir"

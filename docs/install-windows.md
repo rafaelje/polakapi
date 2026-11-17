@@ -8,7 +8,11 @@ Use the PowerShell installer on native Windows x64 to install or upgrade the per
 2. In PowerShell, run `.\install.ps1` from the folder where it was saved.
 3. Follow the NSIS installer. By default, polakapi installs under `%LOCALAPPDATA%\Programs\polakapi`.
 
-The script honors the machine's PowerShell execution policy. It does not change that policy, disable SmartScreen, or request administrator access. If your policy blocks the script, follow your organization's policy rather than bypassing it.
+Running `install.ps1` directly honors the existing PowerShell execution policy. It does not change that policy, disable SmartScreen, or request administrator access. If your policy blocks the script, follow your organization's policy rather than bypassing it.
+
+### Git Bash
+
+The shell installer verifies the downloaded PowerShell script's checksum before launching it with `-ExecutionPolicy RemoteSigned`, placed before `-File`. This sets the policy only for that PowerShell process and its child sessions, without changing saved user or machine settings. It can override local script restrictions for that process; organization-enforced Group Policy still takes precedence. It never uses `Bypass` or unblocks downloaded files. If policy still blocks installation, use the release's `.exe` installer in accordance with your organization's rules.
 
 ## Options
 
