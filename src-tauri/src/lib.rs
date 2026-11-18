@@ -1,6 +1,9 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod a2a;
+pub mod a2a_broker;
+pub mod a2a_mcp;
 mod adv_review;
 mod agent_context;
 mod agent_models;
@@ -192,6 +195,12 @@ pub fn run() {
                 app.manage(notifications::SoundPlayback::default());
                 app.manage(notification_command::NotificationCommandState::default());
                 app.manage(AwakeState::default());
+                match a2a::Runtime::start(app.handle()) {
+                    Ok(state) => {
+                        app.manage(state);
+                    }
+                    Err(error) => eprintln!("polakapi: A2A is unavailable: {error}"),
+                }
                 app.manage(CodeReviewWatchers::default());
                 // The operator agent's MCP server reaches the app through this
                 // loopback channel; without it the agent tab still opens but
@@ -287,6 +296,9 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            a2a::a2a_settings,
+            a2a::a2a_update_settings,
+            a2a::a2a_review_share,
             agent_list_sessions,
             agent_cli_models,
             agent_cli_detect,
