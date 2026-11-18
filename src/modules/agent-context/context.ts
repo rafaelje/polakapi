@@ -1,3 +1,4 @@
+import { reviewSharing } from "./review-sharing";
 import { invoke } from "@tauri-apps/api/core";
 import {
   breakdownRows,
@@ -199,6 +200,22 @@ function renderDetail(): void {
   const { summary, note, entries } = detail;
   const nodes: HTMLElement[] = [detailHeader(summary)];
 
+  if (summary.cli === "codex" && detail.identity.sessionId) {
+    nodes.push(
+      reviewSharing(
+        summary.ptyId,
+        detail.identity.sessionId,
+        agents
+          .filter((a) => a.ptyId !== summary.ptyId && (a.cli === "claude" || a.cli === "codex"))
+          .map((a) => ({
+            id: a.ptyId,
+            label: a.cli + " · " + (a.project ?? "unknown project") + " · " + a.ptyId,
+          })),
+        (target, session, reviewer) =>
+          invoke<void>("a2a_review_share", { target, session, reviewer }),
+      ),
+    );
+  }
   if (note) {
     nodes.push(el("p", "ctx-note", note));
     detailEl.replaceChildren(...nodes);

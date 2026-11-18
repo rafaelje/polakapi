@@ -1,9 +1,10 @@
+import { watchAgentCommunication, type AgentCommunicationSettings } from "./agent-communication";
 import { open } from "@tauri-apps/plugin-dialog";
 import { isPermissionGranted, requestPermission } from "@tauri-apps/plugin-notification";
 import { invoke, InvokeError } from "../../shared/tauri/invoke";
 import { loadPreferences, savePreferences, type NotificationPreferences } from "./preferences";
 import { deliverNotification, runNotificationCommand } from "./notifications";
-import { settingsRow, settingsToggle } from "./controls";
+import { settingsRow, settingsSelect, settingsToggle } from "./controls";
 import { mountContextModeSection } from "./context-mode-section";
 import { listen } from "@tauri-apps/api/event";
 import {
@@ -109,6 +110,53 @@ async function start(): Promise<void> {
     "Agent Waiting for Input",
     "Notify when an agent is idle and needs input. Suppressed while another tracked agent is working.",
   ).append(toggle("Agent Waiting for Input", p.waiting, (waiting) => save({ waiting })));
+  const communication = row(
+    "Agent communication",
+    "Allow Claude Code and Codex panes to exchange messages. To share a session, choose one reviewer in /context. Turning this off revokes all context access; turning it back on does not restore it.",
+  );
+  const communicationEnabled = toggle("Agent communication", false, (enabled) =>
+    updateCommunication({ enabled }),
+  );
+  const communicationScope = settingsSelect(
+    "Agent communication scope",
+    [
+      ["window", "Only agents in this window"],
+      ["all", "All polakapi windows"],
+    ],
+    "window",
+    (scope) => updateCommunication({ scope: scope as AgentCommunicationSettings["scope"] }),
+  );
+  communication.append(communicationEnabled, communicationScope);
+  let communicationSettings: AgentCommunicationSettings = { enabled: false, scope: "window" };
+  let communicationSaving = Promise.resolve();
+  const renderCommunication = (): void => {
+    communicationEnabled.checked = communicationSettings.enabled;
+    communicationScope.value = communicationSettings.scope;
+  };
+  function updateCommunication(patch: Partial<AgentCommunicationSettings>): void {
+    communicationSaving = communicationSaving
+      .catch(() => {})
+      .then(async () => {
+        const updated = await invoke<AgentCommunicationSettings>("a2a_update_settings", patch);
+        communicationSettings = updated;
+        renderCommunication();
+        status.textContent = "";
+      });
+    void communicationSaving.catch((error: unknown) => {
+      const detail = error instanceof InvokeError ? error.cause : error;
+      status.textContent = detail instanceof Error ? detail.message : String(detail);
+      renderCommunication();
+    });
+  }
+  try {
+    await watchAgentCommunication((current) => {
+      communicationSettings = current;
+      renderCommunication();
+    });
+  } catch (error) {
+    const detail = error instanceof InvokeError ? error.cause : error;
+    status.textContent = detail instanceof Error ? detail.message : String(detail);
+  }
   const desktop = row(
     "Desktop Notifications",
     "Show notifications in your system notification center.",

@@ -4,7 +4,7 @@ use crate::pty::{spawn_session, PtyStore};
 use portable_pty::PtySize;
 use std::io::Write;
 use std::sync::Arc;
-use tauri::{AppHandle, Manager, State, Window};
+use tauri::{AppHandle, State, Window};
 
 /// Max bytes accepted in a single `pty_write` call. Guards against memory
 /// exhaustion from a malicious or runaway frontend loop. 256 KiB is well above
@@ -21,10 +21,7 @@ pub fn pty_spawn(
     args: Option<Vec<String>>,
     cwd: Option<String>,
 ) -> Result<String, String> {
-    let app = window.app_handle().clone();
-    let id = spawn_session(app, (*store).clone(), cols, rows, command, args, cwd)?;
-    store.set_owner(&id, window.label());
-    Ok(id)
+    spawn_session(window, (*store).clone(), cols, rows, command, args, cwd)
 }
 
 #[tauri::command]
@@ -75,6 +72,7 @@ pub struct PtyAttachment {
 /// a webview taking over its rendering.
 #[tauri::command]
 pub fn pty_attach(
+    window: Window,
     store: State<'_, Arc<PtyStore>>,
     id: String,
     since: Option<u64>,
@@ -82,6 +80,9 @@ pub fn pty_attach(
     let session = store
         .session(&id)
         .ok_or_else(|| format!("unknown pty: {id}"))?;
+    if let Some(membership) = session.a2a.lock().as_ref() {
+        membership.move_to(window.label());
+    }
     let (data, offset) = session.replay.lock().since(since);
     Ok(PtyAttachment { data, offset })
 }

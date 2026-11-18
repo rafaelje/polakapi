@@ -1,4 +1,5 @@
 import { startAgentNotifier } from "../modules/settings/agent-notifier";
+import { wireAgentCommunicationToggle } from "../modules/settings/a2a-toolbar";
 import { checkForUpdatesManually } from "../modules/updates/manual-check";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -214,6 +215,7 @@ export class AppController {
     this.wireGutters();
     this.wirePanelToggles();
     this.wireKeepAwakeToggle(layout.keepAwakeEnabled === true);
+    void wireAgentCommunicationToggle();
     this.wireKeyboardShortcuts();
     this.wireWindowFocus();
     this.unwireWindowLifecycle = wireWindowLifecycle({

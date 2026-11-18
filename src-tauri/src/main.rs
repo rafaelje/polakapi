@@ -26,6 +26,9 @@ fn main() {
     if args.len() >= 2 && args[1] == "capture" {
         std::process::exit(polakapi_lib::capture::run());
     }
+    if args.len() >= 2 && args[1] == "a2a-mcp" {
+        std::process::exit(polakapi_lib::a2a_mcp::run());
+    }
     if args.len() >= 2 && args[1] == "ctx-mcp" {
         std::process::exit(polakapi_lib::ctx::mcp::run());
     }

@@ -37,6 +37,7 @@ mod tests {
         cmd.arg("30");
         let child = pair.slave.spawn_command(cmd).expect("spawn sleep");
         Arc::new(PtySession {
+            a2a: Mutex::new(None),
             writer: Mutex::new(pair.master.take_writer().expect("writer")),
             master: Mutex::new(pair.master),
             child: Mutex::new(child),

@@ -115,11 +115,16 @@ pub fn agent_context_detail(
                     summary,
                     breakdown: ContextBreakdown::default(),
                     entries: Vec::new(),
-                    note: Some(format!(
-                        "Reading context content is implemented for Claude Code only. \
-                 {} writes a transcript in a layout polakapi has not verified yet.",
-                        pane.cli
-                    )),
+                    note: Some(if pane.cli == "codex" {
+                        if identity.session_id.is_some() {
+                            "Select a reviewer above to share a bounded view of this Codex session."
+                                .into()
+                        } else {
+                            "No session ID recorded for this pane. Enable the Codex session hooks in Settings and start a new session.".into()
+                        }
+                    } else {
+                        format!("The local transcript viewer does not support {}.", pane.cli)
+                    }),
                 });
             }
 
@@ -623,3 +628,5 @@ mod tests {
         assert_eq!(head.context_window, Some(272_000));
     }
 }
+
+pub(crate) mod review;

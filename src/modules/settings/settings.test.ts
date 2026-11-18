@@ -29,9 +29,10 @@ vi.mock("@tauri-apps/plugin-store", () => ({
 }));
 vi.mock("@tauri-apps/api/event", () => ({ emit: vi.fn(), listen: vi.fn() }));
 
+import { listen } from "@tauri-apps/api/event";
 import { loadPreferences, savePreferences } from "./preferences";
 import { deliverNotification, runNotificationCommand } from "./notifications";
-import { InvokeError } from "../../shared/tauri/invoke";
+import { InvokeError, invoke } from "../../shared/tauri/invoke";
 
 const input = () =>
   document.querySelector<HTMLInputElement>('[aria-label="Notification Command"]')!;
@@ -50,9 +51,58 @@ beforeEach(async () => {
     sound: "default",
     command: 'say "done"',
   });
+  let communicationSettings = { enabled: false, scope: "window" };
+  vi.mocked(invoke).mockImplementation((command, args) => {
+    if (command === "a2a_settings") return Promise.resolve({ ...communicationSettings });
+    if (command === "a2a_update_settings") {
+      communicationSettings = {
+        ...communicationSettings,
+        ...(args as Partial<typeof communicationSettings>),
+      };
+      return Promise.resolve({ ...communicationSettings });
+    }
+    if (command === "notification_sounds") return Promise.resolve([]);
+    return Promise.resolve(undefined);
+  });
   document.body.innerHTML = '<div id="settings"></div>';
   await import("./settings");
   await vi.waitFor(() => expect(input()).not.toBeNull());
+});
+
+describe("agent communication settings", () => {
+  it("loads disabled by default and persists the enable switch", async () => {
+    const enabled = document.querySelector<HTMLInputElement>('[aria-label="Agent communication"]');
+    expect(enabled?.checked).toBe(false);
+    enabled!.click();
+    await vi.waitFor(() =>
+      expect(invoke).toHaveBeenCalledWith("a2a_update_settings", { enabled: true }),
+    );
+  });
+
+  it("reflects toolbar changes and turns the same switch off without granting a reviewer", async () => {
+    const enabled = document.querySelector<HTMLInputElement>('[aria-label="Agent communication"]')!;
+    const handler = vi.mocked(listen).mock.calls.find(([name]) => name === "a2a:settings")![1];
+    handler({ event: "a2a:settings", id: 1, payload: { enabled: true, scope: "all" } });
+    expect(enabled.checked).toBe(true);
+    expect(enabled.closest(".settings-row")?.textContent).toMatch(/revoke/i);
+    enabled.click();
+    await vi.waitFor(() =>
+      expect(invoke).toHaveBeenCalledWith("a2a_update_settings", { enabled: false }),
+    );
+    expect(invoke).not.toHaveBeenCalledWith("a2a_review_share", expect.anything());
+  });
+
+  it("persists the selected communication scope", async () => {
+    const scope = document.querySelector<HTMLSelectElement>(
+      '[aria-label="Agent communication scope"]',
+    );
+    expect(scope?.value).toBe("window");
+    scope!.value = "all";
+    scope!.dispatchEvent(new Event("change"));
+    await vi.waitFor(() =>
+      expect(invoke).toHaveBeenCalledWith("a2a_update_settings", { scope: "all" }),
+    );
+  });
 });
 
 describe("notification command settings", () => {

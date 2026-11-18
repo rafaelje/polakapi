@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{Emitter, Manager, Window};
 
 use crate::platform_command;
 use crate::pty_activity::{ai_cli_basename, AgentPane};
@@ -40,6 +40,7 @@ const MAX_ARGS: usize = 64;
 const MAX_CWD_LEN: usize = 4096;
 
 pub struct PtySession {
+    pub(crate) a2a: Mutex<Option<crate::a2a::Membership>>,
     pub writer: Mutex<Box<dyn Write + Send>>,
     pub master: Mutex<Box<dyn MasterPty + Send>>,
     pub child: Mutex<Box<dyn Child + Send + Sync>>,
@@ -71,6 +72,9 @@ impl PtyStore {
 
     pub fn remove_session(&self, id: &str) -> Option<Arc<PtySession>> {
         let removed = self.sessions.lock().remove(id);
+        if let Some(session) = &removed {
+            session.a2a.lock().take();
+        }
         self.owners.lock().remove(id);
         removed
     }
@@ -126,6 +130,7 @@ impl PtyStore {
             .collect();
         self.owners.lock().clear();
         for session in sessions {
+            session.a2a.lock().take();
             kill_and_wait(session);
         }
     }
@@ -159,7 +164,7 @@ pub struct PtyExitPayload {
 }
 
 pub fn spawn_session(
-    app: AppHandle,
+    window: Window,
     store: Arc<PtyStore>,
     cols: u16,
     rows: u16,
@@ -167,6 +172,7 @@ pub fn spawn_session(
     args: Option<Vec<String>>,
     cwd: Option<String>,
 ) -> Result<String, String> {
+    let app = window.app_handle().clone();
     let pty_system = NativePtySystem::default();
     let pair = pty_system
         .openpty(PtySize {
@@ -184,13 +190,17 @@ pub fn spawn_session(
 
     let shell = resolve_command(command)?;
     let program = platform_command::resolve_program(&shell)?;
-    let validated_args = validate_args(args)?;
+    let mut validated_args = validate_args(args)?;
     let validated_cwd = validate_cwd(cwd)?;
 
     let id = uuid::Uuid::new_v4().to_string();
 
+    let cli = ai_cli_basename(&shell);
+    let enrollment =
+        crate::a2a::Membership::prepare(&window, &id, cli.as_deref(), &mut validated_args)?;
     let mut cmd =
         platform_command::portable_command(&program, &validated_args, !is_allowed_shell(&shell))?;
+    let a2a = crate::a2a::Membership::set_environment(enrollment, &mut cmd);
     match &validated_cwd {
         Some(dir) => cmd.env(crate::ctx::paths::PROJECT_DIR_ENV, dir),
         None => cmd.env_remove(crate::ctx::paths::PROJECT_DIR_ENV),
@@ -224,14 +234,16 @@ pub fn spawn_session(
     let mut reader = pair.master.try_clone_reader().map_err(|e| e.to_string())?;
 
     let session = Arc::new(PtySession {
+        a2a: Mutex::new(a2a),
         writer: Mutex::new(writer),
         master: Mutex::new(pair.master),
         child: Mutex::new(child),
-        cli: ai_cli_basename(&shell),
+        cli,
         cwd: effective_cwd,
         replay: Mutex::new(Default::default()),
     });
     store.insert_session(id.clone(), session.clone());
+    store.set_owner(&id, window.label());
 
     let id_for_thread = id.clone();
     let app_for_thread = app.clone();
